@@ -40,7 +40,16 @@ A production-ready quantitative trading system that transforms from "amateur sco
 - **Temporal Validation**: `assert feature_date.max() <= train_end`, `assert label_date.min() > train_end`
 - **Safe Walk-Forward**: Prevents common pitfalls that cause backtest inflation (15-30%) vs live performance (-50%)
 
-### 5. **Core Modules**
+### 5. **Professional Trading Cost Modeling** 💰
+- **Advanced Liquidity Impact Model**: 10-bucket ADV-based slippage modeling (not just fixed bp)
+- **Dynamic Impact Costs**: 50-200bp for low liquidity stocks (<¥50M daily volume)
+- **ST Stock Penalties**: 3-5x multiplier for ST/delisting risk stocks
+- **T+1 Sell Impact**: Higher selling costs due to T+1 settlement constraints
+- **Limit Up/Down Filters**: Avoid trading near price limits (±10%)
+- **Low Liquidity Filtering**: Automatic exclusion of stocks with ADV < ¥30M or market cap < ¥3B
+- **Market Regime Adjustments**: Higher costs during volatile/crash markets
+
+### 6. **Core Modules**
 - **Factor Management**: 18 real factors from financial reports (ROE, profit growth, etc.)
 - **Backtest Engine**: Vectorized backtesting with realistic slippage modeling
 - **Risk Management**: VaR, CVaR, Sharpe, Sortino, drawdown analysis
@@ -169,6 +178,18 @@ This validates the professional data reconciliation capabilities:
 3. **Quality Enforcement**: Forward adjustment, continuity checks, anomaly handling
 4. **Switch Logging**: Detailed logs for data source switches and quality metrics
 5. **Emergency Fallback**: Simulated data when both sources fail
+
+### Advanced Slippage Model Test
+Test the professional trading cost model for A-shares:
+```bash
+python test_advanced_slippage_integration.py
+```
+This validates the liquidity-based impact cost modeling:
+1. **Dynamic Slippage**: 10 liquidity buckets based on ADV (average daily volume)
+2. **ST Stock Penalties**: 3-5x cost multiplier for ST/delisting risk stocks
+3. **T+1 Sell Impact**: Higher selling costs reflecting T+1 settlement reality
+4. **Low Liquidity Filtering**: Automatic exclusion of stocks with ADV < ¥30M
+5. **Market Regime Adjustments**: Higher costs during volatile/crash markets
 
 ### Future Function Prevention Test
 The system includes a dedicated `DataAssurance` module to detect look-ahead bias:

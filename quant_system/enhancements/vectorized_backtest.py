@@ -11,19 +11,59 @@ import warnings
 warnings.filterwarnings('ignore')
 from dataclasses import dataclass, field
 import time
+import sys
+import os
+
+# 尝试导入高级滑点模型
+try:
+    # 添加quant_system路径
+    sys.path.append('/root/.openclaw/workspace/quant_system')
+    from slippage.liquidity_impact_model import (
+        AdvancedSlippageModel, 
+        BacktestLiquidityEnforcer,
+        StockLiquidityProfile,
+        MarketRegime
+    )
+    ADVANCED_SLIPPAGE_AVAILABLE = True
+except ImportError as e:
+    print(f"警告: 高级滑点模型不可用: {e}")
+    ADVANCED_SLIPPAGE_AVAILABLE = False
+    AdvancedSlippageModel = None
+    BacktestLiquidityEnforcer = None
+    StockLiquidityProfile = None
+    MarketRegime = None
 
 @dataclass
 class BacktestConfig:
     """回测配置"""
     initial_capital: float = 1000000.0  # 初始资金
     commission_rate: float = 0.001      # 佣金费率 0.1%
-    slippage_rate: float = 0.002        # 滑点费率 0.2%
+    slippage_rate: float = 0.002        # 滑点费率 0.2%（基础固定滑点）
     min_trade_value: float = 1000.0     # 最小交易金额
     max_position_pct: float = 0.1       # 单票最大仓位比例
     stop_loss_pct: float = 0.10         # 止损比例 10%
     take_profit_pct: float = 0.20       # 止盈比例 20%
     
+    # 高级滑点模型配置（用户建议）
+    use_advanced_slippage: bool = False          # 使用高级滑点模型
+    adv_threshold: float = 3000.0                # ADV过滤阈值（万元），默认3000万
+    market_cap_threshold: float = 30.0           # 流通市值过滤阈值（亿元），默认30亿
+    enforce_tplus1: bool = True                  # 强制执行T+1约束
+    enforce_limit_up_down: bool = True           # 强制执行涨跌停板过滤
+    filter_low_liquidity: bool = True            # 过滤低流动性股票
+    
+    # 市场状态
+    market_regime: str = 'normal'                # 市场状态：normal, volatile, crash, bull, bear
+    
 @dataclass
+class StockLiquidityData:
+    """股票流动性数据（用于高级滑点模型）"""
+    symbol: str
+    adv_20d: float = 0.0              # 过去20日平均日成交额（万元）
+    market_cap: float = 0.0           # 流通市值（亿元）
+    is_st: bool = False               # 是否为ST股票
+    daily_turnover: float = 0.0       # 日换手率
+    
 @dataclass
 class TradeRecord:
     """交易记录"""
@@ -67,12 +107,25 @@ class VectorizedBacktester:
         self.config = config or BacktestConfig()
         self.results_cache = {}
         
+        # 初始化高级滑点模型（如果可用且配置启用）
+        self.liquidity_enforcer = None
+        if (self.config.use_advanced_slippage and 
+            ADVANCED_SLIPPAGE_AVAILABLE and 
+            BacktestLiquidityEnforcer is not None):
+            try:
+                self.liquidity_enforcer = BacktestLiquidityEnforcer()
+                print(f"✓ 高级滑点模型已启用 (ADV阈值: {self.config.adv_threshold}万, 市值阈值: {self.config.market_cap_threshold}亿)")
+            except Exception as e:
+                print(f"⚠️ 高级滑点模型初始化失败: {e}")
+                self.liquidity_enforcer = None
+        
     def run_vectorized_backtest(self, 
                                symbol: str,
                                prices: pd.DataFrame,
                                signals: pd.Series,
                                start_date: Optional[pd.Timestamp] = None,
-                               end_date: Optional[pd.Timestamp] = None) -> BacktestResult:
+                               end_date: Optional[pd.Timestamp] = None,
+                               liquidity_data: Optional[Dict[str, Any]] = None) -> BacktestResult:
         """
         运行向量化回测
         
@@ -82,6 +135,13 @@ class VectorizedBacktester:
             signals: 交易信号Series，1=买入，-1=卖出，0=持有
             start_date: 回测开始日期
             end_date: 回测结束日期
+            liquidity_data: 流动性数据字典（用于高级滑点模型）
+                {
+                    'adv_20d': float,      # 过去20日平均日成交额（万元）
+                    'market_cap': float,   # 流通市值（亿元）
+                    'is_st': bool,         # 是否为ST股票
+                    'daily_turnover': float # 日换手率
+                }
             
         Returns:
             回测结果
@@ -111,6 +171,54 @@ class VectorizedBacktester:
         signals = signals.loc[common_idx]
         
         print(f"向量化回测 {symbol}: {len(prices)}个交易日")
+        
+        # ========== 初始化高级滑点模型（如果启用）==========
+        stock_profile = None
+        market_regime = None
+        
+        if (self.config.use_advanced_slippage and 
+            self.liquidity_enforcer is not None and 
+            liquidity_data is not None):
+            
+            try:
+                # 初始化市场状态
+                if hasattr(MarketRegime, self.config.market_regime.upper()):
+                    market_regime = getattr(MarketRegime, self.config.market_regime.upper())
+                else:
+                    market_regime = MarketRegime.NORMAL
+                
+                # 初始化股票流动性画像
+                adv_20d = liquidity_data.get('adv_20d', 0.0)
+                market_cap = liquidity_data.get('market_cap', 0.0)
+                is_st = liquidity_data.get('is_st', False)
+                
+                # 获取当前价格（用于计算涨跌停价）
+                current_price = closes[0] if len(closes) > 0 else 0.0
+                limit_up_price = current_price * 1.1 if current_price > 0 else 0.0
+                limit_down_price = current_price * 0.9 if current_price > 0 else 0.0
+                
+                stock_profile = self.liquidity_enforcer.slippage_model.create_stock_profile(
+                    symbol=symbol,
+                    adv_20d=adv_20d,
+                    market_cap=market_cap,
+                    is_st=is_st,
+                    price=current_price,
+                    limit_up_price=limit_up_price,
+                    limit_down_price=limit_down_price
+                )
+                
+                print(f"  高级滑点模型已启用: ADV={adv_20d:.0f}万, 市值={market_cap:.1f}亿, ST={is_st}")
+                
+                # 检查是否为低流动性股票
+                if stock_profile.is_low_liquidity(
+                    adv_threshold=self.config.adv_threshold,
+                    market_cap_threshold=self.config.market_cap_threshold
+                ):
+                    print(f"  ⚠️  警告: {symbol}为低流动性股票，回测结果可能虚高")
+                    
+            except Exception as e:
+                print(f"  ⚠️  高级滑点模型初始化失败: {e}")
+                stock_profile = None
         
         # ========== 核心向量化计算 ==========
         
@@ -164,9 +272,32 @@ class VectorizedBacktester:
                 available_cash = min(cash[i], max_trade_value)
                 
                 # 计算实际买入价格（考虑滑点）
-                buy_price = open_price * (1 + self.config.slippage_rate)
+                if self.config.use_advanced_slippage and stock_profile is not None:
+                    # 使用高级滑点模型计算冲击成本
+                    trade_value_estimate = available_cash * 0.8  # 估算交易金额（假设使用80%可用资金）
+                    
+                    # 确定交易时间（简化：根据日期时间判断）
+                    trade_time = 'midday'  # 默认盘中
+                    
+                    # 计算冲击成本
+                    slippage_result = self.liquidity_enforcer.slippage_model.calculate_slippage(
+                        stock_profile=stock_profile,
+                        trade_side='buy',
+                        trade_value=trade_value_estimate,
+                        trade_time=trade_time,
+                        market_regime=market_regime
+                    )
+                    
+                    impact_pct = slippage_result['impact_pct']
+                    buy_price = open_price * (1 + impact_pct)
+                    advanced_slippage_used = True
+                else:
+                    # 使用固定滑点率
+                    buy_price = open_price * (1 + self.config.slippage_rate)
+                    impact_pct = self.config.slippage_rate
+                    advanced_slippage_used = False
                 
-                # 计算可买股数
+                # 计算可买股数（考虑冲击成本和佣金）
                 shares = int(available_cash / (buy_price * (1 + self.config.commission_rate)))
                 
                 if shares > 0:
@@ -179,6 +310,28 @@ class VectorizedBacktester:
                     positions[i] = shares
                     cash[i] -= total_cost
                     
+                    # 准备metadata
+                    metadata = {}
+                    if advanced_slippage_used and stock_profile is not None:
+                        metadata.update({
+                            'advanced_slippage': True,
+                            'impact_pct': impact_pct,
+                            'impact_bps': impact_pct * 10000,
+                            'bucket_id': stock_profile.bucket_id,
+                            'adv_20d': stock_profile.adv_20d,
+                            'market_cap': stock_profile.market_cap,
+                            'is_st': stock_profile.is_st,
+                            'is_low_liquidity': stock_profile.is_low_liquidity(
+                                self.config.adv_threshold, 
+                                self.config.market_cap_threshold
+                            )
+                        })
+                    else:
+                        metadata.update({
+                            'advanced_slippage': False,
+                            'slippage_rate': self.config.slippage_rate
+                        })
+                    
                     # 记录交易
                     trade = TradeRecord(
                         date=dates[i],
@@ -188,19 +341,42 @@ class VectorizedBacktester:
                         price=buy_price,
                         value=trade_value,
                         commission=commission,
-                        slippage=open_price * self.config.slippage_rate,
+                        slippage=open_price * impact_pct,  # 使用实际冲击成本
                         position_before=0,
                         position_after=shares,
                         cash_before=cash[i-1],
                         cash_after=cash[i],
-                        metadata=None
+                        metadata=metadata
                     )
                     trade_records.append(trade)
             
             # 卖出信号
             elif sell_signals[i] and positions[i] > 0:
                 # 计算实际卖出价格（考虑滑点）
-                sell_price = open_price * (1 - self.config.slippage_rate)
+                if self.config.use_advanced_slippage and stock_profile is not None:
+                    # 使用高级滑点模型计算冲击成本
+                    trade_value_estimate = positions[i] * open_price  # 估算交易金额
+                    
+                    # 确定交易时间（简化：根据日期时间判断）
+                    trade_time = 'midday'  # 默认盘中
+                    
+                    # 计算冲击成本（卖出冲击通常更大）
+                    slippage_result = self.liquidity_enforcer.slippage_model.calculate_slippage(
+                        stock_profile=stock_profile,
+                        trade_side='sell',
+                        trade_value=trade_value_estimate,
+                        trade_time=trade_time,
+                        market_regime=market_regime
+                    )
+                    
+                    impact_pct = slippage_result['impact_pct']
+                    sell_price = open_price * (1 - impact_pct)
+                    sell_advanced_slippage_used = True
+                else:
+                    # 使用固定滑点率
+                    sell_price = open_price * (1 - self.config.slippage_rate)
+                    impact_pct = self.config.slippage_rate
+                    sell_advanced_slippage_used = False
                 
                 # 计算收入
                 trade_value = positions[i] * sell_price
@@ -225,6 +401,28 @@ class VectorizedBacktester:
                     cash[i] += net_proceeds
                     positions[i] = 0
                     
+                    # 准备metadata
+                    sell_metadata = {'profit_pct': profit_pct, 'reason': reason}
+                    if sell_advanced_slippage_used and stock_profile is not None:
+                        sell_metadata.update({
+                            'advanced_slippage': True,
+                            'impact_pct': impact_pct,
+                            'impact_bps': impact_pct * 10000,
+                            'bucket_id': stock_profile.bucket_id,
+                            'adv_20d': stock_profile.adv_20d,
+                            'market_cap': stock_profile.market_cap,
+                            'is_st': stock_profile.is_st,
+                            'is_low_liquidity': stock_profile.is_low_liquidity(
+                                self.config.adv_threshold, 
+                                self.config.market_cap_threshold
+                            )
+                        })
+                    else:
+                        sell_metadata.update({
+                            'advanced_slippage': False,
+                            'slippage_rate': self.config.slippage_rate
+                        })
+                    
                     # 记录交易
                     trade = TradeRecord(
                         date=dates[i],
@@ -234,12 +432,12 @@ class VectorizedBacktester:
                         price=sell_price,
                         value=trade_value,
                         commission=commission,
-                        slippage=open_price * self.config.slippage_rate,
+                        slippage=open_price * impact_pct,  # 使用实际冲击成本
                         position_before=positions[i-1],
                         position_after=0,
                         cash_before=cash[i-1],
                         cash_after=cash[i],
-                        metadata={'profit_pct': profit_pct, 'reason': reason}
+                        metadata=sell_metadata
                     )
                     trade_records.append(trade)
             
