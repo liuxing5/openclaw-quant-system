@@ -2,6 +2,17 @@
 因子管理器 - 支持50+个量化因子
 包括技术因子、基本面因子、情绪因子
 提供因子计算、标准化、加权融合
+
+🚨 重要警告：本模块中的基本面因子是伪因子！
+用户指出问题：pe_ratio 用 rolling(252).mean() / 20 模拟 EPS，
+roe_simulation 直接返回 3 个月动量值作为 ROE，
+profit_growth_simulation 把价格增长乘以 1.5 系数当利润增长。
+这些代码名字叫"基本面因子"但实质是技术因子的变形，与 momentum_3m 高度相关，
+会造成严重的因子冗余，让你以为分散了但实际暴露集中。
+
+✅ 生产环境解决方案：
+请使用 real_factor_manager.py（基于Baostock真实财报数据）
+quant_main.py 已优先使用真实因子管理器，其他模块也应遵循此模式。
 """
 
 import pandas as pd
@@ -134,7 +145,19 @@ class TechnicalFactor(FactorBase):
 
 
 class FundamentalFactor(FactorBase):
-    """基本面因子（需要财务数据，这里提供模拟版本）"""
+    """
+    ⚠️ 警告：这是伪基本面因子！仅用于开发和测试！
+    
+    用户指出问题：这些因子实质是技术因子的变形：
+    1. pe_ratio: 用 rolling(252).mean() / 20 模拟 EPS
+    2. roe_simulation: 直接返回 3 个月动量值作为 ROE  
+    3. profit_growth_simulation: 把价格增长乘以 1.5 系数当利润增长
+    
+    这些"基本面因子"与 momentum_3m 高度相关，会造成严重的因子冗余，
+    让你以为分散了但实际暴露集中。
+    
+    ✅ 生产环境请使用 RealFactorManager（基于Baostock真实财报数据）
+    """
     
     @staticmethod
     def pe_ratio(df: pd.DataFrame) -> pd.Series:

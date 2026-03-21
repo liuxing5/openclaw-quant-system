@@ -15,7 +15,79 @@ import os
 
 sys.path.append('/root/.openclaw/workspace/quant_system')
 from data.sources.data_pipeline import DataPipeline
-from factors.factor_manager import FactorManager
+
+# 因子管理器：优先使用真实因子管理器（解决伪因子问题）
+try:
+    # 尝试导入真实因子管理器（基于Baostock真实财务数据）
+    from real_factors.real_factor_manager import RealFactorManager
+    # 创建兼容包装器
+    class FactorManager(RealFactorManager):
+        """兼容包装器，提供get_factor_weights方法"""
+        def get_factor_weights(self, method: str = 'equal') -> Dict[str, float]:
+            """获取因子权重（兼容接口）"""
+            if method == 'equal':
+                n_factors = len(self.factors)
+                return {factor_id: 1.0 / n_factors for factor_id in self.factors.keys()}
+            
+            elif method == 'category_weighted':
+                # 使用真实因子类别统计
+                # 技术因子保持50%，基本面因子30%（真实数据），情绪因子20%（部分真实）
+                category_weights = {
+                    'technical': 0.50,
+                    'fundamental': 0.30,
+                    'sentiment': 0.20
+                }
+                
+                weights = {}
+                for factor_id, info in self.factors.items():
+                    category = info['category']
+                    n_in_category = self.category_stats.get(category, 1)
+                    weights[factor_id] = category_weights.get(category, 0.0) / n_in_category
+                
+                return weights
+            
+            else:
+                raise ValueError(f"未知的权重方法: {method}")
+        
+        def combine_factors(self, df: pd.DataFrame, weights: Optional[Dict[str, float]] = None, symbol: str = None) -> pd.Series:
+            """因子融合（增强版，支持symbol参数）"""
+            # 计算所有因子
+            factor_df = self.calculate_all_factors(df, symbol=symbol)
+            
+            # 获取权重
+            if weights is None:
+                weights = self.get_factor_weights('category_weighted')
+            
+            # 确保权重与因子匹配
+            valid_weights = {}
+            for factor_id in factor_df.columns:
+                if factor_id in weights:
+                    valid_weights[factor_id] = weights[factor_id]
+                else:
+                    valid_weights[factor_id] = 0.0
+            
+            # 归一化权重
+            total_weight = sum(valid_weights.values())
+            if total_weight > 0:
+                normalized_weights = {k: v / total_weight for k, v in valid_weights.items()}
+            else:
+                normalized_weights = {k: 1.0 / len(valid_weights) for k in valid_weights.keys()}
+            
+            # 加权求和
+            weighted_sum = pd.Series(0.0, index=factor_df.index)
+            for factor_id, weight in normalized_weights.items():
+                if factor_id in factor_df.columns:
+                    # 标准化因子值（去除NaN）
+                    factor_values = factor_df[factor_id].fillna(0)
+                    weighted_sum += factor_values * weight
+            
+            return weighted_sum
+    
+    print("✓ AdvancedBacktester: 使用真实因子管理器 (RealFactorManager)")
+except ImportError as e:
+    # 回退到原始因子管理器
+    print(f"⚠ AdvancedBacktester: 真实因子管理器导入失败: {e}，使用原始因子管理器")
+    from factors.factor_manager import FactorManager
 
 class AdvancedBacktester:
     """高级回测器 - 支持专业回测方法"""
