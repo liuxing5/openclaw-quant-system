@@ -180,9 +180,10 @@ class AdvancedBacktester:
                     test_start: str,
                     test_end: str,
                     strategy_func: callable,
+                    param_grid: Dict[str, List] = None,
                     **kwargs) -> Dict[str, Any]:
         """
-        样本外测试 (OOS Test)
+        样本外测试 (OOS Test) - 真正的参数拟合与验证
         
         Args:
             symbols: 股票代码列表
@@ -191,10 +192,12 @@ class AdvancedBacktester:
             test_start: 测试集开始日期
             test_end: 测试集结束日期
             strategy_func: 策略函数
-            **kwargs: 策略参数
+            param_grid: 参数网格用于优化（格式：{'param1': [val1, val2], 'param2': [val3, val4]}）
+                       如果为None，则使用固定的**kwargs（非真正的OOS测试，会发出警告）
+            **kwargs: 策略参数（当param_grid为None时使用，或作为网格搜索的基准参数）
         
         Returns:
-            OOS测试结果
+            OOS测试结果（包含优化后的参数）
         """
         print("=" * 60)
         print("样本外测试 (Out-of-Sample Testing)")
@@ -203,32 +206,201 @@ class AdvancedBacktester:
         print(f"测试集: {test_start} 至 {test_end}")
         print(f"股票数量: {len(symbols)}")
         
-        # 1. 训练集回测
-        print("\n1. 训练集回测...")
-        train_results = self.run_standard_backtest(
-            symbols, train_start, train_end, strategy_func, **kwargs
-        )
+        # 检查是否为真正的OOS测试
+        if param_grid is None:
+            print("\n⚠️  警告：未提供param_grid参数，这不是真正的样本外验证！")
+            print("   当前实现仅运行两段独立回测，没有参数拟合过程。")
+            print("   若要真正的OOS测试，请提供param_grid参数进行参数优化。")
+            print("   继续使用固定参数运行...")
+            
+            # 1. 训练集回测（固定参数）
+            print("\n1. 训练集回测（固定参数）...")
+            train_results = self.run_standard_backtest(
+                symbols, train_start, train_end, strategy_func, **kwargs
+            )
+            
+            # 2. 测试集回测（使用相同固定参数）
+            print("\n2. 测试集回测（相同固定参数）...")
+            test_results = self.run_standard_backtest(
+                symbols, test_start, test_end, strategy_func, **kwargs
+            )
+            
+            best_params = kwargs.copy()
+            optimization_results = None
+            
+        else:
+            print("\n🚀 执行真正的OOS测试：在训练集上拟合参数，在测试集上固定参数测试")
+            print(f"   参数网格大小: {len(param_grid)}个参数，{self._count_grid_combinations(param_grid)}种组合")
+            
+            # 1. 在训练集上进行参数优化
+            print("\n1. 训练集参数优化...")
+            optimization_results = self._optimize_parameters_on_train_set(
+                symbols, train_start, train_end, strategy_func, param_grid, **kwargs
+            )
+            
+            best_params = optimization_results['best_params']
+            print(f"   最佳参数: {best_params}")
+            print(f"   训练集最佳表现: 夏普={optimization_results['best_sharpe']:.4f}, "
+                  f"收益={optimization_results['best_return']:.2f}%")
+            
+            # 2. 在测试集上使用优化后的固定参数
+            print("\n2. 测试集回测（使用优化后的固定参数）...")
+            test_results = self.run_standard_backtest(
+                symbols, test_start, test_end, strategy_func, **best_params
+            )
+            
+            # 3. 训练集回测（使用相同优化参数，用于对比）
+            print("\n3. 训练集回测（使用优化参数）...")
+            train_results = self.run_standard_backtest(
+                symbols, train_start, train_end, strategy_func, **best_params
+            )
         
-        # 2. 测试集回测 (使用训练得到的参数)
-        print("\n2. 测试集回测...")
-        test_results = self.run_standard_backtest(
-            symbols, test_start, test_end, strategy_func, **kwargs
-        )
-        
-        # 3. OOS性能分析
-        print("\n3. OOS性能分析...")
+        # 4. OOS性能分析
+        print("\n4. OOS性能分析...")
         oos_analysis = self._analyze_oos_performance(train_results, test_results)
         
         return {
             'train_results': train_results,
             'test_results': test_results,
             'oos_analysis': oos_analysis,
+            'optimization_results': optimization_results,
+            'best_params': best_params,
+            'is_true_oos': param_grid is not None,
             'metadata': {
                 'train_period': f"{train_start} 至 {train_end}",
                 'test_period': f"{test_start} 至 {test_end}",
                 'total_symbols': len(symbols),
+                'param_optimized': param_grid is not None,
+                'param_grid_size': len(param_grid) if param_grid else 0,
+                'best_params': best_params,
                 'oos_test_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             }
+        }
+    
+    def _count_grid_combinations(self, param_grid: Dict[str, List]) -> int:
+        """计算参数网格的组合总数"""
+        import itertools
+        if not param_grid:
+            return 0
+        counts = [len(values) for values in param_grid.values()]
+        total = 1
+        for c in counts:
+            total *= c
+        return total
+    
+    def _optimize_parameters_on_train_set(self,
+                                         symbols: List[str],
+                                         train_start: str,
+                                         train_end: str,
+                                         strategy_func: callable,
+                                         param_grid: Dict[str, List],
+                                         base_params: Dict = None) -> Dict[str, Any]:
+        """
+        在训练集上进行参数优化（网格搜索）
+        
+        Args:
+            symbols: 股票代码列表
+            train_start: 训练集开始日期
+            train_end: 训练集结束日期
+            strategy_func: 策略函数
+            param_grid: 参数网格
+            base_params: 基准参数（网格参数会覆盖）
+        
+        Returns:
+            优化结果，包含最佳参数和表现
+        """
+        import itertools
+        
+        if base_params is None:
+            base_params = {}
+        
+        # 生成所有参数组合
+        param_names = list(param_grid.keys())
+        param_values = list(param_grid.values())
+        
+        best_sharpe = -float('inf')
+        best_return = -float('inf')
+        best_params = base_params.copy()
+        best_results = None
+        all_results = []
+        
+        print(f"   网格搜索: {len(param_names)}个参数，{self._count_grid_combinations(param_grid)}种组合")
+        
+        # 遍历所有组合
+        total_combinations = self._count_grid_combinations(param_grid)
+        if total_combinations > 100:
+            print(f"   警告: 组合数过多({total_combinations})，使用随机采样20个组合")
+            # 随机采样
+            combinations = []
+            for _ in range(min(20, total_combinations)):
+                combo = base_params.copy()
+                for name in param_names:
+                    import random
+                    combo[name] = random.choice(param_grid[name])
+                combinations.append(combo)
+        else:
+            # 枚举所有组合
+            combinations = []
+            for values in itertools.product(*param_values):
+                combo = base_params.copy()
+                for name, value in zip(param_names, values):
+                    combo[name] = value
+                combinations.append(combo)
+        
+        print(f"   实际测试组合数: {len(combinations)}")
+        
+        # 评估每个组合
+        for i, params in enumerate(combinations, 1):
+            try:
+                # 运行训练集回测
+                results = self.run_standard_backtest(
+                    symbols, train_start, train_end, strategy_func, **params
+                )
+                
+                # 提取性能指标
+                summary = results['summary']
+                sharpe = summary.get('sharpe_ratio', 0)
+                total_return = summary.get('total_return', 0)
+                
+                # 更新最佳参数
+                if sharpe > best_sharpe:
+                    best_sharpe = sharpe
+                    best_return = total_return
+                    best_params = params.copy()
+                    best_results = results
+                
+                all_results.append({
+                    'params': params.copy(),
+                    'sharpe': sharpe,
+                    'total_return': total_return,
+                    'summary': summary
+                })
+                
+                if i % 5 == 0 or i == len(combinations):
+                    print(f"     组合{i}/{len(combinations)}: 夏普={sharpe:.4f}, 收益={total_return:.2f}%")
+                    
+            except Exception as e:
+                print(f"     组合{i}失败: {e}")
+                continue
+        
+        if best_results is None:
+            print("   警告: 所有参数组合均失败，使用基准参数")
+            best_params = base_params.copy()
+            best_results = self.run_standard_backtest(
+                symbols, train_start, train_end, strategy_func, **best_params
+            )
+            best_sharpe = best_results['summary'].get('sharpe_ratio', 0)
+            best_return = best_results['summary'].get('total_return', 0)
+        
+        return {
+            'best_params': best_params,
+            'best_sharpe': best_sharpe,
+            'best_return': best_return,
+            'best_results': best_results,
+            'all_results': all_results,
+            'param_grid_size': len(param_grid),
+            'combinations_tested': len(combinations),
+            'total_combinations': total_combinations
         }
     
     def run_walk_forward_test(self,
