@@ -87,6 +87,15 @@ except ImportError as e:
     print(f"⚠ 真实因子管理器导入失败: {e}，使用原始因子管理器")
     from factors.factor_manager import FactorManager
 
+
+# PIT因子管理器（Point-in-Time数据合规性）
+try:
+    from pit_factors.pit_factor_manager import PITFactorManager
+    PIT_FACTOR_MANAGER_AVAILABLE = True
+    print("✓ PIT因子管理器可用")
+except ImportError as e:
+    PIT_FACTOR_MANAGER_AVAILABLE = False
+    print(f"⚠ PIT因子管理器导入失败: {e}")
 # 动态导入，避免循环依赖
 try:
     from models.backtest_engine.backtester import BacktestEngine
@@ -148,7 +157,12 @@ class QuantSystem:
                     {'max': 90, 'multiplier': 0.2},   # 80-90分：权重20%
                     {'max': 100, 'multiplier': 0.0}   # >90分：权重0%
                 ]
-            }
+            },
+            # PIT配置
+            'pit_mode': False,              # 是否启用PIT模式
+            'pit_strict_mode': False,       # PIT严格模式（违规时抛出异常）
+            'pit_enable_caching': True,     # 启用PIT缓存
+            'pit_current_date': None,       # PIT当前日期（自动设置）
         }
         
         # 初始化组件
@@ -158,7 +172,23 @@ class QuantSystem:
             initial_capital=self.config['initial_capital']
         )
         self.portfolio_manager = PortfolioManager(self.config)
-        
+        # 初始化PIT因子管理器
+        self.pit_factor_manager = None
+        self.active_factor_manager = self.factor_manager
+        if self.config.get('pit_mode', False) and 'PIT_FACTOR_MANAGER_AVAILABLE' in globals() and PIT_FACTOR_MANAGER_AVAILABLE:
+            try:
+                from pit_factors.pit_factor_manager import PITFactorManager
+                self.pit_factor_manager = PITFactorManager(
+                    base_factor_manager=self.factor_manager,
+                    current_date=self.config.get('pit_current_date'),
+                    pit_strict_mode=self.config.get('pit_strict_mode', False),
+                    enable_caching=self.config.get('pit_enable_caching', True)
+                )
+                self.active_factor_manager = self.pit_factor_manager
+                print("✓ PIT因子管理器初始化成功")
+            except Exception as e:
+                print(f"✗ PIT因子管理器初始化失败: {e}")
+        print(f"使用因子管理器: {'PIT' if self.pit_factor_manager else '原始'}版本")        
         # 结果存储
         self.results = {}
         self.current_portfolio = {}
@@ -518,6 +548,59 @@ class QuantSystem:
         
         return True
 
+    def enable_pit_mode(self, strict_mode=False, enable_caching=True, current_date=None):
+        """启用PIT模式"""
+        if not ('PIT_FACTOR_MANAGER_AVAILABLE' in globals() and PIT_FACTOR_MANAGER_AVAILABLE):
+            print("❌ PIT因子管理器不可用")
+            return False
+        self.config['pit_mode'] = True
+        self.config['pit_strict_mode'] = strict_mode
+        self.config['pit_enable_caching'] = enable_caching
+        self.config['pit_current_date'] = current_date
+        try:
+            from pit_factors.pit_factor_manager import PITFactorManager
+            self.pit_factor_manager = PITFactorManager(
+                base_factor_manager=self.factor_manager,
+                current_date=current_date,
+                pit_strict_mode=strict_mode,
+                enable_caching=enable_caching
+            )
+            self.active_factor_manager = self.pit_factor_manager
+            print(f"✅ PIT模式启用")
+            return True
+        except Exception as e:
+            print(f"❌ PIT模式启用失败: {e}")
+            self.config['pit_mode'] = False
+            return False
+    
+    def disable_pit_mode(self):
+        """禁用PIT模式"""
+        self.config['pit_mode'] = False
+        self.active_factor_manager = self.factor_manager
+        if self.pit_factor_manager:
+            self.pit_factor_manager = None
+        print("✅ PIT模式已禁用")
+    
+    def set_pit_current_date(self, current_date):
+        """设置PIT当前日期"""
+        self.config['pit_current_date'] = current_date
+        if self.pit_factor_manager:
+            self.pit_factor_manager.set_current_date(current_date)
+    
+    def get_pit_violations(self):
+        """获取PIT违规记录"""
+        if self.pit_factor_manager:
+            return self.pit_factor_manager.get_pit_violations()
+        return []
+    
+    def get_pit_stats(self):
+        """获取PIT统计"""
+        if self.pit_factor_manager:
+            return {
+                'performance': self.pit_factor_manager.get_performance_stats(),
+                'cache': self.pit_factor_manager.get_cache_stats()
+            }
+        return {'error': 'PIT未启用'}
 
 if __name__ == "__main__":
     # 创建量化系统实例
@@ -530,4 +613,5 @@ if __name__ == "__main__":
     print("1. 获取单股票评分: quant.get_stock_scores('600519', '2025-12-01', '2026-03-01')")
     print("2. 生成每日报告: quant.generate_daily_report()")
     print("3. 运行回测: quant.run_backtest(['600519', '300750'], '2025-01-01', '2025-12-31')")
-    print("\n📁 报告保存目录: /root/.openclaw/workspace/quant_system/reports/")
+    print("\n📁 报告保存目录: /root/.openclaw/workspace/quant_system/reports/")    
+    # PIT方法

@@ -668,5 +668,365 @@ def test_advanced_slippage_model():
     print("\n✅ 高级滑点模型测试完成")
 
 
+# ============================================================================
+# L2订单簿模拟器 - 流动性过滤器
+# ============================================================================
+
+class VolumePercentageFilter:
+    """
+    成交量占比限制过滤器 - 专业机构做法
+    
+    确保单日成交量不得超过该股当日总成交的5%-10%
+    用于防止大单冲击市场，模拟真实交易限制
+    """
+    
+    def __init__(self, max_percentage: float = 0.05):
+        """
+        初始化过滤器
+        
+        Args:
+            max_percentage: 最大成交量占比（默认5%）
+        """
+        self.max_percentage = max_percentage
+        
+    def check_order_size(self, 
+                        order_volume: float, 
+                        daily_volume: float,
+                        symbol: str = None) -> Dict[str, Any]:
+        """
+        检查订单大小是否符合成交量占比限制
+        
+        Args:
+            order_volume: 订单成交量（股数）
+            daily_volume: 当日总成交量（股数）
+            symbol: 股票代码（可选，用于日志）
+            
+        Returns:
+            检查结果字典，包含：
+            - allowed: 是否允许交易
+            - max_allowed_volume: 最大允许成交量
+            - actual_percentage: 实际占比
+            - message: 结果描述
+        """
+        if daily_volume <= 0:
+            return {
+                'allowed': False,
+                'max_allowed_volume': 0,
+                'actual_percentage': 0,
+                'message': f'当日成交量为零或负数: {daily_volume}'
+            }
+        
+        # 计算实际占比
+        actual_percentage = order_volume / daily_volume
+        
+        if actual_percentage <= self.max_percentage:
+            # 允许交易
+            return {
+                'allowed': True,
+                'max_allowed_volume': order_volume,
+                'actual_percentage': actual_percentage,
+                'message': f'订单占比{actual_percentage:.2%} ≤ {self.max_percentage:.0%}限制'
+            }
+        else:
+            # 超过限制，计算最大允许成交量
+            max_allowed_volume = daily_volume * self.max_percentage
+            return {
+                'allowed': False,
+                'max_allowed_volume': max_allowed_volume,
+                'actual_percentage': actual_percentage,
+                'message': f'订单占比{actual_percentage:.2%} > {self.max_percentage:.0%}限制，最大允许{max_allowed_volume:.0f}股'
+            }
+    
+    def adjust_order_for_liquidity(self,
+                                 order_volume: float,
+                                 daily_volume: float,
+                                 min_trade_lots: int = 100) -> Dict[str, Any]:
+        """
+        根据流动性调整订单大小
+        
+        Args:
+            order_volume: 原始订单成交量（股数）
+            daily_volume: 当日总成交量（股数）
+            min_trade_lots: 最小交易手数（A股默认100股）
+            
+        Returns:
+            调整结果字典，包含：
+            - adjusted_volume: 调整后成交量
+            - original_volume: 原始成交量
+            - is_adjusted: 是否进行了调整
+            - reason: 调整原因
+            - passes_check: 调整后是否通过检查
+        """
+        # 检查原始订单
+        check_result = self.check_order_size(order_volume, daily_volume)
+        
+        if check_result['allowed']:
+            # 无需调整
+            return {
+                'adjusted_volume': order_volume,
+                'original_volume': order_volume,
+                'is_adjusted': False,
+                'reason': '原始订单符合流动性限制',
+                'passes_check': True
+            }
+        
+        # 需要调整：使用最大允许成交量
+        max_allowed = check_result['max_allowed_volume']
+        
+        # 确保是交易手数的整数倍
+        adjusted_volume = (max_allowed // min_trade_lots) * min_trade_lots
+        
+        # 如果调整后为0，使用最小交易手数
+        if adjusted_volume <= 0:
+            adjusted_volume = min_trade_lots
+        
+        # 检查调整后的订单
+        adjusted_check = self.check_order_size(adjusted_volume, daily_volume)
+        
+        return {
+            'adjusted_volume': adjusted_volume,
+            'original_volume': order_volume,
+            'is_adjusted': True,
+            'reason': f'原始订单{order_volume:.0f}股超过限制，调整为{adjusted_volume:.0f}股',
+            'passes_check': adjusted_check['allowed']
+        }
+
+
+class OrderBookSimulator:
+    """
+    L2订单簿模拟器 - 简化版本
+    
+    模拟专业机构交易流程：
+    1. 流动性检查（成交量占比限制）
+    2. 市场冲击成本计算
+    3. 订单拆分（如果需要）
+    4. 交易执行模拟
+    """
+    
+    def __init__(self, 
+                 max_volume_percentage: float = 0.05,
+                 use_advanced_slippage: bool = True):
+        """
+        初始化订单簿模拟器
+        
+        Args:
+            max_volume_percentage: 最大成交量占比（默认5%）
+            use_advanced_slippage: 是否使用高级滑点模型
+        """
+        self.volume_filter = VolumePercentageFilter(max_volume_percentage)
+        self.use_advanced_slippage = use_advanced_slippage
+        
+        if use_advanced_slippage:
+            self.slippage_model = AdvancedSlippageModel()
+        else:
+            self.slippage_model = None
+    
+    def simulate_order(self,
+                      symbol: str,
+                      order_side: str,
+                      order_volume: float,
+                      order_price: float,
+                      daily_volume: float,
+                      daily_high: float,
+                      daily_low: float,
+                      adv_20d: float = None,
+                      market_cap: float = None,
+                      is_st: bool = False,
+                      regime: MarketRegime = MarketRegime.NORMAL) -> Dict[str, Any]:
+        """
+        模拟订单执行
+        
+        Args:
+            symbol: 股票代码
+            order_side: 'buy' 或 'sell'
+            order_volume: 订单成交量（股数）
+            order_price: 订单价格（假设为当前市场价）
+            daily_volume: 当日总成交量（股数）
+            daily_high: 当日最高价
+            daily_low: 当日最低价
+            adv_20d: 过去20日平均成交额（万元），用于高级滑点
+            market_cap: 流通市值（亿元），用于高级滑点
+            is_st: 是否为ST股票
+            regime: 市场状态
+            
+        Returns:
+            模拟结果字典，包含：
+            - execution_volume: 实际执行成交量
+            - avg_execution_price: 平均执行价格
+            - total_cost_bps: 总成本（bp）
+            - liquidity_check: 流动性检查结果
+            - slippage_cost: 滑点成本结果
+            - order_status: 订单状态（完全执行/部分执行/拒绝）
+        """
+        # 1. 流动性检查
+        liquidity_check = self.volume_filter.check_order_size(
+            order_volume, daily_volume, symbol
+        )
+        
+        if not liquidity_check['allowed']:
+            # 订单超过流动性限制，尝试调整
+            adjustment = self.volume_filter.adjust_order_for_liquidity(
+                order_volume, daily_volume
+            )
+            
+            if adjustment['passes_check']:
+                # 使用调整后的订单量
+                execution_volume = adjustment['adjusted_volume']
+                order_status = 'partially_executed'
+                liquidity_message = f'订单调整: {adjustment["reason"]}'
+            else:
+                # 无法调整到有效值，拒绝订单
+                return {
+                    'execution_volume': 0,
+                    'avg_execution_price': 0,
+                    'total_cost_bps': 0,
+                    'liquidity_check': liquidity_check,
+                    'slippage_cost': None,
+                    'order_status': 'rejected',
+                    'message': '订单无法调整到有效大小，被拒绝'
+                }
+        else:
+            # 原始订单通过检查
+            execution_volume = order_volume
+            order_status = 'fully_executed'
+            liquidity_message = liquidity_check['message']
+        
+        # 2. 计算滑点成本（如果可用）
+        slippage_cost = None
+        total_impact_bps = 0
+        
+        if self.use_advanced_slippage and adv_20d is not None:
+            try:
+                # 创建股票画像
+                stock_profile = self.slippage_model.create_stock_profile(
+                    symbol=symbol,
+                    adv_20d=adv_20d,
+                    market_cap=market_cap,
+                    is_st=is_st,
+                    price=order_price
+                )
+                
+                # 计算交易金额（万元）
+                trade_amount = execution_volume * order_price / 10000.0
+                
+                # 确定交易时段（简化：假设为盘中）
+                trading_session = 'midday'
+                
+                # 计算滑点
+                slippage_cost = self.slippage_model.calculate_slippage(
+                    stock_profile, order_side, trade_amount, trading_session, regime
+                )
+                
+                total_impact_bps = slippage_cost['impact_bps']
+                
+            except Exception as e:
+                print(f"警告: 滑点计算失败: {e}")
+                slippage_cost = {'error': str(e)}
+        
+        # 3. 计算平均执行价格
+        if total_impact_bps > 0:
+            # 考虑冲击成本调整价格
+            impact_pct = total_impact_bps / 10000.0  # bp转百分比
+            if order_side == 'buy':
+                # 买入：价格升高
+                avg_execution_price = order_price * (1 + impact_pct)
+            else:
+                # 卖出：价格降低
+                avg_execution_price = order_price * (1 - impact_pct)
+        else:
+            avg_execution_price = order_price
+        
+        return {
+            'execution_volume': execution_volume,
+            'avg_execution_price': avg_execution_price,
+            'total_cost_bps': total_impact_bps,
+            'liquidity_check': {
+                **liquidity_check,
+                'message': liquidity_message
+            },
+            'slippage_cost': slippage_cost,
+            'order_status': order_status,
+            'message': f'订单{order_status}，执行{execution_volume:.0f}股，均价{avg_execution_price:.2f}元'
+        }
+
+
+# 测试函数
+def test_l2_order_book_simulator():
+    """测试L2订单簿模拟器"""
+    print("\n=== 测试L2订单簿模拟器 ===")
+    
+    # 创建模拟器
+    simulator = OrderBookSimulator(max_volume_percentage=0.05)
+    
+    # 测试案例
+    test_cases = [
+        {
+            'symbol': '600519',
+            'order_side': 'buy',
+            'order_volume': 10000,      # 1万股
+            'order_price': 200.0,       # 200元
+            'daily_volume': 500000,     # 50万股日成交
+            'daily_high': 205.0,
+            'daily_low': 195.0,
+            'adv_20d': 80000.0,         # 8亿元日成交
+            'market_cap': 1600.0,       # 1600亿市值
+            'is_st': False
+        },
+        {
+            'symbol': '300750',
+            'order_side': 'sell',
+            'order_volume': 500000,     # 50万股
+            'order_price': 150.0,
+            'daily_volume': 1000000,    # 100万股日成交（占比50%，超过5%限制）
+            'daily_high': 155.0,
+            'daily_low': 145.0,
+            'adv_20d': 150000.0,        # 15亿元日成交
+            'market_cap': 300.0,
+            'is_st': False
+        },
+        {
+            'symbol': '000001',
+            'order_side': 'buy',
+            'order_volume': 5000,
+            'order_price': 10.0,
+            'daily_volume': 10000,      # 1万股日成交（占比50%，超过限制但可调整）
+            'daily_high': 10.5,
+            'daily_low': 9.5,
+            'adv_20d': 2000.0,          # 2000万日成交（低流动性）
+            'market_cap': 50.0,
+            'is_st': True               # ST股票
+        }
+    ]
+    
+    for i, test_case in enumerate(test_cases):
+        print(f"\n测试案例 {i+1}: {test_case['symbol']} {test_case['order_side']} {test_case['order_volume']}股")
+        
+        result = simulator.simulate_order(
+            symbol=test_case['symbol'],
+            order_side=test_case['order_side'],
+            order_volume=test_case['order_volume'],
+            order_price=test_case['order_price'],
+            daily_volume=test_case['daily_volume'],
+            daily_high=test_case['daily_high'],
+            daily_low=test_case['daily_low'],
+            adv_20d=test_case.get('adv_20d'),
+            market_cap=test_case.get('market_cap'),
+            is_st=test_case.get('is_st', False)
+        )
+        
+        print(f"  订单状态: {result['order_status']}")
+        print(f"  执行数量: {result['execution_volume']:.0f}股")
+        print(f"  平均价格: {result['avg_execution_price']:.2f}元")
+        print(f"  总成本: {result['total_cost_bps']:.0f}bp")
+        print(f"  流动性检查: {result['liquidity_check']['message']}")
+        
+        if result.get('slippage_cost') and 'error' not in result['slippage_cost']:
+            print(f"  滑点成本: {result['slippage_cost']['impact_bps']:.0f}bp")
+    
+    print("\n✅ L2订单簿模拟器测试完成")
+
+
 if __name__ == "__main__":
+    test_advanced_slippage_model()
+    test_l2_order_book_simulator()
     test_advanced_slippage_model()

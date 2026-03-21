@@ -22,7 +22,9 @@ try:
         AdvancedSlippageModel, 
         BacktestLiquidityEnforcer,
         StockLiquidityProfile,
-        MarketRegime
+        MarketRegime,
+        VolumePercentageFilter,
+        OrderBookSimulator
     )
     ADVANCED_SLIPPAGE_AVAILABLE = True
 except ImportError as e:
@@ -32,6 +34,8 @@ except ImportError as e:
     BacktestLiquidityEnforcer = None
     StockLiquidityProfile = None
     MarketRegime = None
+    VolumePercentageFilter = None
+    OrderBookSimulator = None
 
 @dataclass
 class BacktestConfig:
@@ -51,6 +55,7 @@ class BacktestConfig:
     enforce_tplus1: bool = True                  # 强制执行T+1约束
     enforce_limit_up_down: bool = True           # 强制执行涨跌停板过滤
     filter_low_liquidity: bool = True            # 过滤低流动性股票
+    volume_percentage_limit: float = 0.05        # 成交量占比限制（默认5%），单日成交量不得超过该股当日总成交的百分比
     
     # 市场状态
     market_regime: str = 'normal'                # 市场状态：normal, volatile, crash, bull, bear
@@ -109,6 +114,19 @@ class VectorizedBacktester:
         
         # 初始化高级滑点模型（如果可用且配置启用）
         self.liquidity_enforcer = None
+        
+        # 初始化成交量占比过滤器（如果可用）
+        self.volume_filter = None
+        if VolumePercentageFilter is not None:
+            try:
+                self.volume_filter = VolumePercentageFilter(
+                    max_percentage=self.config.volume_percentage_limit
+                )
+                print(f"✓ 成交量占比限制已启用 (最大{self.config.volume_percentage_limit:.0%})")
+            except Exception as e:
+                print(f"⚠️ 成交量占比过滤器初始化失败: {e}")
+                self.volume_filter = None
+        
         if (self.config.use_advanced_slippage and 
             ADVANCED_SLIPPAGE_AVAILABLE and 
             BacktestLiquidityEnforcer is not None):
@@ -332,23 +350,46 @@ class VectorizedBacktester:
                             'slippage_rate': self.config.slippage_rate
                         })
                     
-                    # 记录交易
-                    trade = TradeRecord(
-                        date=dates[i],
-                        symbol=symbol,
-                        action='BUY',
-                        shares=shares,
-                        price=buy_price,
-                        value=trade_value,
-                        commission=commission,
-                        slippage=open_price * impact_pct,  # 使用实际冲击成本
-                        position_before=0,
-                        position_after=shares,
-                        cash_before=cash[i-1],
-                        cash_after=cash[i],
-                        metadata=metadata
-                    )
-                    trade_records.append(trade)
+                # 记录交易
+                # 应用成交量占比过滤器（如果启用）
+    if self.volume_filter is not None:
+        daily_volume = prices.iloc[i]['volume']
+        if daily_volume > 0:
+            liquidity_check = self.volume_filter.check_order_size(
+                order_volume=shares,
+                daily_volume=daily_volume,
+                symbol=symbol
+            )
+            if not liquidity_check['allowed']:
+                # 订单超过流动性限制，调整订单大小
+                adjustment = self.volume_filter.adjust_order_for_liquidity(
+                    order_volume=shares,
+                    daily_volume=daily_volume
+                )
+                if adjustment['passes_check']:
+                    shares = int(adjustment['adjusted_volume'])
+                    print(f"流动性调整: {adjustment['reason']}")
+                else:
+                    # 无法调整，跳过此交易
+                    print(f"流动性限制: 订单被拒绝，{liquidity_check['message']}")
+                    continue
+    
+    trade = TradeRecord(
+        date=dates[i],
+        symbol=symbol,
+        action='BUY',
+        shares=shares,
+        price=buy_price,
+        value=trade_value,
+        commission=commission,
+        slippage=open_price * impact_pct,  # 使用实际冲击成本
+        position_before=0,
+        position_after=shares,
+        cash_before=cash[i-1],
+        cash_after=cash[i],
+        metadata=metadata
+    )
+    trade_records.append(trade)
             
             # 卖出信号
             elif sell_signals[i] and positions[i] > 0:
@@ -423,23 +464,46 @@ class VectorizedBacktester:
                             'slippage_rate': self.config.slippage_rate
                         })
                     
-                    # 记录交易
-                    trade = TradeRecord(
-                        date=dates[i],
-                        symbol=symbol,
-                        action='SELL',
-                        shares=positions[i-1],
-                        price=sell_price,
-                        value=trade_value,
-                        commission=commission,
-                        slippage=open_price * impact_pct,  # 使用实际冲击成本
-                        position_before=positions[i-1],
-                        position_after=0,
-                        cash_before=cash[i-1],
-                        cash_after=cash[i],
-                        metadata=sell_metadata
-                    )
-                    trade_records.append(trade)
+                # 记录交易
+                # 应用成交量占比过滤器（如果启用）
+    if self.volume_filter is not None:
+        daily_volume = prices.iloc[i]['volume']
+        if daily_volume > 0:
+            liquidity_check = self.volume_filter.check_order_size(
+                order_volume=shares,
+                daily_volume=daily_volume,
+                symbol=symbol
+            )
+            if not liquidity_check['allowed']:
+                # 订单超过流动性限制，调整订单大小
+                adjustment = self.volume_filter.adjust_order_for_liquidity(
+                    order_volume=shares,
+                    daily_volume=daily_volume
+                )
+                if adjustment['passes_check']:
+                    shares = int(adjustment['adjusted_volume'])
+                    print(f"流动性调整: {adjustment['reason']}")
+                else:
+                    # 无法调整，跳过此交易
+                    print(f"流动性限制: 订单被拒绝，{liquidity_check['message']}")
+                    continue
+    
+    trade = TradeRecord(
+        date=dates[i],
+        symbol=symbol,
+        action='SELL',
+        shares=shares,
+        price=sell_price,
+        value=trade_value,
+        commission=commission,
+        slippage=open_price * impact_pct,  # 使用实际冲击成本
+        position_before=position_before,
+        position_after=0,
+        cash_before=cash[i-1],
+        cash_after=cash[i],
+        metadata=metadata
+    )
+    trade_records.append(trade)
             
             # 计算当日组合价值
             position_value = positions[i] * current_price
