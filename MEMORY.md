@@ -356,3 +356,20 @@
   - ✅ **尾部风险准备**: 生成合成极端情景，准备黑天鹅事件
   - ✅ **动态风险管理**: 基于市场状态的Conditional VaR，避免熊市/崩盘时风险低估
   - ✅ **防止爆仓**: 通过专业风险建模和压力测试，显著降低黑天鹅爆仓概率
+
+### 2026-03-21 ⭐ (Cron会话清理)
+- **用户要求**: "把这些定时人的session全部删除"
+- **问题**: 发现18个遗留的cron会话占用系统资源，包括：
+  - `agent:main:cron:5428de18-a588-460a-8d6e-b83f70b798a3:run:*` (17个运行会话)
+  - `agent:main:cron:5428de18-a588-460a-8d6e-b83f70b798a3` (1个主cron会话)
+- **解决方案**: 创建Python脚本 `cleanup_cron_sessions.py` 直接编辑会话存储文件
+- **清理结果**:
+  - ✅ **删除cron会话**: 18个
+  - ✅ **保留非cron会话**: 2个 (`agent:main:main`, `agent:main:qqbot:group:c2c:bb0ceaaa6038588a9f6bf4bbbf67360a`)
+  - ✅ **清理前后对比**: 20个 → 2个会话
+  - ✅ **备份创建**: `sessions.json.backup.20260321_151933`
+- **技术细节**:
+  - 会话存储文件: `/root/.openclaw/agents/main/sessions/sessions.json`
+  - 清理方法: 识别并删除所有包含"cron"的会话key
+  - 验证: 使用 `openclaw sessions --all-agents --json` 确认清理结果
+- **系统影响**: 释放系统资源，减少内存占用，提高OpenClaw运行效率
