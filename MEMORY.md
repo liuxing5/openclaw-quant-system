@@ -373,3 +373,18 @@
   - 清理方法: 识别并删除所有包含"cron"的会话key
   - 验证: 使用 `openclaw sessions --all-agents --json` 确认清理结果
 - **系统影响**: 释放系统资源，减少内存占用，提高OpenClaw运行效率
+
+### 2026-03-21 ⭐ (QQBot群聊会话清理)
+- **用户要求**: "也删除这个 group agent:main:qqbot...67360a"
+- **问题**: 遗留的QQBot群聊会话 `agent:main:qqbot:group:c2c:bb0ceaaa6038588a9f6bf4bbbf67360a`
+- **解决方案**: 扩展清理脚本，支持删除特定会话key
+- **清理结果**:
+  - ✅ **删除QQBot会话**: 1个
+  - ✅ **保留主会话**: 1个 (`agent:main:main`)
+  - ✅ **清理前后对比**: 2个 → 1个会话
+  - ✅ **备份创建**: `sessions.json.backup.20260321_152220`
+- **技术细节**:
+  - 扩展清理脚本支持自定义会话key删除
+  - 脚本参数: `--delete-key "agent:main:qqbot:group:c2c:bb0ceaaa6038588a9f6bf4bbbf67360a"`
+  - 验证: 使用 `openclaw sessions --all-agents --json` 确认只剩主会话
+- **系统影响**: 进一步释放资源，保持系统简洁
