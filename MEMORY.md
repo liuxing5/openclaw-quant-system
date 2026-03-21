@@ -6,6 +6,7 @@
 - **助理名称**: 小Q
 - **开始时间**: 2026年3月13日
 - **沟通渠道**: QQ私聊
+- **GitHub用户名**: liuxing5
 
 ## 重要决策和约定
 ### 2026-03-13
@@ -435,3 +436,78 @@
   3. 使用滚动窗口统计量替代全局统计量
   4. 对财务因子实施严格的报告期检查
   5. 定期运行PIT合规性检查，监控违规记录
+
+### 2026-03-21 ⭐⭐⭐⭐⭐ (PIT数据管道严格性增强关键修复)
+- **用户指出关键问题**: pit_data_pipeline.py很可能还未做到真正的point-in-time严格性，早期项目即使命名PIT，也只是把report_date字段加进去，实际在因子计算/标准化/中性化时仍然用了全样本或未来信息
+- **典型问题识别**:
+  1. ✅ **财务因子日期问题**: 财务因子在t日用了t+1、t+2甚至t+3季报（因为report_date ≤ t的筛选写错或漏写）
+  2. ✅ **全局标准化问题**: rolling window标准化用了全局mean/std而非窗口内统计量
+  3. ✅ **中性化未来数据**: neutralization用了全市场未来数据进行行业中性化
+  4. ✅ **截面重算缺失**: 每个历史截面未独立重算统计量，导致未来信息污染
+- **解决方案实施**:
+  1. ✅ **DataIntegrityValidator类**: 严格PIT合规性检查，核心`validate_no_lookahead()`方法实现用户建议的断言检查
+  2. ✅ **EnhancedPITDataPipeline类**: 增强版PIT数据管道，强制所有因子计算函数接受as_of_date参数
+  3. ✅ **财务因子严格筛选**: 内部只加载`report_date ≤ as_of_date`的最新财报
+  4. ✅ **滚动计算安全保证**: 避免使用全局统计量，每个窗口独立计算
+  5. ✅ **Walk-forward验证集成**: 每个fold开始前强制调用`walkforward_validation()`
+- **核心验证断言** (用户建议实现):
+  - ✅ `assert (df_factor['report_date'] <= as_of_date).all()`
+  - ✅ `assert df_factor.index.get_level_values('date').max() <= as_of_date`
+  - ✅ 每个walk-forward fold开始前强制调用验证
+- **技术特性**:
+  - `pit_strict`装饰器: 强制函数接收as_of_date参数并进行PIT检查
+  - `validate_no_lookahead()`: 用户建议的核心验证函数
+  - `get_pit_fundamentals_strict()`: 严格财务因子获取方法
+  - `calculate_rolling_statistics_pit()`: PIT安全的滚动统计计算
+  - `walkforward_validation()`: Walk-forward期间的PIT验证
+- **向后兼容性**:
+  - ✅ 保留`PITDataPipeline`类名（别名到`EnhancedPITDataPipeline`）
+  - ✅ 保持原始接口`get_pit_fundamentals()`（但建议使用增强版）
+  - ✅ 现有代码无需修改即可使用增强功能
+- **已修复文件**:
+  1. `pit_data_pipeline.py` - 增强版严格PIT数据管道 (26311字节)
+  2. `data_integrity.py` - 数据完整性验证模块 (24928字节)
+  3. `pit_data_pipeline_strict.py` - 严格PIT管道独立版本 (24360字节)
+  4. `MEMORY.md` - 记录本次关键修复
+- **验证测试**:
+  - ✅ 财务因子严格日期筛选测试
+  - ✅ 未来数据泄露检测测试
+  - ✅ Walk-forward PIT验证测试
+  - ✅ 滚动统计量安全计算测试
+- **用户要求验证**:
+  - ✅ 解决pit_data_pipeline.py可能未做到真正PIT严格性的问题
+  - ✅ 实现`validate_no_lookahead()`函数进行严格检查
+  - ✅ 强制所有因子计算函数接受as_of_date参数
+  - ✅ 确保财务因子只使用截至as_of_date的最新财报
+  - ✅ 每个历史截面独立重算统计量
+
+### 2026-03-21 ⭐⭐⭐⭐⭐ (模拟数据污染数据库信任链断裂关键修复)
+- **用户指出严重问题**: `_fetch_simulated()` 在第487-492行把模拟数据写入数据库（`data_source='simulated'`），之后所有调用都从"本地数据库"取出这批数据，元数据显示"来源：本地数据库"，完全看不出来是模拟的，导致整个系统信任链断裂
+- **问题严重性**: 
+  1. ⚠️ **信任链完全断裂**: 模拟数据被当作真实数据使用，回测结果完全失真
+  2. ⚠️ **无法区分真实与模拟**: 数据源标记丢失，后续处理无法识别模拟数据
+  3. ⚠️ **系统性风险**: 所有依赖该数据库的分析和决策都基于污染数据
+- **解决方案实施** (双重保障):
+  1. ✅ **源头禁止**: 在`_fetch_simulated()`函数开头加强制检查，模拟数据绝对不写入数据库
+  2. ✅ **数据库层拦截**: 在`insert_daily_prices`方法添加`if data_source == 'simulated': raise ValueError("禁止写入模拟数据")`
+- **具体修复**:
+  1. ✅ **注释掉数据库写入代码**: 在所有4个data_pipeline文件中移除模拟数据写入
+  2. ✅ **添加明确警告**: 输出"⚠️ 警告：模拟数据不写入数据库（防止信任链断裂）"
+  3. ✅ **数据库层验证**: 在`database_manager.py`的`insert_daily_prices`方法开头添加严格检查
+  4. ✅ **向后兼容性**: 模拟数据仍可生成，但仅用于测试和开发，不污染生产数据库
+- **已修复文件**:
+  1. `data/sources/data_pipeline.py` - 主数据管道 (第487-492行修复)
+  2. `data/sources/data_pipeline_v2.py` - 第二版数据管道
+  3. `data/sources/data_pipeline_without_baostock.py` - 无Baostock版本
+  4. `data/sources/data_pipeline_new.py` - 新版数据管道
+  5. `data/database/database_manager.py` - 数据库管理器 (添加源头检查)
+- **修复原则**:
+  - 🛡️ **防御性编程**: 双重检查防止模拟数据污染
+  - 🛡️ **明确性**: 添加详细注释说明修复原因
+  - 🛡️ **向后兼容**: 不破坏现有接口，模拟数据仍可生成
+  - 🛡️ **系统性修复**: 修复所有数据管道版本，不留死角
+- **用户要求验证**:
+  - ✅ 解决`_fetch_simulated()`模拟数据污染数据库问题
+  - ✅ 实现源头禁止（`_fetch_simulated()`不写入数据库）
+  - ✅ 实现数据库层拦截（`insert_daily_prices`拒绝模拟数据）
+  - ✅ 确保系统信任链完整，真实数据与模拟数据严格分离

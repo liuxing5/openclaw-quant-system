@@ -327,13 +327,15 @@ class DataPipeline:
         
         print(f"    生成 {len(df)} 条模拟数据")
         
-        # 模拟数据也保存到数据库
+        # 🚨 关键修复：模拟数据绝对不写入数据库，防止信任链断裂
+        # 用户指出问题：模拟数据写入数据库后，后续调用从"本地数据库"取出，
+        # 元数据显示"来源：本地数据库"，完全看不出来是模拟的
+        # 解决方案：模拟数据仅用于测试和开发，不污染生产数据库
         if self.db:
-            try:
-                new_count, update_count = self.db.insert_daily_prices(symbol, df, data_source='simulated')
-                print(f"    保存模拟数据到数据库: 新增{new_count}条")
-            except Exception as e:
-                print(f"    保存模拟数据失败: {e}")
+            print(f"    ⚠️  警告：模拟数据不写入数据库（防止信任链断裂）")
+            # 注释掉原数据库写入代码，确保模拟数据不污染数据库
+            # new_count, update_count = self.db.insert_daily_prices(symbol, df, data_source='simulated')
+            # print(f"    保存模拟数据到数据库: 新增{new_count}条")
         
         return df
     

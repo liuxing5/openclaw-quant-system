@@ -647,6 +647,10 @@ class EnhancedPITDataPipeline:
         return all_stocks[:4000]
 
 
+# 向后兼容性：保留原始类名
+PITDataPipeline = EnhancedPITDataPipeline
+
+
 # 测试函数
 def test_enhanced_pit_pipeline():
     """测试增强版PIT数据管道"""
