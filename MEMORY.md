@@ -511,3 +511,31 @@
   - ✅ 实现源头禁止（`_fetch_simulated()`不写入数据库）
   - ✅ 实现数据库层拦截（`insert_daily_prices`拒绝模拟数据）
   - ✅ 确保系统信任链完整，真实数据与模拟数据严格分离
+
+### 2026-03-22 ⭐⭐⭐⭐⭐ (数据库并发与API性能关键修复)
+- **用户连续指出两个关键问题**:
+  1. **数据库并发数据竞争**: `database_manager.py`使用`isolation_level=None`（自动提交）但每行单独写，在并发情况下多个线程同时写同一股票会产生数据竞争
+  2. **全量API调用性能**: `backfill_all_stocks.py`的`fetch_stock_info()`第122行为获取一支股票的名称，调用了`ak.stock_zh_a_spot_em()`——这个接口返回全市场4000+条数据。4并发线程意味着同时发出4个全量请求
+- **问题严重性**:
+  1. ⚠️ **数据竞争**: 多个线程同时修改同一股票日线数据，导致数据不一致和损坏
+  2. ⚠️ **性能瓶颈**: 重复下载全市场数据，4线程=4倍网络负载，浪费API资源
+- **解决方案实施**:
+  1. ✅ **数据库显式事务**: 改为`isolation_level='DEFERRED'`，使用`BEGIN IMMEDIATE/COMMIT`包装整个DataFrame写入
+  2. ✅ **全市场缓存**: 一次性拉取全量列表缓存为字典，单支股票查询时直接字典查找（O(1)复杂度）
+- **技术实现**:
+  - **事务保护**: `insert_daily_prices`方法中显式开始事务，确保整个批量写入原子性
+  - **缓存机制**: `HistoricalDataBackfiller`添加`_spot_cache`字典，双重检查锁确保缓存只加载一次
+  - **线程安全**: 缓存加载使用`threading.Lock`，避免多个线程同时加载缓存
+- **验证测试**:
+  - ✅ **数据库并发**: `test_concurrency.py` 4线程测试通过（成功:4，失败:0）
+  - ✅ **API性能**: 缓存机制将API调用从N次减少到1次，显著降低网络负载
+- **已修复文件**:
+  1. `quant_system/data/database/database_manager.py` - 数据库事务修复
+  2. `quant_system/data/database/backfill_all_stocks.py` - API缓存修复
+- **GitHub提交**:
+  - **提交哈希**: `39f92a4`
+  - **推送状态**: ✅ 成功 (803d82a..39f92a4 master -> master)
+- **用户要求验证**:
+  - ✅ 数据库：使用显式事务，整个DataFrame写入包在BEGIN/COMMIT块里，失败时ROLLBACK
+  - ✅ API：初始化时一次性拉取全量列表并缓存为字典，单支股票查询直接字典查找
+  - ✅ 并发：4并发线程不再同时发出4个全量请求，显著减少网络负载
