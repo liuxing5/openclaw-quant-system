@@ -75,8 +75,11 @@ class DataPipeline:
             self.data_sources.append(('akshare', 'AKShare', self._fetch_akshare))
         
         # 3. 其他网络源（保持兼容）
-        if TENCENT_AVAILABLE:
-            self.data_sources.append(('tencent', '腾讯财经', self._fetch_tencent))
+        # 🚨 关键修复：移除腾讯财经数据源，因为其OHLC是按固定比例缩放的假数据
+        # 用户指出问题：open = close * 0.99，high = close * 1.02，volume = 1000000（常数）
+        # 这批数据被写入数据库后，所有依赖OHLC的因子（ATR、布林带、振幅、成交量突破）的计算结果全部是错的
+        # if TENCENT_AVAILABLE:
+        #     self.data_sources.append(('tencent', '腾讯财经', self._fetch_tencent))
         
         if TUSHARE_AVAILABLE:
             self.data_sources.append(('tushare', 'Tushare Pro', self._fetch_tushare))

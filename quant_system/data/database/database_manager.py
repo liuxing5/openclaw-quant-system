@@ -184,6 +184,18 @@ class DatabaseManager:
                 "模拟数据仅用于测试和开发，不应写入生产数据库。"
             )
         
+        # 🚨 关键修复：防止腾讯财经假数据污染数据库，确保因子计算准确性
+        # 用户指出问题：腾讯财经的OHLC是按固定比例缩放的假数据
+        # open = close * 0.99，high = close * 1.02，volume = 1000000（常数）
+        # 这批数据被写入数据库后，所有依赖OHLC的因子（ATR、布林带、振幅、成交量突破）的计算结果全部是错的
+        if data_source == 'tencent':
+            raise ValueError(
+                f"禁止将腾讯财经假数据写入数据库（symbol: {symbol}）: "
+                "腾讯财经数据源提供的是按固定比例缩放的假OHLC数据，"
+                "会导致所有技术因子计算错误。"
+                "请使用Baostock或AKShare等可靠数据源。"
+            )
+        
         if df.empty:
             return 0, 0
         
