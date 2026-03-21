@@ -9,6 +9,7 @@ import pandas as pd
 from typing import Dict, List, Tuple, Any, Optional, Callable
 from dataclasses import dataclass
 import warnings
+import functools
 warnings.filterwarnings('ignore')
 import time
 from datetime import datetime, timedelta
