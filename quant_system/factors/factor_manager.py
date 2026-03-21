@@ -333,8 +333,20 @@ class FactorManager:
             categories[category].append(factor_id)
         return categories
     
-    def calculate_factor(self, df: pd.DataFrame, factor_id: str) -> pd.Series:
-        """计算单个因子"""
+    def calculate_factor(self, df: pd.DataFrame, factor_id: str, use_rolling_rank: bool = True, **kwargs) -> pd.Series:
+        """
+        计算单个因子
+        
+        Args:
+            df: 输入数据
+            factor_id: 因子ID
+            use_rolling_rank: 是否使用滚动窗口排名（防止全局前视偏差）
+                              True: 使用滚动窗口排名，避免未来数据依赖
+                              False: 使用全局排名（仅用于兼容性，不推荐）
+        
+        Returns:
+            因子值Series（标准化到0-1范围）
+        """
         if factor_id not in self.factors:
             raise ValueError(f"因子 {factor_id} 不存在")
         
@@ -343,7 +355,38 @@ class FactorManager:
         
         # 标准化到0-1范围（百分位排名）
         if factor_values.notna().sum() > 0:
-            factor_values = factor_values.rank(pct=True)
+            # 🚨 关键修复：解决全局前视偏差问题
+            # 用户指出问题：rank(pct=True)对整个时间序列做百分位排名，
+            # T日的值依赖了T+1到T+N的未来数据，造成未来函数
+            if use_rolling_rank:
+                # 使用滚动窗口排名（PIT安全）
+                # 默认窗口252个交易日（约1年），最小窗口20个数据点
+                window_size = 252
+                min_window = 20
+                
+                # 确保有足够数据
+                if len(factor_values) < min_window:
+                    # 数据不足，使用全局排名并发出警告
+                    import warnings
+                    warnings.warn(
+                        f"数据点不足{min_window}个，无法使用滚动窗口排名，"
+                        f"将使用全局排名（可能引入前视偏差）。数据长度: {len(factor_values)}",
+                        UserWarning
+                    )
+                    factor_values = factor_values.rank(pct=True)
+                else:
+                    # 使用滚动窗口排名，避免未来数据依赖
+                    actual_window = min(window_size, len(factor_values))
+                    factor_values = factor_values.rolling(window=actual_window, min_periods=min_window).rank(pct=True)
+            else:
+                # ⚠️ 警告：全局排名会引入前视偏差，仅用于兼容性
+                import warnings
+                warnings.warn(
+                    "使用全局排名，这会引入前视偏差（未来函数）。"
+                    "建议设置use_rolling_rank=True以获得PIT安全的排名。",
+                    UserWarning
+                )
+                factor_values = factor_values.rank(pct=True)
         
         return factor_values.fillna(0.5)  # 缺失值填充为中性
     
