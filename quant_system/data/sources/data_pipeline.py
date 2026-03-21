@@ -44,6 +44,21 @@ except ImportError:
     YFINANCE_AVAILABLE = False
     yf = None
 
+# 数据协调管道（新增）
+try:
+    from ..reconciliation import DataReconciliationPipeline, merge_dual_source_simple
+    RECONCILIATION_AVAILABLE = True
+except ImportError as e:
+    # 尝试绝对路径
+    try:
+        import sys
+        sys.path.append('/root/.openclaw/workspace/quant_system/data')
+        from reconciliation import DataReconciliationPipeline, merge_dual_source_simple
+        RECONCILIATION_AVAILABLE = True
+    except ImportError as e2:
+        print(f"数据协调模块导入失败: {e}")
+        RECONCILIATION_AVAILABLE = False
+
 # 腾讯财经模块（自定义）
 try:
     from web_interface.tencent_data import get_tencent_stock_data
@@ -107,6 +122,20 @@ class DataPipeline:
 
         print(f"数据管道初始化完成（本地数据库优先）")
         print(f"可用数据源: {[name for _, name, _ in self.data_sources]}")
+        
+        # 初始化数据协调管道（新增）
+        if RECONCILIATION_AVAILABLE:
+            self.reconciliation_pipeline = DataReconciliationPipeline(
+                primary_source_name='baostock',
+                backup_source_name='akshare',
+                strict_checks=False,  # 非严格模式，避免影响正常流程
+                max_price_discrepancy_pct=2.0,  # 2%价格差异容忍
+                max_volume_discrepancy_pct=20.0  # 20%成交量差异容忍
+            )
+            print(f"数据协调管道初始化完成: baostock + akshare")
+        else:
+            self.reconciliation_pipeline = None
+            print(f"数据协调管道不可用")
 
     # ========== 新功能：本地数据库优先 ==========
 
@@ -607,6 +636,8 @@ class DataPipeline:
         """
         获取股票数据，带完整元数据
         本地数据库优先，自动回填网络数据
+        
+        增强：如果可用，使用双数据源协调（Baostock + AKShare）
         """
         formatted_symbol = self._format_symbol(symbol)
         sources_tried = []
@@ -614,17 +645,94 @@ class DataPipeline:
         source_info = {}
 
         start_time = time.time()
-
-        # 按优先级尝试各个数据源
-        for source_id, source_name, fetch_func in self.data_sources:
+        
+        # 检查是否应该使用双数据源协调
+        use_reconciliation = (
+            self.reconciliation_pipeline is not None and 
+            BAOSTOCK_AVAILABLE and 
+            AKSHARE_AVAILABLE
+        )
+        
+        if use_reconciliation:
+            print(f"使用双数据源协调模式: baostock + akshare")
+            
+            # 尝试获取主数据源（Baostock）
+            primary_data = None
+            primary_error = None
+            
             try:
-                print(f"尝试从 {source_name} 获取 {formatted_symbol} 数据...")
-                data = fetch_func(formatted_symbol, start_date, end_date)
-
-                if data is not None and not data.empty:
+                print(f"尝试主数据源: baostock")
+                primary_data = self._fetch_baostock(formatted_symbol, start_date, end_date)
+                if primary_data is not None and not primary_data.empty:
+                    print(f"  主数据源成功: {len(primary_data)}条记录")
+                else:
+                    primary_error = "返回空数据"
+                    print(f"  主数据源失败: {primary_error}")
+            except Exception as e:
+                primary_error = str(e)[:100]
+                print(f"  主数据源失败: {primary_error}")
+                sources_tried.append({'source': 'baostock', 'error': primary_error})
+            
+            # 尝试获取备份数据源（AKShare）
+            backup_data = None
+            backup_error = None
+            
+            try:
+                print(f"尝试备份数据源: akshare")
+                backup_data = self._fetch_akshare(formatted_symbol, start_date, end_date)
+                if backup_data is not None and not backup_data.empty:
+                    print(f"  备份数据源成功: {len(backup_data)}条记录")
+                else:
+                    backup_error = "返回空数据"
+                    print(f"  备份数据源失败: {backup_error}")
+            except Exception as e:
+                backup_error = str(e)[:100]
+                print(f"  备份数据源失败: {backup_error}")
+                sources_tried.append({'source': 'akshare', 'error': backup_error})
+            
+            # 数据协调
+            reconciliation_metrics = None
+            
+            try:
+                merged_data, reconciliation_metrics = self.reconciliation_pipeline.merge_dual_source(
+                    primary_data,
+                    backup_data,
+                    symbol=formatted_symbol,
+                    date_range=(start_date, end_date)
+                )
+                data = merged_data
+                
+                # 记录切换
+                if primary_data is None or primary_data.empty:
                     source_info = {
-                        'source_id': source_id,
-                        'source_name': source_name,
+                        'source_id': 'akshare',
+                        'source_name': 'AKShare (backup)',
+                        'success': True,
+                        'data_points': len(data),
+                        'date_range': {
+                            'start': data.index.min().strftime('%Y-%m-%d') if hasattr(data.index.min(), 'strftime') else str(data.index.min()),
+                            'end': data.index.max().strftime('%Y-%m-%d') if hasattr(data.index.max(), 'strftime') else str(data.index.max())
+                        },
+                        'reconciliation': reconciliation_metrics.to_dict(),
+                        'switch_type': 'primary_to_backup'
+                    }
+                elif backup_data is not None and not backup_data.empty:
+                    source_info = {
+                        'source_id': 'baostock',
+                        'source_name': 'Baostock (with akshare fill)',
+                        'success': True,
+                        'data_points': len(data),
+                        'date_range': {
+                            'start': data.index.min().strftime('%Y-%m-%d') if hasattr(data.index.min(), 'strftime') else str(data.index.min()),
+                            'end': data.index.max().strftime('%Y-%m-%d') if hasattr(data.index.max(), 'strftime') else str(data.index.max())
+                        },
+                        'reconciliation': reconciliation_metrics.to_dict(),
+                        'switch_type': 'data_filled'
+                    }
+                else:
+                    source_info = {
+                        'source_id': 'baostock',
+                        'source_name': 'Baostock',
                         'success': True,
                         'data_points': len(data),
                         'date_range': {
@@ -632,15 +740,43 @@ class DataPipeline:
                             'end': data.index.max().strftime('%Y-%m-%d') if hasattr(data.index.max(), 'strftime') else str(data.index.max())
                         }
                     }
-                    break
-
+                    
             except Exception as e:
-                sources_tried.append({
-                    'source': source_id,
-                    'error': str(e)[:100]
-                })
-                print(f"  {source_name} 失败: {str(e)[:100]}")
-                continue
+                print(f"数据协调失败: {e}")
+                # 回退到原来的逻辑
+                use_reconciliation = False
+                print("回退到原始数据源优先级逻辑")
+        
+        # 如果不使用协调，或者协调失败，使用原来的逻辑
+        if not use_reconciliation or data is None or data.empty:
+            print("使用原始数据源优先级逻辑")
+            
+            # 按优先级尝试各个数据源
+            for source_id, source_name, fetch_func in self.data_sources:
+                try:
+                    print(f"尝试从 {source_name} 获取 {formatted_symbol} 数据...")
+                    data = fetch_func(formatted_symbol, start_date, end_date)
+
+                    if data is not None and not data.empty:
+                        source_info = {
+                            'source_id': source_id,
+                            'source_name': source_name,
+                            'success': True,
+                            'data_points': len(data),
+                            'date_range': {
+                                'start': data.index.min().strftime('%Y-%m-%d') if hasattr(data.index.min(), 'strftime') else str(data.index.min()),
+                                'end': data.index.max().strftime('%Y-%m-%d') if hasattr(data.index.max(), 'strftime') else str(data.index.max())
+                            }
+                        }
+                        break
+
+                except Exception as e:
+                    sources_tried.append({
+                        'source': source_id,
+                        'error': str(e)[:100]
+                    })
+                    print(f"  {source_name} 失败: {str(e)[:100]}")
+                    continue
 
         if data is None or data.empty:
             print("所有数据源失败，使用紧急模拟数据")
@@ -687,6 +823,163 @@ class DataPipeline:
         # 应用前复权处理（机构级底线）
         data = self._apply_forward_adjustment(data)
 
+        if with_metadata:
+            return {
+                'data': data,
+                'metadata': metadata
+            }
+        else:
+            return {'data': data}
+
+    def get_stock_data_with_reconciliation(self, 
+                                          symbol: str, 
+                                          start_date: str, 
+                                          end_date: str,
+                                          with_metadata: bool = True) -> Dict[str, Any]:
+        """
+        增强版：使用双数据源协调获取股票数据
+        
+        解决用户指出的问题：
+        1. Baostock不稳定，AKShare上游接口变动
+        2. 数据一致性校验缺失
+        3. 缺失值填充策略不一致
+        4. 停牌/复权处理不同步
+        
+        返回：协调后的数据 + 详细的切换日志
+        """
+        formatted_symbol = self._format_symbol(symbol)
+        start_time = time.time()
+        
+        print(f"\n=== 增强版数据获取（双数据源协调）===")
+        print(f"股票: {formatted_symbol}, 期间: {start_date} 至 {end_date}")
+        
+        # 1. 获取主数据源（Baostock）
+        primary_data = None
+        primary_error = None
+        primary_source_name = 'baostock'
+        
+        try:
+            print(f"尝试主数据源: {primary_source_name}")
+            primary_data = self._fetch_baostock(formatted_symbol, start_date, end_date)
+            if primary_data is not None and not primary_data.empty:
+                print(f"  主数据源成功: {len(primary_data)}条记录")
+            else:
+                primary_error = "返回空数据"
+                print(f"  主数据源失败: {primary_error}")
+        except Exception as e:
+            primary_error = str(e)[:100]
+            print(f"  主数据源失败: {primary_error}")
+        
+        # 2. 获取备份数据源（AKShare）
+        backup_data = None
+        backup_error = None
+        backup_source_name = 'akshare'
+        
+        try:
+            print(f"尝试备份数据源: {backup_source_name}")
+            backup_data = self._fetch_akshare(formatted_symbol, start_date, end_date)
+            if backup_data is not None and not backup_data.empty:
+                print(f"  备份数据源成功: {len(backup_data)}条记录")
+            else:
+                backup_error = "返回空数据"
+                print(f"  备份数据源失败: {backup_error}")
+        except Exception as e:
+            backup_error = str(e)[:100]
+            print(f"  备份数据源失败: {backup_error}")
+        
+        # 3. 数据协调
+        reconciliation_metrics = None
+        reconciliation_log = None
+        
+        if self.reconciliation_pipeline is not None and (primary_data is not None or backup_data is not None):
+            print("执行数据协调管道...")
+            try:
+                merged_data, reconciliation_metrics = self.reconciliation_pipeline.merge_dual_source(
+                    primary_data,
+                    backup_data,
+                    symbol=formatted_symbol,
+                    date_range=(start_date, end_date)
+                )
+                data = merged_data
+                reconciliation_log = reconciliation_metrics.to_dict()
+                print(f"数据协调完成: {reconciliation_metrics.merged_count}条记录")
+                
+                # 记录切换
+                if primary_data is None or primary_data.empty:
+                    self.reconciliation_pipeline._log_switch('primary_to_backup', formatted_symbol)
+                elif backup_data is not None and not backup_data.empty and reconciliation_metrics.fill_count > 0:
+                    self.reconciliation_pipeline._log_switch('data_filled', formatted_symbol, {
+                        'fill_count': reconciliation_metrics.fill_count
+                    })
+                    
+            except Exception as e:
+                print(f"数据协调失败: {e}")
+                # 回退到简单合并或单个数据源
+                data = primary_data if primary_data is not None and not primary_data.empty else backup_data
+        else:
+            # 没有协调管道，使用简单逻辑
+            print("使用简单数据源选择逻辑")
+            if primary_data is not None and not primary_data.empty:
+                data = primary_data
+            elif backup_data is not None and not backup_data.empty:
+                data = backup_data
+            else:
+                data = None
+        
+        # 4. 如果都失败，使用紧急数据
+        if data is None or data.empty:
+            print("双数据源均失败，使用紧急模拟数据")
+            if self.reconciliation_pipeline:
+                data = self.reconciliation_pipeline._create_emergency_data((start_date, end_date))
+                self.reconciliation_pipeline._log_switch('emergency_simulated', formatted_symbol)
+            else:
+                dates = pd.date_range(start=start_date, end=end_date, freq='B')
+                data = pd.DataFrame({
+                    'open': np.random.normal(100, 10, len(dates)),
+                    'high': np.random.normal(105, 10, len(dates)),
+                    'low': np.random.normal(95, 10, len(dates)),
+                    'close': np.random.normal(100, 10, len(dates)),
+                    'volume': np.random.randint(1000000, 10000000, len(dates))
+                }, index=dates)
+        
+        # 5. 数据质量处理
+        data = self._apply_forward_adjustment(data)  # 前复权
+        
+        # 6. 构建元数据
+        elapsed_time = time.time() - start_time
+        
+        metadata = {
+            'symbol': formatted_symbol,
+            'request': {
+                'start_date': start_date,
+                'end_date': end_date,
+                'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'response_time_seconds': round(elapsed_time, 3)
+            },
+            'sources': {
+                'primary': {
+                    'name': primary_source_name,
+                    'success': primary_data is not None and not primary_data.empty,
+                    'data_points': len(primary_data) if primary_data is not None else 0,
+                    'error': primary_error
+                },
+                'backup': {
+                    'name': backup_source_name,
+                    'success': backup_data is not None and not backup_data.empty,
+                    'data_points': len(backup_data) if backup_data is not None else 0,
+                    'error': backup_error
+                }
+            },
+            'reconciliation': reconciliation_log,
+            'data_info': {
+                'rows': len(data),
+                'columns': list(data.columns),
+                'period': f"{start_date} 至 {end_date}"
+            },
+            'quality': self._calculate_data_quality(data)
+        }
+        
+        # 7. 返回结果
         if with_metadata:
             return {
                 'data': data,

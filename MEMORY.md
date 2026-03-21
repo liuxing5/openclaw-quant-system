@@ -212,3 +212,50 @@
   - ✅ 财务报告日期检查: `report_date.max() <= train_end`
   - ✅ 滚动窗口标准化: 避免全局统计量污染
   - ✅ 严格模式: 发现严重未来函数时抛出异常停止回测
+
+### 2026-03-21 ⭐⭐⭐⭐⭐ (双数据源协调管道关键修复)
+- **用户指出关键问题**: 双数据源容错实现不完整，缺少数据一致性校验
+- **实际问题**:
+  1. ✅ **Baostock不稳定**: 网络不稳定/当日数据延迟/登录超时
+  2. ✅ **AKShare变动**: 上游接口变动导致失效
+  3. ✅ **数据一致性缺失**: 价格/成交量/停牌状态未对齐校验
+  4. ✅ **缺失值填充不一致**: 策略在不同日期跑，净值曲线差异极大
+  5. ✅ **停牌/复权不同步**: 处理逻辑不一致
+- **用户建议方案**: 实现Data Reconciliation Pipeline
+- **解决方案实施**:
+  1. ✅ **DataReconciliationPipeline类**: 完整的数据协调管道
+  2. ✅ **数据一致性校验**: 价格/成交量对齐检查 + 可配置阈值
+  3. ✅ **智能填充策略**: 主数据源优先，备份数据源填充缺失值
+  4. ✅ **数据质量强制**: 前复权处理、连续性检查、异常值处理
+  5. ✅ **切换日志记录**: 详细日志 + 统计报告，定期人工review
+- **核心算法实现** (用户建议模板):
+  ```python
+  def merge_dual_source(primary, backup):
+      diff = primary.align(backup, join='outer')
+      mask = primary.isna() & ~backup.isna()
+      primary[mask] = backup[mask]
+      # 再做价格连续性、成交量合理性断言
+      return primary
+  ```
+- **技术实现**:
+  - `quant_system/data/reconciliation.py` - 数据协调管道核心模块
+  - `DataReconciliationPipeline` - 完整协调管道类
+  - `ReconciliationMetrics` - 协调度量指标数据类
+  - `merge_dual_source_simple()` - 用户建议的简化接口
+  - 更新`data_pipeline.py`集成协调管道
+  - 添加`test_data_reconciliation.py`测试脚本
+- **DataPipeline增强**:
+  1. ✅ 原`get_stock_data`方法增强支持双数据源协调
+  2. ✅ 新增`get_stock_data_with_reconciliation`增强版方法
+  3. ✅ 自动初始化`DataReconciliationPipeline`
+  4. ✅ 向后兼容原有接口
+- **验证测试**:
+  - ✅ 缺失值填充测试: 主数据源缺失值被备份数据源正确填充
+  - ✅ 数据一致性校验: 严格模式正确捕获价格差异异常
+  - ✅ 切换日志记录: 详细记录数据源切换和协调统计
+  - ✅ 紧急回退机制: 双数据源均失败时使用模拟数据
+- **用户价值**:
+  - ✅ 解决同一策略净值曲线差异大的核心问题
+  - ✅ 专业级数据协调，而非简单try-except + log
+  - ✅ 详细监控数据源健康状况，优化数据质量
+  - ✅ 确保回测一致性，提高策略可靠性

@@ -11,8 +11,12 @@ A production-ready quantitative trading system that transforms from "amateur sco
 
 ## ✨ Key Features
 
-### 1. **Dual Data Source Architecture** ⭐⭐⭐⭐⭐
-- **Baostock (Primary) + AKShare (Backup)**: High-availability automatic failover
+### 1. **Dual Data Source with Reconciliation Pipeline** ⭐⭐⭐⭐⭐
+- **Baostock (Primary) + AKShare (Backup)**: Professional data reconciliation, not just simple failover
+- **Data Consistency Validation**: Price/volume alignment checks with configurable thresholds
+- **Intelligent Gap Filling**: Smart fill strategy when primary has missing values
+- **Data Quality Enforcement**: Forward adjustment, continuity checks, anomaly handling
+- **Switch Logging & Statistics**: Detailed logs for data source switches and quality metrics
 - **Zero Cost**: Baostock completely free, no API key required
 - **Complete Coverage**: A-share historical data since 1990
 - **Financial Data**: Balance sheets, income statements, cash flow, financial indicators
@@ -87,12 +91,26 @@ system.generate_report(results)
 
 ### Data Source Configuration
 ```python
-# Automatic dual-source switching
+# Enhanced dual-source with reconciliation
 from quant_system.data.sources.data_pipeline import DataPipeline
 
 pipeline = DataPipeline()
-data = pipeline.get_stock_data("000001.SZ", "2020-01-01", "2023-12-31")
-# Baostock is primary, automatically switches to AKShare if fails
+
+# Original method (now enhanced with reconciliation)
+data_result = pipeline.get_stock_data("000001.SZ", "2020-01-01", "2023-12-31")
+# Uses Baostock + AKShare coordination with data validation
+
+# Enhanced method with detailed reconciliation metrics
+enhanced_result = pipeline.get_stock_data_with_reconciliation(
+    "000001.SZ", "2020-01-01", "2023-12-31"
+)
+# Returns data + detailed reconciliation metadata
+
+# Access reconciliation logs
+if pipeline.reconciliation_pipeline:
+    report = pipeline.reconciliation_pipeline.get_switch_report()
+    print(f"Primary success rate: {report['primary_success_rate']:.1f}%")
+    print(f"Backup usage rate: {report['backup_usage_rate']:.1f}%")
 ```
 
 ## 📈 Performance Metrics
@@ -139,6 +157,18 @@ python test_dual_source.py
 python run_3year_backtest.py
 python test_future_function_prevention.py
 ```
+
+### Data Reconciliation Test
+Test the dual-source coordination pipeline:
+```bash
+python test_data_reconciliation.py
+```
+This validates the professional data reconciliation capabilities:
+1. **Data Consistency Validation**: Price/volume alignment with configurable thresholds
+2. **Intelligent Gap Filling**: Smart fill when primary source has missing values
+3. **Quality Enforcement**: Forward adjustment, continuity checks, anomaly handling
+4. **Switch Logging**: Detailed logs for data source switches and quality metrics
+5. **Emergency Fallback**: Simulated data when both sources fail
 
 ### Future Function Prevention Test
 The system includes a dedicated `DataAssurance` module to detect look-ahead bias:
