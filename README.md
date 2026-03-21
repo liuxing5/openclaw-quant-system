@@ -49,7 +49,22 @@ A production-ready quantitative trading system that transforms from "amateur sco
 - **Low Liquidity Filtering**: Automatic exclusion of stocks with ADV < ¥30M or market cap < ¥3B
 - **Market Regime Adjustments**: Higher costs during volatile/crash markets
 
-### 6. **Core Modules**
+### 6. **Professional Factor Risk Model** ⚠️
+**解决用户指出的风险模型问题：**
+- **因子暴露分解**: Barra/Axioma风格风险建模（style + industry + specific risk）
+- **跨市场压力测试**: 2015股灾、2018熊市、2022俄乌战争历史重放
+- **尾部风险情景生成**: 历史重放 + 合成极端情景（copula-based extremes）
+- **Conditional VaR**: 在熊市regime下VaR放大（熊市1.8x，崩盘2.5x）
+
+**核心功能：**
+- **Barra风格因子模型**: 8个风格因子（规模、价值、动量、波动率等）+ 申万行业因子
+- **风险分解引擎**: 准确分解总风险为风格风险、行业风险和特质风险
+- **压力测试框架**: 4个历史极端情景（2015/2018/2020/2022）完整重放
+- **尾部风险生成器**: 历史重放、合成极端、混合情景三种方法
+- **市场状态检测**: 自动识别正常/熊市/崩盘/复苏/泡沫五种市场状态
+- **动态VaR调整**: 基于市场状态的Conditional VaR，避免黑天鹅爆仓
+
+### 7. **Core Modules**
 - **Factor Management**: 18 real factors from financial reports (ROE, profit growth, etc.)
 - **Backtest Engine**: Vectorized backtesting with realistic slippage modeling
 - **Risk Management**: VaR, CVaR, Sharpe, Sortino, drawdown analysis
