@@ -220,6 +220,8 @@ class BrinsonAttribution:
             r_b = benchmark_returns.get(symbol, 0.0)
             
             # 聚合行业数据
+            # 🚨 关键验证：加权收益之和将在后续除以行业权重得到加权平均收益率
+            # 第236行：r_p_i = (industry_portfolio_returns.get(industry, 0.0) / w_p_i) if w_p_i > 0 else 0.0
             industry_portfolio_weights[industry] = industry_portfolio_weights.get(industry, 0.0) + w_p
             industry_portfolio_returns[industry] = industry_portfolio_returns.get(industry, 0.0) + w_p * r_p
             industry_benchmark_weights[industry] = industry_benchmark_weights.get(industry, 0.0) + w_b

@@ -269,11 +269,17 @@ class AlphaPredictor:
             raise ValueError(f"数据长度{len(price_data)}不足，需要至少{horizon+1}个数据点")
         
         # 计算未来horizon日的累计收益率
-        future_prices = price_data.shift(-horizon)
-        target = (future_prices / price_data - 1).shift(horizon)
+        # 🚨 关键修复：解决off-by-one错误
+        # 原错误代码：future_prices = price_data.shift(-horizon); target = (future_prices / price_data - 1).shift(horizon)
+        # 两次shift相互抵消，得到的是原始收益，不是未来收益
+        # 正确方法：计算price_data.shift(-horizon) / price_data - 1，然后去掉末尾horizon行的NaN
+        target = price_data.shift(-horizon) / price_data - 1
         
-        # 移除末尾无法计算的数据
-        target = target.iloc[:-horizon] if horizon > 0 else target
+        # 移除末尾无法计算的数据（未来horizon日的数据为NaN）
+        if horizon > 0:
+            # 去掉最后horizon行（这些行没有未来数据）
+            target = target.iloc[:-horizon]
+        # 注：如果horizon=0，则target就是price_data / price_data - 1 = 0，无意义
         
         # 移除NaN值
         target = target.dropna()

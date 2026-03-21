@@ -116,9 +116,21 @@ class MarketRegimeDetector:
     
     def detect_regimes_gmm(self, 
                           market_returns: pd.Series,
-                          market_volumes: pd.Series = None) -> pd.Series:
+                          market_volumes: pd.Series = None,
+                          fit: bool = True) -> pd.Series:
         """
         使用高斯混合模型(GMM)识别市场状态
+        
+        Args:
+            market_returns: 市场收益率序列
+            market_volumes: 市场成交量序列（可选）
+            fit: 是否重新拟合模型和归一化器
+                 - True: 在输入数据上重新拟合scaler和GMM（用于训练窗口）
+                 - False: 使用已拟合的scaler和GMM进行transform和predict（用于测试窗口）
+                 默认为True以保持向后兼容性
+        
+        重要: 在walk-forward回测中，应在训练窗口调用fit=True，
+              在后续测试窗口调用fit=False，确保不同期间的结果可横向比较
         """
         if not SKLEARN_AVAILABLE:
             raise ImportError("scikit-learn不可用")
@@ -126,19 +138,32 @@ class MarketRegimeDetector:
         # 提取特征
         features = self.extract_market_features(market_returns, market_volumes)
         
-        # 标准化
-        features_scaled = self.scaler.fit_transform(features)
-        
-        # 训练GMM模型
-        self.model = GaussianMixture(
-            n_components=self.n_regimes,
-            covariance_type='full',
-            random_state=42,
-            n_init=3
-        )
-        
-        # 拟合数据
-        self.model.fit(features_scaled)
+        # 🚨 关键修复：解决每次调用都重新拟合的问题
+        # 原问题：每次调用都执行self.scaler.fit_transform(features)，
+        #         导致每个walk-forward窗口的归一化均值和方差不同，
+        #         GMM聚类结果不可横向比较
+        if fit:
+            # 训练模式：重新拟合scaler和GMM模型
+            features_scaled = self.scaler.fit_transform(features)
+            
+            self.model = GaussianMixture(
+                n_components=self.n_regimes,
+                covariance_type='full',
+                random_state=42,
+                n_init=3
+            )
+            
+            # 拟合数据
+            self.model.fit(features_scaled)
+            print(f"  GMM模型拟合完成: {self.n_regimes}个状态，数据形状{features_scaled.shape}")
+        else:
+            # 预测模式：使用已拟合的scaler和GMM
+            if self.scaler is None or self.model is None:
+                raise ValueError("模型未拟合，请先使用fit=True调用一次")
+            
+            # 只进行transform，不重新拟合
+            features_scaled = self.scaler.transform(features)
+            print(f"  使用已拟合模型预测: 数据形状{features_scaled.shape}")
         
         # 预测状态
         regime_labels = self.model.predict(features_scaled)

@@ -16,6 +16,8 @@ from datetime import datetime
 import warnings
 import sys
 import traceback
+import hashlib
+import json
 
 # 导入PIT特征工程模块
 try:
@@ -217,14 +219,39 @@ class PITFactorManager:
                            kwargs: Dict[str, Any]) -> str:
         """生成缓存键"""
         
-        # 基于数据哈希和参数生成键
-        data_hash = ""
-        if hasattr(data, 'values'):
-            # 简单哈希：使用形状和前几个值
-            data_sample = str(data.shape) + str(data.iloc[:3].values.tolist() if len(data) > 3 else "")
-            data_hash = hash(data_sample)
+        # 🚨 关键修复：解决Python hash()随机化导致的缓存失效问题
+        # CPython 3.3+ 默认启用hash randomization，hash()的结果在不同进程启动时不同
+        # 导致相同输入在多进程或重启后得到不同缓存键，缓存完全失效
+        # 解决方案：使用稳定哈希算法（MD5/SHA256）
         
-        kwargs_hash = hash(frozenset(kwargs.items()))
+        data_hash = ""
+        if hasattr(data, 'values') and len(data) > 0:
+            try:
+                # 方法1: 使用pandas内置的稳定哈希函数
+                # pd.util.hash_pandas_object返回每行的哈希值，我们将其聚合
+                import pandas as pd
+                hash_values = pd.util.hash_pandas_object(data, index=True)
+                data_hash_bytes = hash_values.values.tobytes()
+                data_hash = hashlib.md5(data_hash_bytes).hexdigest()
+                
+            except Exception as e:
+                # 降级方法：使用数据的字符串表示
+                # 注意：这种方法可能较慢，但作为备选方案
+                print(f"  警告: 使用备用哈希方法: {e}")
+                data_str = str(data.shape) + str(data.iloc[:min(10, len(data))].values.tolist())
+                data_hash = hashlib.md5(data_str.encode('utf-8')).hexdigest()
+        
+        # 对kwargs也使用稳定哈希
+        kwargs_hash = ""
+        if kwargs:
+            try:
+                # 将kwargs转换为可哈希的稳定字符串表示
+                # 排序键以确保顺序一致
+                kwargs_str = json.dumps(kwargs, sort_keys=True, default=str)
+                kwargs_hash = hashlib.md5(kwargs_str.encode('utf-8')).hexdigest()
+            except Exception as e:
+                print(f"  警告: kwargs哈希失败: {e}")
+                kwargs_hash = str(hash(frozenset(kwargs.items())))
         
         return f"{factor_id}_{data_hash}_{kwargs_hash}_{self.current_date}"
     
