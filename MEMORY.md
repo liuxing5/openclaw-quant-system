@@ -182,3 +182,33 @@
   2. 第三方平台独立验证
   3. 生产环境容器化部署
   4. 小资金实盘模拟测试
+
+### 2026-03-21 ⭐⭐⭐⭐⭐ (未来函数预防关键修复)
+- **用户指出关键问题**: Walk-forward滚动回测存在严重的look-ahead bias/未来函数
+- **常见错误识别**:
+  1. ✅ **全局标准化问题**: 训练窗口使用整个样本的因子标准化（global z-score）
+  2. ✅ **因子IC计算泄露**: 因子ic/ir计算时偷偷用了未来信息
+  3. ✅ **财务因子日期问题**: 财务因子未严格使用t-1期报告期数据
+  4. ✅ **LightGBM特征滞后**: 训练时label是未来N日收益，但特征未严格滞后
+- **严重后果**: 回测年化15–30%，实盘-50%很常见
+- **解决方案实施**:
+  1. ✅ **DataAssurance类**: 严格的静态检查，防止未来函数
+  2. ✅ **强制滚动窗口计算**: 所有因子在每个滚动窗口内只使用截至训练期最后一天的信息重新计算
+  3. ✅ **滚动标准化**: rolling z-score / neutralization替代全局标准化
+  4. ✅ **财务数据严格性**: 财务因子必须严格使用 `report_date ≤ train_end` 的最新一期数据
+  5. ✅ **静态检查断言**:
+     - `assert feature_date.max() <= train_end`
+     - `assert label_date.min() > train_end`
+- **技术实现**:
+  - `quant_system/data/assurance.py` - 未来函数检查核心模块
+  - `RollingFeatureProcessor` - 安全的滚动窗口特征处理器
+  - 更新`walkforward_backtester.py`集成DataAssurance检查
+  - 添加`test_future_function_prevention.py`测试脚本
+- **GitHub同步**: 所有代码已提交并推送到公开仓库
+- **用户价值**: 彻底解决量化回测中最致命的未来函数问题，显著提升回测结果可信度
+- **关键检查点**:
+  - ✅ 特征数据泄露检查: `feature_date.max() <= train_end`
+  - ✅ 标签数据泄露检查: `label_date.min() > train_end`
+  - ✅ 财务报告日期检查: `report_date.max() <= train_end`
+  - ✅ 滚动窗口标准化: 避免全局统计量污染
+  - ✅ 严格模式: 发现严重未来函数时抛出异常停止回测
