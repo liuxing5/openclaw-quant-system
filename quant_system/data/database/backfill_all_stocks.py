@@ -41,6 +41,11 @@ class HistoricalDataBackfiller:
             '000858', '000333', '002594', '600036', '601318',
             '000001', '399001', '399006', '000300', '000905'
         ]
+        
+        # 🚀 性能优化：全市场股票信息缓存（避免每个股票调用全量API）
+        self._spot_cache = None  # 缓存AKShare全市场实时数据
+        self._cache_loaded = False  # 缓存加载状态
+        self._cache_lock = None  # 线程锁（延迟初始化）
     
     def get_all_a_stocks(self) -> List[str]:
         """获取全A股股票列表（从AKShare）"""
@@ -117,17 +122,66 @@ class HistoricalDataBackfiller:
             industry = None
             listing_date = None
             
-            # 接口1: 实时数据
+            # 🚀 性能优化：使用全市场缓存，避免每个股票调用全量API
+            # 接口1: 实时数据（从缓存获取）
             try:
-                spot_df = ak.stock_zh_a_spot_em()
-                if spot_df is not None and not spot_df.empty:
-                    mask = spot_df['代码'] == symbol
-                    if mask.any():
-                        row = spot_df[mask].iloc[0]
-                        name = row.get('名称', '')
-                        # 行业信息可能在其他列
-            except:
-                pass
+                # 延迟初始化线程锁
+                if self._cache_lock is None:
+                    import threading
+                    self._cache_lock = threading.Lock()
+                
+                # 加载缓存（线程安全）
+                if not self._cache_loaded:
+                    with self._cache_lock:
+                        if not self._cache_loaded:  # 双重检查
+                            print("加载全市场股票信息缓存...")
+                            spot_df = ak.stock_zh_a_spot_em()
+                            if spot_df is not None and not spot_df.empty:
+                                # 构建缓存字典：代码 -> {名称, 行业等}
+                                self._spot_cache = {}
+                                for _, row in spot_df.iterrows():
+                                    code = row.get('代码', '')
+                                    if code:
+                                        self._spot_cache[code] = {
+                                            '名称': row.get('名称', ''),
+                                            '行业': row.get('行业', '') if '行业' in row else None,
+                                            '最新价': row.get('最新价', 0),
+                                            '涨跌幅': row.get('涨跌幅', 0)
+                                        }
+                                print(f"  缓存加载完成：{len(self._spot_cache)} 支股票")
+                            else:
+                                self._spot_cache = {}
+                                print("  警告：全市场数据为空，缓存为空")
+                            self._cache_loaded = True
+                
+                # 从缓存查找
+                if self._spot_cache and symbol in self._spot_cache:
+                    cache_data = self._spot_cache[symbol]
+                    name = cache_data.get('名称')
+                    if cache_data.get('行业'):
+                        industry = cache_data['行业']
+                    # 缓存命中，跳过后续API调用
+                    # print(f"  缓存命中: {symbol} -> {name}")
+                else:
+                    # 缓存未命中，使用原接口（但可能仍需要调用其他接口）
+                    pass
+            except Exception as e:
+                print(f"缓存加载/查找失败: {e}")
+                # 降级到原逻辑
+            
+            # 如果缓存未提供名称，且缓存加载失败，尝试原实时数据接口（降级）
+            if name is None and not self._cache_loaded:
+                try:
+                    print(f"  缓存未加载，降级到全量API查询: {symbol}")
+                    spot_df = ak.stock_zh_a_spot_em()
+                    if spot_df is not None and not spot_df.empty:
+                        mask = spot_df['代码'] == symbol
+                        if mask.any():
+                            row = spot_df[mask].iloc[0]
+                            name = row.get('名称', '')
+                            # 行业信息可能在其他列
+                except:
+                    pass
             
             # 接口2: 基本面数据
             try:

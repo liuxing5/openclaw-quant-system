@@ -52,7 +52,7 @@ class DatabaseManager:
                 conn = sqlite3.connect(
                     self.db_path,
                     timeout=timeout,
-                    isolation_level=None  # 自动提交模式，减少锁争用
+                    isolation_level='DEFERRED'  # 🚨 关键修复：使用显式事务，避免数据竞争
                 )
                 conn.row_factory = sqlite3.Row  # 允许通过列名访问
                 conn.execute("PRAGMA journal_mode=WAL")  # WAL模式，支持读写并发
@@ -201,6 +201,10 @@ class DatabaseManager:
         
         with self.get_connection() as conn:
             cursor = conn.cursor()
+            # 🚨 关键修复：显式开始事务，避免并发数据竞争
+            # 使用IMMEDIATE事务确保写入一致性，防止多个线程同时修改同一股票数据
+            conn.execute("BEGIN IMMEDIATE")
+            
             new_count = 0
             update_count = 0
             
@@ -265,10 +269,10 @@ class DatabaseManager:
                     if cursor.rowcount > 0:
                         new_count += 1
             
-            # 记录更新日志
+            # 记录更新日志（使用同一连接，避免嵌套事务）
             if new_count > 0 or update_count > 0:
                 self._log_update('daily_update', symbol, new_count + update_count, 
-                               new_count, 'success')
+                               new_count, 'success', conn=conn)
             
             return new_count, update_count
     
@@ -381,7 +385,7 @@ class DatabaseManager:
                         count += 1
             
             if count > 0:
-                self._log_update('financial_update', symbol, count, count, 'success')
+                self._log_update('financial_update', symbol, count, count, 'success', conn=conn)
             
             return count
     
@@ -489,10 +493,40 @@ class DatabaseManager:
     # ========== 数据质量与维护 ==========
     
     def _log_update(self, task_type: str, symbol: str, records_updated: int,
-                   records_new: int, status: str, error_message: str = None):
-        """记录数据更新日志"""
+                   records_new: int, status: str, error_message: str = None,
+                   conn=None):
+        """
+        记录数据更新日志
+        
+        Args:
+            task_type: 任务类型
+            symbol: 股票代码
+            records_updated: 更新记录数
+            records_new: 新增记录数
+            status: 状态（success/failed）
+            error_message: 错误信息（可选）
+            conn: 数据库连接（可选），如果提供则使用现有连接，否则创建新连接
+        """
         try:
-            with self.get_connection() as conn:
+            if conn is None:
+                # 创建新连接
+                with self.get_connection() as new_conn:
+                    cursor = new_conn.cursor()
+                    start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    query = """
+                    INSERT INTO update_logs 
+                    (task_type, symbol, date_range, records_updated, records_new, 
+                     start_time, end_time, status, error_message)
+                    VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?)
+                    """
+                    
+                    cursor.execute(query, (
+                        task_type, symbol, "", records_updated, records_new,
+                        start_time, status, error_message
+                    ))
+            else:
+                # 使用现有连接
                 cursor = conn.cursor()
                 start_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 
@@ -614,7 +648,7 @@ class DatabaseManager:
             # 记录清理操作
             if deleted_count > 0:
                 self._log_update('cleanup', 'ALL', 0, 0, 'success', 
-                               f"清理{deleted_count}条{cutoff_date}前的数据")
+                               f"清理{deleted_count}条{cutoff_date}前的数据", conn=conn)
             
             return deleted_count
     
