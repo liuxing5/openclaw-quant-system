@@ -1,0 +1,83 @@
+{
+  "system": {
+    "timestamp": "2026-03-19T18:59:52.726248",
+    "python_version": "3.12.3",
+    "platform": "linux",
+    "cwd": "/root/.openclaw/workspace/quant_system",
+    "user": "root",
+    "hostname": "unknown"
+  },
+  "config": {
+    "system": {
+      "name": "EnhancedQuantSystem",
+      "version": "2.0.0",
+      "deployment_time": "2026-03-19T18:59:52.726220",
+      "mode": "production",
+      "debug": false,
+      "log_level": "INFO"
+    },
+    "data_sources": {
+      "primary": "local_database",
+      "fallbacks": [
+        "baostock",
+        "akshare",
+        "tushare",
+        "simulation"
+      ],
+      "cache_enabled": true,
+      "cache_ttl": 3600,
+      "retry_times": 3,
+      "retry_delay": 1.0
+    },
+    "backtest": {
+      "initial_capital": 1000000.0,
+      "commission_rate": 0.001,
+      "slippage_rate": 0.002,
+      "max_position_pct": 0.1,
+      "stop_loss_pct": 0.1,
+      "take_profit_pct": 0.2,
+      "vectorized_enabled": true,
+      "parallel_workers": 4,
+      "max_memory_mb": 4096
+    },
+    "factors": {
+      "ic_lookback_days": 20,
+      "min_icir_for_weight": 0.1,
+      "weight_smoothing": 0.3,
+      "decay_monitoring_enabled": true,
+      "effectiveness_threshold": 0.3,
+      "default_half_life_technical": 4.0,
+      "default_half_life_fundamental": 63.0
+    },
+    "risk": {
+      "monte_carlo_simulations": 500,
+      "confidence_level": 0.95,
+      "timing_dependency_warning": 0.7,
+      "max_drawdown_alarm": 0.25,
+      "sharpe_ratio_min": 0.5
+    },
+    "monitoring": {
+      "enabled": true,
+      "metrics_interval": 60,
+      "log_retention_days": 7,
+      "performance_alerts": true,
+      "error_alerts": true,
+      "health_check_interval": 300
+    },
+    "output": {
+      "reports_dir": "./reports/production",
+      "logs_dir": "./logs",
+      "cache_dir": "./cache",
+      "backup_dir": "./backups",
+      "daily_report_time": "17:00",
+      "weekly_summary_day": "Friday"
+    },
+    "scheduling": {
+      "daily_report": "0 17 * * *",
+      "weekly_rebalance": "0 9 * * 5",
+      "monthly_analysis": "0 10 1 * *",
+      "health_check": "*/5 * * * *",
+      "cache_cleanup": "0 2 * * *"
+    }
+  }
+}

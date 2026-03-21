@@ -1,0 +1,14 @@
+{
+  "optimized_at": "2026-03-20T09:43:15.200620",
+  "best_sharpe": 0.384838436601346,
+  "parameters": {
+    "max_position": 0.05506965225330304,
+    "risk_free_rate": 0.010249548771424007,
+    "transaction_cost": 0.0012703970254817048,
+    "lookback_period": 177
+  },
+  "data_source": "simulated",
+  "data_quality": {
+    "score": 10.5,
+    "total_points": 109600,
+    "valid_points": 

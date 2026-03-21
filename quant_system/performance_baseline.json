@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-03-18T16:08:08.091361",
+  "benchmarks": [
+    {
+      "operation": "data_acquisition",
+      "avg_time_seconds": 0.48762091000874835,
+      "success_rate": 0.0,
+      "symbols_tested": 3,
+      "details": [
+        {
+          "symbol": "600519",
+          "success": false,
+          "time_seconds": 0.0071985721588134766,
+          "rows": 0,
+          "source": "unknown"
+        },
+        {
+          "symbol": "000001",
+          "success": false,
+          "time_seconds": 0.0041351318359375,
+          "rows": 0,
+          "source": "unknown"
+        },
+        {
+          "symbol": "300750",
+          "success": false,
+          "time_seconds": 1.4515290260314941,
+          "rows": 0,
+          "source": "unknown"
+        }
+      ]
+    },
+    {
+      "operation": "sentiment_calculation",
+      "market_state_time_seconds": 0.003593921661376953,
+      "sentiment_time_seconds": 0.0029544830322265625,
+      "total_time_seconds": 0.006548404693603516,
+      "stocks_count": 3,
+      "market_state": "consolidation"
+    },
+    {
+      "error": "'AdvancedRiskManager' object has no attribute '_summarize_stress_test_results'"
+    }
+  ],
+  "summary": {
+    "total_time_seconds": 0.49416931470235187,
+    "successful_tests": 2,
+    "total_tests": 3
+  }
+}

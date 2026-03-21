@@ -1,0 +1,126 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+quant_env/
+quant_venv/
+
+# OpenClaw
+.openclaw/
+memory/
+*.pid
+*.log
+*.zip
+*.pdf
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Data files
+*.csv
+*.xlsx
+*.xls
+*.db
+*.sqlite
+*.pickle
+*.pkl
+*.h5
+*.hdf5
+
+# Temporary files
+*.tmp
+*.temp
+
+# Config files with sensitive info
+config.yaml
+config.json
+secrets.json
+credentials.json
+*.key
+*.pem
+
+# Specific exclusions for this project
+run80.pid
+test.pid
+web*.pid
+=1.12
+backtest_output.log
+real_backtest_output.log
+stability_test.log
+quant_sys.zip
+finance_data/
+funds/
+reports/
+analysis_results/
+quick_backtest/
+real_backtest_results/
+predict_engine/
+web_interface/
+ai_investment_system/
+.learnings/
+assets/
+scripts/

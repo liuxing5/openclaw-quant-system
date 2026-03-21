@@ -1,0 +1,60 @@
+{
+  "data": {
+    "period": {
+      "start_date": "2020-01-01",
+      "end_date": "2022-12-31",
+      "training_start": "2020-01-01",
+      "training_end": "2021-12-31",
+      "testing_start": "2022-01-01",
+      "testing_end": "2022-12-31"
+    },
+    "universe": {
+      "size": 50,
+      "selection_method": "市值加权",
+      "rebalance_frequency": "季度"
+    },
+    "features": {
+      "technical": [
+        "momentum",
+        "volatility",
+        "rsi",
+        "macd",
+        "bollinger"
+      ],
+      "fundamental": [
+        "roe",
+        "profit_growth",
+        "debt_ratio",
+        "pe_ratio"
+      ],
+      "market": [
+        "beta",
+        "relative_strength",
+        "volume_trend"
+      ]
+    }
+  },
+  "model": {
+    "factor_model": "multi_factor_regression",
+    "alpha_model": "alpha_predictor",
+    "regime_model": "market_regime_detector",
+    "optimizer": "portfolio_optimizer"
+  },
+  "backtest": {
+    "initial_capital": 1000000.0,
+    "transaction_cost": 0.001,
+    "slippage": 0.0005,
+    "rebalance_frequency": "monthly",
+    "walkforward": {
+      "train_years": 2,
+      "test_months": 6,
+      "step_months": 3
+    }
+  },
+  "risk": {
+    "max_position": 0.1,
+    "max_sector_exposure": 0.3,
+    "stop_loss": -0.15,
+    "max_drawdown_limit": -0.25
+  }
+}

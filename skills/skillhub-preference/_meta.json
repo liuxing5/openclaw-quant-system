@@ -1,0 +1,9 @@
+{
+  "name": "skillhub-preference",
+  "version": "1.0.0",
+  "description": "技能发现与安装助手，优先使用skillhub，clawhub作为备用",
+  "author": "OpenClaw",
+  "license": "MIT",
+  "created": "2026-03-19",
+  "updated": "2026-03-20"
+}
