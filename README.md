@@ -29,7 +29,14 @@ A production-ready quantitative trading system that transforms from "amateur sco
 - **Skill Standardization**: All 33 skills have complete standard files
 - **Safe Evolution**: Analysis mode (read-only), manual confirmation before changes
 
-### 4. **Core Modules**
+### 4. **Look-Ahead Bias Prevention** 🔍
+- **DataAssurance Module**: Strict static checks for future function detection
+- **Rolling Window Normalization**: Avoid global z-score, use rolling window statistics
+- **Financial Data Cutoff**: Ensure financial factors use `report_date ≤ train_end` data
+- **Temporal Validation**: `assert feature_date.max() <= train_end`, `assert label_date.min() > train_end`
+- **Safe Walk-Forward**: Prevents common pitfalls that cause backtest inflation (15-30%) vs live performance (-50%)
+
+### 5. **Core Modules**
 - **Factor Management**: 18 real factors from financial reports (ROE, profit growth, etc.)
 - **Backtest Engine**: Vectorized backtesting with realistic slippage modeling
 - **Risk Management**: VaR, CVaR, Sharpe, Sortino, drawdown analysis
@@ -130,7 +137,19 @@ Run comprehensive tests:
 python test_quant_integration.py
 python test_dual_source.py
 python run_3year_backtest.py
+python test_future_function_prevention.py
 ```
+
+### Future Function Prevention Test
+The system includes a dedicated `DataAssurance` module to detect look-ahead bias:
+```bash
+python test_future_function_prevention.py
+```
+This demonstrates how the system prevents common future function errors:
+1. **Global z-score normalization** → Rolling window normalization
+2. **Feature date leakage** → `assert feature_date.max() <= train_end`
+3. **Label date leakage** → `assert label_date.min() > train_end`
+4. **Financial data future reports** → `assert report_date.max() <= train_end`
 
 ## 📄 License
 
