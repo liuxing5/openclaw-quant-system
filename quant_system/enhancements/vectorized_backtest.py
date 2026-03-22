@@ -14,6 +14,16 @@ import time
 import sys
 import os
 
+# 尝试导入OrderBook统计模块
+try:
+    sys.path.append('/root/.openclaw/workspace/quant_system')
+    from utils.orderbook_stats import OrderBookStats
+    ORDERBOOK_STATS_AVAILABLE = True
+except ImportError as e:
+    print(f"警告: OrderBook统计模块不可用: {e}")
+    ORDERBOOK_STATS_AVAILABLE = False
+    OrderBookStats = None
+
 # 尝试导入高级滑点模型
 try:
     # 添加quant_system路径
@@ -151,6 +161,18 @@ class VectorizedBacktester:
             except Exception as e:
                 print(f"⚠️ 订单簿模拟器初始化失败: {e}")
                 self.order_book_simulator = None
+        
+        # 初始化OrderBook统计模块
+        self.orderbook_stats = None
+        if (self.config.use_advanced_slippage and 
+            ORDERBOOK_STATS_AVAILABLE and 
+            OrderBookStats is not None):
+            try:
+                self.orderbook_stats = OrderBookStats()
+                print(f"✓ OrderBook统计模块已启用")
+            except Exception as e:
+                print(f"⚠️ OrderBook统计模块初始化失败: {e}")
+                self.orderbook_stats = None
         
     def run_vectorized_backtest(self, 
                                 symbol: str,
@@ -346,6 +368,37 @@ class VectorizedBacktester:
                         order_status = order_result['order_status']
                         liquidity_check = order_result['liquidity_check']
                         
+                        # 记录统计（如果统计模块可用）
+                        if self.orderbook_stats is not None and order_result:
+                            try:
+                                # 提取流动性分桶（从结果中获取或估算）
+                                liquidity_bucket = None
+                                if 'liquidity_bucket' in order_result:
+                                    liquidity_bucket = order_result['liquidity_bucket']
+                                elif 'metadata' in order_result and 'liquidity_bucket' in order_result['metadata']:
+                                    liquidity_bucket = order_result['metadata']['liquidity_bucket']
+                                else:
+                                    # 根据ADV估算分桶
+                                    if stock_profile.adv_20d > 50000:
+                                        liquidity_bucket = 1
+                                    elif stock_profile.adv_20d > 10000:
+                                        liquidity_bucket = 3
+                                    elif stock_profile.adv_20d > 3000:
+                                        liquidity_bucket = 5
+                                    else:
+                                        liquidity_bucket = 7
+                                
+                                # 记录统计
+                                self.orderbook_stats.record_order(
+                                    order_result=order_result,
+                                    symbol=symbol,
+                                    order_side='buy',
+                                    liquidity_bucket=liquidity_bucket,
+                                    market_regime=market_regime
+                                )
+                            except Exception as e:
+                                print(f"⚠️ OrderBook统计记录失败: {e}")
+                        
                         if order_status == 'rejected':
                             # 订单被拒绝，跳过此交易
                             print(f"订单被拒绝: {liquidity_check['message']}")
@@ -500,6 +553,37 @@ class VectorizedBacktester:
                         sell_price = order_result['avg_execution_price']
                         order_status = order_result['order_status']
                         liquidity_check = order_result['liquidity_check']
+                        
+                        # 记录统计（如果统计模块可用）
+                        if self.orderbook_stats is not None and order_result:
+                            try:
+                                # 提取流动性分桶（从结果中获取或估算）
+                                liquidity_bucket = None
+                                if 'liquidity_bucket' in order_result:
+                                    liquidity_bucket = order_result['liquidity_bucket']
+                                elif 'metadata' in order_result and 'liquidity_bucket' in order_result['metadata']:
+                                    liquidity_bucket = order_result['metadata']['liquidity_bucket']
+                                else:
+                                    # 根据ADV估算分桶
+                                    if stock_profile.adv_20d > 50000:
+                                        liquidity_bucket = 1
+                                    elif stock_profile.adv_20d > 10000:
+                                        liquidity_bucket = 3
+                                    elif stock_profile.adv_20d > 3000:
+                                        liquidity_bucket = 5
+                                    else:
+                                        liquidity_bucket = 7
+                                
+                                # 记录统计
+                                self.orderbook_stats.record_order(
+                                    order_result=order_result,
+                                    symbol=symbol,
+                                    order_side='sell',
+                                    liquidity_bucket=liquidity_bucket,
+                                    market_regime=market_regime
+                                )
+                            except Exception as e:
+                                print(f"⚠️ OrderBook统计记录失败: {e}")
                         
                         if order_status == 'rejected':
                             # 订单被拒绝，跳过此交易
@@ -742,6 +826,22 @@ class VectorizedBacktester:
         # 平均盈利/亏损
         avg_profit = profit_sum / profitable_trades if profitable_trades > 0 else 0.0
         avg_loss = loss_sum / (total_trades - profitable_trades) if (total_trades - profitable_trades) > 0 else 0.0
+        
+        # 保存OrderBook统计（如果可用）
+        if hasattr(self, 'orderbook_stats') and self.orderbook_stats is not None:
+            try:
+                self.orderbook_stats.save_stats()
+                print(f"✅ OrderBook统计已保存: {self.orderbook_stats.stats['total_calls']}次调用")
+                
+                # 如果有调用，生成简要报告
+                if self.orderbook_stats.stats['total_calls'] > 0:
+                    summary = self.orderbook_stats.get_summary()
+                    if summary['total_calls'] > 0:
+                        print(f"  统计摘要: {summary['total_calls']}次调用, "
+                              f"平均冲击成本{summary['avg_impact_cost_bps']:.1f}bp, "
+                              f"执行成功率{summary['execution_rate_pct']:.1f}%")
+            except Exception as e:
+                print(f"⚠️ OrderBook统计保存失败: {e}")
         
         return BacktestResult(
             symbol=symbol,
