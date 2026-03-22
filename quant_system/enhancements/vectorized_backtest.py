@@ -226,6 +226,9 @@ class VectorizedBacktester:
                 is_st = liquidity_data.get('is_st', False)
                 
                 # 获取当前价格（用于计算涨跌停价）
+                # 需要先定义closes变量
+                if 'closes' not in locals():
+                    closes = prices['close'].values
                 current_price = closes[0] if len(closes) > 0 else 0.0
                 limit_up_price = current_price * 1.1 if current_price > 0 else 0.0
                 limit_down_price = current_price * 0.9 if current_price > 0 else 0.0
@@ -354,6 +357,8 @@ class VectorizedBacktester:
                             # 调整shares变量（将在后续使用）
                             shares = execution_volume
                         
+                        advanced_slippage_used = True
+                        
                     elif self.liquidity_enforcer is not None and self.liquidity_enforcer.slippage_model is not None:
                         # 回退到高级滑点模型
                         slippage_result = self.liquidity_enforcer.slippage_model.calculate_slippage(
@@ -365,12 +370,12 @@ class VectorizedBacktester:
                         )
                         impact_pct = slippage_result['impact_pct']
                         buy_price = open_price * (1 + impact_pct)
+                        advanced_slippage_used = True
                     else:
                         # 使用固定滑点率
                         buy_price = open_price * (1 + self.config.slippage_rate)
                         impact_pct = self.config.slippage_rate
-                    buy_price = open_price * (1 + impact_pct)
-                    advanced_slippage_used = True
+                        advanced_slippage_used = False
                 else:
                     # 使用固定滑点率
                     buy_price = open_price * (1 + self.config.slippage_rate)
@@ -455,6 +460,8 @@ class VectorizedBacktester:
             
         # 卖出信号
             elif sell_signals[i] and positions[i] > 0:
+                # 保存卖出前的持仓量
+                position_before = positions[i]
                 # 计算实际卖出价格（考虑滑点）
                 if self.config.use_advanced_slippage and stock_profile is not None:
                     # 使用高级滑点模型计算冲击成本
@@ -463,18 +470,67 @@ class VectorizedBacktester:
                     # 确定交易时间（简化：根据日期时间判断）
                     trade_time = 'midday'  # 默认盘中
                     
-                    # 计算冲击成本（卖出冲击通常更大）
-                    slippage_result = self.liquidity_enforcer.slippage_model.calculate_slippage(
-                        stock_profile=stock_profile,
-                        trade_side='sell',
-                        trade_value=trade_value_estimate,
-                        trade_time=trade_time,
-                        market_regime=market_regime
-                    )
-                    
-                    impact_pct = slippage_result['impact_pct']
-                    sell_price = open_price * (1 - impact_pct)
-                    sell_advanced_slippage_used = True
+                    # 计算冲击成本（卖出冲击通常更大，使用订单簿模拟器或高级滑点模型）
+                    if self.order_book_simulator is not None:
+                        # 获取当日成交量、高低价
+                        daily_volume = prices.iloc[i]['volume']
+                        daily_high = prices.iloc[i]['high']
+                        daily_low = prices.iloc[i]['low']
+                        # 卖出订单股数就是当前持仓
+                        order_volume = positions[i]
+                        
+                        # 调用订单簿模拟器（卖出冲击通常更大）
+                        order_result = self.order_book_simulator.simulate_order(
+                            symbol=symbol,
+                            order_side='sell',
+                            order_volume=order_volume,
+                            order_price=open_price,
+                            daily_volume=daily_volume,
+                            daily_high=daily_high,
+                            daily_low=daily_low,
+                            adv_20d=stock_profile.adv_20d,
+                            market_cap=stock_profile.market_cap,
+                            is_st=stock_profile.is_st,
+                            regime=market_regime
+                        )
+                        
+                        # 使用模拟结果
+                        impact_bps = order_result['total_cost_bps']
+                        impact_pct = impact_bps / 10000.0  # bp转百分比
+                        sell_price = order_result['avg_execution_price']
+                        order_status = order_result['order_status']
+                        liquidity_check = order_result['liquidity_check']
+                        
+                        if order_status == 'rejected':
+                            # 订单被拒绝，跳过此交易
+                            print(f"卖出订单被拒绝: {liquidity_check['message']}")
+                            continue
+                        
+                        # 根据实际执行股数调整（如果部分执行）
+                        if order_status == 'partially_executed':
+                            execution_volume = order_result['execution_volume']
+                            # 调整positions[i]变量（将在后续使用）
+                            positions[i] = execution_volume
+                        
+                        sell_advanced_slippage_used = True
+                        
+                    elif self.liquidity_enforcer is not None and self.liquidity_enforcer.slippage_model is not None:
+                        # 回退到高级滑点模型
+                        slippage_result = self.liquidity_enforcer.slippage_model.calculate_slippage(
+                            stock_profile=stock_profile,
+                            trade_side='sell',
+                            trade_value=trade_value_estimate,
+                            trade_time=trade_time,
+                            market_regime=market_regime
+                        )
+                        impact_pct = slippage_result['impact_pct']
+                        sell_price = open_price * (1 - impact_pct)
+                        sell_advanced_slippage_used = True
+                    else:
+                        # 使用固定滑点率
+                        sell_price = open_price * (1 - self.config.slippage_rate)
+                        impact_pct = self.config.slippage_rate
+                        sell_advanced_slippage_used = False
                 else:
                     # 使用固定滑点率
                     sell_price = open_price * (1 - self.config.slippage_rate)
