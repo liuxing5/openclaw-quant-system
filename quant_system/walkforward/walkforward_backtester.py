@@ -442,6 +442,13 @@ class WalkForwardBacktester:
                 print(f"   训练数据: {len(features_df)}个样本, {len(features_df.columns)}个特征")
                 
                 # 创建并训练AlphaPredictor
+                # 检查LightGBM是否可用
+                try:
+                    import lightgbm as lgb
+                    LIGHTGBM_AVAILABLE = True
+                except ImportError:
+                    LIGHTGBM_AVAILABLE = False
+                
                 predictor = AlphaPredictor(
                     model_type='lightgbm' if LIGHTGBM_AVAILABLE else 'gbr',
                     prediction_horizon=5,
