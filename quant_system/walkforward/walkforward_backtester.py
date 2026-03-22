@@ -801,38 +801,71 @@ class WalkForwardBacktester:
                             # 计算简化因子（基于价格数据）
                             factor_scores = pd.DataFrame(index=dates)
                             
-                            # 1. 动量因子 (momentum_1m) - 20日收益率
-                            if 'momentum_1m' in factor_weights:
-                                momentum = price_series.pct_change(20).fillna(0)
-                                factor_scores['momentum_1m'] = momentum * factor_weights['momentum_1m']
-                                print(f"        momentum_1m: 权重={factor_weights['momentum_1m']:.2f}, 范围[{momentum.min():.3f}, {momentum.max():.3f}]")
-                            
-                            # 2. RSI因子 (rsi_14) - 14日RSI
-                            if 'rsi_14' in factor_weights:
-                                # 计算RSI
-                                delta = price_series.diff()
-                                gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-                                loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-                                rs = gain / loss
-                                rsi = 100 - (100 / (1 + rs))
-                                rsi = rsi.fillna(50) / 100 - 0.5  # 归一化到[-0.5, 0.5]
-                                factor_scores['rsi_14'] = rsi * factor_weights['rsi_14']
-                                print(f"        rsi_14: 权重={factor_weights['rsi_14']:.2f}, 范围[{rsi.min():.3f}, {rsi.max():.3f}]")
-                            
-                            # 3. 波动率因子（代理其他因子）
+                            # 1. 波动率因子（代理其他因子，如pe_ratio）
                             if 'pe_ratio' in factor_weights:
                                 # 使用波动率作为PE比率的代理
                                 volatility = price_series.pct_change().rolling(20).std().fillna(0.02)
                                 factor_scores['pe_ratio'] = (0.02 - volatility) * factor_weights['pe_ratio']  # 低波动率得分高
                                 print(f"        pe_ratio(代理): 权重={factor_weights['pe_ratio']:.2f}")
                             
-                            # 添加其他因子的代理计算
+                            # 2. 尝试使用_calculate_technical_features计算其他特征
+                            # 构建OHLCV数据格式
+                            try:
+                                # 准备OHLCV数据
+                                prices_ohlc = pd.DataFrame({
+                                    'open': prices_df['open'] if 'open' in prices_df.columns else price_series * 0.99,
+                                    'high': prices_df['high'] if 'high' in prices_df.columns else price_series * 1.02,
+                                    'low': prices_df['low'] if 'low' in prices_df.columns else price_series * 0.98,
+                                    'close': price_series,
+                                    'volume': prices_df['volume'] if 'volume' in prices_df.columns else np.ones(len(price_series)) * 1000000
+                                }, index=dates)
+                                
+                                # 计算所有技术特征
+                                all_technical_features = self._calculate_technical_features(prices_ohlc, symbol)
+                                
+                                # 因子名称映射（将训练时可能使用的通用名称映射到具体技术特征）
+                                factor_name_mapping = {
+                                    'momentum_1m': 'momentum_20d',  # 1个月动量 ≈ 20日动量
+                                    'momentum': 'momentum_20d',
+                                    'volatility': 'volatility_20d',
+                                    'volume': 'volume_ratio',
+                                    'ma': 'ma_20',
+                                    'close_open': 'close_open_ratio',
+                                    'high_low': 'high_low_ratio'
+                                }
+                                
+                                # 对每个因子权重，使用对应的技术特征（如果可用）
+                                for factor_name, weight in factor_weights.items():
+                                    if factor_name not in factor_scores.columns:
+                                        # 尝试直接匹配
+                                        if factor_name in all_technical_features.columns:
+                                            # 使用真实计算的技术特征
+                                            feature_value = all_technical_features[factor_name]
+                                            factor_scores[factor_name] = feature_value * weight
+                                            print(f"        {factor_name}: 使用真实技术特征，权重={weight:.3f}")
+                                        # 尝试通过映射匹配
+                                        elif factor_name in factor_name_mapping:
+                                            mapped_name = factor_name_mapping[factor_name]
+                                            if mapped_name in all_technical_features.columns:
+                                                feature_value = all_technical_features[mapped_name]
+                                                factor_scores[factor_name] = feature_value * weight
+                                                print(f"        {factor_name}→{mapped_name}: 使用映射技术特征，权重={weight:.3f}")
+                                
+                                print(f"        技术特征计算: 找到{sum([1 for f in factor_weights if f in factor_scores.columns])}/{len(factor_weights)}个对应特征")
+                                
+                            except Exception as e:
+                                print(f"        ⚠️ 技术特征计算失败: {e}")
+                                # 保留原始代理逻辑作为降级方案
+                                pass
+                            
+                            # 3. 对于仍未处理的因子，使用随机噪声作为代理（降级方案）
                             for factor_name, weight in factor_weights.items():
                                 if factor_name not in factor_scores.columns:
                                     # 使用随机噪声作为代理（比纯随机信号好）
                                     np.random.seed(hash(symbol + factor_name) % 10000)
                                     proxy_values = pd.Series(np.random.normal(0, 0.1, len(dates)), index=dates)
                                     factor_scores[factor_name] = proxy_values * weight * 0.5  # 降低权重
+                                    print(f"        {factor_name}: 使用随机代理，权重={weight:.3f}")
                             
                             # 计算综合得分（加权求和）
                             composite_score = factor_scores.sum(axis=1).fillna(0)
