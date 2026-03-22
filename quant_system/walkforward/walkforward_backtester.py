@@ -408,10 +408,10 @@ class WalkForwardBacktester:
                         
                         # 计算未来收益作为标签（防止未来函数）
                         # 使用未来5日收益率，确保标签在训练窗口结束后
-                        future_returns = prices_ohlc['close'].pct_change(5).shift(-5).fillna(0)
+                        future_returns = prices_ohlc['close'].pct_change(5).shift(-5)
                         
-                        # 确保特征和标签对齐
-                        aligned_idx = features.index.intersection(future_returns.index)
+                        # 确保特征和标签对齐，移除末尾无法计算未来收益的样本
+                        aligned_idx = features.index.intersection(future_returns.dropna().index)
                         if len(aligned_idx) > 20:
                             features = features.loc[aligned_idx]
                             target = future_returns.loc[aligned_idx]

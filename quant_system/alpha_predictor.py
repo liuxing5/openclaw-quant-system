@@ -308,6 +308,10 @@ class AlphaPredictor:
         features_aligned = features.loc[common_idx]
         target_aligned = target.loc[common_idx]
         
+        # 确保按时间排序（防止随机切分引入未来函数）
+        features_aligned = features_aligned.sort_index()
+        target_aligned = target_aligned.sort_index()
+        
         # 时间序列分割（不能随机打乱）
         split_idx = int(len(common_idx) * (1 - test_size))
         
