@@ -375,11 +375,12 @@ class WalkForwardBacktester:
                 try:
                     if data_available:
                         # 获取价格数据
-                        prices_df = data_pipeline.get_stock_data(
+                        result = data_pipeline.get_stock_data(
                             symbol, 
                             period.train_start.strftime('%Y-%m-%d'),
                             period.train_end.strftime('%Y-%m-%d')
                         )
+                        prices_df = result['data'] if isinstance(result, dict) else result
                         
                         if prices_df.empty or len(prices_df) < 50:
                             continue
@@ -686,11 +687,12 @@ class WalkForwardBacktester:
             for symbol in test_symbols:
                 try:
                     # 1. 获取测试窗口价格数据
-                    prices_df = data_pipeline.get_stock_data(
+                    result = data_pipeline.get_stock_data(
                         symbol,
                         period.test_start.strftime('%Y-%m-%d'),
                         period.test_end.strftime('%Y-%m-%d')
                     )
+                    prices_df = result['data'] if isinstance(result, dict) else result
                     
                     if prices_df.empty or len(prices_df) < 15:
                         continue
@@ -932,11 +934,12 @@ class WalkForwardBacktester:
                 try:
                     # 1. 获取价格数据
                     print(f"    获取 {symbol} 价格数据...")
-                    prices_df = data_pipeline.get_stock_data(
+                    result = data_pipeline.get_stock_data(
                         symbol, 
                         start_date.strftime('%Y-%m-%d'), 
                         end_date.strftime('%Y-%m-%d')
                     )
+                    prices_df = result['data'] if isinstance(result, dict) else result
                     
                     if prices_df.empty:
                         print(f"      {symbol} 无价格数据，跳过")
