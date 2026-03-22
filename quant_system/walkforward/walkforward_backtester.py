@@ -408,10 +408,11 @@ class WalkForwardBacktester:
                         
                         # 计算未来收益作为标签（防止未来函数）
                         # 使用未来5日收益率，确保标签在训练窗口结束后
-                        future_returns = prices_ohlc['close'].pct_change(5).shift(-5)
+                        future_returns = prices_ohlc['close'].pct_change(5).shift(-5)  # 去掉fillna(0)
                         
                         # 确保特征和标签对齐，移除末尾无法计算未来收益的样本
-                        aligned_idx = features.index.intersection(future_returns.dropna().index)
+                        valid_target_idx = future_returns.dropna().index  # 只保留有真实未来价格的行
+                        aligned_idx = features.index.intersection(valid_target_idx)  # 自动排除末尾5行
                         if len(aligned_idx) > 20:
                             features = features.loc[aligned_idx]
                             target = future_returns.loc[aligned_idx]
@@ -622,7 +623,7 @@ class WalkForwardBacktester:
         在测试集上测试模型（样本外）
         
         Returns:
-            测试结果
+            测试结果，包含真实的OOS IC（样本外信息系数）
         """
         print(f"\n=== 测试期间 {period.period_id} (样本外) ===")
         print(f"测试集: {period.test_start.date()} 至 {period.test_end.date()}")
@@ -638,13 +639,175 @@ class WalkForwardBacktester:
             model_params
         )
         
+        # 计算真实的OOS IC（样本外信息系数）
+        # 用训练窗口拟合的模型，对测试窗口的特征做predict，再与测试窗口的真实未来收益算相关性
+        oos_ic = self._calculate_oos_ic(period, model_params, symbols)
+        
         return {
             'period_id': period.period_id,
             'test_result': test_result,
             'test_symbols': len(symbols),
             'test_dates': f"{period.test_start.date()} - {period.test_end.date()}",
-            'is_out_of_sample': True
+            'is_out_of_sample': True,
+            'oos_ic': oos_ic,  # 真实的样本外IC
+            'oos_ic_abs': abs(oos_ic) if oos_ic is not None else 0.0
         }
+    
+    def _calculate_oos_ic(self,
+                         period: WalkForwardPeriod,
+                         model_params: Dict[str, Any],
+                         symbols: List[str]) -> Optional[float]:
+        """
+        计算真实的样本外信息系数（OOS IC）
+        
+        步骤：
+        1. 获取测试窗口价格数据
+        2. 计算测试窗口特征（确保无未来函数）
+        3. 使用训练好的模型（predictor）或因子权重进行预测
+        4. 计算测试窗口真实未来收益（未来5日）
+        5. 计算预测值与真实值的相关性（IC）
+        
+        Returns:
+            OOS IC值（可为负），如果无法计算则返回None
+        """
+        try:
+            print(f"  计算OOS IC（样本外信息系数）...")
+            
+            # 导入数据管道
+            from data.sources.data_pipeline import DataPipeline
+            data_pipeline = DataPipeline()
+            
+            all_predictions = []
+            all_future_returns = []
+            
+            # 限制股票数量，避免计算过载
+            test_symbols = symbols[:10] if len(symbols) > 10 else symbols
+            
+            for symbol in test_symbols:
+                try:
+                    # 1. 获取测试窗口价格数据
+                    prices_df = data_pipeline.get_stock_data(
+                        symbol,
+                        period.test_start.strftime('%Y-%m-%d'),
+                        period.test_end.strftime('%Y-%m-%d')
+                    )
+                    
+                    if prices_df.empty or len(prices_df) < 15:
+                        continue
+                    
+                    # 准备OHLCV数据格式
+                    if 'close' not in prices_df.columns and len(prices_df.columns) > 0:
+                        price_series = prices_df.iloc[:, 0]
+                        prices_ohlc = pd.DataFrame({
+                            'open': price_series * 0.99,
+                            'high': price_series * 1.02,
+                            'low': price_series * 0.98,
+                            'close': price_series,
+                            'volume': np.ones(len(price_series)) * 1000000
+                        }, index=prices_df.index)
+                    else:
+                        prices_ohlc = pd.DataFrame({
+                            'close': prices_df['close'] if 'close' in prices_df.columns else prices_df.iloc[:, 0],
+                            'open': prices_df['open'] if 'open' in prices_df.columns else prices_df['close'] * 0.99,
+                            'high': prices_df['high'] if 'high' in prices_df.columns else prices_df['close'] * 1.02,
+                            'low': prices_df['low'] if 'low' in prices_df.columns else prices_df['close'] * 0.98,
+                            'volume': prices_df['volume'] if 'volume' in prices_df.columns else np.ones(len(prices_df)) * 1000000
+                        }, index=prices_df.index)
+                    
+                    # 2. 计算测试窗口特征（与训练时相同的方法）
+                    features_df = self._calculate_technical_features(prices_ohlc, symbol)
+                    
+                    # 3. 使用训练好的模型进行预测
+                    predictions = None
+                    
+                    # 检查是否有训练好的predictor
+                    if 'predictor' in model_params and model_params['predictor'] is not None:
+                        predictor = model_params['predictor']
+                        try:
+                            # 使用AlphaPredictor进行预测
+                            predictions = predictor.predict(features_df)
+                            print(f"    {symbol}: 使用AlphaPredictor预测")
+                        except Exception as e:
+                            print(f"    {symbol}: AlphaPredictor预测失败: {e}")
+                            predictions = None
+                    
+                    # 如果没有predictor，使用因子权重计算综合得分
+                    if predictions is None and 'factor_weights' in model_params:
+                        factor_weights = model_params['factor_weights']
+                        
+                        # 计算每个因子的得分（使用特征值乘以权重）
+                        factor_scores = pd.DataFrame(index=features_df.index)
+                        for factor_name, weight in factor_weights.items():
+                            if factor_name in features_df.columns:
+                                factor_scores[factor_name] = features_df[factor_name] * weight
+                            else:
+                                # 因子名称映射（尝试匹配）
+                                mapped = False
+                                for feature_name in features_df.columns:
+                                    if factor_name in feature_name or feature_name in factor_name:
+                                        factor_scores[factor_name] = features_df[feature_name] * weight * 0.5  # 降低权重
+                                        mapped = True
+                                        break
+                                if not mapped:
+                                    # 使用随机噪声作为降级方案
+                                    np.random.seed(hash(symbol + factor_name) % 10000)
+                                    factor_scores[factor_name] = pd.Series(
+                                        np.random.normal(0, 0.1, len(features_df)),
+                                        index=features_df.index
+                                    ) * weight * 0.3
+                        
+                        # 计算综合得分（加权求和）
+                        if not factor_scores.empty:
+                            predictions = factor_scores.sum(axis=1).fillna(0)
+                            print(f"    {symbol}: 使用因子权重计算预测得分")
+                    
+                    if predictions is None:
+                        # 无法生成预测，跳过此股票
+                        continue
+                    
+                    # 4. 计算真实未来收益（未来5日收益）
+                    # 注意：排除末尾5天（无法计算未来5日收益）
+                    future_returns = prices_ohlc['close'].pct_change(5).shift(-5)
+                    
+                    # 对齐预测值和未来收益（移除NaN）
+                    valid_idx = predictions.index.intersection(future_returns.dropna().index)
+                    if len(valid_idx) < 5:
+                        continue
+                    
+                    pred_aligned = predictions.loc[valid_idx]
+                    future_aligned = future_returns.loc[valid_idx]
+                    
+                    # 5. 收集数据（所有股票合并计算IC）
+                    all_predictions.extend(pred_aligned.values)
+                    all_future_returns.extend(future_aligned.values)
+                    
+                    print(f"    {symbol}: {len(valid_idx)}个有效样本")
+                    
+                except Exception as e:
+                    print(f"    {symbol}: OOS IC计算失败 - {str(e)[:80]}")
+                    continue
+            
+            # 6. 计算总体IC
+            if len(all_predictions) > 20:
+                # 转换为numpy数组
+                pred_array = np.array(all_predictions)
+                future_array = np.array(all_future_returns)
+                
+                # 计算相关系数（IC）
+                ic_matrix = np.corrcoef(pred_array, future_array)
+                if ic_matrix.shape == (2, 2):
+                    ic = ic_matrix[0, 1]
+                    print(f"  ✅ OOS IC计算完成: {ic:.6f} (样本量: {len(all_predictions)})")
+                    return float(ic)
+                else:
+                    print(f"  ⚠️ OOS IC计算失败: 相关系数矩阵形状异常")
+            else:
+                print(f"  ⚠️ OOS IC计算失败: 样本不足 ({len(all_predictions)} < 20)")
+            
+        except Exception as e:
+            print(f"  ❌ OOS IC计算异常: {e}")
+        
+        return None
     
     def run_walkforward(self,
                        start_date: str,

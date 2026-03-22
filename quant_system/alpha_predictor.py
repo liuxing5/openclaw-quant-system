@@ -424,10 +424,20 @@ class AlphaPredictor:
         train_r2 = r2_score(y_train, train_pred) if SKLEARN_AVAILABLE else None
         test_r2 = r2_score(y_test, test_pred) if SKLEARN_AVAILABLE else None
         
-        # 计算IC（信息系数）
+        # 计算IC（信息系数） - 排除末尾泄露行（确保没有NaN）
         if len(y_test) > 10:
-            test_ic = np.corrcoef(y_test, test_pred)[0, 1] if not np.isnan(test_pred).any() else 0
-            test_rank_ic = y_test.rank().corr(pd.Series(test_pred).rank()) if not pd.isna(test_pred).any() else 0
+            # 移除任何NaN或无穷值
+            valid_mask = ~(np.isnan(y_test) | np.isnan(test_pred) | 
+                          np.isinf(y_test) | np.isinf(test_pred))
+            
+            if valid_mask.sum() > 10:
+                y_test_clean = y_test[valid_mask]
+                test_pred_clean = test_pred[valid_mask]
+                
+                test_ic = np.corrcoef(y_test_clean, test_pred_clean)[0, 1]
+                test_rank_ic = pd.Series(y_test_clean).rank().corr(pd.Series(test_pred_clean).rank())
+            else:
+                test_ic = test_rank_ic = 0
         else:
             test_ic = test_rank_ic = 0
         
