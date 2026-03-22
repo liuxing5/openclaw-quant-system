@@ -538,15 +538,43 @@ class WalkForwardBacktester:
                     # 3. 准备流动性数据（用于高级滑点模型）
                     liquidity_data = None
                     if hasattr(self.backtester, 'config') and self.backtester.config.use_advanced_slippage:
-                        # 简化流动性数据（实际应从Baostock/财务数据获取）
-                        liquidity_data = {
-                            'adv_20d': np.random.uniform(1000, 50000),  # 20日平均成交额（万元）
-                            'market_cap': np.random.uniform(10, 500),   # 流通市值（亿元）
-                            'is_st': False,                            # 是否为ST股票
-                            'daily_turnover': np.random.uniform(0.5, 5.0)  # 日换手率
-                        }
-                        print(f"      {symbol}: ADV={liquidity_data['adv_20d']:.0f}万, "
-                              f"市值={liquidity_data['market_cap']:.1f}亿")
+                        try:
+                            # 使用流动性计算器获取真实ADV数据
+                            from utils.liquidity_calculator import LiquidityCalculator
+                            
+                            liquidity_data = LiquidityCalculator.get_liquidity_data_simple(
+                                symbol=symbol, 
+                                prices_df=prices_df
+                            )
+                            
+                            print(f"      {symbol}: ADV={liquidity_data['adv_20d']:.0f}万(真实), "
+                                  f"市值={liquidity_data['market_cap']:.1f}亿")
+                            
+                            # 标记数据来源
+                            liquidity_data['data_source'] = 'calculated'
+                            
+                        except ImportError:
+                            # 回退到模拟数据
+                            print(f"      ⚠️ 流动性计算器不可用，使用模拟数据")
+                            liquidity_data = {
+                                'adv_20d': np.random.uniform(1000, 50000),
+                                'market_cap': np.random.uniform(10, 500),
+                                'is_st': False,
+                                'daily_turnover': np.random.uniform(0.5, 5.0),
+                                'data_source': 'simulated'
+                            }
+                            print(f"      {symbol}: ADV={liquidity_data['adv_20d']:.0f}万(模拟), "
+                                  f"市值={liquidity_data['market_cap']:.1f}亿")
+                        except Exception as e:
+                            print(f"      ⚠️ 流动性数据计算失败: {e}")
+                            # 降级到模拟数据
+                            liquidity_data = {
+                                'adv_20d': np.random.uniform(1000, 50000),
+                                'market_cap': np.random.uniform(10, 500),
+                                'is_st': False,
+                                'daily_turnover': np.random.uniform(0.5, 5.0),
+                                'data_source': 'fallback'
+                            }
                     
                     # 4. 运行向量化回测（集成高级滑点模型）
                     print(f"      运行向量化回测...")
