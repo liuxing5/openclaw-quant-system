@@ -83,9 +83,59 @@ try:
     
     print("✓ 使用真实因子管理器 (RealFactorManager)")
 except ImportError as e:
-    # 回退到原始因子管理器
-    print(f"⚠ 真实因子管理器导入失败: {e}，使用原始因子管理器")
-    from factors.factor_manager import FactorManager
+    # 回退到安全因子管理器（禁用伪因子）
+    print(f"⚠ 真实因子管理器导入失败: {e}，使用安全因子管理器（伪因子已禁用）")
+    
+    # 导入原始因子管理器作为基类，以及因子类
+    from factors.factor_manager import FactorManager as OriginalFactorManager
+    from factors.factor_manager import TechnicalFactor, SentimentFactor
+    
+    # 定义安全因子管理器：禁用基本面伪因子
+    class FactorManager(OriginalFactorManager):
+        """安全因子管理器（禁用伪因子）"""
+        
+        def _register_factors(self):
+            """只注册技术因子，禁用基本面伪因子"""
+            # 技术因子 (14个真实因子)
+            tech_factors = {
+                'momentum_1m': ('1个月动量', TechnicalFactor.momentum_1m, 'technical'),
+                'momentum_3m': ('3个月动量', TechnicalFactor.momentum_3m, 'technical'),
+                'momentum_6m': ('6个月动量', TechnicalFactor.momentum_6m, 'technical'),
+                'volatility_20d': ('20日波动率', TechnicalFactor.volatility_20d, 'technical'),
+                'volatility_60d': ('60日波动率', TechnicalFactor.volatility_60d, 'technical'),
+                'ma_cross_5_20': ('5-20日均线金叉', TechnicalFactor.ma_cross_5_20, 'technical'),
+                'ma_cross_10_30': ('10-30日均线金叉', TechnicalFactor.ma_cross_10_30, 'technical'),
+                'volume_breakout': ('成交量突破', TechnicalFactor.volume_breakout, 'technical'),
+                'macd_signal': ('MACD信号', TechnicalFactor.macd_signal, 'technical'),
+                'rsi_14': ('14日RSI', TechnicalFactor.rsi_14, 'technical'),
+                'bollinger_position': ('布林带位置', TechnicalFactor.bollinger_band_position, 'technical'),
+                'atr_14': ('14日ATR', TechnicalFactor.atr_14, 'technical'),
+                'price_volume_trend': ('价量趋势', TechnicalFactor.price_volume_trend, 'technical'),
+                'gap_up_down': ('跳空缺口', TechnicalFactor.gap_up_down, 'technical')
+            }
+            
+            # 情绪因子 (5个模拟因子，但相对安全)
+            sent_factors = {
+                'news_sentiment': ('新闻情绪', SentimentFactor.news_sentiment_simulation, 'sentiment'),
+                'social_buzz': ('社交媒体热度', SentimentFactor.social_media_buzz_simulation, 'sentiment'),
+                'institution_research': ('机构调研', SentimentFactor.institution_research_simulation, 'sentiment'),
+                'dragon_tiger': ('龙虎榜', SentimentFactor.dragon_tiger_simulation, 'sentiment'),
+                'margin_trading': ('融资融券', SentimentFactor.margin_trading_simulation, 'sentiment')
+            }
+            
+            # 合并所有因子（排除基本面伪因子）
+            all_factors = {**tech_factors, **sent_factors}
+            
+            for factor_id, (desc, func, category) in all_factors.items():
+                self.factors[factor_id] = {
+                    'name': factor_id,
+                    'description': desc,
+                    'function': func,
+                    'category': category
+                }
+                self.category_stats[category] = self.category_stats.get(category, 0) + 1
+            
+            print(f"⚠ 安全模式：注册{len(self.factors)}个因子（{len(tech_factors)}技术+{len(sent_factors)}情绪），基本面伪因子已禁用")
 
 
 # PIT因子管理器（Point-in-Time数据合规性）

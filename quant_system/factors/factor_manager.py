@@ -161,64 +161,115 @@ class FundamentalFactor(FactorBase):
     
     @staticmethod
     def pe_ratio(df: pd.DataFrame) -> pd.Series:
-        """市盈率（模拟）"""
-        # 实际应用中需要EPS数据
-        # 这里使用价格/模拟EPS
-        simulated_eps = df['close'].rolling(252).mean() / 20  # 模拟EPS
-        pe = df['close'] / simulated_eps
-        # 处理极值
-        pe = pe.clip(lower=0, upper=100)
-        return 1 / pe  # 低PE得分高
+        """市盈率（已禁用 - 使用真实因子管理器替代）"""
+        import warnings
+        warnings.warn(
+            "FundamentalFactor.pe_ratio 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实 PE 数据。",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        raise RuntimeError(
+            "FundamentalFactor.pe_ratio 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实 PE 数据。"
+            "解决方案：from real_factors.real_factor_manager import RealFactorManager"
+        )
     
     @staticmethod
     def pb_ratio(df: pd.DataFrame) -> pd.Series:
-        """市净率（模拟）"""
-        # 实际应用中需要BPS数据
-        simulated_bps = df['close'].rolling(252).mean() / 2  # 模拟BPS
-        pb = df['close'] / simulated_bps
-        pb = pb.clip(lower=0, upper=10)
-        return 1 / pb  # 低PB得分高
+        """市净率（已禁用 - 使用真实因子管理器替代）"""
+        import warnings
+        warnings.warn(
+            "FundamentalFactor.pb_ratio 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实 PB 数据。",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        raise RuntimeError(
+            "FundamentalFactor.pb_ratio 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实 PB 数据。"
+            "解决方案：from real_factors.real_factor_manager import RealFactorManager"
+        )
     
     @staticmethod
     def roe_simulation(df: pd.DataFrame) -> pd.Series:
-        """ROE模拟（使用价格动量作为代理）"""
-        # 实际ROE需要净利润和净资产
-        # 这里使用动量作为代理
-        momentum = df['close'].pct_change(66)  # 3个月动量
-        roe_sim = (momentum + 0.2).clip(lower=0, upper=0.5)  # 模拟ROE范围0-50%
-        return roe_sim
+        """ROE模拟（已禁用 - 使用真实因子管理器替代）"""
+        import warnings
+        warnings.warn(
+            "FundamentalFactor.roe_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实 ROE 数据。",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        raise RuntimeError(
+            "FundamentalFactor.roe_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实 ROE 数据。"
+            "解决方案：from real_factors.real_factor_manager import RealFactorManager"
+        )
     
     @staticmethod
     def profit_growth_simulation(df: pd.DataFrame) -> pd.Series:
-        """利润增长模拟"""
-        price_growth = df['close'].pct_change(132)  # 6个月增长
-        profit_growth = price_growth * 1.5  # 假设利润增长比价格增长快
-        return profit_growth.clip(lower=-0.5, upper=1.0)
+        """利润增长模拟（已禁用 - 使用真实因子管理器替代）"""
+        import warnings
+        warnings.warn(
+            "FundamentalFactor.profit_growth_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实利润增长数据。",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        raise RuntimeError(
+            "FundamentalFactor.profit_growth_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实利润增长数据。"
+            "解决方案：from real_factors.real_factor_manager import RealFactorManager"
+        )
     
     @staticmethod
     def debt_ratio_simulation(df: pd.DataFrame) -> pd.Series:
-        """负债率模拟（低负债率得分高）"""
-        # 使用波动率作为代理：高波动可能对应高风险/高负债
-        volatility = df['close'].pct_change().rolling(60).std()
-        debt_ratio = volatility * 2  # 模拟负债率
-        return 1 - debt_ratio.clip(lower=0, upper=1)  # 低负债率得分高
+        """负债率模拟（已禁用 - 使用真实因子管理器替代）"""
+        import warnings
+        warnings.warn(
+            "FundamentalFactor.debt_ratio_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实负债率数据。",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        raise RuntimeError(
+            "FundamentalFactor.debt_ratio_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实负债率数据。"
+            "解决方案：from real_factors.real_factor_manager import RealFactorManager"
+        )
     
     @staticmethod
     def cash_flow_yield_simulation(df: pd.DataFrame) -> pd.Series:
-        """现金流收益率模拟"""
-        # 使用股息率代理
-        dividend_yield = df['close'].rolling(252).mean() / df['close'] * 0.03  # 模拟3%股息率
-        return dividend_yield.clip(lower=0, upper=0.1)
+        """现金流收益率模拟（已禁用 - 使用真实因子管理器替代）"""
+        import warnings
+        warnings.warn(
+            "FundamentalFactor.cash_flow_yield_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实现金流收益率数据。",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        raise RuntimeError(
+            "FundamentalFactor.cash_flow_yield_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实现金流收益率数据。"
+            "解决方案：from real_factors.real_factor_manager import RealFactorManager"
+        )
     
     @staticmethod
     def peg_ratio_simulation(df: pd.DataFrame) -> pd.Series:
-        """PEG比率模拟"""
-        pe = FundamentalFactor.pe_ratio(df)
-        growth = FundamentalFactor.profit_growth_simulation(df)
-        peg = (1 / pe) / (growth * 100)  # PEG = PE / 增长
-        peg = peg.replace([np.inf, -np.inf], np.nan).fillna(10)
-        peg = peg.clip(lower=0, upper=10)
-        return 1 / peg  # 低PEG得分高
+        """PEG比率模拟（已禁用 - 使用真实因子管理器替代）"""
+        import warnings
+        warnings.warn(
+            "FundamentalFactor.peg_ratio_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实 PEG 数据。",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        raise RuntimeError(
+            "FundamentalFactor.peg_ratio_simulation 是伪因子，已禁用。"
+            "请使用 RealFactorManager 获取真实 PEG 数据。"
+            "解决方案：from real_factors.real_factor_manager import RealFactorManager"
+        )
 
 
 class SentimentFactor(FactorBase):
@@ -292,16 +343,14 @@ class FactorManager:
             'gap_up_down': ('跳空缺口', TechnicalFactor.gap_up_down, 'technical')
         }
         
-        # 基本面因子 (7个)
-        fund_factors = {
-            'pe_ratio': ('市盈率', FundamentalFactor.pe_ratio, 'fundamental'),
-            'pb_ratio': ('市净率', FundamentalFactor.pb_ratio, 'fundamental'),
-            'roe': ('ROE', FundamentalFactor.roe_simulation, 'fundamental'),
-            'profit_growth': ('利润增长', FundamentalFactor.profit_growth_simulation, 'fundamental'),
-            'debt_ratio': ('负债率', FundamentalFactor.debt_ratio_simulation, 'fundamental'),
-            'cash_flow_yield': ('现金流收益率', FundamentalFactor.cash_flow_yield_simulation, 'fundamental'),
-            'peg_ratio': ('PEG比率', FundamentalFactor.peg_ratio_simulation, 'fundamental')
-        }
+        # 基本面因子 (已禁用 - 使用真实因子管理器替代)
+        # 警告：以下伪因子会导致因子冗余，与动量因子高度相关
+        # 1. pe_ratio: 用 rolling(252).mean() / 20 模拟 EPS
+        # 2. roe_simulation: 直接返回 3 个月动量值作为 ROE
+        # 3. profit_growth_simulation: 把价格增长乘以 1.5 系数当利润增长
+        # 解决方案：使用 real_factor_manager.py (基于Baostock真实财报数据)
+        fund_factors = {}
+        print("⚠ 基本面伪因子已禁用，请使用 RealFactorManager 获取真实财报数据")
         
         # 情绪因子 (5个)
         sent_factors = {
