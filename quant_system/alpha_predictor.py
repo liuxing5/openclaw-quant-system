@@ -350,11 +350,21 @@ class AlphaPredictor:
         if len(X_train) < 50 or len(X_test) < 20:
             raise ValueError(f"训练数据不足: 训练集{len(X_train)}个, 测试集{len(X_test)}个")
         
+        # ✅ 新增：从训练集末尾切出 early stopping 验证集（不碰 X_test）
+        # 三段切分：训练集（60%）、early stopping 验证集（20%）、IC 评估集（20%）
+        val_split = int(len(X_train) * 0.8)
+        X_tr = X_train.iloc[:val_split]
+        y_tr = y_train.iloc[:val_split]
+        X_val = X_train.iloc[val_split:]
+        y_val = y_train.iloc[val_split:]
+        
+        print(f"  三段切分完成: 训练集={len(X_tr)}个样本, 早停验证集={len(X_val)}个样本, IC评估集={len(X_test)}个样本")
+        
         # 训练模型
         if self.model_type == 'lightgbm' and LIGHTGBM_AVAILABLE and early_stopping:
-            # LightGBM早停
-            train_data = lgb.Dataset(X_train, label=y_train)
-            valid_data = lgb.Dataset(X_test, label=y_test, reference=train_data)
+            # LightGBM早停 - 使用独立的早停验证集
+            train_data = lgb.Dataset(X_tr, label=y_tr)
+            valid_data = lgb.Dataset(X_val, label=y_val, reference=train_data)
             
             params = {
                 'objective': 'regression',
@@ -379,15 +389,15 @@ class AlphaPredictor:
             
             # 提取特征重要性
             self.feature_importance = pd.DataFrame({
-                'feature': X_train.columns,
+                'feature': X_tr.columns,
                 'importance': self.model.feature_importance()
             }).sort_values('importance', ascending=False)
             
         elif self.model_type == 'xgboost' and XGBOOST_AVAILABLE and early_stopping:
-            # XGBoost早停
+            # XGBoost早停 - 使用独立的早停验证集
             self.model.fit(
-                X_train, y_train,
-                eval_set=[(X_test, y_test)],
+                X_tr, y_tr,
+                eval_set=[(X_val, y_val)],
                 eval_metric=eval_metric,
                 early_stopping_rounds=10,
                 verbose=False
@@ -395,33 +405,36 @@ class AlphaPredictor:
             
             # 特征重要性
             self.feature_importance = pd.DataFrame({
-                'feature': X_train.columns,
+                'feature': X_tr.columns,
                 'importance': self.model.feature_importances_
             }).sort_values('importance', ascending=False)
             
         else:
             # 标准scikit-learn训练
-            self.model.fit(X_train, y_train)
+            self.model.fit(X_tr, y_tr)
             
             # 特征重要性（如果可用）
             if hasattr(self.model, 'feature_importances_'):
                 self.feature_importance = pd.DataFrame({
-                    'feature': X_train.columns,
+                    'feature': X_tr.columns,
                     'importance': self.model.feature_importances_
                 }).sort_values('importance', ascending=False)
             elif hasattr(self.model, 'coef_'):
                 self.feature_importance = pd.DataFrame({
-                    'feature': X_train.columns,
+                    'feature': X_tr.columns,
                     'importance': np.abs(self.model.coef_)
                 }).sort_values('importance', ascending=False)
         
         # 评估模型
-        train_pred = self.predict(X_train)
+        train_pred = self.predict(X_tr)
+        val_pred = self.predict(X_val) if len(X_val) > 0 else None
         test_pred = self.predict(X_test)
         
-        train_mse = mean_squared_error(y_train, train_pred) if SKLEARN_AVAILABLE else None
+        train_mse = mean_squared_error(y_tr, train_pred) if SKLEARN_AVAILABLE else None
+        val_mse = mean_squared_error(y_val, val_pred) if SKLEARN_AVAILABLE and val_pred is not None else None
         test_mse = mean_squared_error(y_test, test_pred) if SKLEARN_AVAILABLE else None
-        train_r2 = r2_score(y_train, train_pred) if SKLEARN_AVAILABLE else None
+        train_r2 = r2_score(y_tr, train_pred) if SKLEARN_AVAILABLE else None
+        val_r2 = r2_score(y_val, val_pred) if SKLEARN_AVAILABLE and val_pred is not None else None
         test_r2 = r2_score(y_test, test_pred) if SKLEARN_AVAILABLE else None
         
         # 计算IC（信息系数） - 排除末尾泄露行（确保没有NaN）
@@ -444,21 +457,26 @@ class AlphaPredictor:
         # 存储训练结果
         self.training_history = {
             'model_type': self.model_type,
-            'train_samples': len(X_train),
+            'train_samples': len(X_tr),
+            'val_samples': len(X_val),
             'test_samples': len(X_test),
             'train_mse': train_mse,
+            'val_mse': val_mse,
             'test_mse': test_mse,
             'train_r2': train_r2,
+            'val_r2': val_r2,
             'test_r2': test_r2,
             'test_ic': test_ic,
             'test_rank_ic': test_rank_ic,
-            'feature_count': len(X_train.columns),
+            'feature_count': len(X_tr.columns),
             'top_features': self.feature_importance.head(10).to_dict('records') if self.feature_importance is not None else []
         }
         
         self.validation_score = test_r2
         
         print(f"训练完成:")
+        print(f"  训练集R²: {train_r2:.4f}" if train_r2 is not None else "  训练集R²: N/A")
+        print(f"  验证集R²: {val_r2:.4f}" if val_r2 is not None else "  验证集R²: N/A")
         print(f"  测试集R²: {test_r2:.4f}" if test_r2 is not None else "  测试集R²: N/A")
         print(f"  测试集IC: {test_ic:.4f}")
         print(f"  测试集Rank IC: {test_rank_ic:.4f}")
