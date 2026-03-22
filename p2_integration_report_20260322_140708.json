@@ -1,0 +1,15 @@
+{
+  "test_timestamp": "2026-03-22T14:07:08.690891",
+  "test_duration_seconds": 23.27901,
+  "results": {
+    "market_cap_fetcher": true,
+    "liquidity_calculator_real": true,
+    "orderbook_stats": true,
+    "vectorized_backtest_integration": true
+  },
+  "summary": {
+    "total_tests": 4,
+    "passed_tests": 4,
+    "success_rate": 1.0
+  }
+}

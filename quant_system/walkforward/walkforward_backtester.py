@@ -542,7 +542,8 @@ class WalkForwardBacktester:
                             # 使用流动性计算器获取真实ADV数据
                             from utils.liquidity_calculator import LiquidityCalculator
                             
-                            liquidity_data = LiquidityCalculator.get_liquidity_data_simple(
+                            # 使用保持向后兼容的类方法
+                            liquidity_data = LiquidityCalculator.get_liquidity_data_simple_classmethod(
                                 symbol=symbol, 
                                 prices_df=prices_df
                             )

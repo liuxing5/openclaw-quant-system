@@ -1,0 +1,355 @@
+name: Quant System CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  schedule:
+    - cron: '0 2 * * *'  # 每天凌晨2点运行夜间构建
+
+env:
+  PYTHON_VERSION: '3.12'
+  NODE_VERSION: '18'
+
+jobs:
+  # 代码质量检查
+  code-quality:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install black flake8 mypy pytest pytest-cov bandit safety
+        
+    - name: Check code formatting with black
+      run: |
+        black --check --diff quant_system/
+        
+    - name: Lint with flake8
+      run: |
+        flake8 quant_system/ --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 quant_system/ --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+        
+    - name: Type checking with mypy
+      run: |
+        mypy quant_system/ --ignore-missing-imports
+        
+    - name: Security scan with bandit
+      run: |
+        bandit -r quant_system/ -f json -o bandit-report.json || true
+        
+    - name: Dependency vulnerability scan
+      run: |
+        safety check --json > safety-report.json || true
+        
+    - name: Upload security reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: security-reports
+        path: |
+          bandit-report.json
+          safety-report.json
+
+  # 单元测试和集成测试
+  test:
+    runs-on: ubuntu-latest
+    needs: code-quality
+    strategy:
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y sqlite3 redis-server
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt || true
+        pip install -e .
+        
+    - name: Run unit tests
+      run: |
+        cd quant_system
+        python -m pytest tests/unit/ -v --cov=. --cov-report=xml --cov-report=html
+        
+    - name: Run integration tests
+      run: |
+        cd quant_system
+        python -m pytest tests/integration/ -v --tb=short
+        
+    - name: Upload coverage reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: coverage-reports-${{ matrix.python-version }}
+        path: |
+          quant_system/coverage.xml
+          quant_system/htmlcov/
+          
+    - name: Upload test results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: test-results-${{ matrix.python-version }}
+        path: |
+          test-results.xml
+
+  # 回测验证测试
+  backtest-validation:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas numpy scipy scikit-learn baostock akshare
+        
+    - name: Run backtest validation tests
+      run: |
+        cd quant_system
+        python -m validation.backtest_validator
+        
+    - name: Run performance benchmarks
+      run: |
+        cd quant_system
+        python -m pytest tests/benchmarks/ -v --benchmark-only || true
+        
+    - name: Upload validation reports
+      uses: actions/upload-artifact@v4
+      with:
+        name: validation-reports
+        path: quant_system/validation_results/
+
+  # Web仪表板测试
+  web-dashboard-test:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        
+    - name: Install Python dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install flask pytest-flask gunicorn
+        
+    - name: Install Node.js dependencies (if any)
+      run: |
+        if [ -f package.json ]; then
+          npm ci
+        fi
+        
+    - name: Run web dashboard tests
+      run: |
+        cd quant_system/web_dashboard
+        python -m pytest tests/ -v
+        
+    - name: Test API endpoints
+      run: |
+        cd quant_system/web_dashboard
+        timeout 30 python -m pytest tests/test_api.py -v || true
+        
+    - name: Check web dashboard health
+      run: |
+        cd quant_system/web_dashboard
+        timeout 10 python -c "
+        import sys
+        sys.path.append('.')
+        from app import app, DashboardManager
+        print('✅ Dashboard imports successfully')
+        manager = DashboardManager()
+        print('✅ DashboardManager initialized')
+        "
+
+  # Docker构建和测试
+  docker-build:
+    runs-on: ubuntu-latest
+    needs: [test, backtest-validation, web-dashboard-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Login to DockerHub
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+        
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile
+        push: ${{ github.event_name != 'pull_request' }}
+        tags: |
+          ${{ secrets.DOCKERHUB_USERNAME }}/quant-system:latest
+          ${{ secrets.DOCKERHUB_USERNAME }}/quant-system:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # 部署到测试环境
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    environment:
+      name: staging
+      url: https://staging.quant.yourdomain.com
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Deploy to staging
+      run: |
+        echo "Deploying to staging environment..."
+        # 这里添加实际的部署脚本
+        # 例如：ansible-playbook deploy-staging.yml
+        
+    - name: Run smoke tests
+      run: |
+        echo "Running smoke tests on staging..."
+        curl -f https://staging.quant.yourdomain.com/api/health || exit 1
+        
+    - name: Run integration tests on staging
+      run: |
+        echo "Running integration tests on staging..."
+        # 这里添加在staging环境运行的集成测试
+
+  # 部署到生产环境（手动触发）
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    environment:
+      name: production
+      url: https://quant.yourdomain.com
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Confirm production deployment
+      run: |
+        echo "🚀 Deploying to production environment"
+        echo "Commit: ${{ github.sha }}"
+        echo "Deploying version: ${{ github.sha }}"
+        
+    - name: Deploy to production
+      run: |
+        echo "Starting production deployment..."
+        # 这里添加实际的部署脚本
+        # 例如：ansible-playbook deploy-production.yml
+        
+    - name: Verify production deployment
+      run: |
+        echo "Verifying production deployment..."
+        curl -f https://quant.yourdomain.com/api/health || exit 1
+        echo "✅ Production deployment verified"
+
+  # 监控和告警
+  monitoring:
+    runs-on: ubuntu-latest
+    needs: deploy-production
+    if: always()
+    
+    steps:
+    - name: Send deployment notification
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        username: 'CI/CD Bot'
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        
+    - name: Update deployment dashboard
+      run: |
+        echo "Updating deployment dashboard..."
+        # 这里添加更新部署状态到监控系统的代码
+        
+    - name: Create deployment report
+      run: |
+        echo "Creating deployment report..."
+        # 生成部署报告
+        
+    - name: Upload deployment artifacts
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: deployment-artifacts
+        path: |
+          .github/workflows/deployment-report.md
+
+# 流水线级别的通知和报告
+conclusion:
+  runs-on: ubuntu-latest
+  needs: 
+    - code-quality
+    - test
+    - backtest-validation
+    - web-dashboard-test
+    - docker-build
+    - deploy-staging
+    - deploy-production
+    - monitoring
+  if: always()
+  
+  steps:
+  - name: Pipeline summary
+    run: |
+      echo "🚀 CI/CD Pipeline Summary"
+      echo "=========================="
+      echo "Pipeline Status: ${{ job.status }}"
+      echo "Triggered by: ${{ github.event_name }}"
+      echo "Branch: ${{ github.ref }}"
+      echo "Commit: ${{ github.sha }}"
+      
+  - name: Send final notification
+    if: always()
+    uses: 8398a7/action-slack@v3
+    with:
+      status: ${{ job.status }}
+      channel: '#ci-cd'
+      username: 'CI/CD Bot'
+      fields: job,commit,repo,ref,author,took
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

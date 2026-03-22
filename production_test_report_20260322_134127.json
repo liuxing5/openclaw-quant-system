@@ -1,0 +1,114 @@
+{
+  "test_timestamp": "2026-03-22T13:41:27.511469",
+  "test_duration_seconds": 0.466756,
+  "results": {
+    "module_imports": true,
+    "walkforward_config": true,
+    "orderbook_initialization": true,
+    "liquidity_calculator": true,
+    "market_wide_backtest": {
+      "summary": {
+        "n_stocks": 8,
+        "total_time": 0.02031731605529785,
+        "avg_return": 0.0006547474691774163,
+        "std_return": 0.003866409131945831,
+        "advanced_slippage_rate": 0.625
+      },
+      "detailed_results": [
+        {
+          "symbol": "600519.SH",
+          "total_return": -0.005167586589402973,
+          "sharpe_ratio": -8.960838610096538,
+          "max_drawdown": -0.005540999876687436,
+          "trade_count": 1,
+          "execution_time": 0.004241466522216797,
+          "advanced_slippage_used": true,
+          "liquidity_source": "unknown",
+          "avg_volume": 9236880.581699347
+        },
+        {
+          "symbol": "000858.SZ",
+          "total_return": 0.006155138749967204,
+          "sharpe_ratio": -3.9139665083960256,
+          "max_drawdown": -0.002005857514436107,
+          "trade_count": 1,
+          "execution_time": 0.002645730972290039,
+          "advanced_slippage_used": true,
+          "liquidity_source": "unknown",
+          "avg_volume": 9028076.287581699
+        },
+        {
+          "symbol": "300750.SZ",
+          "total_return": 0.005136583948331941,
+          "sharpe_ratio": -1.9881532808080604,
+          "max_drawdown": -0.006307874141180684,
+          "trade_count": 0,
+          "execution_time": 0.002177715301513672,
+          "advanced_slippage_used": true,
+          "liquidity_source": "unknown",
+          "avg_volume": 8633032.248366013
+        },
+        {
+          "symbol": "000725.SZ",
+          "total_return": 0.0,
+          "sharpe_ratio": -6.972213902555718e+16,
+          "max_drawdown": 0.0,
+          "trade_count": 0,
+          "execution_time": 0.0017580986022949219,
+          "advanced_slippage_used": false,
+          "liquidity_source": "unknown",
+          "avg_volume": 2995630.5555555555
+        },
+        {
+          "symbol": "002475.SZ",
+          "total_return": 0.002447127318809361,
+          "sharpe_ratio": -2.022764502792268,
+          "max_drawdown": -0.011206174466688187,
+          "trade_count": 1,
+          "execution_time": 0.002477407455444336,
+          "advanced_slippage_used": true,
+          "liquidity_source": "unknown",
+          "avg_volume": 2935464.222222222
+        },
+        {
+          "symbol": "300059.SZ",
+          "total_return": -0.0033332836742862026,
+          "sharpe_ratio": -2.2506498851947776,
+          "max_drawdown": -0.014156947583071625,
+          "trade_count": 1,
+          "execution_time": 0.002703428268432617,
+          "advanced_slippage_used": true,
+          "liquidity_source": "unknown",
+          "avg_volume": 1070994.0522875816
+        },
+        {
+          "symbol": "000100.SZ",
+          "total_return": 0.0,
+          "sharpe_ratio": -6.972213902555718e+16,
+          "max_drawdown": 0.0,
+          "trade_count": 0,
+          "execution_time": 0.0017468929290771484,
+          "advanced_slippage_used": false,
+          "liquidity_source": "unknown",
+          "avg_volume": 1061235.4117647058
+        },
+        {
+          "symbol": "002241.SZ",
+          "total_return": 0.0,
+          "sharpe_ratio": -6.972213902555718e+16,
+          "max_drawdown": 0.0,
+          "trade_count": 0,
+          "execution_time": 0.0016665458679199219,
+          "advanced_slippage_used": false,
+          "liquidity_source": "unknown",
+          "avg_volume": 1090424.9215686275
+        }
+      ]
+    }
+  },
+  "summary": {
+    "total_tests": 5,
+    "passed_tests": 5,
+    "success_rate": 1.0
+  }
+}
