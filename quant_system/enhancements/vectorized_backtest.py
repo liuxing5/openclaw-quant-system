@@ -137,13 +137,28 @@ class VectorizedBacktester:
                 print(f"⚠️ 高级滑点模型初始化失败: {e}")
                 self.liquidity_enforcer = None
         
+        # 初始化订单簿模拟器（用于高级滑点模型）
+        self.order_book_simulator = None
+        if (self.config.use_advanced_slippage and 
+            ADVANCED_SLIPPAGE_AVAILABLE and 
+            OrderBookSimulator is not None):
+            try:
+                self.order_book_simulator = OrderBookSimulator(
+                    max_volume_percentage=self.config.volume_percentage_limit,
+                    use_advanced_slippage=True
+                )
+                print(f"✓ 订单簿模拟器已启用 (最大成交量占比: {self.config.volume_percentage_limit:.0%})")
+            except Exception as e:
+                print(f"⚠️ 订单簿模拟器初始化失败: {e}")
+                self.order_book_simulator = None
+        
     def run_vectorized_backtest(self, 
-                               symbol: str,
-                               prices: pd.DataFrame,
-                               signals: pd.Series,
-                               start_date: Optional[pd.Timestamp] = None,
-                               end_date: Optional[pd.Timestamp] = None,
-                               liquidity_data: Optional[Dict[str, Any]] = None) -> BacktestResult:
+                                symbol: str,
+                                prices: pd.DataFrame,
+                                signals: pd.Series,
+                                start_date: Optional[pd.Timestamp] = None,
+                                end_date: Optional[pd.Timestamp] = None,
+                                liquidity_data: Optional[Dict[str, Any]] = None) -> BacktestResult:
         """
         运行向量化回测
         
@@ -297,16 +312,63 @@ class VectorizedBacktester:
                     # 确定交易时间（简化：根据日期时间判断）
                     trade_time = 'midday'  # 默认盘中
                     
-                    # 计算冲击成本
-                    slippage_result = self.liquidity_enforcer.slippage_model.calculate_slippage(
-                        stock_profile=stock_profile,
-                        trade_side='buy',
-                        trade_value=trade_value_estimate,
-                        trade_time=trade_time,
-                        market_regime=market_regime
-                    )
-                    
-                    impact_pct = slippage_result['impact_pct']
+                    # 计算冲击成本（使用订单簿模拟器或高级滑点模型）
+                    if self.order_book_simulator is not None:
+                        # 获取当日成交量、高低价
+                        daily_volume = prices.iloc[i]['volume']
+                        daily_high = prices.iloc[i]['high']
+                        daily_low = prices.iloc[i]['low']
+                        # 估算订单股数（基于可用资金和估算价格）
+                        estimated_shares = int(available_cash * 0.8 / open_price)  # 假设使用80%资金
+                        
+                        # 调用订单簿模拟器
+                        order_result = self.order_book_simulator.simulate_order(
+                            symbol=symbol,
+                            order_side='buy',
+                            order_volume=estimated_shares,
+                            order_price=open_price,
+                            daily_volume=daily_volume,
+                            daily_high=daily_high,
+                            daily_low=daily_low,
+                            adv_20d=stock_profile.adv_20d,
+                            market_cap=stock_profile.market_cap,
+                            is_st=stock_profile.is_st,
+                            regime=market_regime
+                        )
+                        
+                        # 使用模拟结果
+                        impact_bps = order_result['total_cost_bps']
+                        impact_pct = impact_bps / 10000.0  # bp转百分比
+                        buy_price = order_result['avg_execution_price']
+                        order_status = order_result['order_status']
+                        liquidity_check = order_result['liquidity_check']
+                        
+                        if order_status == 'rejected':
+                            # 订单被拒绝，跳过此交易
+                            print(f"订单被拒绝: {liquidity_check['message']}")
+                            continue
+                        
+                        # 根据实际执行股数调整（如果部分执行）
+                        if order_status == 'partially_executed':
+                            execution_volume = order_result['execution_volume']
+                            # 调整shares变量（将在后续使用）
+                            shares = execution_volume
+                        
+                    elif self.liquidity_enforcer is not None and self.liquidity_enforcer.slippage_model is not None:
+                        # 回退到高级滑点模型
+                        slippage_result = self.liquidity_enforcer.slippage_model.calculate_slippage(
+                            stock_profile=stock_profile,
+                            trade_side='buy',
+                            trade_value=trade_value_estimate,
+                            trade_time=trade_time,
+                            market_regime=market_regime
+                        )
+                        impact_pct = slippage_result['impact_pct']
+                        buy_price = open_price * (1 + impact_pct)
+                    else:
+                        # 使用固定滑点率
+                        buy_price = open_price * (1 + self.config.slippage_rate)
+                        impact_pct = self.config.slippage_rate
                     buy_price = open_price * (1 + impact_pct)
                     advanced_slippage_used = True
                 else:
@@ -352,46 +414,46 @@ class VectorizedBacktester:
                     
                 # 记录交易
                 # 应用成交量占比过滤器（如果启用）
-    if self.volume_filter is not None:
-        daily_volume = prices.iloc[i]['volume']
-        if daily_volume > 0:
-            liquidity_check = self.volume_filter.check_order_size(
-                order_volume=shares,
-                daily_volume=daily_volume,
-                symbol=symbol
-            )
-            if not liquidity_check['allowed']:
-                # 订单超过流动性限制，调整订单大小
-                adjustment = self.volume_filter.adjust_order_for_liquidity(
-                    order_volume=shares,
-                    daily_volume=daily_volume
+                if self.volume_filter is not None:
+                    daily_volume = prices.iloc[i]['volume']
+                    if daily_volume > 0:
+                        liquidity_check = self.volume_filter.check_order_size(
+                            order_volume=shares,
+                            daily_volume=daily_volume,
+                            symbol=symbol
+                        )
+                        if not liquidity_check['allowed']:
+                            # 订单超过流动性限制，调整订单大小
+                            adjustment = self.volume_filter.adjust_order_for_liquidity(
+                                order_volume=shares,
+                                daily_volume=daily_volume
+                            )
+                            if adjustment['passes_check']:
+                                shares = int(adjustment['adjusted_volume'])
+                                print(f"流动性调整: {adjustment['reason']}")
+                            else:
+                                # 无法调整，跳过此交易
+                                print(f"流动性限制: 订单被拒绝，{liquidity_check['message']}")
+                                continue
+                
+                trade = TradeRecord(
+                    date=dates[i],
+                    symbol=symbol,
+                    action='BUY',
+                    shares=shares,
+                    price=buy_price,
+                    value=trade_value,
+                    commission=commission,
+                    slippage=open_price * impact_pct,  # 使用实际冲击成本
+                    position_before=0,
+                    position_after=shares,
+                    cash_before=cash[i-1],
+                    cash_after=cash[i],
+                    metadata=metadata
                 )
-                if adjustment['passes_check']:
-                    shares = int(adjustment['adjusted_volume'])
-                    print(f"流动性调整: {adjustment['reason']}")
-                else:
-                    # 无法调整，跳过此交易
-                    print(f"流动性限制: 订单被拒绝，{liquidity_check['message']}")
-                    continue
-    
-    trade = TradeRecord(
-        date=dates[i],
-        symbol=symbol,
-        action='BUY',
-        shares=shares,
-        price=buy_price,
-        value=trade_value,
-        commission=commission,
-        slippage=open_price * impact_pct,  # 使用实际冲击成本
-        position_before=0,
-        position_after=shares,
-        cash_before=cash[i-1],
-        cash_after=cash[i],
-        metadata=metadata
-    )
-    trade_records.append(trade)
+                trade_records.append(trade)
             
-            # 卖出信号
+        # 卖出信号
             elif sell_signals[i] and positions[i] > 0:
                 # 计算实际卖出价格（考虑滑点）
                 if self.config.use_advanced_slippage and stock_profile is not None:
@@ -466,44 +528,44 @@ class VectorizedBacktester:
                     
                 # 记录交易
                 # 应用成交量占比过滤器（如果启用）
-    if self.volume_filter is not None:
-        daily_volume = prices.iloc[i]['volume']
-        if daily_volume > 0:
-            liquidity_check = self.volume_filter.check_order_size(
-                order_volume=shares,
-                daily_volume=daily_volume,
-                symbol=symbol
-            )
-            if not liquidity_check['allowed']:
-                # 订单超过流动性限制，调整订单大小
-                adjustment = self.volume_filter.adjust_order_for_liquidity(
-                    order_volume=shares,
-                    daily_volume=daily_volume
-                )
-                if adjustment['passes_check']:
-                    shares = int(adjustment['adjusted_volume'])
-                    print(f"流动性调整: {adjustment['reason']}")
-                else:
-                    # 无法调整，跳过此交易
-                    print(f"流动性限制: 订单被拒绝，{liquidity_check['message']}")
-                    continue
+                    if self.volume_filter is not None:
+                        daily_volume = prices.iloc[i]['volume']
+                        if daily_volume > 0:
+                            liquidity_check = self.volume_filter.check_order_size(
+                                order_volume=shares,
+                                daily_volume=daily_volume,
+                                symbol=symbol
+                            )
+                            if not liquidity_check['allowed']:
+                                # 订单超过流动性限制，调整订单大小
+                                adjustment = self.volume_filter.adjust_order_for_liquidity(
+                                    order_volume=shares,
+                                    daily_volume=daily_volume
+                                )
+                                if adjustment['passes_check']:
+                                    shares = int(adjustment['adjusted_volume'])
+                                    print(f"流动性调整: {adjustment['reason']}")
+                                else:
+                                    # 无法调整，跳过此交易
+                                    print(f"流动性限制: 订单被拒绝，{liquidity_check['message']}")
+                                    continue
     
-    trade = TradeRecord(
-        date=dates[i],
-        symbol=symbol,
-        action='SELL',
-        shares=shares,
-        price=sell_price,
-        value=trade_value,
-        commission=commission,
-        slippage=open_price * impact_pct,  # 使用实际冲击成本
-        position_before=position_before,
-        position_after=0,
-        cash_before=cash[i-1],
-        cash_after=cash[i],
-        metadata=metadata
-    )
-    trade_records.append(trade)
+                    trade = TradeRecord(
+                        date=dates[i],
+                        symbol=symbol,
+                        action='SELL',
+                        shares=shares,
+                        price=sell_price,
+                        value=trade_value,
+                        commission=commission,
+                        slippage=open_price * impact_pct,  # 使用实际冲击成本
+                        position_before=position_before,
+                        position_after=0,
+                        cash_before=cash[i-1],
+                        cash_after=cash[i],
+                        metadata=metadata
+                    )
+                    trade_records.append(trade)
             
             # 计算当日组合价值
             position_value = positions[i] * current_price
@@ -551,10 +613,10 @@ class VectorizedBacktester:
             return 0.0
     
     def _calculate_performance_metrics(self,
-                                      symbol: str,
-                                      dates: pd.DatetimeIndex,
-                                      portfolio_values: np.ndarray,
-                                      trade_records: List[TradeRecord]) -> BacktestResult:
+                                        symbol: str,
+                                        dates: pd.DatetimeIndex,
+                                        portfolio_values: np.ndarray,
+                                        trade_records: List[TradeRecord]) -> BacktestResult:
         """计算绩效指标"""
         
         # 日收益率
@@ -644,11 +706,11 @@ class VectorizedBacktester:
         )
     
     def run_batch_backtest(self,
-                          symbols: List[str],
-                          prices_dict: Dict[str, pd.DataFrame],
-                          signals_dict: Dict[str, pd.Series],
-                          parallel: bool = True,
-                          max_workers: int = 4) -> Dict[str, BacktestResult]:
+                        symbols: List[str],
+                        prices_dict: Dict[str, pd.DataFrame],
+                        signals_dict: Dict[str, pd.Series],
+                        parallel: bool = True,
+                        max_workers: int = 4) -> Dict[str, BacktestResult]:
         """
         批量回测多支股票
         
