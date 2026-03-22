@@ -111,14 +111,25 @@ class WalkForwardBacktester:
         
         # 初始化回测器
         if VECTORIZED_AVAILABLE:
+            # ✅ 启用高级滑点模型（用户要求修复）
+            # 原问题：walkforward_backtester.py使用固定滑点slippage_rate=0.002
+            # 修复：启用高级滑点模型配置，使用流动性冲击模型
             backtest_config = BacktestConfig(
                 initial_capital=self.config.initial_capital,
                 commission_rate=0.001,
-                slippage_rate=0.002,
-                max_position_pct=0.1
+                slippage_rate=0.002,  # 基础滑点（降级时使用）
+                max_position_pct=0.1,
+                use_advanced_slippage=True,          # ✅ 启用高级滑点模型
+                adv_threshold=3000.0,                # ADV过滤阈值3000万
+                market_cap_threshold=30.0,           # 流通市值阈值30亿
+                enforce_tplus1=True,                 # 强制执行T+1约束
+                enforce_limit_up_down=True,          # 强制执行涨跌停板过滤
+                filter_low_liquidity=True,           # 过滤低流动性股票
+                volume_percentage_limit=0.05         # 成交量占比限制5%
             )
             self.backtester = VectorizedBacktester(backtest_config)
-            print("✓ 向量化回测器加载成功")
+            print("✓ 向量化回测器加载成功（高级滑点模型已启用）")
+            print("  🚀 使用流动性冲击模型：10档流动性分桶、T+1卖出溢价、ST惩罚")
         else:
             self.backtester = None
             print("✗ 向量化回测器不可用")

@@ -16,6 +16,21 @@ from typing import List, Dict, Any, Optional
 import warnings
 warnings.filterwarnings('ignore')
 
+# 交易日历库（优先使用chinese_calendar，其次Baostock）
+try:
+    import chinese_calendar as calendar
+    CHINESE_CALENDAR_AVAILABLE = True
+    print("✓ 中文交易日历库可用")
+except ImportError:
+    CHINESE_CALENDAR_AVAILABLE = False
+    print("⚠ chinese_calendar不可用，尝试使用Baostock")
+
+try:
+    import baostock as bs
+    BAOSTOCK_AVAILABLE = True
+except ImportError:
+    BAOSTOCK_AVAILABLE = False
+
 # 添加路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.database_manager import DatabaseManager
@@ -43,38 +58,85 @@ class DailyDataUpdater:
         }
     
     def _load_trading_calendar(self) -> List[str]:
-        """加载交易日历（简化版，实际应从交易所获取）"""
-        # 这里使用简单逻辑：排除周末
-        # 实际应用中应接入交易所交易日历API
-        
+        """加载交易日历（使用真实节假日数据）"""
         # 生成最近一年的日期
         end_date = datetime.now()
         start_date = end_date - timedelta(days=365)
         
         trading_days = []
         current = start_date
+        
+        print(f"加载交易日历: {start_date.date()} 至 {end_date.date()}")
+        
+        # 方法1: 使用chinese_calendar库（推荐）
+        if CHINESE_CALENDAR_AVAILABLE:
+            print("  使用chinese_calendar库检查节假日...")
+            while current <= end_date:
+                try:
+                    # is_workday 判断是否为工作日（考虑调休）
+                    if calendar.is_workday(current):
+                        trading_days.append(current.strftime('%Y-%m-%d'))
+                except Exception as e:
+                    # 降级到周末检查
+                    if current.weekday() < 5:
+                        trading_days.append(current.strftime('%Y-%m-%d'))
+                current += timedelta(days=1)
+            
+            print(f"  找到 {len(trading_days)} 个交易日（chinese_calendar）")
+            return trading_days
+        
+        # 方法2: 使用Baostock交易日历API
+        if BAOSTOCK_AVAILABLE:
+            try:
+                # 登录Baostock
+                lg = bs.login()
+                if lg.error_code == '0':
+                    # 查询交易日历
+                    rs = bs.query_trade_dates(
+                        start_date=start_date.strftime('%Y-%m-%d'),
+                        end_date=end_date.strftime('%Y-%m-%d')
+                    )
+                    
+                    while (rs.error_code == '0') & rs.next():
+                        row = rs.get_row_data()
+                        date_str = row[0]  # 格式: YYYY-MM-DD
+                        is_trading_day = row[1]  # '1'表示交易日，'0'表示非交易日
+                        
+                        if is_trading_day == '1':
+                            trading_days.append(date_str)
+                    
+                    bs.logout()
+                    print(f"  找到 {len(trading_days)} 个交易日（Baostock）")
+                    return trading_days
+            except Exception as e:
+                print(f"  Baostock交易日历获取失败: {e}")
+                print("  降级到仅周末检查")
+        
+        # 方法3: 降级到仅周末检查（无节假日数据）
+        print("  降级到仅周末检查（无节假日数据）")
         while current <= end_date:
-            # 排除周末（简化处理）
-            if current.weekday() < 5:  # 0-4为周一到周五
+            if current.weekday() < 5:  # 周一至周五
                 trading_days.append(current.strftime('%Y-%m-%d'))
             current += timedelta(days=1)
         
+        print(f"  找到 {len(trading_days)} 个交易日（仅周末检查）")
         return trading_days
     
     def is_trading_day(self, date_str: str = None) -> bool:
-        """判断是否为交易日"""
+        """判断是否为交易日（使用缓存的真实节假日数据）"""
         if date_str is None:
             date_str = datetime.now().strftime('%Y-%m-%d')
         
-        # 检查是否周末
-        date_obj = datetime.strptime(date_str, '%Y-%m-%d')
-        if date_obj.weekday() >= 5:  # 周六、周日
-            return False
+        # 检查缓存是否已加载
+        if not hasattr(self, 'trading_days') or self.trading_days is None:
+            self.trading_days = self._load_trading_calendar()
         
-        # 检查是否在交易日历中（简化）
-        # 实际应检查节假日
+        # O(1)字典查找（转换为set提高查找性能）
+        if not hasattr(self, '_trading_days_set'):
+            self._trading_days_set = set(self.trading_days)
         
-        return True
+        # 检查是否在交易日历中
+        return date_str in self._trading_days_set
     
     def get_last_trading_day(self, date_str: str = None) -> str:
         """获取上一个交易日"""

@@ -159,8 +159,8 @@ class QuantSystem:
                 ]
             },
             # PIT配置
-            'pit_mode': False,              # 是否启用PIT模式
-            'pit_strict_mode': False,       # PIT严格模式（违规时抛出异常）
+            'pit_mode': True,               # ✅ 默认启用PIT模式（用户要求）
+            'pit_strict_mode': False,       # PIT严格模式（违规时抛出异常），默认False（警告模式）
             'pit_enable_caching': True,     # 启用PIT缓存
             'pit_current_date': None,       # PIT当前日期（自动设置）
         }
@@ -175,7 +175,11 @@ class QuantSystem:
         # 初始化PIT因子管理器
         self.pit_factor_manager = None
         self.active_factor_manager = self.factor_manager
-        if self.config.get('pit_mode', False) and 'PIT_FACTOR_MANAGER_AVAILABLE' in globals() and PIT_FACTOR_MANAGER_AVAILABLE:
+        
+        # ✅ 改进：健壮的PIT模式检测（用户要求修复）
+        # 原问题：依赖 'PIT_FACTOR_MANAGER_AVAILABLE' in globals() 字符串检测
+        # 新方案：直接检查PIT_FACTOR_MANAGER_AVAILABLE变量，并尝试导入验证
+        if self.config.get('pit_mode', False):
             try:
                 from pit_factors.pit_factor_manager import PITFactorManager
                 self.pit_factor_manager = PITFactorManager(
@@ -186,8 +190,13 @@ class QuantSystem:
                 )
                 self.active_factor_manager = self.pit_factor_manager
                 print("✓ PIT因子管理器初始化成功")
+            except ImportError as e:
+                print(f"⚠ PIT因子管理器不可用: {e}")
+                print("  降级到原始因子管理器（无PIT保护）")
             except Exception as e:
                 print(f"✗ PIT因子管理器初始化失败: {e}")
+                print("  降级到原始因子管理器")
+        
         print(f"使用因子管理器: {'PIT' if self.pit_factor_manager else '原始'}版本")        
         # 结果存储
         self.results = {}
@@ -550,15 +559,18 @@ class QuantSystem:
 
     def enable_pit_mode(self, strict_mode=False, enable_caching=True, current_date=None):
         """启用PIT模式"""
-        if not ('PIT_FACTOR_MANAGER_AVAILABLE' in globals() and PIT_FACTOR_MANAGER_AVAILABLE):
-            print("❌ PIT因子管理器不可用")
+        try:
+            from pit_factors.pit_factor_manager import PITFactorManager
+        except ImportError as e:
+            print(f"❌ PIT因子管理器不可用: {e}")
             return False
+        
         self.config['pit_mode'] = True
         self.config['pit_strict_mode'] = strict_mode
         self.config['pit_enable_caching'] = enable_caching
         self.config['pit_current_date'] = current_date
+        
         try:
-            from pit_factors.pit_factor_manager import PITFactorManager
             self.pit_factor_manager = PITFactorManager(
                 base_factor_manager=self.factor_manager,
                 current_date=current_date,

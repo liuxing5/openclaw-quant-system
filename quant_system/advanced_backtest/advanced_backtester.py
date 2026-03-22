@@ -6,7 +6,7 @@
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Tuple, Any, Optional, Union
 import warnings
 warnings.filterwarnings('ignore')
 import json
@@ -15,6 +15,15 @@ import os
 
 sys.path.append('/root/.openclaw/workspace/quant_system')
 from data.sources.data_pipeline import DataPipeline
+
+# 尝试导入高级滑点模型（流动性冲击模型）
+try:
+    from slippage.liquidity_impact_model import AdvancedSlippageModel
+    LIQUIDITY_IMPACT_MODEL_AVAILABLE = True
+except ImportError as e:
+    LIQUIDITY_IMPACT_MODEL_AVAILABLE = False
+    AdvancedSlippageModel = None
+    print(f"警告: 高级滑点模型不可用: {e}")
 
 # 因子管理器：优先使用真实因子管理器（解决伪因子问题）
 try:
@@ -95,11 +104,33 @@ class AdvancedBacktester:
     def __init__(self, 
                  initial_capital: float = 1000000.0,
                  commission: float = 0.001,
-                 slippage: float = 0.002):
+                 slippage: Union[float, AdvancedSlippageModel] = 0.002):
+        """
+        高级回测引擎初始化
+        
+        Args:
+            initial_capital: 初始资金
+            commission: 佣金率（固定比例，如0.001表示0.1%）
+            slippage: 滑点，可以是：
+                     - 浮点数：固定滑点比例（如0.002表示0.2%）
+                     - AdvancedSlippageModel实例：高级流动性冲击模型
+                     
+                🚀 建议：使用AdvancedSlippageModel以获得更真实的回测结果
+                AdvancedSlippageModel基于流动性分桶、T+1卖出溢价、ST惩罚等
+                显著提升回测真实度，避免固定滑点导致的低估冲击成本
+        """
         
         self.initial_capital = initial_capital
         self.commission = commission
+        
+        # 滑点配置：支持固定滑点或高级滑点模型
         self.slippage = slippage
+        self.use_advanced_slippage = isinstance(slippage, AdvancedSlippageModel) if AdvancedSlippageModel else False
+        
+        if self.use_advanced_slippage:
+            print(f"✅ 使用高级滑点模型 (AdvancedSlippageModel)")
+        else:
+            print(f"使用固定滑点: {slippage*100:.2f}%")
         
         self.data_pipeline = DataPipeline()
         self.factor_manager = FactorManager()
@@ -594,8 +625,67 @@ class AdvancedBacktester:
     
     # ========== 辅助方法 ==========
     
-    def _run_single_backtest(self, df: pd.DataFrame, signals: pd.Series) -> Dict[str, Any]:
-        """运行单股票回测"""
+    def _calculate_execution_price(self, 
+                                  base_price: float, 
+                                  action: str, 
+                                  symbol: str = None,
+                                  volume: float = None,
+                                  timestamp: datetime = None) -> float:
+        """
+        计算执行价格（考虑滑点或流动性冲击）
+        
+        Args:
+            base_price: 基础价格（如收盘价）
+            action: 交易动作 ('BUY' 或 'SELL')
+            symbol: 股票代码（用于高级滑点模型）
+            volume: 交易量（股数，用于高级滑点模型）
+            timestamp: 交易时间戳（用于高级滑点模型）
+            
+        Returns:
+            考虑滑点后的执行价格
+        """
+        if self.use_advanced_slippage and symbol is not None:
+            # 使用高级滑点模型（流动性冲击模型）
+            try:
+                # 高级滑点模型需要更多参数，这里简化调用
+                # 实际应用中应根据模型接口调整
+                if action.upper() == 'BUY':
+                    # 买入：价格上浮（冲击成本）
+                    impact_bps = self.slippage.estimate_buy_impact(
+                        symbol=symbol,
+                        trade_amount=volume * base_price if volume else 0,
+                        time_of_day=timestamp.time() if timestamp else None
+                    )
+                    execution_price = base_price * (1 + impact_bps / 10000)
+                else:  # SELL
+                    # 卖出：价格下沉（冲击成本 + T+1溢价）
+                    impact_bps = self.slippage.estimate_sell_impact(
+                        symbol=symbol,
+                        trade_amount=volume * base_price if volume else 0,
+                        time_of_day=timestamp.time() if timestamp else None
+                    )
+                    execution_price = base_price * (1 - impact_bps / 10000)
+                
+                return execution_price
+                
+            except Exception as e:
+                print(f"  警告: 高级滑点模型计算失败，降级到固定滑点: {e}")
+                # 降级到固定滑点
+        
+        # 固定滑点模式
+        if action.upper() == 'BUY':
+            return base_price * (1 + self.slippage)
+        else:  # SELL
+            return base_price * (1 - self.slippage)
+    
+    def _run_single_backtest(self, df: pd.DataFrame, signals: pd.Series, symbol: str = None) -> Dict[str, Any]:
+        """运行单股票回测
+        
+        Args:
+            df: 价格数据DataFrame
+            signals: 交易信号Series
+            symbol: 股票代码（可选，用于高级滑点模型）
+        """
         if df.empty or signals.empty:
             return {'error': '数据为空'}
         

@@ -15,31 +15,29 @@ def test_table_columns():
     
     print("检查表列结构...")
     
-    conn = db.get_connection().__enter__()  # 手动进入上下文
-    cursor = conn.cursor()
-    
-    tables = ['stocks', 'daily_prices', 'index_data', 'financials']
-    
-    for table in tables:
-        try:
-            cursor.execute(f"PRAGMA table_info({table})")
-            columns = cursor.fetchall()
-            col_names = [col[1] for col in columns]
-            
-            print(f"\n{table}:")
-            print(f"  列数: {len(columns)}")
-            print(f"  列名: {col_names}")
-            
-            # 检查updated_at
-            if 'updated_at' in col_names:
-                print(f"  ✅ 有updated_at列")
-            else:
-                print(f"  ⚠️  缺少updated_at列")
+    with db.get_connection() as conn:
+        cursor = conn.cursor()
+        
+        tables = ['stocks', 'daily_prices', 'index_data', 'financials']
+        
+        for table in tables:
+            try:
+                cursor.execute(f"PRAGMA table_info({table})")
+                columns = cursor.fetchall()
+                col_names = [col[1] for col in columns]
                 
-        except Exception as e:
-            print(f"\n{table}: 查询失败 - {e}")
-    
-    conn.__exit__(None, None, None)  # 手动退出上下文
+                print(f"\n{table}:")
+                print(f"  列数: {len(columns)}")
+                print(f"  列名: {col_names}")
+                
+                # 检查updated_at
+                if 'updated_at' in col_names:
+                    print(f"  ✅ 有updated_at列")
+                else:
+                    print(f"  ⚠️  缺少updated_at列")
+                    
+            except Exception as e:
+                print(f"\n{table}: 查询失败 - {e}")
 
 def test_stock_operations():
     """测试股票操作"""
