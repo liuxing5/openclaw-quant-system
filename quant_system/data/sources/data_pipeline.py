@@ -185,7 +185,7 @@ class DataPipeline:
                 try:
                     # 查询K线数据
                     # 字段：date,code,open,high,low,close,volume,amount,pctChg,preclose,turn
-                    fields = "date,code,open,high,low,close,volume,amount,pctChg,preclose,turn,peTTM,pbMRQ,psTTM,adjustfactor"
+                    fields = "date,code,open,high,low,close,volume,amount,pctChg,preclose,turn,peTTM,pbMRQ,psTTM"
 
                     rs = bs.query_history_k_data_plus(
                         code=baostock_symbol,
@@ -204,7 +204,7 @@ class DataPipeline:
                     if df is not None and not df.empty:
                         # 转换数据类型
                         numeric_cols = ['open', 'high', 'low', 'close', 'volume', 'amount',
-                                      'pctChg', 'preclose', 'turn', 'peTTM', 'pbMRQ', 'psTTM', 'adjustfactor']
+                                      'pctChg', 'preclose', 'turn', 'peTTM', 'pbMRQ', 'psTTM']
 
                         for col in numeric_cols:
                             if col in df.columns:
@@ -224,8 +224,7 @@ class DataPipeline:
                             'turn': 'turnover',
                             'peTTM': 'pe_ttm',
                             'pbMRQ': 'pb_mrq',
-                            'psTTM': 'ps_ttm',
-                            'adjustfactor': 'adj_factor'
+                            'psTTM': 'ps_ttm'
                         })
 
                         # 设置日期索引
