@@ -22,13 +22,13 @@ passlib[bcrypt]>=1.7.4  # Password hashing
 
 # Quant libraries
 empyrical>=0.5.0
-riskfolio-ml>=0.1.0
+# riskfolio-ml>=0.1.0
 
 # Database and ORM
 sqlalchemy>=2.0.0
 redis>=5.0.0
 psycopg2-binary>=2.9.0  # PostgreSQL support
-sqlite3  # Built-in
+# sqlite3  # Built-in
 
 # Authentication and security
 pyjwt>=2.8.0
