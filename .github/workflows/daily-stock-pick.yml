@@ -78,25 +78,20 @@ jobs:
         TITLE="${{ steps.task.outputs.title }}"
         RUN_TIME=$(date -u '+%Y-%m-%d %H:%M UTC')
         
-        # 读取输出并限制长度
         OUTPUT=$(head -c 3500 /tmp/output.log)
         
-        # 构建消息
         MESSAGE="${TITLE}
 
 运行时间: ${RUN_TIME}
 
-\`\`\`
-${OUTPUT}
-\`\`\`"
+${OUTPUT}"
 
-        # 发送到 Telegram
         curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
           -H "Content-Type: application/json" \
           -d "{
             \"chat_id\": \"${CHAT_ID}\",
             \"text\": \"${MESSAGE//\"/\\\"}\",
-            \"parse_mode\": \"MarkdownV2\",
+            \"parse_mode\": \"Markdown\",
             \"disable_web_page_preview\": true
           }" || echo "Failed to send Telegram message"
 
