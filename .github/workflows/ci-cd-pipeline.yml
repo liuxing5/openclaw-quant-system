@@ -319,37 +319,37 @@ jobs:
         path: |
           .github/workflows/deployment-report.md
 
-# 流水线级别的通知和报告
-conclusion:
-  runs-on: ubuntu-latest
-  needs: 
-    - code-quality
-    - test
-    - backtest-validation
-    - web-dashboard-test
-    - docker-build
-    - deploy-staging
-    - deploy-production
-    - monitoring
-  if: always()
-  
-  steps:
-  - name: Pipeline summary
-    run: |
-      echo "🚀 CI/CD Pipeline Summary"
-      echo "=========================="
-      echo "Pipeline Status: ${{ job.status }}"
-      echo "Triggered by: ${{ github.event_name }}"
-      echo "Branch: ${{ github.ref }}"
-      echo "Commit: ${{ github.sha }}"
-      
-  - name: Send final notification
+  # 流水线级别的通知和报告
+  conclusion:
+    runs-on: ubuntu-latest
+    needs: 
+      - code-quality
+      - test
+      - backtest-validation
+      - web-dashboard-test
+      - docker-build
+      - deploy-staging
+      - deploy-production
+      - monitoring
     if: always()
-    uses: 8398a7/action-slack@v3
-    with:
-      status: ${{ job.status }}
-      channel: '#ci-cd'
-      username: 'CI/CD Bot'
-      fields: job,commit,repo,ref,author,took
-    env:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    
+    steps:
+    - name: Pipeline summary
+      run: |
+        echo "🚀 CI/CD Pipeline Summary"
+        echo "=========================="
+        echo "Pipeline Status: ${{ job.status }}"
+        echo "Triggered by: ${{ github.event_name }}"
+        echo "Branch: ${{ github.ref }}"
+        echo "Commit: ${{ github.sha }}"
+        
+    - name: Send final notification
+      if: always()
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#ci-cd'
+        username: 'CI/CD Bot'
+        fields: job,commit,repo,ref,author,took
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
