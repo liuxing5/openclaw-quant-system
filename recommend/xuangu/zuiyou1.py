@@ -614,11 +614,9 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> list:
 
     stock_pool = get_stock_pool()
 
-    real_map = {}
-    if mode == "realtime":
-        print("  正在拉取实时行情...")
-        real_map = get_realtime_quotes(stock_pool)
-        print(f"  实时行情获取: {len(real_map)} 只")
+    # post 模式也用腾讯接口获取收盘数据（baostock 历史数据有延迟）
+    real_map = get_realtime_quotes(stock_pool)
+    print(f"  实时行情获取: {len(real_map)} 只")
 
     results = []
     total = len(stock_pool)
@@ -628,19 +626,16 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> list:
     print(f"  开始扫描 {total} 只股票...\n")
 
     for i, code in enumerate(stock_pool):
-        if mode == "realtime":
-            key = code.replace(".", "").lower()
-            real_info = real_map.get(key)
-            if real_info is None:
-                continue
-            pct = real_info.get("pct", 0)
-            if not (
-                cfg["stable_pct_lo"] <= pct <= cfg["stable_pct_hi"]
-                or cfg["upper_pct_lo"] <= pct <= cfg["upper_pct_hi"]
-            ):
-                continue
-        else:
-            real_info = None
+        key = code.replace(".", "").lower()
+        real_info = real_map.get(key)
+        if real_info is None:
+            continue
+        pct = real_info.get("pct", 0)
+        if not (
+            cfg["stable_pct_lo"] <= pct <= cfg["stable_pct_hi"]
+            or cfg["upper_pct_lo"] <= pct <= cfg["upper_pct_hi"]
+        ):
+            continue
 
         k_rs = bs.query_history_k_data_plus(
             code, FIELDS_HIST,
