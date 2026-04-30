@@ -58,7 +58,7 @@ STRATEGY_FILE_MAP = {
     "V7Omni": "7in1.py",
     "V8终极": "Overnight.py",
     "V9闭环": "20260415-1.py",
-    "zuiyou最优": "zuiyou1.py",
+    "zuiyou1最优": "zuiyou1.py",
 }
 
 
@@ -85,8 +85,8 @@ def parse_summary_file(filepath: str) -> List[Dict]:
             # 优先级：先匹配更具体的名称
             if "V9" in section or "闭环" in section:
                 strategy_name = "V9闭环"
-            elif "zuiyou" in section.lower() or "最优" in section:
-                strategy_name = "zuiyou最优"
+            elif "zuiyou1" in section.lower() or "最优" in section:
+                strategy_name = "zuiyou1最优"
             elif "V7" in section or "omni" in section.lower() or "7in1" in section:
                 strategy_name = "V7Omni"
             elif "V6" in section or "mogai" in section.lower() or "龙头法" in section or "龙头" in section:
@@ -116,8 +116,8 @@ def parse_summary_file(filepath: str) -> List[Dict]:
                     except ValueError:
                         continue
             
-            # zuiyou最优: sh.600977   hs300+zz500  14.91    5.00   3.31...
-            elif strategy_name == "zuiyou最优":
+            # zuiyou1最优: sh.600977   hs300+zz500  14.91    5.00   3.31...
+            elif strategy_name == "zuiyou1最优":
                 matches = re.findall(r'(?:sh\.|sz\.)?(\d{6})\s+\S+\s+([\d.]+)\s+[\d.]+\s+[\d.]+\s+[\d.]+', section)
                 for code, price in matches:
                     try:

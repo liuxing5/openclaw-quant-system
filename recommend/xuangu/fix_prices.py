@@ -90,7 +90,7 @@ def fix_line(line, real_data):
     if m:
         return f"{m.group(1)}{real_data[code]['close']:.1f}"
     
-    # zuiyou格式: sh.600977   hs300+zz500  14.91    5.00   3.31    5.00     0    6.14   120  特征
+    # zuiyou1格式: sh.600977   hs300+zz500  14.91    5.00   3.31    5.00     0    6.14   120  特征
     m = re.match(r'((?:sh\.|sz\.)?\d{6}\s+\S+\s+)[\d.]+(\s+)[\d.]+(\s+.+)', line)
     if m:
         return f"{m.group(1)}{new_price}{m.group(2)}{new_change}{m.group(3)}"

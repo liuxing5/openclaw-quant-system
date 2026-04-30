@@ -1,7 +1,7 @@
 """
 完整报告更新工具
 用法: python update_report.py
-功能: 运行zuiyou.py并将结果追加到完整报告.md
+功能: 运行zuiyou1.py并将结果追加到完整报告.md
 """
 import os
 import subprocess
@@ -11,7 +11,7 @@ REPORT_PATH = r"d:\pythonProject\openclaw-quant-system\recommend\完整报告.md
 ZUIYOU_PATH = r"d:\pythonProject\openclaw-quant-system\recommend\xuangu\zuiyou1.py"
 
 def run_zuiyou():
-    """运行zuiyou.py并返回输出"""
+    """运行zuiyou1.py并返回输出"""
     result = subprocess.run(
         ["python", ZUIYOU_PATH],
         capture_output=True,
@@ -23,7 +23,7 @@ def run_zuiyou():
     return result.stdout.strip()
 
 def parse_output(output):
-    """解析zuiyou输出"""
+    """解析zuiyou1输出"""
     lines = output.split('\n')
     sections = []
     current_section = None
@@ -97,19 +97,19 @@ def update_report():
     print(f"📊 更新每日选股报告 - {date}")
     print("=" * 50)
     
-    # 1. 运行zuiyou.py
-    print("🔍 运行zuiyou.py获取最新选股结果...")
+    # 1. 运行zuiyou1.py
+    print("🔍 运行zuiyou1.py获取最新选股结果...")
     try:
         output = run_zuiyou()
     except Exception as e:
-        print(f"❌ 运行zuiyou.py失败: {e}")
+        print(f"❌ 运行zuiyou1.py失败: {e}")
         return
     
     if not output:
-        print("⚠️ zuiyou.py未输出任何内容")
+        print("⚠️ zuiyou1.py未输出任何内容")
         return
     
-    print("✅ zuiyou.py运行成功")
+    print("✅ zuiyou1.py运行成功")
     print("\n" + output[:500] + "...\n")
     
     # 2. 解析输出

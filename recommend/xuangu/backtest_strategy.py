@@ -101,7 +101,7 @@ def parse_summary_file(filepath: str) -> List[Dict]:
             
             # 简化策略名称
             for key, value in {
-                "zuiyou最优版·稳健路径": "zuiyou最优",
+                "zuiyou1最优版·稳健路径": "zuiyou1最优",
                 "V1 稳健法": "V1稳健",
                 "V2 高位突破": "V2高位",
                 "V3 合并增强": "V3合并",
