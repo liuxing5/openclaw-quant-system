@@ -58,7 +58,7 @@ except ImportError:
 #  1. 全局配置
 # ============================================================
 CONFIG_STABLE = {
-    "MODE": "post",
+    "MODE": "realtime",
     "POOL": "hs300+zz500",
     "min_amount": 200_000_000,
     "max_amount": 5_000_000_000,
@@ -112,6 +112,13 @@ CONFIG_UPPER = {
 }
 
 CONFIG = CONFIG_STABLE
+
+# 自动判断 MODE：15:10 后为 post，其余为 realtime
+_now = datetime.now()
+if _now.weekday() < 5 and (_now.hour > 15 or (_now.hour == 15 and _now.minute >= 10)):
+    CONFIG["MODE"] = "post"
+else:
+    CONFIG["MODE"] = "realtime"
 
 FIELDS_HIST = "date,code,open,high,low,close,preclose,volume,amount,turn,pctChg"
 
