@@ -63,6 +63,11 @@ def main():
             print("输出内容为空，跳过推送")
             sys.exit(0)
 
+        # 检测脚本是否已经自行推送（zuiyou1.py 内部推送）
+        if '✅ 已推送到 Telegram' in content:
+            print("脚本已自行推送，跳过 workflow 推送")
+            sys.exit(0)
+
         # 构建推送消息
         msg = f"📊 {title}\n"
         msg += f"⏰ {run_time}\n"
