@@ -114,8 +114,11 @@ CONFIG_UPPER = {
 CONFIG = CONFIG_STABLE
 
 # 自动判断 MODE：15:10 后为 post，其余为 realtime
+# 注意：GitHub Actions VM 使用 UTC 时区，需要 +8 转换为北京时间
 _now = datetime.now()
-if _now.weekday() < 5 and (_now.hour > 15 or (_now.hour == 15 and _now.minute >= 10)):
+_beijing_hour = (_now.hour + 8) % 24
+_beijing_min = _now.minute
+if _now.weekday() < 5 and (_beijing_hour > 15 or (_beijing_hour == 15 and _beijing_min >= 10)):
     CONFIG["MODE"] = "post"
 else:
     CONFIG["MODE"] = "realtime"
