@@ -8,18 +8,18 @@ on:
     - cron: '30 6 * * 1-5'
     # 北京时间 15:05 盘后定稿 (UTC 07:05)
     - cron: '5 7 * * 1-5'
-    # 北京时间 09:25 卖出决策 (UTC 01:25)
-    - cron: '25 1 * * 1-5'
-    # 北京时间 10:00 盘中跟踪 (UTC 02:00)
-    - cron: '0 2 * * 1-5'
-    # 北京时间 10:30 盘中跟踪 (UTC 02:30)
-    - cron: '30 2 * * 1-5'
-    # 北京时间 13:00 盘中跟踪 (UTC 05:00)
-    - cron: '0 5 * * 1-5'
-    # 北京时间 13:30 盘中跟踪 (UTC 05:30)
-    - cron: '30 5 * * 1-5'
-    # 北京时间 14:00 盘中跟踪 (UTC 06:00)
-    - cron: '0 6 * * 1-5'
+    # 北京时间 09:20 卖出决策 (UTC 01:20) - 提前5分钟预留VM启动时间
+    - cron: '20 1 * * 1-5'
+    # 北京时间 09:55 盘中跟踪 (UTC 01:55) - 提前5分钟
+    - cron: '55 1 * * 1-5'
+    # 北京时间 10:25 盘中跟踪 (UTC 02:25) - 提前5分钟
+    - cron: '25 2 * * 1-5'
+    # 北京时间 12:55 午间跟踪 (UTC 04:55) - 提前5分钟
+    - cron: '55 4 * * 1-5'
+    # 北京时间 13:25 午后跟踪 (UTC 05:25) - 提前5分钟
+    - cron: '25 5 * * 1-5'
+    # 北京时间 13:55 尾盘前跟踪 (UTC 05:55) - 提前5分钟
+    - cron: '55 5 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -82,30 +82,30 @@ jobs:
         elif [[ "$CURRENT_TIME" == "0705" ]]; then
           echo "script=zuiyou.py" >> $GITHUB_OUTPUT
           echo "title=🎯 15:05 盘后定稿-最终决策" >> $GITHUB_OUTPUT
-        # 09:25 卖出决策 → sell_new.py
-        elif [[ "$CURRENT_TIME" == "0125" ]]; then
+        # 09:20 卖出决策 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0120" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
-          echo "title=⏰ 09:25 卖出决策" >> $GITHUB_OUTPUT
-        # 10:00 盘中跟踪 → sell_new.py
-        elif [[ "$CURRENT_TIME" == "0200" ]]; then
+          echo "title=⏰ 09:20 卖出决策" >> $GITHUB_OUTPUT
+        # 09:55 盘中跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0155" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
-          echo "title=📊 10:00 盘中跟踪" >> $GITHUB_OUTPUT
-        # 10:30 盘中跟踪 → sell_new.py
-        elif [[ "$CURRENT_TIME" == "0230" ]]; then
+          echo "title=📊 09:55 盘中跟踪" >> $GITHUB_OUTPUT
+        # 10:25 盘中跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0225" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
-          echo "title=📊 10:30 盘中跟踪" >> $GITHUB_OUTPUT
-        # 13:00 盘中跟踪 → sell_new.py
-        elif [[ "$CURRENT_TIME" == "0500" ]]; then
+          echo "title=📊 10:25 盘中跟踪" >> $GITHUB_OUTPUT
+        # 12:55 午间跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0455" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
-          echo "title=📊 13:00 午间跟踪" >> $GITHUB_OUTPUT
-        # 13:30 盘中跟踪 → sell_new.py
-        elif [[ "$CURRENT_TIME" == "0530" ]]; then
+          echo "title=📊 12:55 午间跟踪" >> $GITHUB_OUTPUT
+        # 13:25 午后跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0525" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
-          echo "title=📊 13:30 午后跟踪" >> $GITHUB_OUTPUT
-        # 14:00 盘中跟踪 → sell_new.py
-        elif [[ "$CURRENT_TIME" == "0600" ]]; then
+          echo "title=📊 13:25 午后跟踪" >> $GITHUB_OUTPUT
+        # 13:55 尾盘前跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0555" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
-          echo "title=📊 14:00 尾盘前跟踪" >> $GITHUB_OUTPUT
+          echo "title=📊 13:55 尾盘前跟踪" >> $GITHUB_OUTPUT
         # 手动触发时，根据北京时间智能选择
         elif [[ $BEIJING_HOUR -ge 9 && $BEIJING_HOUR -lt 10 ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
