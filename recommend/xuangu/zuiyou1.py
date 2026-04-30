@@ -48,11 +48,11 @@ from typing import Optional, Tuple, List, Dict
 #  Telegram 推送（可选,未配置时不影响主流程）
 # ============================================================
 try:
-    from notify_telegram import send_stock_picks
+    from notifyTelegram import send_stock_picks
     TELEGRAM_ENABLED = True
 except ImportError:
     TELEGRAM_ENABLED = False
-    print("ℹ️ notify_telegram 模块未找到,不启用 Telegram 推送")
+    print("ℹ️ notifyTelegram 模块未找到,不启用 Telegram 推送")
 
 # ============================================================
 #  1. 全局配置
