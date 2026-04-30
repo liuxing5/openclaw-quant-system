@@ -121,7 +121,7 @@ def beijing_now():
 
 # 自动判断 MODE：15:10 后为 post，其余为 realtime
 _now = beijing_now()
-if _now.weekday() < 5 and (_now.hour > 15 or (_now.hour == 15 and _now.minute >= 10)):
+if _now.hour > 15 or (_now.hour == 15 and _now.minute >= 10):
     CONFIG["MODE"] = "post"
 else:
     CONFIG["MODE"] = "realtime"
