@@ -58,7 +58,7 @@ STRATEGY_FILE_MAP = {
     "V7Omni": "7in1.py",
     "V8终极": "Overnight.py",
     "V9闭环": "20260415-1.py",
-    "zuiyou最优": "zuiyou.py",
+    "zuiyou最优": "zuiyou1.py",
 }
 
 

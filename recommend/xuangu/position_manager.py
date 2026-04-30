@@ -235,7 +235,7 @@ def handle_command(command: str, args: str = "") -> str:
 
     elif command == "import":
         # 这里需要从 zuiyou 结果获取，暂时返回提示
-        return "⏳ 从选股结果导入功能需要配合 zuiyou.py 使用\n请在选股推送消息中点击「一键买入」按钮"
+        return " 从选股结果导入功能需要配合 zuiyou1.py 使用\n请在选股推送消息中点击「一键买入」按钮"
 
     elif command == "help":
         return """📖 持仓管理命令

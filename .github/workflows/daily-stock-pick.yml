@@ -114,13 +114,13 @@ jobs:
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=📊 盘中持仓跟踪" >> $GITHUB_OUTPUT
         elif [[ $BEIJING_HOUR -ge 14 && $BEIJING_HOUR -lt 15 ]]; then
-          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
-          echo "title=🔥 盘中选股初筛" >> $GITHUB_OUTPUT
+          echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
+          echo "title= 盘中选股初筛" >> $GITHUB_OUTPUT
         elif [[ $BEIJING_HOUR -ge 15 && $BEIJING_HOUR -lt 16 ]]; then
-          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
+          echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 盘后选股定稿" >> $GITHUB_OUTPUT
         else
-          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
+          echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🔍 非交易时段测试" >> $GITHUB_OUTPUT
         fi
         
