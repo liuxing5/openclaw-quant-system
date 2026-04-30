@@ -38,7 +38,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas numpy
+        pip install requests pandas numpy baostock
 
     - name: Check if trading day
       id: check_trading
@@ -70,7 +70,8 @@ jobs:
         CURRENT_HOUR=$(date -u +%H)
         CURRENT_MIN=$(date -u +%M)
         CURRENT_TIME="${CURRENT_HOUR}${CURRENT_MIN}"
-        echo "Current UTC time: ${CURRENT_TIME} (Beijing: $((CURRENT_HOUR+8)):${CURRENT_MIN})"
+        BEIJING_HOUR=$(( (CURRENT_HOUR + 8) % 24 ))
+        echo "Current UTC time: ${CURRENT_TIME} (Beijing: ${BEIJING_HOUR}:${CURRENT_MIN})"
         
         # 14:30 盘中初筛 → zuiyou.py
         if [[ "$CURRENT_TIME" == "0630" ]]; then
@@ -104,9 +105,22 @@ jobs:
         elif [[ "$CURRENT_TIME" == "0600" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=📊 14:00 尾盘前跟踪" >> $GITHUB_OUTPUT
+        # 手动触发时，根据北京时间智能选择
+        elif [[ $BEIJING_HOUR -ge 9 && $BEIJING_HOUR -lt 10 ]]; then
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=⏰ 早盘卖出决策" >> $GITHUB_OUTPUT
+        elif [[ $BEIJING_HOUR -ge 10 && $BEIJING_HOUR -lt 14 ]]; then
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=📊 盘中持仓跟踪" >> $GITHUB_OUTPUT
+        elif [[ $BEIJING_HOUR -ge 14 && $BEIJING_HOUR -lt 15 ]]; then
+          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
+          echo "title=🔥 盘中选股初筛" >> $GITHUB_OUTPUT
+        elif [[ $BEIJING_HOUR -ge 15 && $BEIJING_HOUR -lt 16 ]]; then
+          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
+          echo "title=🎯 盘后选股定稿" >> $GITHUB_OUTPUT
         else
           echo "script=zuiyou.py" >> $GITHUB_OUTPUT
-          echo "title=🔍 临时测试任务" >> $GITHUB_OUTPUT
+          echo "title=🔍 非交易时段测试" >> $GITHUB_OUTPUT
         fi
         
         echo "Task determined: script=${{ steps.task.outputs.script }}, title=${{ steps.task.outputs.title }}"
