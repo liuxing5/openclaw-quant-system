@@ -911,7 +911,7 @@ def main():
         )
 
         try:
-            ok = send_stock_picks(title, end_d, mood_info, stable_picks, upper_picks, operation_note)
+            ok = send_stock_picks(title, beijing_now().strftime("%Y-%m-%d %H:%M:%S"), mood_info, stable_picks, upper_picks, operation_note)
             if ok:
                 print("  ✅ 已推送到 Telegram\n")
             else:
