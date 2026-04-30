@@ -1,8 +1,8 @@
 {
   "600520": {
     "cost": 29.8,
-    "high_water": 0.0,
-    "high_water_price": 0.0,
+    "high_water": 0.570469798657712,
+    "high_water_price": 29.97,
     "take1_done": false,
     "take2_done": false,
     "limit_up_hit": false,

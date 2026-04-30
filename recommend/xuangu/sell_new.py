@@ -36,7 +36,6 @@ v2.1 新增特性：
 import os
 import json
 import requests
-import pandas as pd
 from datetime import datetime
 from typing import Dict, Optional
 
@@ -503,9 +502,8 @@ def run():
     # 保存状态
     save_state(state)
 
-    # 打印决策表
-    df = pd.DataFrame(results)
-    df_sorted = df.sort_values(by=["priority", "profit_pct"], ascending=[False, False])
+    # 排序：优先级降序，盈亏降序
+    results_sorted = sorted(results, key=lambda x: (-x["priority"], -x["profit_pct"]))
 
     print("📊 卖出建议：")
     print("─" * 130)
@@ -515,7 +513,7 @@ def run():
     )
     print("─" * 130)
 
-    for _, row in df_sorted.iterrows():
+    for row in results_sorted:
         print(
             f"{row['code']:<10}{row['name']:<10}{row['path']:<6}"
             f"{row['now']:>7.2f}{row['cost']:>7.2f}"
@@ -528,17 +526,17 @@ def run():
             print(f"{'':<10}{'':<10}{'':<6}{'':<55}    └─ {row['take_info']}")
 
     # 紧急清单
-    urgent = df_sorted[df_sorted["priority"] >= 4]
-    if not urgent.empty:
+    urgent = [r for r in results_sorted if r["priority"] >= 4]
+    if urgent:
         print("\n🚨 【紧急操作】以下标的需要立即处理：")
-        for _, row in urgent.iterrows():
+        for row in urgent:
             print(f"  → {row['code']} {row['name']} : {row['action']} | {row['reason']}")
             if row.get("take_info"):
                 print(f"      {row['take_info']}")
 
         # v2.1: Telegram 推送紧急信号
         if TELEGRAM_ENABLED:
-            for _, row in urgent.iterrows():
+            for row in urgent:
                 try:
                     send_sell_alert(
                         code=row["code"],
@@ -553,9 +551,9 @@ def run():
             print("  📲 紧急信号已推送到 Telegram\n")
 
     # v2.1: 即使没有紧急信号,也推送一份完整的卖出建议(每天首次运行时)
-    elif TELEGRAM_ENABLED and df_sorted is not None and not df_sorted.empty:
-        summary_lines = [f"📊 {datetime.now().strftime('%H:%M')} 持仓状态"]
-        for _, row in df_sorted.iterrows():
+    elif TELEGRAM_ENABLED and results_sorted:
+        summary_lines = [f" {datetime.now().strftime('%H:%M')} 持仓状态"]
+        for row in results_sorted:
             summary_lines.append(
                 f"• {row['code']} {row['name']}: {row['profit_pct']:+.2f}% "
                 f"({row['action']})"
