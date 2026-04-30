@@ -4,8 +4,8 @@ on:
   push:
     branches: [master]
   schedule:
-    # 北京时间 14:30 盘中初筛 (UTC 06:30)
-    - cron: '30 6 * * 1-5'
+    # 北京时间 14:25 盘中初筛 (UTC 06:25)
+    - cron: '25 6 * * 1-5'
     # 北京时间 15:05 盘后定稿 (UTC 07:05)
     - cron: '5 7 * * 1-5'
     # 北京时间 09:20 卖出决策 (UTC 01:20) - 提前5分钟预留VM启动时间
@@ -74,13 +74,13 @@ jobs:
         BEIJING_HOUR=$(( (CURRENT_HOUR + 8) % 24 ))
         echo "Current UTC time: ${CURRENT_TIME} (Beijing: ${BEIJING_HOUR}:${CURRENT_MIN})"
         
-        # 14:30 盘中初筛 → zuiyou.py
-        if [[ "$CURRENT_TIME" == "0630" ]]; then
-          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
-          echo "title=🔥 14:30 盘中初筛-候选清单" >> $GITHUB_OUTPUT
-        # 15:05 盘后定稿 → zuiyou.py
+        # 14:25 盘中初筛 → zuiyou1.py
+        if [[ "$CURRENT_TIME" == "0625" ]]; then
+          echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
+          echo "title=🔥 14:25 盘中初筛-候选清单" >> $GITHUB_OUTPUT
+        # 15:05 盘后定稿 → zuiyou1.py
         elif [[ "$CURRENT_TIME" == "0705" ]]; then
-          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
+          echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 15:05 盘后定稿-最终决策" >> $GITHUB_OUTPUT
         # 09:20 卖出决策 → sell_new.py
         elif [[ "$CURRENT_TIME" == "0120" ]]; then
