@@ -887,8 +887,8 @@ def main():
     #  v1.1: Telegram 推送(如已配置)
     # ============================================================
     if TELEGRAM_ENABLED:
-        mode_label = "盘后定稿" if CONFIG_STABLE.get("MODE") == "post" else "盘中初筛"
-        title = f"zuiyou v1.1 {mode_label}"
+        mode_label = "盘后定稿" if CONFIG.get("MODE") == "post" else "盘中初筛"
+        title = f"zuiyou v1.2 {mode_label}"
         mood_info = f"情绪: {mood} ({zt_count}家涨停)"
 
         stable_picks = []
