@@ -85,7 +85,7 @@ def send_long_message(text: str, parse_mode: Optional[str] = None) -> bool:
     """
     发送超长消息(自动按 4000 字符分段)。
 
-    适用场景:zuiyou 完整选股报告可能超过 4000 字符。
+    适用场景:zuiyou1 完整选股报告可能超过 4000 字符。
     会按"换行"边界切分,避免把一行截断。
     """
     if len(text) <= MAX_MSG_LENGTH:
@@ -132,7 +132,7 @@ def send_stock_picks(
     operation_note: str = "",
 ) -> bool:
     """
-    格式化推送选股结果(zuiyou 专用便捷接口)。
+    格式化推送选股结果(zuiyou1 专用便捷接口)。
 
     Args:
         title: 标题(如 "🔥 zuiyou1 v1.2 盘后定稿")
