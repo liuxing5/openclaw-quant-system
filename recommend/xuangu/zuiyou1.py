@@ -1,6 +1,12 @@
 """
-隔夜选股法·最优融合版 (zuiyou v1.1)
+隔夜选股法·最优融合版 (zuiyou v1.2)
 ========================================
+v1.2 修订（2026-04-30）：
+  ✓ 市值过滤按池子分档 —— 稳健池100-2000亿，高位池30-300亿
+  ✓ 涨停阈值按板块动态判断 —— 主板10%/创业板20%/科创板20%/北交所30%
+  ✓ 压力检测按路径分档 —— 稳健8%，高位15%
+  ✓ 盘后时间安全检查 —— 15:05前运行post模式会警告
+
 v1.1 修订（2026-04-29）：
   ✓ 市值过滤不再受 MODE 限制 —— post 模式同样启用 50-200亿过滤
   ✓ MA 计算统一不含今日 —— 严格无未来函数（修复 realtime 模式的潜在偏差）
@@ -52,12 +58,12 @@ except ImportError:
 #  1. 全局配置
 # ============================================================
 CONFIG_STABLE = {
-    "MODE": "post", #realtime/post
+    "MODE": "post",
     "POOL": "hs300+zz500",
     "min_amount": 200_000_000,
     "max_amount": 5_000_000_000,
-    "min_mktcap": 5_000_000_000,
-    "max_mktcap": 20_000_000_000,
+    "min_mktcap": 10_000_000_000,
+    "max_mktcap": 200_000_000_000,
     "vol_ratio_min": 1.5,
     "vol_ratio_max": 8.0,
     "stable_pct_lo": 3.0,
@@ -83,8 +89,8 @@ CONFIG_UPPER = {
     "POOL": "zz1000",
     "min_amount": 100_000_000,
     "max_amount": 3_000_000_000,
-    "min_mktcap": 5_000_000_000,
-    "max_mktcap": 20_000_000_000,
+    "min_mktcap": 3_000_000_000,
+    "max_mktcap": 30_000_000_000,
     "vol_ratio_min": 1.5,
     "vol_ratio_max": 10.0,
     "stable_pct_lo": 3.0,
@@ -108,6 +114,28 @@ CONFIG_UPPER = {
 CONFIG = CONFIG_STABLE
 
 FIELDS_HIST = "date,code,open,high,low,close,preclose,volume,amount,turn,pctChg"
+
+
+# ============================================================
+#  1.5 涨停阈值判断
+# ============================================================
+def get_limit_pct(code: str) -> float:
+    """根据股票代码返回涨停阈值"""
+    pure_code = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
+
+    if pure_code.startswith("30") or pure_code.startswith("68"):
+        return 19.8
+    if pure_code.startswith("8") or pure_code.startswith("43"):
+        return 29.8
+    return 9.8
+
+
+def is_safe_post_time() -> bool:
+    """判断当前是否为盘后安全数据时间"""
+    now = datetime.now()
+    if now.weekday() >= 5:
+        return True
+    return (now.hour, now.minute) >= (15, 5)
 
 
 # ============================================================
@@ -427,7 +455,8 @@ def analyze_ultimate(
     if recent_highs:
         max_recent_high = max(recent_highs)
         resistance_ratio = (max_recent_high - curr_price) / curr_price
-        if resistance_ratio > 0.08:
+        resistance_threshold = 0.15 if in_upper else 0.08
+        if resistance_ratio > resistance_threshold:
             return None
 
     # --- STEP 5b: 成交量递增验证 ---
@@ -446,8 +475,9 @@ def analyze_ultimate(
     pct_list = df["pctChg"].tolist()
     if CONFIG["MODE"] != "realtime":
         pct_list = pct_list[:-1]
+    limit_pct = get_limit_pct(code)
     for p in reversed(pct_list):
-        if p >= 9.8:
+        if p >= limit_pct:
             streak += 1
         else:
             break
@@ -743,7 +773,7 @@ def append_to_summary(
 # ============================================================
 def main():
     print("=" * 70)
-    print(f"  隔夜选股法·最优融合版 v1.0")
+    print(f"  隔夜选股法·最优融合版 v1.2")
     print(f"  双池策略：稳健[hs300+zz500] + 高位[zz1000]")
     print(f"  完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
     print(f"  运行时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -753,6 +783,10 @@ def main():
     if lg.error_code != "0":
         print(f"❌ baostock 登录失败: {lg.error_msg}")
         return
+
+    if CONFIG_STABLE["MODE"] == "post" and not is_safe_post_time():
+        print("⚠️ 当前不是安全的盘后时间,数据可能不是最终收盘价")
+        print("   建议 15:05 之后再运行 post 模式")
 
     zt_count, mood = fetch_market_sentiment()
     print(f"\n📊 市场情绪: 今日涨停 {zt_count} 家 → [{mood}]")
