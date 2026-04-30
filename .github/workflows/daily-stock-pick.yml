@@ -130,12 +130,20 @@ jobs:
       working-directory: recommend/xuangu
       run: |
         echo "Running: ${{ steps.task.outputs.script }}"
-        python ${{ steps.task.outputs.script }} > /tmp/output.log 2>&1 || true
-        if [ ! -s /tmp/output.log ]; then
+        python ${{ steps.task.outputs.script }} > /tmp/output.log 2>&1
+        EXIT_CODE=$?
+        
+        if [ $EXIT_CODE -ne 0 ]; then
+          echo "Script failed with exit code: $EXIT_CODE"
+          echo "has_result=false" >> $GITHUB_OUTPUT
+          echo "script_failed=true" >> $GITHUB_OUTPUT
+        elif [ ! -s /tmp/output.log ]; then
           echo "No output from script"
           echo "has_result=false" >> $GITHUB_OUTPUT
+          echo "script_failed=false" >> $GITHUB_OUTPUT
         else
           echo "has_result=true" >> $GITHUB_OUTPUT
+          echo "script_failed=false" >> $GITHUB_OUTPUT
           head -20 /tmp/output.log
         fi
 
@@ -150,6 +158,32 @@ jobs:
         OUTPUT_FILE: /tmp/output.log
         ACTION: send
       run: python3 .github/scripts/send_telegram.py
+
+    - name: Send no-output notification
+      if: steps.run_script.outputs.has_result == 'false' && steps.run_script.outputs.script_failed == 'false'
+      working-directory: ${{ github.workspace }}
+      env:
+        BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TITLE: ${{ steps.task.outputs.title }}
+        RUN_TIME: ${{ github.run_started_at }}
+      run: |
+        python3 -c "
+        import os, sys
+        sys.path.insert(0, 'recommend/xuangu')
+        os.environ['TELEGRAM_BOT_TOKEN'] = os.environ['BOT_TOKEN']
+        os.environ['TELEGRAM_CHAT_ID'] = os.environ['CHAT_ID']
+        from notifyTelegram import send_message
+        msg = f\"📊 {os.environ['TITLE']}\\n\"
+        msg += f\" {os.environ['RUN_TIME']}\\n\"
+        msg += f\"{'='*40}\\n\\n\"
+        msg += '⚠️ 脚本运行成功但无输出内容\\n'
+        msg += '可能原因：\\n'
+        msg += '• 当前无符合条件的标的\\n'
+        msg += '• 市场整体低迷，暂无推荐\\n'
+        msg += '• 空仓也是仓位，保持观望'
+        send_message(msg)
+        "
 
     - name: Handle script failure
       if: failure()
