@@ -132,13 +132,7 @@ jobs:
                 elif command == 'help':
                     result = handle_command('help')
                 elif command == 'start':
-                    result = '''👋 欢迎使用 OpenClaw 量化交易系统
-
-📊 可用命令：
-/positions 或 /list  - 查看当前持仓
-/add <代码> <成本> [路径]  - 添加持仓
-/remove <代码>  - 删除持仓
-/help  - 显示帮助'''
+                    result = '👋 欢迎使用 OpenClaw 量化交易系统\n\n📊 可用命令：\n/positions 或 /list  - 查看当前持仓\n/add <代码> <成本> [路径]  - 添加持仓\n/remove <代码>  - 删除持仓\n/help  - 显示帮助'
                 else:
                     result = f' 未知命令: /{command}\n输入 /help 查看可用命令'
 
