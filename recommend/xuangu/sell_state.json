@@ -1,0 +1,11 @@
+{
+  "600520": {
+    "cost": 29.8,
+    "high_water": 0.0,
+    "high_water_price": 0.0,
+    "take1_done": false,
+    "take2_done": false,
+    "limit_up_hit": false,
+    "first_seen": "2026-04-30 09:13:35"
+  }
+}

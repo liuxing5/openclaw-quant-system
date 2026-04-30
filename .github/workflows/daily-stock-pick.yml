@@ -70,22 +70,51 @@ jobs:
         CURRENT_HOUR=$(date -u +%H)
         CURRENT_MIN=$(date -u +%M)
         CURRENT_TIME="${CURRENT_HOUR}${CURRENT_MIN}"
-        echo "Current UTC time: ${CURRENT_TIME}"
+        echo "Current UTC time: ${CURRENT_TIME} (Beijing: $((CURRENT_HOUR+8)):${CURRENT_MIN})"
+        
+        # 14:30 盘中初筛 → zuiyou.py
         if [[ "$CURRENT_TIME" == "0630" ]]; then
           echo "script=zuiyou.py" >> $GITHUB_OUTPUT
-          echo "title=盘中初筛-候选清单" >> $GITHUB_OUTPUT
+          echo "title=🔥 14:30 盘中初筛-候选清单" >> $GITHUB_OUTPUT
+        # 15:05 盘后定稿 → zuiyou.py
         elif [[ "$CURRENT_TIME" == "0705" ]]; then
           echo "script=zuiyou.py" >> $GITHUB_OUTPUT
-          echo "title=盘后定稿-最终决策" >> $GITHUB_OUTPUT
-        else
+          echo "title=🎯 15:05 盘后定稿-最终决策" >> $GITHUB_OUTPUT
+        # 09:25 卖出决策 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0125" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
-          echo "title=卖出决策/盘中跟踪" >> $GITHUB_OUTPUT
+          echo "title=⏰ 09:25 卖出决策" >> $GITHUB_OUTPUT
+        # 10:00 盘中跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0200" ]]; then
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=📊 10:00 盘中跟踪" >> $GITHUB_OUTPUT
+        # 10:30 盘中跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0230" ]]; then
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=📊 10:30 盘中跟踪" >> $GITHUB_OUTPUT
+        # 13:00 盘中跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0500" ]]; then
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=📊 13:00 午间跟踪" >> $GITHUB_OUTPUT
+        # 13:30 盘中跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0530" ]]; then
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=📊 13:30 午后跟踪" >> $GITHUB_OUTPUT
+        # 14:00 盘中跟踪 → sell_new.py
+        elif [[ "$CURRENT_TIME" == "0600" ]]; then
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=📊 14:00 尾盘前跟踪" >> $GITHUB_OUTPUT
+        else
+          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
+          echo "title=🔍 临时测试任务" >> $GITHUB_OUTPUT
         fi
+        
+        echo "Task determined: script=${{ steps.task.outputs.script }}, title=${{ steps.task.outputs.title }}"
 
     - name: Run stock pick script
       id: run_script
+      working-directory: recommend/xuangu
       run: |
-        cd recommend/xuangu
         echo "Running: ${{ steps.task.outputs.script }}"
         python ${{ steps.task.outputs.script }} > /tmp/output.log 2>&1 || true
         if [ ! -s /tmp/output.log ]; then
@@ -98,6 +127,7 @@ jobs:
 
     - name: Send Telegram notification
       if: steps.run_script.outputs.has_result == 'true'
+      working-directory: ${{ github.workspace }}
       env:
         BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -109,6 +139,7 @@ jobs:
 
     - name: Handle script failure
       if: failure()
+      working-directory: ${{ github.workspace }}
       env:
         BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

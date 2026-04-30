@@ -44,7 +44,7 @@ from typing import Dict, Optional
 #  Telegram 推送（可选）
 # ============================================================
 try:
-    from notify_telegram import send_message, send_sell_alert
+    from notifyTelegram import send_message, send_sell_alert
     TELEGRAM_ENABLED = True
 except ImportError:
     TELEGRAM_ENABLED = False
