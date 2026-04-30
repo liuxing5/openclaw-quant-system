@@ -5,7 +5,7 @@ v1.2 修订（2026-04-30）：
   ✓ 市值过滤按池子分档 —— 稳健池100-2000亿，高位池30-300亿
   ✓ 涨停阈值按板块动态判断 —— 主板10%/创业板20%/科创板20%/北交所30%
   ✓ 压力检测按路径分档 —— 稳健8%，高位15%
-  ✓ 盘后时间安全检查 —— 15:05前运行post模式会警告
+  ✓ 盘后时间安全检查 —— 15:10前运行post模式会警告
 
 v1.1 修订（2026-04-29）：
   ✓ 市值过滤不再受 MODE 限制 —— post 模式同样启用 50-200亿过滤
@@ -28,7 +28,7 @@ v1.0 改进：
 
 运行建议：
   盘中：14:25-14:35  CONFIG["MODE"] = "realtime"  （初步候选，仅供参考）
-  盘后：15:05+       CONFIG["MODE"] = "post"      （最终决策，二次验证）
+  盘后：15:10+       CONFIG["MODE"] = "post"      （最终决策，二次验证）
 
 止损铁律：
   稳健路径：次日09:35未维持昨收+1%，直接出局
@@ -135,7 +135,7 @@ def is_safe_post_time() -> bool:
     now = datetime.now()
     if now.weekday() >= 5:
         return True
-    return (now.hour, now.minute) >= (15, 5)
+    return (now.hour, now.minute) >= (15, 10)
 
 
 # ============================================================
@@ -786,7 +786,7 @@ def main():
 
     if CONFIG_STABLE["MODE"] == "post" and not is_safe_post_time():
         print("⚠️ 当前不是安全的盘后时间,数据可能不是最终收盘价")
-        print("   建议 15:05 之后再运行 post 模式")
+        print("   建议 15:10 之后再运行 post 模式")
 
     zt_count, mood = fetch_market_sentiment()
     print(f"\n📊 市场情绪: 今日涨停 {zt_count} 家 → [{mood}]")
