@@ -113,12 +113,15 @@ CONFIG_UPPER = {
 
 CONFIG = CONFIG_STABLE
 
+# 北京时间工具函数（GitHub Actions VM 使用 UTC 时区，需要 +8）
+def beijing_now():
+    """返回北京时间"""
+    utc_now = datetime.now()
+    return utc_now + timedelta(hours=8)
+
 # 自动判断 MODE：15:10 后为 post，其余为 realtime
-# 注意：GitHub Actions VM 使用 UTC 时区，需要 +8 转换为北京时间
-_now = datetime.now()
-_beijing_hour = (_now.hour + 8) % 24
-_beijing_min = _now.minute
-if _now.weekday() < 5 and (_beijing_hour > 15 or (_beijing_hour == 15 and _beijing_min >= 10)):
+_now = beijing_now()
+if _now.weekday() < 5 and (_now.hour > 15 or (_now.hour == 15 and _now.minute >= 10)):
     CONFIG["MODE"] = "post"
 else:
     CONFIG["MODE"] = "realtime"
@@ -142,7 +145,7 @@ def get_limit_pct(code: str) -> float:
 
 def is_safe_post_time() -> bool:
     """判断当前是否为盘后安全数据时间"""
-    now = datetime.now()
+    now = beijing_now()
     if now.weekday() >= 5:
         return True
     return (now.hour, now.minute) >= (15, 10)
@@ -155,7 +158,7 @@ def get_time_weight() -> float:
     if CONFIG["MODE"] == "post":
         return 1.0
 
-    now = datetime.now()
+    now = beijing_now()
     h, m = now.hour, now.minute
 
     if h < 9 or (h == 9 and m < 30):
@@ -286,14 +289,14 @@ def get_realtime_quotes(stock_list: list) -> dict:
 # ============================================================
 def get_latest_trading_day() -> str:
     for delta in range(0, 14):
-        day_str = (datetime.now() - timedelta(days=delta)).strftime("%Y-%m-%d")
+        day_str = (beijing_now() - timedelta(days=delta)).strftime("%Y-%m-%d")
         rs = bs.query_all_stock(day=day_str)
         rows = []
         while rs.next():
             rows.append(rs.get_row_data())
         if rows:
             return day_str
-    return datetime.now().strftime("%Y-%m-%d")
+    return beijing_now().strftime("%Y-%m-%d")
 
 
 def get_stock_pool() -> list:
@@ -619,8 +622,8 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> list:
 
     results = []
     total = len(stock_pool)
-    end_d = datetime.now().strftime("%Y-%m-%d")
-    start_d = (datetime.now() - timedelta(days=45)).strftime("%Y-%m-%d")
+    end_d = beijing_now().strftime("%Y-%m-%d")
+    start_d = (beijing_now() - timedelta(days=45)).strftime("%Y-%m-%d")
 
     print(f"  开始扫描 {total} 只股票...\n")
 
@@ -727,7 +730,7 @@ def append_to_summary(
     lines = []
     lines.append("")
     lines.append("=" * 80)
-    lines.append(f"📅 {end_d}  ({datetime.now().strftime('%H:%M:%S')})  [{mode_label}]")
+    lines.append(f"📅 {end_d}  ({beijing_now().strftime('%H:%M:%S')})  [{mode_label}]")
     lines.append(f"情绪: {mood}({zt_count}家涨停)  扫描总量: {total_candidates}只")
     lines.append("=" * 80)
 
@@ -786,7 +789,7 @@ def main():
     print(f"  隔夜选股法·最优融合版 v1.2")
     print(f"  双池策略：稳健[hs300+zz500] + 高位[zz1000]")
     print(f"  完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
-    print(f"  运行时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"  运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)
 
     lg = bs.login()
@@ -811,7 +814,7 @@ def main():
     print(f"  稳健路径仓位: {CONFIG_STABLE['position_ratio']}")
     print(f"  高位路径仓位: {CONFIG_UPPER['position_ratio']}")
 
-    end_d = datetime.now().strftime("%Y-%m-%d")
+    end_d = beijing_now().strftime("%Y-%m-%d")
 
     results_stable = scan_pool(CONFIG_STABLE, zt_count, mood)
 
