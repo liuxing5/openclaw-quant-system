@@ -44,20 +44,18 @@ jobs:
       id: check_trading
       run: |
         cd recommend/xuangu
-        python -c "
+        python3 -c "
         from trading_calendar import is_trading_day
-        from datetime import date, timedelta, timezone
-        # GitHub Actions 使用 UTC，需要转换为北京时间 (UTC+8)
-        utc_now = date.today()
-        # 根据当前 UTC 时间判断北京时间
-        import datetime
-        utc_dt = datetime.datetime.now(timezone.utc)
-        beijing_dt = utc_dt + datetime.timedelta(hours=8)
+        from datetime import datetime, timedelta, timezone, date
+        utc_dt = datetime.now(timezone.utc)
+        beijing_dt = utc_dt + timedelta(hours=8)
         beijing_date = beijing_dt.date()
         is_trading = is_trading_day(beijing_date)
-        print(f'北京时间: {beijing_date} ({"交易日" if is_trading else "休市日"})')
-        print(f'is_trading={str(is_trading).lower()}' >> $GITHUB_OUTPUT
+        print(f'北京时间: {beijing_date} ({\"交易日\" if is_trading else \"休市日\"})')
+        with open('/tmp/is_trading.txt', 'w') as f:
+            f.write('true' if is_trading else 'false')
         "
+        echo "is_trading=$(cat /tmp/is_trading.txt)" >> $GITHUB_OUTPUT
 
     - name: Skip on non-trading day
       if: steps.check_trading.outputs.is_trading == 'false'
