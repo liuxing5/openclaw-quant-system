@@ -1,0 +1,92 @@
+name: Daily Stock Pick & Sell Signals
+
+on:
+  schedule:
+    # 北京时间 14:30 盘中初筛 (UTC 06:30)
+    - cron: '30 6 * * 1-5'
+    # 北京时间 15:05 盘后定稿 (UTC 07:05)
+    - cron: '5 7 * * 1-5'
+    # 北京时间 09:25 卖出决策 (UTC 01:25)
+    - cron: '25 1 * * 1-5'
+    # 北京时间 10:00 盘中跟踪 (UTC 02:00)
+    - cron: '0 2 * * 1-5'
+    # 北京时间 10:30 盘中跟踪 (UTC 02:30)
+    - cron: '30 2 * * 1-5'
+    # 北京时间 13:00 盘中跟踪 (UTC 05:00)
+    - cron: '0 5 * * 1-5'
+    # 北京时间 13:30 盘中跟踪 (UTC 05:30)
+    - cron: '30 5 * * 1-5'
+    # 北京时间 14:00 盘中跟踪 (UTC 06:00)
+    - cron: '0 6 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  stock-pick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests pandas numpy
+
+    - name: Determine task type
+      id: task
+      run: |
+        CURRENT_HOUR=$(date -u +%H)
+        CURRENT_MIN=$(date -u +%M)
+        CURRENT_TIME="${CURRENT_HOUR}${CURRENT_MIN}"
+        echo "Current UTC time: ${CURRENT_TIME}"
+        if [[ "$CURRENT_TIME" == "0630" ]]; then
+          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
+          echo "title=盘中初筛-候选清单" >> $GITHUB_OUTPUT
+        elif [[ "$CURRENT_TIME" == "0705" ]]; then
+          echo "script=zuiyou.py" >> $GITHUB_OUTPUT
+          echo "title=盘后定稿-最终决策" >> $GITHUB_OUTPUT
+        else
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=卖出决策/盘中跟踪" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Run stock pick script
+      id: run_script
+      run: |
+        cd recommend/xuangu
+        echo "Running: ${{ steps.task.outputs.script }}"
+        python ${{ steps.task.outputs.script }} > /tmp/output.log 2>&1 || true
+        if [ ! -s /tmp/output.log ]; then
+          echo "No output from script"
+          echo "has_result=false" >> $GITHUB_OUTPUT
+        else
+          echo "has_result=true" >> $GITHUB_OUTPUT
+          head -20 /tmp/output.log
+        fi
+
+    - name: Send Telegram notification
+      if: steps.run_script.outputs.has_result == 'true'
+      env:
+        BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TITLE: ${{ steps.task.outputs.title }}
+        RUN_TIME: ${{ github.run_started_at }}
+        OUTPUT_FILE: /tmp/output.log
+        ACTION: send
+      run: python3 .github/scripts/send_telegram.py
+
+    - name: Handle script failure
+      if: failure()
+      env:
+        BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TITLE: ${{ steps.task.outputs.title }}
+        RUN_TIME: ${{ github.run_started_at }}
+        ACTION: error
+      run: python3 .github/scripts/send_telegram.py
