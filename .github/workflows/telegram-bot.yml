@@ -1,0 +1,191 @@
+name: Telegram Bot Polling
+
+on:
+  schedule:
+    # 每分钟检查一次新消息
+    - cron: '* * * * *'
+  workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/telegram-bot.yml'
+
+jobs:
+  poll-telegram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        pip install requests
+
+    - name: Poll Telegram and handle commands
+      working-directory: recommend/xuangu
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        python3 -c "
+        import os
+        import sys
+        import json
+        import requests
+        from datetime import datetime
+
+        sys.path.insert(0, '.')
+
+        BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+        CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '')
+        GITHUB_TOKEN = os.environ.get('GITHUB_TOKEN', '')
+        REPO = os.environ.get('GITHUB_REPOSITORY', '')
+
+        if not BOT_TOKEN:
+            print('未配置 TELEGRAM_BOT_TOKEN')
+            sys.exit(0)
+
+        # 从 GitHub 读取上次处理的 update_id
+        state_file = '/tmp/telegram_state.json'
+        last_update_id = 0
+        
+        # 尝试从仓库读取状态文件
+        if REPO and GITHUB_TOKEN:
+            try:
+                url = f'https://raw.githubusercontent.com/{REPO}/master/recommend/xuangu/telegram_state.json'
+                resp = requests.get(url, timeout=5)
+                if resp.status_code == 200:
+                    state = resp.json()
+                    last_update_id = state.get('last_update_id', 0)
+                    print(f'从仓库读取状态: last_update_id={last_update_id}')
+            except Exception as e:
+                print(f'读取状态文件失败（首次运行）: {e}')
+
+        # 获取新消息
+        url = f'https://api.telegram.org/bot{BOT_TOKEN}/getUpdates'
+        params = {
+            'offset': last_update_id + 1,
+            'limit': 10,
+            'timeout': 0,
+        }
+
+        try:
+            resp = requests.get(url, params=params, timeout=10)
+            if resp.status_code != 200:
+                print(f'获取消息失败: {resp.status_code}')
+                sys.exit(0)
+
+            data = resp.json()
+            if not data.get('ok'):
+                print(f'API 错误: {data}')
+                sys.exit(0)
+
+            updates = data.get('result', [])
+            if not updates:
+                print('无新消息')
+                sys.exit(0)
+
+            print(f'收到 {len(updates)} 条新消息')
+
+            # 导入 position_manager
+            from position_manager import handle_command, format_positions, add_position, remove_position
+
+            # 处理每条消息
+            for update in updates:
+                update_id = update.get('update_id', 0)
+                message = update.get('message', {})
+                chat_id = str(message.get('chat', {}).get('id', ''))
+                text = message.get('text', '')
+
+                # 只处理授权用户的命令
+                if CHAT_ID and chat_id != CHAT_ID:
+                    print(f'忽略未授权用户: {chat_id}')
+                    continue
+
+                if not text or not text.startswith('/'):
+                    print(f'忽略非命令消息: {text[:50]}')
+                    continue
+
+                # 解析命令
+                parts = text[1:].split()
+                command = parts[0].lower()
+                args = ' '.join(parts[1:]) if len(parts) > 1 else ''
+
+                print(f'执行命令: /{command} {args}')
+
+                # 执行命令
+                if command in ['positions', 'list']:
+                    result = format_positions()
+                elif command == 'add':
+                    result = handle_command('add', args)
+                elif command in ['remove', 'del', 'delete']:
+                    result = handle_command('remove', args)
+                elif command == 'help':
+                    result = handle_command('help')
+                elif command == 'start':
+                    result = '''👋 欢迎使用 OpenClaw 量化交易系统
+
+📊 可用命令：
+/positions 或 /list  - 查看当前持仓
+/add <代码> <成本> [路径]  - 添加持仓
+/remove <代码>  - 删除持仓
+/help  - 显示帮助'''
+                else:
+                    result = f' 未知命令: /{command}\n输入 /help 查看可用命令'
+
+                # 发送回复
+                send_url = f'https://api.telegram.org/bot{BOT_TOKEN}/sendMessage'
+                payload = {
+                    'chat_id': chat_id,
+                    'text': result,
+                }
+
+                send_resp = requests.post(send_url, json=payload, timeout=10)
+                print(f'发送结果: {send_resp.status_code}')
+
+                # 更新 last_update_id
+                last_update_id = max(last_update_id, update_id)
+
+            # 保存状态到仓库
+            if REPO and GITHUB_TOKEN and last_update_id > 0:
+                state_content = json.dumps({'last_update_id': last_update_id}, indent=2)
+                
+                # 获取当前文件 SHA
+                file_url = f'https://api.github.com/repos/{REPO}/contents/recommend/xuangu/telegram_state.json'
+                headers = {'Authorization': f'token {GITHUB_TOKEN}'}
+                
+                try:
+                    file_resp = requests.get(file_url, headers=headers, timeout=5)
+                    sha = ''
+                    if file_resp.status_code == 200:
+                        sha = file_resp.json().get('sha', '')
+                    
+                    # 更新或创建文件
+                    payload = {
+                        'message': 'chore: update telegram bot state',
+                        'content': requests.utils.b64encode(state_content.encode()).decode(),
+                        'branch': 'master',
+                    }
+                    if sha:
+                        payload['sha'] = sha
+                    
+                    update_resp = requests.put(file_url, json=payload, headers=headers, timeout=10)
+                    print(f'状态已保存到仓库: {update_resp.status_code}')
+                except Exception as e:
+                    print(f'保存状态失败: {e}')
+
+        except Exception as e:
+            print(f'错误: {e}')
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+        "
