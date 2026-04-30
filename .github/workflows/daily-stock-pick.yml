@@ -1,6 +1,8 @@
 name: Daily Stock Pick & Sell Signals
 
 on:
+  push:
+    branches: [master]
   schedule:
     # 北京时间 14:30 盘中初筛 (UTC 06:30)
     - cron: '30 6 * * 1-5'
