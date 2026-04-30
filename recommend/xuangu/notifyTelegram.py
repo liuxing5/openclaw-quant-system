@@ -135,7 +135,7 @@ def send_stock_picks(
     格式化推送选股结果(zuiyou 专用便捷接口)。
 
     Args:
-        title: 标题(如 "🔥 zuiyou v1.1 盘后定稿")
+        title: 标题(如 "🔥 zuiyou1 v1.2 盘后定稿")
         end_d: 日期 (2026-04-29)
         mood_info: 情绪信息字符串
         stable_picks: 稳健路径推荐列表 [{code, price, pct, score, tags}, ...]
@@ -330,7 +330,7 @@ if __name__ == "__main__":
     # 测试2:格式化选股推送
     print("\n测试2: 发送选股格式消息...")
     ok = send_stock_picks(
-        title="zuiyou v1.1 测试推送",
+        title="zuiyou1 v1.2 测试推送",
         end_d="2026-04-29",
         mood_info="情绪: 正常 (50家涨停)",
         stable_picks=[],

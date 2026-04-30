@@ -1,5 +1,5 @@
 """
-隔夜选股法·最优融合版 (zuiyou v1.2)
+隔夜选股法·最优融合版 (zuiyou1 v1.2)
 ========================================
 v1.2 修订（2026-04-30）：
   ✓ 市值过滤按池子分档 —— 稳健池100-2000亿，高位池30-300亿
@@ -737,7 +737,7 @@ def append_to_summary(
         path_pool = "hs300+zz500" if path_label == "稳健" else "zz1000"
         pos_hint = CONFIG_STABLE["position_ratio"] if path_label == "稳健" else CONFIG_UPPER["position_ratio"]
         lines.append("")
-        lines.append(f"── zuiyou最优版·{path_label}路径 ({len(sub)} 只)  💰 {pos_hint}")
+        lines.append(f"── zuiyou1最优版·{path_label}路径 ({len(sub)} 只)  💰 {pos_hint}")
         lines.append(
             f"{'代码':<14} {'池子':<16} {'价格':>7} {'涨幅%':>7} {'量比':>6} "
             f"{'换手%':>7} {'连板':>5} {'乖离%':>7} {'得分':>5}  特征"
@@ -886,7 +886,7 @@ def main():
     # ============================================================
     if TELEGRAM_ENABLED:
         mode_label = "盘后定稿" if CONFIG.get("MODE") == "post" else "盘中初筛"
-        title = f"zuiyou v1.2 {mode_label}"
+        title = f"zuiyou1 v1.2 {mode_label}"
         mood_info = f"情绪: {mood} ({zt_count}家涨停)"
 
         stable_picks = []
