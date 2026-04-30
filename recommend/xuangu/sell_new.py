@@ -50,19 +50,31 @@ except ImportError:
     TELEGRAM_ENABLED = False
 
 # ============================================================
-#  持仓配置（每天修改这里）
-#  fields:
-#    code        : 股票代码
-#    cost        : 买入均价
-#    path        : 稳健 / 高位（默认稳健）
-#    entry_date  : 入场日期 YYYY-MM-DD（可选，用于T+N判断）
+#  持仓配置（从 position_manager 动态加载）
+#  也可以通过 Telegram 命令管理：
+#    /add <代码> <成本> [路径]  - 添加持仓
+#    /remove <代码>            - 删除持仓
+#    /positions                - 查看持仓
 # ============================================================
-POSITIONS = [
-    # {"code": "002439", "cost": 15.30, "path": "稳健", "entry_date": "2026-04-28"},
-    {"code": "601933", "cost": 4.10},
-    {"code": "002510", "cost": 7.80},
-    {"code": "000632", "cost": 4.60},
-]
+try:
+    from position_manager import get_positions as load_positions_dynamic
+    POSITIONS = load_positions_dynamic()
+    if not POSITIONS:
+        # 如果动态加载为空，使用默认配置
+        POSITIONS = [
+            # {"code": "002439", "cost": 15.30, "path": "稳健", "entry_date": "2026-04-28"},
+            # {"code": "601933", "cost": 4.10},
+            # {"code": "002510", "cost": 7.80},
+            # {"code": "000632", "cost": 4.60},
+        ]
+except ImportError:
+    # 如果 position_manager 不可用，使用硬编码配置
+    POSITIONS = [
+        # {"code": "002439", "cost": 15.30, "path": "稳健", "entry_date": "2026-04-28"},
+        # {"code": "601933", "cost": 4.10},
+        # {"code": "002510", "cost": 7.80},
+        # {"code": "000632", "cost": 4.60},
+    ]
 
 CONFIG = {
     "state_file": "./sell_state.json",

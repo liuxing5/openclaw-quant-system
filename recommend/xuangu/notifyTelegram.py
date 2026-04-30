@@ -180,6 +180,104 @@ def send_stock_picks(
     return send_long_message("\n".join(lines))
 
 
+def send_stock_picks_with_buttons(
+    title: str,
+    end_d: str,
+    mood_info: str,
+    stable_picks: list,
+    upper_picks: list,
+    operation_note: str = "",
+) -> bool:
+    """
+    发送选股结果，带内联键盘按钮（一键买入）。
+
+    需要 python-telegram-bot 库支持。
+    """
+    token, chat_id = _get_credentials()
+    if not token:
+        return False
+
+    # 构建消息文本
+    lines = []
+    lines.append(f"🔥 {title}")
+    lines.append(f"📅 {end_d}")
+    lines.append(f"📊 {mood_info}")
+    lines.append("")
+
+    if not stable_picks and not upper_picks:
+        lines.append("⚠️ 今日无符合条件的标的")
+        lines.append("(空仓也是仓位)")
+        return send_message("\n".join(lines))
+
+    if stable_picks:
+        lines.append(f"━━ 稳健路径 ({len(stable_picks)} 只) ━━")
+        lines.append("💰 单票≤15% 总仓位")
+        for s in stable_picks:
+            lines.append(f"• {s['code']}  ¥{s['price']}  +{s['pct']:.2f}%")
+            lines.append(f"  得分 {s['score']} | {s['tags']}")
+        lines.append("")
+
+    if upper_picks:
+        lines.append(f"━━ 高位路径 ({len(upper_picks)} 只) ━━")
+        lines.append("💰 单票≤8% 总仓位")
+        for s in upper_picks:
+            lines.append(f"• {s['code']}  ¥{s['price']}  +{s['pct']:.2f}%")
+            lines.append(f"  得分 {s['score']} | {s['tags']}")
+        lines.append("")
+
+    if operation_note:
+        lines.append("━━ 操作建议 ━━")
+        lines.append(operation_note)
+
+    text = "\n".join(lines)
+
+    # 构建内联键盘
+    try:
+        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+        keyboard = []
+
+        # 稳健路径买入按钮
+        for s in stable_picks[:3]:  # 最多3个
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"🛡️ 买入 {s['code']} ¥{s['price']:.2f}",
+                    callback_data=f"buy_{s['code']}_{s['price']}_稳健",
+                )
+            ])
+
+        # 高位路径买入按钮
+        for s in upper_picks[:3]:  # 最多3个
+            keyboard.append([
+                InlineKeyboardButton(
+                    f"🚀 买入 {s['code']} ¥{s['price']:.2f}",
+                    callback_data=f"buy_{s['code']}_{s['price']}_高位",
+                )
+            ])
+
+        # 查看持仓按钮
+        keyboard.append([
+            InlineKeyboardButton("📊 查看持仓", callback_data="view_positions")
+        ])
+
+        markup = InlineKeyboardMarkup(keyboard)
+
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {
+            "chat_id": chat_id,
+            "text": text,
+            "reply_markup": markup.to_json(),
+        }
+
+        resp = requests.post(url, json=payload, timeout=10)
+        return resp.status_code == 200
+
+    except ImportError:
+        # 如果没有 telegram 库，退化为普通消息
+        print("⚠️ python-telegram-bot 未安装，使用普通消息推送")
+        return send_long_message(text)
+
+
 def send_sell_alert(
     code: str,
     name: str,
