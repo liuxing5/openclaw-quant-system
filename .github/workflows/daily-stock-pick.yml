@@ -129,6 +129,9 @@ jobs:
     - name: Run stock pick script
       id: run_script
       working-directory: recommend/xuangu
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
       run: |
         echo "Running: ${{ steps.task.outputs.script }}"
         python ${{ steps.task.outputs.script }} > /tmp/output.log 2>&1
