@@ -159,14 +159,21 @@ def safe_call(func, *args, max_retries=None, sleep_sec=None, **kwargs):
             # 'NoneType' object is not subscriptable 等类型错误直接返回
             logger.warning(f"调用失败 [{func.__name__}] 类型错误: {str(e)[:100]}")
             return None
-        except (ConnectionError, TimeoutError, OSError) as e:
-            # 网络错误快速失败,减少重试
-            logger.warning(f"网络错误 [{func.__name__}]: {str(e)[:100]}")
-            # 标记AKShare网络失败
-            if hasattr(func, '__self__') and hasattr(func.__self__, 'mark_network_failed'):
-                func.__self__.mark_network_failed()
-            return None
         except Exception as e:
+            error_msg = str(e).lower()
+            # 网络错误快速失败 (匹配requests/urllib3异常)
+            is_network_error = any(kw in error_msg for kw in [
+                'connection', 'timeout', 'max retries', 'host', 
+                'network', 'refused', 'unreachable', 'ssl',
+                'httpsconnectionpool', 'httpconnectionpool'
+            ])
+            if is_network_error:
+                logger.warning(f"网络错误 [{func.__name__}]: {str(e)[:100]}")
+                # 标记AKShare网络失败
+                if hasattr(func, '__self__') and hasattr(func.__self__, 'mark_network_failed'):
+                    func.__self__.mark_network_failed()
+                return None
+            # 其他异常重试
             if i < max_retries - 1:
                 logger.warning(f"调用失败 [{func.__name__}] 重试{i+1}/{max_retries}: {str(e)[:100]}")
                 time.sleep(sleep_sec * (i + 1))
