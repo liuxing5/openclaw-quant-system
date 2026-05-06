@@ -546,10 +546,9 @@ class DataHub:
         start_date = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
         
         results = []
-        # 注意:全市场5000+股票循环成本高,这里只是兜底,
-        # 实际兜底建议先取头部活跃股
-        sample_codes = stock_list['raw_code'].head(500).tolist()  # 限制500只
-        logger.warning(f"Baostock兜底快照只取前500只股票 (避免接口压力)")
+        # 优化:取前1000只股票,覆盖主要活跃股
+        sample_codes = stock_list['raw_code'].head(1000).tolist()
+        logger.warning(f"Baostock兜底快照取前1000只股票")
         
         for code in sample_codes:
             try:
@@ -716,14 +715,24 @@ class MarketRegime:
         zt_yesterday = self.hub.get_zt_pool(date)
         spot = self.hub.get_spot()
         
+        # 数据不足时的兜底逻辑
         if spot.empty or 'amount' not in spot.columns:
-            return 'WEAK', 0.0, {'error': 'no_spot_data'}
+            logger.warning("快照数据为空,使用默认市场状态(NORMAL)")
+            return 'NORMAL', 0.6, {'error': 'no_spot_data', 'fallback': True}
         
         spot_valid = spot[(spot['amount'] > 1e8) & (spot['pct_chg'].abs() < 25)].copy()
-        spot_valid = spot_valid.nlargest(Config.TOP_N_BY_AMOUNT, 'amount')
         
+        # 如果有效数据不足,放宽条件
         if len(spot_valid) < Config.TOP_N_BY_AMOUNT:
-            return 'WEAK', 0.0, {'error': 'insufficient_data'}
+            # 尝试放宽成交额条件
+            spot_valid = spot[spot['pct_chg'].abs() < 25].copy()
+            spot_valid = spot_valid.nlargest(Config.TOP_N_BY_AMOUNT, 'amount')
+            
+            if len(spot_valid) < 3:
+                logger.warning("快照数据不足,使用默认市场状态(NORMAL)")
+                return 'NORMAL', 0.6, {'error': 'insufficient_data', 'fallback': True}
+        else:
+            spot_valid = spot_valid.nlargest(Config.TOP_N_BY_AMOUNT, 'amount')
         
         up_count = (spot_valid['pct_chg'] > 0).sum()
         avg_pct = spot_valid['pct_chg'].mean()
