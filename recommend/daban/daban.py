@@ -155,6 +155,10 @@ def safe_call(func, *args, max_retries=None, sleep_sec=None, **kwargs):
                     time.sleep(sleep_sec)
                     continue
             return result
+        except TypeError as e:
+            # 'NoneType' object is not subscriptable 等类型错误直接返回
+            logger.warning(f"调用失败 [{func.__name__}] 类型错误: {str(e)[:100]}")
+            return None
         except Exception as e:
             if i < max_retries - 1:
                 logger.warning(f"调用失败 [{func.__name__}] 重试{i+1}/{max_retries}: {str(e)[:100]}")
@@ -449,6 +453,10 @@ class DataHub:
     def __init__(self):
         self.bao = BaostockProvider() if Config.USE_BAOSTOCK else None
         self.ak = AKShareProvider() if Config.USE_AKSHARE else None
+        self._zt_pool_cache = {}  # 涨停池缓存
+        self._zb_pool_cache = {}  # 炸板池缓存
+        self._spot_cache = None   # 快照缓存
+        self._trade_dates_cache = None  # 交易日缓存
         self._zt_history_cache = {}
     
     def shutdown(self):
@@ -460,7 +468,9 @@ class DataHub:
         """获取交易日 (offset=0今日,-1昨日)"""
         # 优先Baostock
         if self.bao:
-            dates = self.bao.get_trade_dates(lookback_days=30)
+            if self._trade_dates_cache is None:
+                self._trade_dates_cache = self.bao.get_trade_dates(lookback_days=30)
+            dates = self._trade_dates_cache
             if dates:
                 today = datetime.now().strftime('%Y-%m-%d')
                 past = [d for d in dates if d <= today]
@@ -487,13 +497,19 @@ class DataHub:
     # ============ 全市场快照 ============
     def get_spot(self):
         """全市场快照 - AKShare优先"""
+        if self._spot_cache is not None:
+            return self._spot_cache
+        
         if self.ak and self.ak.available:
             df = self.ak.get_spot_data()
             if not df.empty:
+                self._spot_cache = df
                 return df
         # Baostock备用 (用最新K线模拟spot)
         logger.info("AKShare快照失败,使用Baostock K线兜底...")
-        return self._spot_from_baostock()
+        result = self._spot_from_baostock()
+        self._spot_cache = result
+        return result
     
     def _spot_from_baostock(self):
         """用Baostock K线构造spot快照 (兜底方案)"""
@@ -539,17 +555,39 @@ class DataHub:
     # ============ 涨停板池 ============
     def get_zt_pool(self, date):
         """涨停板池 - AKShare独有"""
+        if date in self._zt_pool_cache:
+            return self._zt_pool_cache[date]
+        
         if self.ak and self.ak.available:
             df = self.ak.get_zt_pool(date)
             if not df.empty:
+                self._zt_pool_cache[date] = df
                 return df
         # Baostock兜底:用K线推算涨停股
         logger.info(f"AKShare涨停池失败,使用K线推算 {date}")
-        return self._zt_pool_from_kline(date)
+        result = self._zt_pool_from_kline(date)
+        self._zt_pool_cache[date] = result
+        return result
+    
+    def _is_trading_day(self, date_str):
+        """检查是否为交易日"""
+        if not self.bao:
+            return True  # 无法判断时假设是交易日
+        try:
+            date_fmt = f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}" if len(date_str) == 8 else date_str
+            dates = self.bao.get_trade_dates(lookback_days=30)
+            return date_fmt in dates
+        except:
+            return True
     
     def _zt_pool_from_kline(self, date):
         """从K线推算涨停板 (兜底,精度较低)"""
         if not self.bao:
+            return pd.DataFrame()
+        
+        # 先检查是否为交易日,非交易日直接返回空
+        if not self._is_trading_day(date):
+            logger.debug(f"{date} 非交易日,跳过涨停池查询")
             return pd.DataFrame()
         
         date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}" if len(date) == 8 else date
@@ -558,9 +596,10 @@ class DataHub:
             return pd.DataFrame()
         
         zt_stocks = []
-        # 性能考虑:这里也只能取部分,完整版需要预先全市场扫描入库
-        for _, row in stock_list.head(1000).iterrows():
-            code = row['raw_code']
+        # 性能优化:只取沪深主板+创业板+科创板的前2000只
+        sample_codes = stock_list['raw_code'].head(2000).tolist()
+        
+        for code in sample_codes:
             try:
                 kline = self.bao.get_daily_kline(code, date_str, date_str)
                 if kline.empty:
@@ -583,9 +622,17 @@ class DataHub:
     
     def get_zb_pool(self, date):
         """炸板池 - AKShare独有 (Baostock无法替代)"""
+        if date in self._zb_pool_cache:
+            return self._zb_pool_cache[date]
+        
         if self.ak and self.ak.available:
-            return self.ak.get_zb_pool(date)
-        return pd.DataFrame()
+            df = self.ak.get_zb_pool(date)
+            if not df.empty:
+                self._zb_pool_cache[date] = df
+                return df
+        result = pd.DataFrame()
+        self._zb_pool_cache[date] = result
+        return result
     
     def get_lhb_detail(self, date):
         """龙虎榜 - AKShare独有"""
@@ -691,13 +738,32 @@ class StockSelector:
         
         all_zt = []
         end_dt = datetime.strptime(end_date, '%Y%m%d')
-        for i in range(lookback_days):
-            date_i = (end_dt - timedelta(days=i)).strftime('%Y%m%d')
-            df = self.hub.get_zt_pool(date_i)
-            if not df.empty:
-                df = df.copy()
-                df['trade_date'] = date_i
-                all_zt.append(df)
+        
+        # 获取交易日列表,排除周末和节假日
+        trade_dates = self.hub.bao.get_trade_dates(lookback_days=lookback_days+30) if self.hub.bao else []
+        
+        if trade_dates:
+            # 使用交易日列表
+            trade_dates_set = set(trade_dates)
+            for i in range(lookback_days):
+                date_i = (end_dt - timedelta(days=i)).strftime('%Y-%m-%d')
+                if date_i not in trade_dates_set:
+                    continue  # 跳过非交易日
+                date_i_fmt = date_i.replace('-', '')
+                df = self.hub.get_zt_pool(date_i_fmt)
+                if not df.empty:
+                    df = df.copy()
+                    df['trade_date'] = date_i_fmt
+                    all_zt.append(df)
+        else:
+            # 兜底:按日历日扫描(慢但不依赖Baostock)
+            for i in range(lookback_days):
+                date_i = (end_dt - timedelta(days=i)).strftime('%Y%m%d')
+                df = self.hub.get_zt_pool(date_i)
+                if not df.empty:
+                    df = df.copy()
+                    df['trade_date'] = date_i
+                    all_zt.append(df)
         
         result = pd.concat(all_zt, ignore_index=True) if all_zt else pd.DataFrame()
         self._zt_history_cache[end_date] = result
@@ -895,8 +961,19 @@ class CapitalFactors:
         
         all_lhb = []
         end_dt = datetime.strptime(end_date, '%Y%m%d')
+        
+        # 获取交易日列表
+        trade_dates = self.hub.bao.get_trade_dates(lookback_days=lookback_days+10) if self.hub.bao else []
+        trade_dates_set = set(trade_dates) if trade_dates else set()
+        
         for i in range(lookback_days):
             d = (end_dt - timedelta(days=i)).strftime('%Y%m%d')
+            d_fmt = d[:4] + '-' + d[4:6] + '-' + d[6:]
+            
+            # 跳过非交易日
+            if trade_dates_set and d_fmt not in trade_dates_set:
+                continue
+                
             df = self.hub.get_lhb_detail(d)
             if not df.empty:
                 df = df.copy()
