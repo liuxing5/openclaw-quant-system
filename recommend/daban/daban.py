@@ -109,8 +109,8 @@ class Config:
     CACHE_DIR = BASE_DIR / "cache"
     
     # 网络重试
-    MAX_RETRIES = 3
-    RETRY_SLEEP = 1.0
+    MAX_RETRIES = 5
+    RETRY_SLEEP = 2.0
 
 
 # ============================================================================
@@ -158,6 +158,13 @@ def safe_call(func, *args, max_retries=None, sleep_sec=None, **kwargs):
         except TypeError as e:
             # 'NoneType' object is not subscriptable 等类型错误直接返回
             logger.warning(f"调用失败 [{func.__name__}] 类型错误: {str(e)[:100]}")
+            return None
+        except (ConnectionError, TimeoutError, OSError) as e:
+            # 网络错误快速失败,减少重试
+            logger.warning(f"网络错误 [{func.__name__}]: {str(e)[:100]}")
+            # 标记AKShare网络失败
+            if hasattr(func, '__self__') and hasattr(func.__self__, 'mark_network_failed'):
+                func.__self__.mark_network_failed()
             return None
         except Exception as e:
             if i < max_retries - 1:
@@ -374,10 +381,17 @@ class AKShareProvider:
             self.ak = ak
             logger.info(f"AKShare 版本: {ak.__version__}")
             self.available = True
+            self._network_failed = False  # 网络状态标记
         except ImportError:
             logger.warning("AKShare未安装")
             self.ak = None
             self.available = False
+            self._network_failed = False
+    
+    def mark_network_failed(self):
+        """标记网络失败,后续调用直接跳过"""
+        self._network_failed = True
+        logger.warning("AKShare网络不可用,后续调用将跳过")
     
     def get_spot_data(self):
         """A股全市场快照"""
@@ -500,7 +514,7 @@ class DataHub:
         if self._spot_cache is not None:
             return self._spot_cache
         
-        if self.ak and self.ak.available:
+        if self.ak and self.ak.available and not getattr(self.ak, '_network_failed', False):
             df = self.ak.get_spot_data()
             if not df.empty:
                 self._spot_cache = df
@@ -558,7 +572,7 @@ class DataHub:
         if date in self._zt_pool_cache:
             return self._zt_pool_cache[date]
         
-        if self.ak and self.ak.available:
+        if self.ak and self.ak.available and not getattr(self.ak, '_network_failed', False):
             df = self.ak.get_zt_pool(date)
             if not df.empty:
                 self._zt_pool_cache[date] = df
@@ -625,7 +639,7 @@ class DataHub:
         if date in self._zb_pool_cache:
             return self._zb_pool_cache[date]
         
-        if self.ak and self.ak.available:
+        if self.ak and self.ak.available and not getattr(self.ak, '_network_failed', False):
             df = self.ak.get_zb_pool(date)
             if not df.empty:
                 self._zb_pool_cache[date] = df
@@ -636,7 +650,7 @@ class DataHub:
     
     def get_lhb_detail(self, date):
         """龙虎榜 - AKShare独有"""
-        if self.ak and self.ak.available:
+        if self.ak and self.ak.available and not getattr(self.ak, '_network_failed', False):
             return self.ak.get_lhb_detail(date)
         return pd.DataFrame()
     
