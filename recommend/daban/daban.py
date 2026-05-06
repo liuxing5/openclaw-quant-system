@@ -462,48 +462,76 @@ class AKShareProvider:
     
     def get_zt_pool(self, date):
         """涨停板池"""
-        if not self.available:
+        if not self.available or self._network_failed:
             return pd.DataFrame()
-        result = safe_call(self.ak.stock_zt_pool_em, date=date)
-        if result is None or result.empty:
+        try:
+            result = safe_call(self.ak.stock_zt_pool_em, date=date)
+            if result is None or result.empty:
+                return pd.DataFrame()
+            return result
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(kw in error_msg for kw in ['connection', 'timeout', 'max retries', 'host', 'httpsconnectionpool']):
+                self._network_failed = True
+                logger.warning(f"AKShare涨停池网络错误: {str(e)[:100]}")
             return pd.DataFrame()
-        return result
     
     def get_zb_pool(self, date):
         """炸板池"""
-        if not self.available:
+        if not self.available or self._network_failed:
             return pd.DataFrame()
-        result = safe_call(self.ak.stock_zt_pool_zbgc_em, date=date)
-        if result is None or result.empty:
+        try:
+            result = safe_call(self.ak.stock_zt_pool_zbgc_em, date=date)
+            if result is None or result.empty:
+                return pd.DataFrame()
+            return result
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(kw in error_msg for kw in ['connection', 'timeout', 'max retries', 'host', 'httpsconnectionpool']):
+                self._network_failed = True
+                logger.warning(f"AKShare炸板池网络错误: {str(e)[:100]}")
             return pd.DataFrame()
-        return result
     
     def get_lhb_detail(self, date):
         """龙虎榜明细"""
-        if not self.available:
+        if not self.available or self._network_failed:
             return pd.DataFrame()
-        result = safe_call(self.ak.stock_lhb_detail_em, 
-                         start_date=date, end_date=date)
-        if result is None or result.empty:
+        try:
+            result = safe_call(self.ak.stock_lhb_detail_em, 
+                             start_date=date, end_date=date)
+            if result is None or result.empty:
+                return pd.DataFrame()
+            return result
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(kw in error_msg for kw in ['connection', 'timeout', 'max retries', 'host', 'httpsconnectionpool']):
+                self._network_failed = True
+                logger.warning(f"AKShare龙虎榜网络错误: {str(e)[:100]}")
             return pd.DataFrame()
-        return result
     
     def get_5min_kline_fallback(self, code, date):
         """AKShare的5分钟K线 (Baostock失败时备用)"""
-        if not self.available:
+        if not self.available or self._network_failed:
             return pd.DataFrame()
-        df = safe_call(self.ak.stock_zh_a_hist_min_em, 
-                      symbol=code, period='5', adjust="qfq")
-        if df is None or df.empty:
+        try:
+            df = safe_call(self.ak.stock_zh_a_hist_min_em, 
+                          symbol=code, period='5', adjust="qfq")
+            if df is None or df.empty:
+                return pd.DataFrame()
+            col_map = {
+                '时间': 'datetime', '开盘': 'open', '收盘': 'close',
+                '最高': 'high', '最低': 'low', '成交量': 'volume', '成交额': 'amount'
+            }
+            df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+            if 'datetime' in df.columns:
+                df['datetime'] = pd.to_datetime(df['datetime'])
+            return df
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(kw in error_msg for kw in ['connection', 'timeout', 'max retries', 'host', 'httpsconnectionpool']):
+                self._network_failed = True
+                logger.warning(f"AKShare 5分钟K线网络错误: {str(e)[:100]}")
             return pd.DataFrame()
-        col_map = {
-            '时间': 'datetime', '开盘': 'open', '收盘': 'close',
-            '最高': 'high', '最低': 'low', '成交量': 'volume', '成交额': 'amount'
-        }
-        df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
-        if 'datetime' in df.columns:
-            df['datetime'] = pd.to_datetime(df['datetime'])
-        return df
 
 
 # ============================================================================
@@ -709,12 +737,12 @@ class DataHub:
     
     # ============ K线数据 ============
     def get_5min_kline(self, code, date):
-        """5分钟K线 - Baostock优先"""
+        """5分钟K线 - Baostock优先,AKShare网络失败时跳过"""
         if Config.PREFER_BAOSTOCK_FOR_KLINE and self.bao:
             df = self.bao.get_5min_kline(code, date)
             if not df.empty:
                 return df
-        if self.ak and self.ak.available:
+        if self.ak and self.ak.available and not getattr(self.ak, '_network_failed', False):
             return self.ak.get_5min_kline_fallback(code, date)
         return pd.DataFrame()
     
@@ -730,7 +758,7 @@ class DataHub:
                 df = df.rename(columns={'pctChg': 'pct_chg', 'turn': 'turnover'})
                 return df.tail(days).reset_index(drop=True)
         
-        if self.ak and self.ak.available:
+        if self.ak and self.ak.available and not getattr(self.ak, '_network_failed', False):
             try:
                 df = safe_call(
                     self.ak.ak.stock_zh_a_hist,
@@ -746,7 +774,11 @@ class DataHub:
                     df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
                     df['date'] = pd.to_datetime(df['date'])
                     return df.tail(days).reset_index(drop=True)
-            except:
+            except Exception as e:
+                error_msg = str(e).lower()
+                if any(kw in error_msg for kw in ['connection', 'timeout', 'max retries', 'host', 'httpsconnectionpool']):
+                    self.ak._network_failed = True
+                    logger.warning(f"AKShare日K线网络错误: {str(e)[:100]}")
                 pass
         return pd.DataFrame()
 
@@ -1200,14 +1232,19 @@ class SectorSentiment:
     
     def _get_dt_count(self, date) -> int:
         """获取跌停家数"""
-        if not self.hub.ak or not self.hub.ak.available:
+        if not self.hub.ak or not self.hub.ak.available or getattr(self.hub.ak, '_network_failed', False):
             return 0
         try:
             dt_pool = safe_call(self.hub.ak.ak.stock_zt_pool_dtgc_em, date=date)
             if dt_pool is not None and not dt_pool.empty:
                 return len(dt_pool)
         except Exception as e:
-            logger.warning(f"获取跌停池失败: {e}")
+            error_msg = str(e).lower()
+            if any(kw in error_msg for kw in ['connection', 'timeout', 'max retries', 'host', 'httpsconnectionpool']):
+                self.hub.ak._network_failed = True
+                logger.warning(f"AKShare跌停池网络错误: {str(e)[:100]}")
+            else:
+                logger.warning(f"获取跌停池失败: {e}")
         return 0
     
     def _calc_zt_premium(self, date) -> float:
