@@ -36,8 +36,15 @@ v2.1 新增特性：
 import os
 import json
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
+
+# 北京时间 (UTC+8)
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+def get_beijing_time():
+    """获取北京时间"""
+    return datetime.now(BEIJING_TZ)
 
 # ============================================================
 #  Telegram 推送（可选）
@@ -448,7 +455,7 @@ def auction_advice(code: str, cost: float, path: str, market_data: dict) -> Opti
 #  主程序
 # ============================================================
 def run():
-    now = datetime.now()
+    now = get_beijing_time()
     print("=" * 70)
     print("  自动卖出系统 v2.1（含跟踪止盈 + 状态持久化）")
     print(f"  运行时间: {now.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -552,16 +559,20 @@ def run():
 
     # v2.1: 即使没有紧急信号,也推送一份完整的卖出建议(每天首次运行时)
     elif TELEGRAM_ENABLED and results_sorted:
-        summary_lines = [f" {datetime.now().strftime('%H:%M')} 持仓状态"]
-        for row in results_sorted:
-            summary_lines.append(
-                f"• {row['code']} {row['name']}: {row['profit_pct']:+.2f}% "
-                f"({row['action']})"
-            )
-        try:
-            send_message("\n".join(summary_lines))
-        except Exception as e:
-            print(f"  ⚠️ 推送失败: {e}")
+        # 只在尾盘时段(13:50-15:00)推送一次完整持仓状态
+        hhmm = now.hour * 100 + now.minute
+        if 1350 <= hhmm <= 1500:
+            summary_lines = [f"📊 📊 {now.strftime('%H:%M')} 尾盘前跟踪\n⏰"]
+            summary_lines.append("=" * 40)
+            for row in results_sorted:
+                summary_lines.append(
+                    f"• {row['code']} {row['name']}: {row['profit_pct']:+.2f}% "
+                    f"({row['action']})"
+                )
+            try:
+                send_message("\n".join(summary_lines))
+            except Exception as e:
+                print(f"  ⚠️ 推送失败: {e}")
 
     print("\n" + "=" * 70)
     print("  路径说明：")

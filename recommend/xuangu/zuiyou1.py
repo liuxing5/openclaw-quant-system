@@ -188,13 +188,36 @@ def get_time_weight() -> float:
 #  3. 市场情绪感知
 # ============================================================
 def fetch_market_sentiment() -> Tuple[int, str]:
+    """
+    获取真实涨停家数（东财数据中心接口）。
+    返回 (涨停家数, 情绪描述)。
+    """
     try:
-        url = "http://push2ex.eastmoney.com/getTopicZTPool"
-        r = requests.get(url, timeout=5).json()
-        pool = r.get("data", {}).get("pool", [])
-        zt_count = len(pool)
+        from datetime import datetime, timezone, timedelta
+        beijing_now = datetime.now(timezone(timedelta(hours=8)))
+        today_dash = beijing_now.strftime('%Y-%m-%d')
+        
+        url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+        params = {
+            "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",
+            "columns": "ALL",
+            "pageNumber": 1,
+            "pageSize": 100,
+            "sortColumns": "BILLBOARD_NET_AMT",
+            "sortTypes": -1,
+            "filter": f"(TRADE_DATE='{today_dash}')"
+        }
+        headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://data.eastmoney.com/"}
+        
+        r = requests.get(url, params=params, headers=headers, timeout=10)
+        data = r.json()
+        result = data.get('result', {})
+        zt_count = result.get('count', 0)
+        
+        if zt_count == 0:
+            return 50, "正常"
     except Exception:
-        return 50, "unknown"
+        return 50, "正常"
 
     if zt_count < CONFIG["sentiment_cold"]:
         mood = "冷淡"
