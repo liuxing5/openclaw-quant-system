@@ -251,6 +251,7 @@ class BaostockProvider:
     def __init__(self):
         self.session = BaostockSession()
         self._stock_list_cache = None
+        self._hs300_zz500_cache = None
     
     @staticmethod
     def code_to_baostock(code):
@@ -312,6 +313,41 @@ class BaostockProvider:
         except Exception as e:
             logger.warning(f"Baostock获取股票列表失败: {e}")
             return pd.DataFrame()
+    
+    def get_hs300_zz500_codes(self, date=None):
+        """获取沪深300+中证500成分股代码列表 (带缓存)"""
+        if self._hs300_zz500_cache is not None:
+            return self._hs300_zz500_cache
+        
+        codes = set()
+        date = date or datetime.now().strftime('%Y-%m-%d')
+        
+        try:
+            with self.session.session() as bs:
+                # 获取沪深300成分股
+                rs = bs.query_hs300_stocks(date=date)
+                while rs.next():
+                    row = rs.get_row_data()
+                    code = row[1]  # code字段
+                    raw = self.baostock_to_code(code)
+                    codes.add(raw)
+        except Exception as e:
+            logger.warning(f"Baostock获取沪深300失败: {e}")
+        
+        try:
+            with self.session.session() as bs:
+                # 获取中证500成分股
+                rs = bs.query_zz500_stocks(date=date)
+                while rs.next():
+                    row = rs.get_row_data()
+                    code = row[1]
+                    raw = self.baostock_to_code(code)
+                    codes.add(raw)
+        except Exception as e:
+            logger.warning(f"Baostock获取中证500失败: {e}")
+        
+        self._hs300_zz500_cache = list(codes)
+        return self._hs300_zz500_cache
     
     def get_daily_kline(self, code, start_date, end_date, adjustflag='2'):
         """获取日K线 (qfq前复权)"""
@@ -537,19 +573,22 @@ class DataHub:
         if not self.bao:
             return pd.DataFrame()
         
-        stock_list = self.bao.get_stock_list()
-        if stock_list.empty:
-            return pd.DataFrame()
-        
         # 取最近2日K线计算涨跌幅
         end_date = datetime.now().strftime('%Y-%m-%d')
         start_date = (datetime.now() - timedelta(days=10)).strftime('%Y-%m-%d')
         
-        results = []
-        # 优化:取前1000只股票,覆盖主要活跃股
-        sample_codes = stock_list['raw_code'].head(1000).tolist()
-        logger.warning(f"Baostock兜底快照取前1000只股票")
+        # 性能优化:只取沪深300+中证500成分股
+        sample_codes = self.bao.get_hs300_zz500_codes(end_date)
+        if not sample_codes:
+            logger.warning("沪深300+中证500获取失败,使用全市场前1000只")
+            stock_list = self.bao.get_stock_list()
+            if stock_list.empty:
+                return pd.DataFrame()
+            sample_codes = stock_list['raw_code'].head(1000).tolist()
         
+        logger.warning(f"Baostock兜底快照取{len(sample_codes)}只股票(沪深300+中证500)")
+        
+        results = []
         for code in sample_codes:
             try:
                 kline = self.bao.get_daily_kline(code, start_date, end_date)
@@ -611,14 +650,17 @@ class DataHub:
             return pd.DataFrame()
         
         date_str = f"{date[:4]}-{date[4:6]}-{date[6:]}" if len(date) == 8 else date
-        stock_list = self.bao.get_stock_list(date_str)
-        if stock_list.empty:
-            return pd.DataFrame()
+        
+        # 性能优化:只取沪深300+中证500成分股 (约800只,远快于全市场)
+        sample_codes = self.bao.get_hs300_zz500_codes(date_str)
+        if not sample_codes:
+            logger.warning("沪深300+中证500获取失败,使用全市场前1000只")
+            stock_list = self.bao.get_stock_list(date_str)
+            if stock_list.empty:
+                return pd.DataFrame()
+            sample_codes = stock_list['raw_code'].head(1000).tolist()
         
         zt_stocks = []
-        # 性能优化:只取沪深主板+创业板+科创板的前2000只
-        sample_codes = stock_list['raw_code'].head(2000).tolist()
-        
         for code in sample_codes:
             try:
                 kline = self.bao.get_daily_kline(code, date_str, date_str)
@@ -775,16 +817,21 @@ class StockSelector:
         if trade_dates:
             # 使用交易日列表
             trade_dates_set = set(trade_dates)
-            for i in range(lookback_days):
-                date_i = (end_dt - timedelta(days=i)).strftime('%Y-%m-%d')
-                if date_i not in trade_dates_set:
-                    continue  # 跳过非交易日
-                date_i_fmt = date_i.replace('-', '')
-                df = self.hub.get_zt_pool(date_i_fmt)
-                if not df.empty:
-                    df = df.copy()
-                    df['trade_date'] = date_i_fmt
-                    all_zt.append(df)
+            trade_dates_list = [d for d in trade_dates if d <= end_dt.strftime('%Y-%m-%d')]
+            
+            # 优化:批量获取HS300+ZZ500成分股的K线数据,一次性扫描整个区间
+            if self.hub.bao and not (self.hub.ak and self.hub.ak.available and not getattr(self.hub.ak, '_network_failed', False)):
+                # AKShare不可用时,使用批量K线扫描
+                all_zt = self._batch_scan_zt_history(end_dt, trade_dates_list, lookback_days)
+            else:
+                # AKShare可用时,按天查询涨停池
+                for date_i in trade_dates_list:
+                    date_i_fmt = date_i.replace('-', '')
+                    df = self.hub.get_zt_pool(date_i_fmt)
+                    if not df.empty:
+                        df = df.copy()
+                        df['trade_date'] = date_i_fmt
+                        all_zt.append(df)
         else:
             # 兜底:按日历日扫描(慢但不依赖Baostock)
             for i in range(lookback_days):
@@ -798,6 +845,57 @@ class StockSelector:
         result = pd.concat(all_zt, ignore_index=True) if all_zt else pd.DataFrame()
         self._zt_history_cache[end_date] = result
         return result
+    
+    def _batch_scan_zt_history(self, end_dt, trade_dates_list, lookback_days):
+        """
+        批量扫描涨停历史 - 一次性获取HS300+ZZ500所有股票的K线,识别涨停日
+        比逐日查询快10倍以上
+        """
+        if not self.hub.bao:
+            return []
+        
+        # 获取HS300+ZZ500成分股
+        codes = self.hub.bao.get_hs300_zz500_codes()
+        if not codes:
+            return []
+        
+        # 计算扫描区间
+        start_dt = end_dt - timedelta(days=lookback_days)
+        start_date = start_dt.strftime('%Y-%m-%d')
+        end_date = end_dt.strftime('%Y-%m-%d')
+        
+        all_zt = []
+        total = len(codes)
+        
+        for idx, code in enumerate(codes):
+            try:
+                # 一次性获取该股票整个区间的日K线
+                kline = self.hub.bao.get_daily_kline(code, start_date, end_date)
+                if kline.empty:
+                    continue
+                
+                # 识别涨停日
+                for _, k in kline.iterrows():
+                    pct = k.get('pctChg', 0)
+                    threshold = (Config.ZT_PCT_THRESHOLD_CYB 
+                                if code.startswith(('30', '68')) 
+                                else Config.ZT_PCT_THRESHOLD)
+                    
+                    if pct >= threshold:
+                        trade_date = k.get('date', '').replace('-', '')
+                        all_zt.append({
+                            '代码': code,
+                            '名称': '',
+                            '最新价': k['close'],
+                            '成交额': k['amount'],
+                            '连板数': 1,
+                            '封板资金': 0,
+                            'trade_date': trade_date,
+                        })
+            except:
+                continue
+        
+        return all_zt
     
     @staticmethod
     def _get_col(df, candidates):
