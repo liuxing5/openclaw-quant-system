@@ -143,7 +143,7 @@ logger = setup_logger()
 # 工具函数: 重试装饰器
 # ============================================================================
 def safe_call(func, *args, max_retries=None, sleep_sec=None, **kwargs):
-    """通用重试包装"""
+    """通用重试包装 - 网络错误立即失败,不重试"""
     max_retries = max_retries or Config.MAX_RETRIES
     sleep_sec = sleep_sec or Config.RETRY_SLEEP
     
@@ -156,12 +156,10 @@ def safe_call(func, *args, max_retries=None, sleep_sec=None, **kwargs):
                     continue
             return result
         except TypeError as e:
-            # 'NoneType' object is not subscriptable 等类型错误直接返回
             logger.warning(f"调用失败 [{func.__name__}] 类型错误: {str(e)[:100]}")
             return None
         except Exception as e:
             error_msg = str(e).lower()
-            # 网络错误快速失败 (匹配requests/urllib3异常)
             is_network_error = any(kw in error_msg for kw in [
                 'connection', 'timeout', 'max retries', 'host', 
                 'network', 'refused', 'unreachable', 'ssl',
@@ -169,11 +167,9 @@ def safe_call(func, *args, max_retries=None, sleep_sec=None, **kwargs):
             ])
             if is_network_error:
                 logger.warning(f"网络错误 [{func.__name__}]: {str(e)[:100]}")
-                # 标记AKShare网络失败
                 if hasattr(func, '__self__') and hasattr(func.__self__, 'mark_network_failed'):
                     func.__self__.mark_network_failed()
-                return None
-            # 其他异常重试
+                return None  # 网络错误不重试,立即返回
             if i < max_retries - 1:
                 logger.warning(f"调用失败 [{func.__name__}] 重试{i+1}/{max_retries}: {str(e)[:100]}")
                 time.sleep(sleep_sec * (i + 1))
@@ -438,22 +434,31 @@ class AKShareProvider:
     
     def get_spot_data(self):
         """A股全市场快照"""
-        if not self.available:
+        if not self.available or self._network_failed:
             return pd.DataFrame()
-        df = safe_call(self.ak.stock_zh_a_spot_em)
-        if df is None or df.empty:
+        try:
+            df = safe_call(self.ak.stock_zh_a_spot_em)
+            if df is None or df.empty:
+                self._network_failed = True
+                logger.warning("AKShare快照返回空数据,标记网络失败")
+                return pd.DataFrame()
+            col_map = {
+                '代码': 'code', '名称': 'name', '最新价': 'close',
+                '涨跌幅': 'pct_chg', '成交量': 'volume', '成交额': 'amount',
+                '今开': 'open', '昨收': 'pre_close',
+                '总市值': 'total_mv', '流通市值': 'circ_mv',
+            }
+            df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
+            if 'code' in df.columns:
+                df = df[~df['code'].str.startswith(('8', '4'))]
+                df = df[~df['name'].str.contains('ST|退', na=False)]
+            return df.reset_index(drop=True)
+        except Exception as e:
+            error_msg = str(e).lower()
+            if any(kw in error_msg for kw in ['connection', 'timeout', 'max retries', 'host', 'httpsconnectionpool']):
+                self._network_failed = True
+                logger.warning(f"AKShare快照网络错误,标记失败: {str(e)[:100]}")
             return pd.DataFrame()
-        col_map = {
-            '代码': 'code', '名称': 'name', '最新价': 'close',
-            '涨跌幅': 'pct_chg', '成交量': 'volume', '成交额': 'amount',
-            '今开': 'open', '昨收': 'pre_close',
-            '总市值': 'total_mv', '流通市值': 'circ_mv',
-        }
-        df = df.rename(columns={k: v for k, v in col_map.items() if k in df.columns})
-        if 'code' in df.columns:
-            df = df[~df['code'].str.startswith(('8', '4'))]
-            df = df[~df['name'].str.contains('ST|退', na=False)]
-        return df.reset_index(drop=True)
     
     def get_zt_pool(self, date):
         """涨停板池"""
@@ -1159,6 +1164,14 @@ class CapitalFactors:
 class SectorSentiment:
     def __init__(self, hub: DataHub):
         self.hub = hub
+    
+    @staticmethod
+    def _get_col(df, candidates):
+        """从候选名中找出第一个存在的列名"""
+        for c in candidates:
+            if c in df.columns:
+                return c
+        return None
     
     def calc_market_sentiment(self, date) -> Dict:
         zt = self.hub.get_zt_pool(date)
