@@ -398,20 +398,29 @@ class AKShareProvider:
         """涨停板池"""
         if not self.available:
             return pd.DataFrame()
-        return safe_call(self.ak.stock_zt_pool_em, date=date) or pd.DataFrame()
+        result = safe_call(self.ak.stock_zt_pool_em, date=date)
+        if result is None or result.empty:
+            return pd.DataFrame()
+        return result
     
     def get_zb_pool(self, date):
         """炸板池"""
         if not self.available:
             return pd.DataFrame()
-        return safe_call(self.ak.stock_zt_pool_zbgc_em, date=date) or pd.DataFrame()
+        result = safe_call(self.ak.stock_zt_pool_zbgc_em, date=date)
+        if result is None or result.empty:
+            return pd.DataFrame()
+        return result
     
     def get_lhb_detail(self, date):
         """龙虎榜明细"""
         if not self.available:
             return pd.DataFrame()
-        return safe_call(self.ak.stock_lhb_detail_em, 
-                         start_date=date, end_date=date) or pd.DataFrame()
+        result = safe_call(self.ak.stock_lhb_detail_em, 
+                         start_date=date, end_date=date)
+        if result is None or result.empty:
+            return pd.DataFrame()
+        return result
     
     def get_5min_kline_fallback(self, code, date):
         """AKShare的5分钟K线 (Baostock失败时备用)"""
