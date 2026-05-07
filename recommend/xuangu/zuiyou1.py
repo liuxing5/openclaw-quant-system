@@ -894,7 +894,13 @@ def main():
 
     total_candidates = len(results_stable) + len(results_upper)
 
-    append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
+    # 只在15:10后写入选股记录，避免盘中数据覆盖盘后定稿
+    current_beijing = beijing_now()
+    is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
+    if is_post_time:
+        append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
+    else:
+        print(f"\n  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入（等待15:10后盘后定稿）")
 
     for path_label in ["稳健", "高位"]:
         sub = final_df[final_df["path"] == path_label]
