@@ -436,9 +436,11 @@ def analyze_ultimate(
     if hist_df is None or len(hist_df) < 15:
         return None
 
-    name_lower = code.lower()
-    if "st" in name_lower:
-        return None
+    # ST过滤：从实时行情中获取股票名称判断
+    if real_info:
+        name = real_info.get("name", "")
+        if "ST" in name or "*ST" in name or "退" in name:
+            return None
 
     df = hist_df.copy()
     for col in ["close", "volume", "pctChg", "turn", "amount", "high", "low", "open", "preclose"]:
