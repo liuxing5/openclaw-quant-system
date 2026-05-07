@@ -1,5 +1,6 @@
 """每日同步全 A 股代码-名称表，用于股票名称匹配"""
 import os
+import time
 from datetime import date
 import psycopg2
 from psycopg2.extras import execute_values
@@ -25,11 +26,18 @@ def sync():
     import pandas as pd
 
     logger.info("同步 A 股代码-名称表...")
-    try:
-        df = ak.stock_info_a_code_name()
-    except Exception as e:
-        logger.error(f"AKShare stock_info_a_code_name 失败: {e}")
-        return
+    df = None
+    for attempt in range(3):
+        try:
+            df = ak.stock_info_a_code_name()
+            break
+        except Exception as e:
+            if attempt < 2:
+                logger.warning(f"AKShare stock_info_a_code_name 失败 (尝试 {attempt+1}/3): {e}")
+                time.sleep(5)
+            else:
+                logger.error(f"AKShare stock_info_a_code_name 最终失败: {e}")
+                return
 
     rows = []
     for _, r in df.iterrows():

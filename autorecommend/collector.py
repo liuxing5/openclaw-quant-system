@@ -1,13 +1,18 @@
 """信息采集器 - GHA 模式（AKShare only）"""
 import os
+import re
 import time
 import hashlib
+import warnings
 from datetime import date, timedelta, datetime
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
 from loguru import logger
 from dotenv import load_dotenv
+
+warnings.filterwarnings('ignore', category=FutureWarning)
+warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
