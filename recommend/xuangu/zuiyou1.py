@@ -42,6 +42,9 @@ import requests
 import time
 import os
 from datetime import datetime, timedelta
+
+# 调试模式开关（环境变量 ZUIYOU_DEBUG=true 时启用）
+DEBUG = os.environ.get("ZUIYOU_DEBUG", "").lower() == "true"
 from typing import Optional, Tuple, List, Dict
 
 # ============================================================
@@ -131,12 +134,14 @@ def beijing_now():
 
 # 自动判断 MODE：15:10 后为 post，其余为 realtime
 _now = beijing_now()
-print(f"  [DEBUG] 服务器时间: {datetime.now()}, 北京时间: {_now.strftime('%Y-%m-%d %H:%M:%S')}")
+if DEBUG:
+    print(f"  [DEBUG] 服务器时间: {datetime.now()}, 北京时间: {_now.strftime('%Y-%m-%d %H:%M:%S')}")
 if _now.hour > 15 or (_now.hour == 15 and _now.minute >= 10):
     CONFIG["MODE"] = "post"
 else:
     CONFIG["MODE"] = "realtime"
-print(f"  [DEBUG] MODE: {CONFIG['MODE']}")
+if DEBUG:
+    print(f"  [DEBUG] MODE: {CONFIG['MODE']}")
 
 FIELDS_HIST = "date,code,open,high,low,close,preclose,volume,amount,turn,pctChg"
 
@@ -538,7 +543,8 @@ def analyze_ultimate(
             return None
 
     # --- STEP 5b: 成交量递增验证 ---
-    recent_5d_vols = df["volume"].tail(5).tolist()
+    # 使用 hist_vols（已处理过的历史序列，不含今日baostock延迟数据）+ 今日预估量
+    recent_5d_vols = hist_vols[-4:] + [est_full_vol] if len(hist_vols) >= 4 else hist_vols[-2:] + [est_full_vol]
     recent_5d_vols = [float(x) for x in recent_5d_vols if float(x) > 0]
     vol_increasing = False
     if len(recent_5d_vols) >= 3:
@@ -550,15 +556,21 @@ def analyze_ultimate(
 
     # --- 连板高度判断 ---
     streak = 0
-    pct_list = df["pctChg"].tolist()
-    if CONFIG["MODE"] != "realtime":
-        pct_list = pct_list[:-1]
+    # 永远不含今日 baostock 数据（可能有延迟）
+    pct_list = df["pctChg"].tolist()[:-1]
     limit_pct = get_limit_pct(code)
-    for p in reversed(pct_list):
-        if p >= limit_pct:
-            streak += 1
-        else:
-            break
+
+    # 先看今日是否涨停（用准确的 curr_pct，来自腾讯实时/收盘数据）
+    if curr_pct >= limit_pct:
+        streak = 1
+        # 然后往前推历史涨停天数
+        for p in reversed(pct_list):
+            if p >= limit_pct:
+                streak += 1
+            else:
+                break
+    else:
+        streak = 0
 
     # --- 评分系统（基础分50）---
     score = 50
@@ -888,11 +900,18 @@ def main():
     all_results = {}
     for r in results_stable + results_upper:
         c = r["code"]
-        if c not in all_results or r["score"] > all_results[c]["score"]:
+        if c not in all_results:
             all_results[c] = r
-        elif r["score"] == all_results[c]["score"]:
-            if r["pool"] not in all_results[c]["pool"]:
-                all_results[c]["pool"] += "+" + r["pool"]
+        else:
+            # 取更高分的版本，但保留双池信号标记
+            if r["score"] > all_results[c]["score"]:
+                old_pool = all_results[c]["pool"]
+                all_results[c] = r
+                if r["pool"] != old_pool:
+                    all_results[c]["pool"] = r["pool"] + "+" + old_pool
+            else:
+                if r["pool"] not in all_results[c]["pool"]:
+                    all_results[c]["pool"] += "+" + r["pool"]
 
     print("\n" + "=" * 70)
     print(f"  🔥 隔夜选股法·最优精选清单  ({end_d})  情绪: {mood}({zt_count}家涨停)")
