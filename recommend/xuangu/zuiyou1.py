@@ -980,6 +980,69 @@ def append_to_summary(
 
 
 # ============================================================
+#  7b. 过滤统计工具
+# ============================================================
+_REJECT_TREND_FILE = os.path.join(os.path.dirname(__file__), "reject_trend.json")
+
+def _print_reject_summary(rejects: dict, total: int = 0):
+    """打印过滤统计，带百分比"""
+    if total == 0:
+        total = sum(rejects.values())
+    print("  过滤统计:")
+    for reason, count in sorted(rejects.items(), key=lambda x: -x[1]):
+        if count > 0:
+            pct = count / total * 100 if total > 0 else 0
+            bar = "█" * min(int(pct // 3), 20)
+            print(f"    ✗ {reason:>8}: {count:>5} ({pct:5.1f}%) {bar}")
+
+def _save_reject_trend(date_str: str, rejects: dict):
+    """保存当日过滤瓶颈到文件，展示5日趋势"""
+    total = sum(rejects.values())
+    if total == 0:
+        return
+
+    trend_entry = {
+        "date": date_str,
+        "total": total,
+        "ratios": {k: round(v / total * 100, 1) for k, v in rejects.items() if v > 0},
+    }
+
+    trend_data = []
+    if os.path.exists(_REJECT_TREND_FILE):
+        try:
+            with open(_REJECT_TREND_FILE, "r", encoding="utf-8") as f:
+                trend_data = json.load(f)
+        except Exception:
+            trend_data = []
+
+    # 去重（同一天只保留最新）
+    trend_data = [d for d in trend_data if d.get("date") != date_str]
+    trend_data.append(trend_entry)
+
+    # 只保留最近30天
+    trend_data = sorted(trend_data, key=lambda x: x["date"])[-30:]
+
+    with open(_REJECT_TREND_FILE, "w", encoding="utf-8") as f:
+        json.dump(trend_data, f, ensure_ascii=False, indent=2)
+
+    # 打印5日趋势
+    recent = trend_data[-5:]
+    if len(recent) >= 2:
+        print(f"\n  📈 过滤瓶颈5日趋势:")
+        # 收集所有出现过的原因
+        all_reasons = set()
+        for d in recent:
+            all_reasons.update(d["ratios"].keys())
+
+        for reason in sorted(all_reasons):
+            vals = []
+            for d in recent:
+                vals.append(d["ratios"].get(reason, "-"))
+            vals_str = " / ".join(f"{v}%" if isinstance(v, (int, float)) else "-" for v in vals)
+            print(f"    {reason:>8}: {vals_str}")
+
+
+# ============================================================
 #  8. 主程序
 # ============================================================
 def main():
@@ -1048,11 +1111,8 @@ def main():
 
     if not all_results:
         print("\n  今日暂无符合条件的标的。")
-        top3 = sorted(total_rejects.items(), key=lambda x: -x[1])[:3]
-        if top3:
-            print("  过滤瓶颈 TOP3:")
-            for reason, count in top3:
-                print(f"    {reason}: {count} 只")
+        _print_reject_summary(total_rejects)
+        _save_reject_trend(end_d, total_rejects)
         return
 
     final_df = (
@@ -1062,6 +1122,13 @@ def main():
     )
 
     total_candidates = len(results_stable) + len(results_upper)
+    total_scanned = sum(total_rejects.values()) + total_candidates
+
+    # 打印过滤统计主报告
+    print(f"\n  📊 今日扫描汇总: {total_scanned} 只")
+    print(f"    ✓ 通过: {total_candidates} 只")
+    _print_reject_summary(total_rejects, total_scanned)
+    _save_reject_trend(end_d, total_rejects)
 
     # 只在15:10后写入选股记录，避免盘中数据覆盖盘后定稿
     current_beijing = beijing_now()
@@ -1114,7 +1181,7 @@ def main():
         
         if CONFIG.get("MODE") == "post" and is_post_time:
             mode_label = "盘后定稿"
-            title = f"zuiyou1 v1.2 {mode_label}"
+            title = f"zuiyou1 v1.3 {mode_label}"
             mood_info = f"情绪: {mood} ({zt_count}家涨停)"
 
             stable_picks = []
@@ -1138,8 +1205,16 @@ def main():
                 "全局止损: 亏损超-2.5%无条件清仓"
             )
 
+            # 构建过滤统计摘要
+            reject_lines = []
+            for reason, count in sorted(total_rejects.items(), key=lambda x: -x[1]):
+                if count > 0:
+                    pct = count / total_scanned * 100
+                    reject_lines.append(f"✗ {reason}: {count}只({pct:.0f}%)")
+            reject_summary = "\n".join(reject_lines[:5]) if reject_lines else "无"
+
             try:
-                ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_picks, upper_picks, operation_note)
+                ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_picks, upper_picks, operation_note, reject_summary)
                 if ok:
                     print("  ✅ 已推送到 Telegram\n")
                 else:
@@ -1150,5 +1225,238 @@ def main():
             print(f"  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')}，跳过推送（等待15:10后盘后定稿）\n")
 
 
+# ============================================================
+#  8b. 单股调试模式
+# ============================================================
+def debug_stock(code: str):
+    """调试单只股票，查看每一步过滤结果"""
+    print(f"\n{'=' * 60}")
+    print(f"  调试模式: {code}")
+    print(f"{'=' * 60}\n")
+
+    bs.login()
+
+    # 获取实时行情
+    real_map = get_realtime_quotes([code])
+    key = code.replace(".", "").lower()
+    real_info = real_map.get(key)
+    if real_info is None:
+        print(f"  ✗ 无法获取 {code} 的实时行情")
+        bs.logout()
+        return
+
+    name = real_info.get("name", "未知")
+    print(f"  {code} {name}")
+    print(f"  现价: {real_info['now']}  涨幅: {real_info['pct']:.2f}%  换手: {real_info.get('turn', 0):.2f}%")
+    print(f"  量: {real_info['vol']}  额: {real_info['amount']:.0f}万  市值: {real_info.get('mktcap', 0):.0f}亿\n")
+
+    # 获取历史数据
+    end_d = beijing_now().strftime("%Y-%m-%d")
+    start_d = (beijing_now() - timedelta(days=45)).strftime("%Y-%m-%d")
+    k_rs = bs.query_history_k_data_plus(
+        code, FIELDS_HIST,
+        start_date=start_d, end_date=end_d,
+        frequency="d", adjustflag="3",
+    )
+    if k_rs.error_code != "0":
+        print(f"  ✗ 无法获取历史数据: {k_rs.error_msg}")
+        bs.logout()
+        return
+
+    data_list = []
+    while k_rs.next():
+        data_list.append(k_rs.get_row_data())
+
+    if len(data_list) < 15:
+        print(f"  ✗ 数据不足: 仅 {len(data_list)} 条（需要≥15条）")
+        bs.logout()
+        return
+
+    hist_df = pd.DataFrame(data_list, columns=k_rs.fields)
+
+    # 逐步检查
+    steps = []
+    df = hist_df.copy()
+    for col in ["close", "volume", "pctChg", "turn", "amount", "high", "low", "open", "preclose"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
+
+    df = df[df["volume"] > 0]
+    if len(df) < 12:
+        print(f"  ✗ 有效数据不足: 仅 {len(df)} 条（需要≥12条）")
+        bs.logout()
+        return
+
+    # 使用当前配置
+    global CONFIG
+    CONFIG = CONFIG_STABLE
+
+    curr_price = real_info["now"]
+    curr_pct = real_info["pct"]
+    curr_vol = real_info["vol"]
+    curr_amount = real_info["amount"]
+    curr_turn = real_info.get("turn", 0.0)
+    if curr_turn <= 0:
+        curr_turn = float(df.iloc[-1]["turn"]) if "turn" in df.columns else 0.0
+
+    time_weight = get_time_weight()
+    est_full_vol = curr_vol / time_weight if time_weight > 0 else curr_vol
+    hist_vols = df["volume"].tolist()
+
+    # Step 1: 涨幅
+    in_stable = CONFIG["stable_pct_lo"] <= curr_pct <= CONFIG["stable_pct_hi"]
+    in_upper = CONFIG["upper_pct_lo"] <= curr_pct <= CONFIG["upper_pct_hi"]
+    steps.append(("涨幅筛选", in_stable or in_upper,
+                  f"{curr_pct:.2f}% [{'稳健' if in_stable else '高位' if in_upper else '无'}] "
+                  f"稳健:{CONFIG['stable_pct_lo']}-{CONFIG['stable_pct_hi']}% 高位:{CONFIG['upper_pct_lo']}-{CONFIG['upper_pct_hi']}%"))
+    if not (in_stable or in_upper):
+        _print_debug_steps(steps)
+        bs.logout()
+        return
+
+    # Step 2: 成交额
+    ok = CONFIG["min_amount"] <= curr_amount <= CONFIG["max_amount"]
+    steps.append(("成交额", ok, f"{curr_amount/1e4:.0f}万 要求:{CONFIG['min_amount']/1e4:.0f}万-{CONFIG['max_amount']/1e4:.0f}万"))
+    if not ok:
+        _print_debug_steps(steps)
+        bs.logout()
+        return
+
+    # Step 3: 换手率
+    ok = CONFIG["turn_min"] <= curr_turn <= CONFIG["turn_max"]
+    steps.append(("换手率", ok, f"{curr_turn:.2f}% 要求:{CONFIG['turn_min']}-{CONFIG['turn_max']}%"))
+    if not ok:
+        _print_debug_steps(steps)
+        bs.logout()
+        return
+
+    # Step 4: 市值
+    mktcap = real_info.get("mktcap", 0)
+    if mktcap > 0:
+        ok = CONFIG["min_mktcap"] <= mktcap <= CONFIG["max_mktcap"]
+        steps.append(("流通市值", ok, f"{mktcap:.0f}亿 要求:{CONFIG['min_mktcap']}-{CONFIG['max_mktcap']}亿"))
+        if not ok:
+            _print_debug_steps(steps)
+            bs.logout()
+            return
+    else:
+        steps.append(("流通市值", True, "数据缺失，跳过"))
+
+    # Step 5: 量比
+    recent_vols = sorted(hist_vols[-12:])
+    if len(recent_vols) < 4:
+        steps.append(("量比", False, f"有效数据仅{len(recent_vols)}条，不足计算"))
+        _print_debug_steps(steps)
+        bs.logout()
+        return
+    trimmed = recent_vols[1:-1] if len(recent_vols) > 2 else recent_vols
+    avg_vol_trimmed = sum(trimmed) / len(trimmed)
+    vol_ratio = est_full_vol / avg_vol_trimmed if avg_vol_trimmed > 0 else 0
+    ok = CONFIG["vol_ratio_min"] <= vol_ratio <= CONFIG["vol_ratio_max"]
+    steps.append(("量比", ok, f"{vol_ratio:.2f} 要求:{CONFIG['vol_ratio_min']}-{CONFIG['vol_ratio_max']}"))
+    if not ok:
+        _print_debug_steps(steps)
+        bs.logout()
+        return
+
+    # Step 6a: 均线
+    hist_close = df["close"].tolist()[:-1]
+    if len(hist_close) < 10:
+        steps.append(("均线", False, f"有效数据仅{len(hist_close)}条，不足计算"))
+        _print_debug_steps(steps)
+        bs.logout()
+        return
+    ma5_yest = sum(hist_close[-5:]) / 5
+    ma10_yest = sum(hist_close[-10:]) / 10
+    ok = curr_price > ma5_yest > ma10_yest
+    steps.append(("均线多头", ok, f"现价:{curr_price:.2f} MA5:{ma5_yest:.2f} MA10:{ma10_yest:.2f}"))
+    if not ok:
+        _print_debug_steps(steps)
+        bs.logout()
+        return
+
+    # Step 6b: 压力
+    recent_highs = df["high"].tail(20).tolist()
+    recent_highs = [float(x) for x in recent_highs if float(x) > 0]
+    if recent_highs:
+        max_high = max(recent_highs)
+        resistance_ratio = (max_high - curr_price) / curr_price
+        threshold = 0.15 if in_upper else 0.08
+        ok = resistance_ratio <= threshold
+        steps.append(("压力检测", ok, f"压力比:{resistance_ratio*100:.2f}% 阈值:{threshold*100:.0f}%"))
+        if not ok:
+            _print_debug_steps(steps)
+            bs.logout()
+            return
+
+    # 冷门行业
+    industry = get_stock_industry(code)
+    cold = is_cold_industry(industry)
+    steps.append(("行业过滤", not cold, f"{industry} {'冷门行业扣分' if cold else '正常'}"))
+
+    # 尾盘回落（post模式）
+    if CONFIG["MODE"] == "post":
+        today_high = float(df.iloc[-1]["high"]) if "high" in df.columns else 0
+        if today_high > 0 and curr_price > 0:
+            drawdown = (today_high - curr_price) / today_high
+            ok = drawdown <= 0.03
+            steps.append(("尾盘回落", ok, f"回撤:{drawdown*100:.2f}% 阈值:3%"))
+
+    # 评分
+    score = 50
+    tags = []
+    if in_stable:
+        score += 15; tags.append("稳健蓄势")
+        bias = (curr_price - ma5_yest) / ma5_yest if ma5_yest > 0 else 1
+        if bias < 0.02:
+            score += 10; tags.append("紧贴MA5")
+    elif in_upper:
+        score += 20; tags.append("高位博弈")
+
+    if 1.8 <= vol_ratio <= 4.0:
+        score += 25; tags.append("黄金放量")
+    elif vol_ratio > 4.0:
+        score += 10; tags.append("爆量博弈")
+    else:
+        score += 5; tags.append("量能达标")
+
+    if 5.0 <= curr_turn <= 8.0:
+        score += 15; tags.append("黄金换手")
+    elif 8.0 < curr_turn <= 10.0:
+        score += 8; tags.append("换手偏高")
+
+    if cold:
+        score -= 20; tags.append("冷门行业↓")
+
+    steps.append(("评分", score >= CONFIG["score_threshold"],
+                  f"得分:{score} 阈值:{CONFIG['score_threshold']} 标签:{' | '.join(tags)}"))
+
+    _print_debug_steps(steps)
+    if score >= CONFIG["score_threshold"]:
+        print(f"\n  ✅ {code} 通过所有过滤！")
+    else:
+        print(f"\n  ✗ {code} 得分不足，被过滤")
+
+    bs.logout()
+
+def _print_debug_steps(steps):
+    """打印调试步骤结果"""
+    for i, (name, passed, detail) in enumerate(steps, 1):
+        status = "✅" if passed else "✗"
+        print(f"  Step{i:2d} {name:<8}: {status} {detail}")
+        if not passed:
+            print(f"  → 跳过后续步骤")
+            break
+
+
 if __name__ == "__main__":
-    main()
+    import sys
+
+    if len(sys.argv) > 1 and sys.argv[1] == "--debug-stock":
+        if len(sys.argv) < 3:
+            print("用法: python zuiyou1.py --debug-stock <股票代码>")
+            print("示例: python zuiyou1.py --debug-stock sh.600519")
+            sys.exit(1)
+        debug_stock(sys.argv[2])
+    else:
+        main()
