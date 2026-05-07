@@ -73,7 +73,7 @@ jobs:
           POSTGRES_DB: stockrec_db
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
       
-      - name: Collect news signals (4-layer: AKShare→RSSHub→HTTP→Playwright)
+      - name: Collect news signals (4-layer fallback)
         run: python autorecommend/collector/src/collector.py --once
         env:
           POSTGRES_HOST: localhost
