@@ -8,6 +8,7 @@ psycopg2-binary
 openai
 
 # Data Collection
+baostock
 tushare
 yfinance
 akshare

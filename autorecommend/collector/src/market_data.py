@@ -1,4 +1,4 @@
-"""行情数据每日采集 - Tushare 为主，yfinance/AKShare 为备用"""
+"""行情数据每日采集 - BaoStock 为主，Tushare/yfinance/AKShare 为备用"""
 import os
 import time
 from datetime import datetime, date
@@ -53,8 +53,100 @@ def ensure_market_tables():
     cur.execute(sql); conn.commit(); cur.close(); conn.close()
 
 
+def fetch_with_baostock():
+    """用 BaoStock 获取 A 股核心股票行情（GitHub Actions 可用，无需 token）"""
+    import baostock as bs
+    
+    logger.info("使用 BaoStock 获取 A 股行情数据...")
+    
+    lg = bs.login()
+    if lg.error_code != '0':
+        logger.warning(f"BaoStock 登录失败: {lg.error_msg}")
+        return None
+    
+    try:
+        today_str = date.today().strftime('%Y-%m-%d')
+        
+        # 核心股票列表（沪深300前100，确保 GitHub Actions 不超时）
+        major_codes = [
+            'sh.600519', 'sh.601318', 'sh.600036', 'sh.601166', 'sh.600887',
+            'sh.601398', 'sh.601288', 'sh.601939', 'sh.601988', 'sh.601628',
+            'sh.600030', 'sh.601688', 'sh.601888', 'sh.601012', 'sh.603259',
+            'sh.600276', 'sh.603288', 'sh.600900', 'sh.601899', 'sh.601088',
+            'sh.600111', 'sh.600160', 'sh.600176', 'sh.600315', 'sh.600801',
+            'sh.601100', 'sh.603059', 'sh.603193', 'sh.603197', 'sh.603256',
+            'sh.603379', 'sh.603605', 'sh.603737', 'sh.688017',
+            'sh.600000', 'sh.600016', 'sh.600028', 'sh.600031', 'sh.600050',
+            'sh.600104', 'sh.600115', 'sh.600150', 'sh.600196', 'sh.600219',
+            'sh.600256', 'sh.600271', 'sh.600309', 'sh.600346', 'sh.600406',
+            'sh.600436', 'sh.600438', 'sh.600460', 'sh.600515', 'sh.600547',
+            'sh.600570', 'sh.600584', 'sh.600585', 'sh.600588', 'sh.600600',
+            'sh.600660', 'sh.600690', 'sh.600703', 'sh.600745', 'sh.600760',
+            'sh.600803', 'sh.600809', 'sh.600837', 'sh.600845', 'sh.600886',
+            'sh.600905', 'sh.600919', 'sh.600926', 'sh.600958', 'sh.601006',
+            'sh.601009', 'sh.601021', 'sh.601059', 'sh.601066', 'sh.601077',
+            'sh.601099', 'sh.601111', 'sh.601117', 'sh.601138', 'sh.601169',
+            'sh.601186', 'sh.601211', 'sh.601225', 'sh.601229', 'sh.601236',
+            'sh.601238', 'sh.601319', 'sh.601328', 'sh.601336', 'sh.601360',
+            'sh.601377', 'sh.601390', 'sh.601555', 'sh.601577', 'sh.601600',
+            'sh.601601', 'sh.601607', 'sh.601618', 'sh.601633', 'sh.601658',
+            'sz.000858', 'sz.000333', 'sz.002594', 'sz.000651', 'sz.002415',
+            'sz.000725', 'sz.002714', 'sz.000001', 'sz.000002', 'sz.002475',
+            'sz.300750', 'sz.300059', 'sz.000568', 'sz.002304', 'sz.002352',
+            'sz.002049', 'sz.002230', 'sz.002271', 'sz.002460', 'sz.002466',
+            'sz.000786', 'sz.002080', 'sz.002299', 'sz.002311', 'sz.002458',
+        ]
+        
+        rows = []
+        for i, code in enumerate(major_codes):
+            try:
+                rs = bs.query_history_k_data_plus(
+                    code,
+                    "date,code,open,high,low,close,volume,amount,turn",
+                    start_date=today_str, end_date=today_str,
+                    frequency="d", adjustflag="3"
+                )
+                
+                if rs.error_code != '0' or not rs.next():
+                    continue
+                
+                row_data = rs.get_row_data()
+                if not row_data or len(row_data) < 9:
+                    continue
+                
+                ts_code = code[3:] + ('.SH' if code.startswith('sh.') else '.SZ')
+                
+                rows.append((
+                    ts_code,
+                    pd.to_datetime(row_data[0]).date(),
+                    float(row_data[2]) if row_data[2] else None,
+                    float(row_data[3]) if row_data[3] else None,
+                    float(row_data[4]) if row_data[4] else None,
+                    float(row_data[5]) if row_data[5] else None,
+                    int(float(row_data[6])) if row_data[6] else None,
+                    float(row_data[7]) if row_data[7] else None,
+                    None,
+                    float(row_data[8]) if row_data[8] else None,
+                ))
+            except Exception as e:
+                logger.debug(f"BaoStock {code} 失败: {e}")
+                continue
+            
+            if (i + 1) % 25 == 0:
+                logger.info(f"BaoStock 进度: {i+1}/{len(major_codes)}")
+        
+        logger.info(f"BaoStock 获取到 {len(rows)} 条行情数据")
+        return rows if rows else None
+        
+    except Exception as e:
+        logger.warning(f"BaoStock 获取失败: {e}")
+        return None
+    finally:
+        bs.logout()
+
+
 def fetch_with_tushare():
-    """用 Tushare 获取 A 股全市场行情（GitHub Actions 可用）"""
+    """用 Tushare 获取 A 股全市场行情（备用）"""
     import tushare as ts
     
     token = os.getenv('TUSHARE_TOKEN')
@@ -199,15 +291,19 @@ def fetch_daily_quotes_today():
     """全市场当日行情快照 - 多数据源降级"""
     rows = None
     
-    # 1. Tushare（优先）
+    # 1. BaoStock（优先，无需 token）
+    if rows is None:
+        rows = fetch_with_baostock()
+    
+    # 2. Tushare（备用）
     if rows is None:
         rows = fetch_with_tushare()
     
-    # 2. yfinance（备用）
+    # 3. yfinance（备用）
     if rows is None:
         rows = fetch_with_yfinance()
     
-    # 3. AKShare（最后）
+    # 4. AKShare（最后）
     if rows is None:
         try:
             rows = fetch_with_akshare()
