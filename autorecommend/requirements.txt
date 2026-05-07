@@ -8,6 +8,8 @@ psycopg2-binary
 openai
 
 # Data Collection
+tushare
+yfinance
 akshare
 pandas
 pyarrow
