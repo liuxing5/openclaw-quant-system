@@ -112,7 +112,7 @@ def fetch_pending(limit=20):
     return rows
 
 
-def store_extraction(raw_id: int, source_id: int, pub_time, items: list):
+def store_extraction(raw_id: int, source_name: str, pub_time, items: list):
     if not items:
         return
     conn = get_db(); cur = conn.cursor()
@@ -124,12 +124,12 @@ def store_extraction(raw_id: int, source_id: int, pub_time, items: list):
             continue
         cur.execute("""
             INSERT INTO extracted_recommendations
-            (raw_signal_id, source_id, ts_code, stock_name, recommendation_type,
+            (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, target_price, stop_loss,
              time_horizon, raw_excerpt, confidence, pub_time)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
         """, (
-            raw_id, source_id,
+            raw_id, source_name,
             ts_code, it.get('stock_name'),
             it.get('recommendation_type'), it.get('strength'),
             it.get('logic_category'), it.get('logic_summary'),
@@ -152,7 +152,7 @@ def process_one(row):
     try:
         result = call_llm(prompt)
         items = result.get('items', []) if result.get('is_recommendation') else []
-        n = store_extraction(row['id'], None, row['pub_time'], items)
+        n = store_extraction(row['id'], row['source_name'], row['pub_time'], items)
         logger.info(f"raw_id={row['id']} → {n or 0} signals")
         if current_model != PRIMARY_MODEL:
             switch_to_primary()

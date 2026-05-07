@@ -1,6 +1,32 @@
 -- AI Stock Recommender Database Schema
 -- Phase 2: Core Table Design
 
+-- Migration: Update raw_signals table structure
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='source_name') THEN
+        ALTER TABLE raw_signals ADD COLUMN source_name VARCHAR(100);
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='source_tier') THEN
+        ALTER TABLE raw_signals ADD COLUMN source_tier INT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='url') THEN
+        ALTER TABLE raw_signals ADD COLUMN url TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='content_hash') THEN
+        ALTER TABLE raw_signals ADD COLUMN content_hash VARCHAR(64);
+        ALTER TABLE raw_signals ADD CONSTRAINT raw_signals_content_hash_key UNIQUE (content_hash);
+    END IF;
+END $$;
+
+-- Migration: Update extracted_recommendations table structure
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='extracted_recommendations' AND column_name='source_name') THEN
+        ALTER TABLE extracted_recommendations ADD COLUMN source_name VARCHAR(100);
+    END IF;
+END $$;
+
 -- Feed sources configuration table (dynamic management)
 CREATE TABLE IF NOT EXISTS feed_sources (
     id SERIAL PRIMARY KEY,
@@ -23,25 +49,26 @@ CREATE INDEX idx_feed_enabled ON feed_sources(enabled, poll_interval_sec);
 -- Raw signals table (each RSS entry lands here)
 CREATE TABLE IF NOT EXISTS raw_signals (
     id BIGSERIAL PRIMARY KEY,
-    source_id INT REFERENCES feed_sources(id),
-    guid VARCHAR(500) NOT NULL,
+    source_id INT,
+    source_name VARCHAR(100),
+    source_tier INT,
     title TEXT,
     content TEXT,
-    link TEXT,
-    author VARCHAR(200),
+    url TEXT,
     pub_time TIMESTAMPTZ,
     fetch_time TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(source_id, guid)
+    content_hash VARCHAR(64) UNIQUE
 );
 
-CREATE INDEX idx_raw_pub_time ON raw_signals(pub_time DESC);
-CREATE INDEX idx_raw_fetch_time ON raw_signals(fetch_time DESC);
+CREATE INDEX IF NOT EXISTS idx_raw_pub_time ON raw_signals(pub_time DESC);
+CREATE INDEX IF NOT EXISTS idx_raw_fetch_time ON raw_signals(fetch_time DESC);
+CREATE INDEX IF NOT EXISTS idx_raw_source ON raw_signals(source_id);
 
 -- Extracted structured recommendations
 CREATE TABLE IF NOT EXISTS extracted_recommendations (
     id BIGSERIAL PRIMARY KEY,
     raw_signal_id BIGINT REFERENCES raw_signals(id),
-    source_id INT REFERENCES feed_sources(id),
+    source_name VARCHAR(100),
     ts_code VARCHAR(20) NOT NULL,         -- 600519.SH
     stock_name VARCHAR(50),
     recommendation_type VARCHAR(30),      -- buy/watch/strong_buy/sell
