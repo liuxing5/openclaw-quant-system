@@ -5,7 +5,7 @@ import json
 from datetime import date
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot
 from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
 from loguru import logger
@@ -94,27 +94,37 @@ async def push_daily_candidates():
         await bot.send_message(CHAT_ID, "今日无候选股", parse_mode=ParseMode.HTML)
         return
     
-    # 汇总头
-    header = f"📊 <b>{today}</b> 候选池\n共 {len(cands)} 只"
-    await bot.send_message(CHAT_ID, header, parse_mode=ParseMode.HTML)
+    # 合并所有候选股为一条消息
+    lines = [f"📊 <b>{today}</b> 候选池\n共 {len(cands)} 只\n"]
     
     for c in cands:
-        msg = build_message(dict(c))
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ 关注", callback_data=f"watch_{c['id']}"),
-            InlineKeyboardButton("❌ 忽略", callback_data=f"ignore_{c['id']}"),
-            InlineKeyboardButton("📈 已入场", callback_data=f"entered_{c['id']}"),
-        ]])
-        try:
-            sent = await bot.send_message(
-                CHAT_ID, msg, parse_mode=ParseMode.HTML, reply_markup=kb)
-            cur.execute("""
-                INSERT INTO push_history (candidate_id, push_type, chat_id, message_id)
-                VALUES (%s, 'pre_open', %s, %s);
-            """, (c['id'], CHAT_ID, sent.message_id))
-        except Exception as e:
-            logger.error(f"push failed for {c['ts_code']}: {e}")
-        await asyncio.sleep(1)
+        c = dict(c)
+        sources = c.get('sources') or []
+        if isinstance(sources, str):
+            sources = json.loads(sources)
+        src_names = ', '.join(set(s.get('source','') for s in sources[:5]))
+        
+        entry_low = c['entry_low'] if c['entry_low'] else '—'
+        entry_high = c['entry_high'] if c['entry_high'] else '—'
+        stop_loss = c['stop_loss'] if c['stop_loss'] else '—'
+        target_1 = c['target_1'] if c['target_1'] else '—'
+        target_2 = c['target_2'] if c['target_2'] else '—'
+        position_pct = (c['position_pct'] or 0) * 100
+        logic_tags = ', '.join(c.get('logic_tags') or [])
+        
+        lines.append(f"🎯 <b>{fmt_html(c['stock_name'] or '')}</b> <code>{fmt_html(c['ts_code'])}</code>")
+        lines.append(f"综合分: <b>{c['final_score']:.1f}</b> | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+        lines.append(f"入场: {fmt_html(str(entry_low))}-{fmt_html(str(entry_high))}  止损: {fmt_html(str(stop_loss))}")
+        lines.append(f"目标: {fmt_html(str(target_1))}/{fmt_html(str(target_2))}  仓位: {fmt_html(f'{position_pct:.0f}')}%")
+        lines.append(f"逻辑: {fmt_html(logic_tags)} | 源: {fmt_html(src_names)}")
+        lines.append("")
+    
+    msg = '\n'.join(lines)
+    
+    try:
+        await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
+    except Exception as e:
+        logger.error(f"push failed: {e}")
     
     conn.commit()
     cur.close(); conn.close()
