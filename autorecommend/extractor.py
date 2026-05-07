@@ -90,14 +90,19 @@ def call_llm(prompt: str) -> dict:
 
 def fetch_pending(limit=20):
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    limit_int = int(limit)
     cur.execute("""
         SELECT r.id, r.title, r.content, r.pub_time,
                r.source_name, r.source_tier,
                CASE
-                   WHEN r.source_name LIKE '%新闻%' OR r.source_name LIKE '%快讯%' OR r.source_name LIKE '%电报%' THEN 'news'
-                   WHEN r.source_name LIKE '%研报%' OR r.source_name LIKE '%调研%' THEN 'research'
-                   WHEN r.source_name LIKE '%涨停%' OR r.source_name LIKE '%龙虎榜%' THEN 'lhb'
-                   WHEN r.source_name LIKE '%概念%' THEN 'concept'
+                   WHEN POSITION('新闻' IN r.source_name) > 0
+                     OR POSITION('快讯' IN r.source_name) > 0
+                     OR POSITION('电报' IN r.source_name) > 0 THEN 'news'
+                   WHEN POSITION('研报' IN r.source_name) > 0
+                     OR POSITION('调研' IN r.source_name) > 0 THEN 'research'
+                   WHEN POSITION('涨停' IN r.source_name) > 0
+                     OR POSITION('龙虎榜' IN r.source_name) > 0 THEN 'lhb'
+                   WHEN POSITION('概念' IN r.source_name) > 0 THEN 'concept'
                    ELSE 'news'
                END AS category
         FROM raw_signals r
@@ -110,15 +115,14 @@ def fetch_pending(limit=20):
             OR EXISTS (
                 SELECT 1 FROM stock_basic_info sb
                 WHERE LENGTH(sb.stock_name) >= 2
-                  AND (r.title LIKE '%' || sb.stock_name || '%'
-                       OR r.content LIKE '%' || sb.stock_name || '%')
-                LIMIT 1
+                  AND (POSITION(sb.stock_name IN r.title) > 0
+                       OR POSITION(sb.stock_name IN r.content) > 0)
             )
         )
         AND r.fetch_time > NOW() - INTERVAL '48 hours'
         ORDER BY r.source_tier ASC, r.fetch_time DESC
         LIMIT %s;
-    """, (limit,))
+    """, (limit_int,))
     rows = cur.fetchall()
     cur.close(); conn.close()
     return rows
