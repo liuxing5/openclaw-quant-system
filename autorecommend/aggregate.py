@@ -103,7 +103,7 @@ def aggregate_today():
                 continue
 
             close_price = float(q['close'])
-            amount = q.get('amount') or 0
+            amount = float(q.get('amount') or 0)
 
             if amount < MIN_LIQUIDITY:
                 logger.debug(f"{r['ts_code']} 流动性不足 {amount/1e8:.2f}亿")

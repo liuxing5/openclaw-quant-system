@@ -307,14 +307,23 @@ def fetch_lhb_today():
     except Exception as e:
         logger.warning(f"lhb skipped: {e}")
         return
-    if df.empty:
+    if df is None or df.empty:
+        logger.info("lhb: 无数据")
         return
     rows = []
     for _, r in df.iterrows():
-        code = str(r.get('代码','')).zfill(6)
-        ts = code + ('.SH' if code.startswith('6') else '.SZ')
-        rows.append((date.today(), ts, r.get('名称',''),
-                     r.get('上榜原因',''), 0, 0, r.get('龙虎榜净买额',0), False))
+        try:
+            code = str(r.get('代码','') or '').zfill(6)
+            if not code or code == 'nan' or len(code) < 4:
+                continue
+            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+            rows.append((date.today(), ts, r.get('名称','') or '',
+                         r.get('上榜原因','') or '', 0, 0, r.get('龙虎榜净买额',0) or 0, False))
+        except Exception as e:
+            logger.debug(f"lhb row error: {e}")
+            continue
+    if not rows:
+        return
     conn = get_db(); cur = conn.cursor()
     execute_values(cur, """
         INSERT INTO lhb_detail (trade_date, ts_code, stock_name, reason, buy_amt, sell_amt, net_amt, is_inst)

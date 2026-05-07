@@ -76,10 +76,14 @@ def fetch_akshare_news():
             return rows
         for _, r in df.iterrows():
             try:
+                title = r.get('新闻标题', '')
+                content = r.get('新闻内容', '')
+                if not title or title == 'nan':
+                    continue
                 rows.append(make_signal(
                     source='AKShare-财经新闻', tier=2,
-                    title=str(r.get('新闻标题', ''))[:1000],
-                    content=str(r.get('新闻内容', ''))[:5000],
+                    title=str(title)[:1000],
+                    content=str(content)[:5000] if content else '',
                     url=str(r.get('新闻链接', ''))[:500],
                     pub_time=pd.to_datetime(r.get('发布时间')) if r.get('发布时间') else None,
                 ))
@@ -98,17 +102,24 @@ def fetch_akshare_lhb():
     rows = []
     try:
         df = ak.stock_lhb_detail_em(start_date=today_str, end_date=today_str)
+        if df is None or df.empty:
+            return rows
         for _, r in df.iterrows():
-            code = str(r.get('代码', '')).zfill(6)
-            name = r.get('名称', '')
-            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-            net = r.get('龙虎榜净买额', 0)
-            rows.append(make_signal(
-                source='AKShare-龙虎榜', tier=1,
-                title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
-                content=f"代码 {code} {name} 上榜原因: {r.get('上榜原因', '')} "
-                       f"龙虎榜净买额 {net} 元",
-            ))
+            try:
+                code = str(r.get('代码', '') or '').zfill(6)
+                if not code or code == 'nan' or len(code) < 4:
+                    continue
+                name = r.get('名称', '') or ''
+                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                net = r.get('龙虎榜净买额', 0) or 0
+                rows.append(make_signal(
+                    source='AKShare-龙虎榜', tier=1,
+                    title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
+                    content=f"代码 {code} {name} 上榜原因: {r.get('上榜原因', '') or ''} "
+                           f"龙虎榜净买额 {net} 元",
+                ))
+            except Exception:
+                continue
         logger.info(f"龙虎榜: {len(rows)} 条")
     except Exception as e:
         logger.warning(f"lhb 失败: {e}")
@@ -184,19 +195,26 @@ def fetch_akshare_research():
         df = df[df[date_col] >= cutoff]
 
         for _, r in df.iterrows():
-            code = str(r.get('股票代码', '')).zfill(6)
-            if not code or code == 'nan' or len(code) < 4:
+            try:
+                code = str(r.get('股票代码', '') or '').zfill(6)
+                if not code or code == 'nan' or len(code) < 4:
+                    continue
+                name = r.get('股票简称', '') or ''
+                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                rating = r.get('评级', '') or ''
+                org = r.get('机构名称', '') or ''
+                target_price = r.get('目标价', '') or ''
+                report_title = r.get('报告名称', '') or ''
+                rows.append(make_signal(
+                    source='AKShare-个股研报', tier=1,
+                    title=f"研报: {name} {ts} {rating} - {org}",
+                    content=f"代码 {code} {name} 评级 {rating} "
+                           f"目标价 {target_price} 报告标题 {report_title} "
+                           f"机构 {org}",
+                    pub_time=r[date_col],
+                ))
+            except Exception:
                 continue
-            name = r.get('股票简称', '')
-            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-            rows.append(make_signal(
-                source='AKShare-个股研报', tier=1,
-                title=f"研报: {name} {ts} {r.get('评级', '')} - {r.get('机构名称', '')}",
-                content=f"代码 {code} {name} 评级 {r.get('评级', '')} "
-                       f"目标价 {r.get('目标价', '')} 报告标题 {r.get('报告名称', '')} "
-                       f"机构 {r.get('机构名称', '')}",
-                pub_time=r[date_col],
-            ))
         logger.info(f"个股研报: {len(rows)} 条")
     except Exception as e:
         logger.warning(f"research 失败: {e}")
@@ -221,17 +239,21 @@ def fetch_akshare_jgdy():
             df[date_col] = pd.to_datetime(df[date_col])
             df = df[df[date_col] >= pd.Timestamp(cutoff)]
         for _, r in df.iterrows():
-            code = str(r.get('股票代码', '')).zfill(6)
-            if not code or code == 'nan' or len(code) < 4:
+            try:
+                code = str(r.get('股票代码', '') or '').zfill(6)
+                if not code or code == 'nan' or len(code) < 4:
+                    continue
+                name = r.get('股票简称', '') or ''
+                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                count = r.get('接待机构数量', 0) or 0
+                rows.append(make_signal(
+                    source='AKShare-机构调研', tier=1,
+                    title=f"机构调研: {name} {ts} - {count}家",
+                    content=f"代码 {code} {name} 接待 {count} 家机构 "
+                           f"调研日期 {r.get(date_col, '') or ''}",
+                ))
+            except Exception:
                 continue
-            name = r.get('股票简称', '')
-            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-            rows.append(make_signal(
-                source='AKShare-机构调研', tier=1,
-                title=f"机构调研: {name} {ts} - {r.get('接待机构数量', 0)}家",
-                content=f"代码 {code} {name} 接待 {r.get('接待机构数量', 0)} 家机构 "
-                       f"调研日期 {r.get(date_col, '')}",
-            ))
         logger.info(f"机构调研: {len(rows)} 条")
     except Exception as e:
         logger.warning(f"jgdy 失败: {e}")
