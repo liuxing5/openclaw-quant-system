@@ -1,29 +1,33 @@
 -- AI Stock Recommender Database Schema
 -- Phase 2: Core Table Design
 
--- Migration: Update raw_signals table structure
+-- Migration: Update raw_signals table structure (only if table exists)
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='source_name') THEN
-        ALTER TABLE raw_signals ADD COLUMN source_name VARCHAR(100);
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='source_tier') THEN
-        ALTER TABLE raw_signals ADD COLUMN source_tier INT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='url') THEN
-        ALTER TABLE raw_signals ADD COLUMN url TEXT;
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='content_hash') THEN
-        ALTER TABLE raw_signals ADD COLUMN content_hash VARCHAR(64);
-        ALTER TABLE raw_signals ADD CONSTRAINT raw_signals_content_hash_key UNIQUE (content_hash);
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='raw_signals') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='source_name') THEN
+            ALTER TABLE raw_signals ADD COLUMN source_name VARCHAR(100);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='source_tier') THEN
+            ALTER TABLE raw_signals ADD COLUMN source_tier INT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='url') THEN
+            ALTER TABLE raw_signals ADD COLUMN url TEXT;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='raw_signals' AND column_name='content_hash') THEN
+            ALTER TABLE raw_signals ADD COLUMN content_hash VARCHAR(64);
+            ALTER TABLE raw_signals ADD CONSTRAINT raw_signals_content_hash_key UNIQUE (content_hash);
+        END IF;
     END IF;
 END $$;
 
--- Migration: Update extracted_recommendations table structure
+-- Migration: Update extracted_recommendations table structure (only if table exists)
 DO $$
 BEGIN
-    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='extracted_recommendations' AND column_name='source_name') THEN
-        ALTER TABLE extracted_recommendations ADD COLUMN source_name VARCHAR(100);
+    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name='extracted_recommendations') THEN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='extracted_recommendations' AND column_name='source_name') THEN
+            ALTER TABLE extracted_recommendations ADD COLUMN source_name VARCHAR(100);
+        END IF;
     END IF;
 END $$;
 
