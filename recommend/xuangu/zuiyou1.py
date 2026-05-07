@@ -1022,8 +1022,11 @@ def _save_reject_trend(date_str: str, rejects: dict):
     # 只保留最近30天
     trend_data = sorted(trend_data, key=lambda x: x["date"])[-30:]
 
-    with open(_REJECT_TREND_FILE, "w", encoding="utf-8") as f:
-        json.dump(trend_data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(_REJECT_TREND_FILE, "w", encoding="utf-8") as f:
+            json.dump(trend_data, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass  # 沙箱/只读环境跳过写入
 
     # 打印5日趋势
     recent = trend_data[-5:]
