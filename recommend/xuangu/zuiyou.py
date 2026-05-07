@@ -559,6 +559,9 @@ def analyze_ultimate(
     if vol_ratio > CONFIG["penalty_vol_ratio"]:
         score -= 15
         tags.append("量比过激↓")
+        # 移除可能已加的"爆量博弈"标签，避免自相矛盾
+        if "爆量博弈" in tags:
+            tags.remove("爆量博弈")
 
     bias_ma5 = (curr_price - ma5_yest) / ma5_yest if ma5_yest > 0 else 0
     if bias_ma5 > CONFIG["penalty_ma_bias"]:
