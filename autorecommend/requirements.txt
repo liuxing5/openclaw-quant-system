@@ -21,6 +21,7 @@ httpx
 
 # Utilities
 requests
+feedparser
 
 # Web UI
 jinja2
