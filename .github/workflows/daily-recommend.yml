@@ -1,0 +1,126 @@
+name: Daily Stock Recommendation
+
+on:
+  schedule:
+    # 每个交易日 15:30 UTC+8 = 07:30 UTC
+    - cron: '30 7 * * 1-5'
+  workflow_dispatch:  # 支持手动触发
+
+jobs:
+  recommend:
+    runs-on: ubuntu-latest
+    
+    env:
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
+      LLM_MODEL: ${{ secrets.LLM_MODEL }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      DEEPSEEK_BASE_URL: ${{ secrets.DEEPSEEK_BASE_URL }}
+      DEEPSEEK_MODEL: ${{ secrets.DEEPSEEK_MODEL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      TZ: Asia/Shanghai
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: stockrec
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: stockrec_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r autorecommend/requirements.txt
+          pip install psycopg2-binary
+      
+      - name: Initialize database
+        run: |
+          PGPASSWORD=$POSTGRES_PASSWORD psql -h localhost -U stockrec -d stockrec_db -f autorecommend/configs/schema.sql
+        env:
+          PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: stockrec
+          POSTGRES_DB: stockrec_db
+      
+      - name: Load feed sources
+        run: |
+          python autorecommend/configs/load_feeds.py
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: stockrec
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: stockrec_db
+      
+      - name: Collect market data (AKShare)
+        run: python autorecommend/collector/src/market_data.py
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: stockrec
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: stockrec_db
+      
+      - name: Collect RSS signals
+        run: python autorecommend/collector/src/collector.py --once
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: stockrec
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: stockrec_db
+          RSSHUB_BASE_URL: http://rsshub.app
+      
+      - name: Extract signals with LLM
+        run: python autorecommend/analyzer/src/extractor.py --once
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: stockrec
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: stockrec_db
+      
+      - name: Aggregate candidates
+        run: python autorecommend/strategy/src/aggregate.py
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: stockrec
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: stockrec_db
+      
+      - name: Generate HTML report
+        run: python autorecommend/web/generate_report.py
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: stockrec
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: stockrec_db
+      
+      - name: Push to Telegram
+        run: python autorecommend/bot/src/pusher.py
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_USER: stockrec
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: stockrec_db
+      
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./autorecommend/docs
+          keep_files: true
