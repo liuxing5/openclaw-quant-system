@@ -71,11 +71,11 @@ jobs:
         CURRENT_HOUR=$(date -u +%H)
         CURRENT_MIN=$(date -u +%M)
         CURRENT_TIME="${CURRENT_HOUR}${CURRENT_MIN}"
-        BEIJING_HOUR=$(( (CURRENT_HOUR + 8) % 24 ))
-        BEIJING_MIN=$CURRENT_MIN
+        BEIJING_HOUR=$(( (10#$CURRENT_HOUR + 8) % 24 ))
+        BEIJING_MIN=$((10#$CURRENT_MIN))
         echo "Current UTC time: ${CURRENT_TIME} (Beijing: ${BEIJING_HOUR}:${BEIJING_MIN})"
         
-        # 精确匹配 cron 定时触发
+        # 精确匹配 cron 定时触发 (使用字符串比较避免八进制解析)
         if [[ "$CURRENT_TIME" == "0126" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=⏰ 09:26 卖出决策" >> $GITHUB_OUTPUT
@@ -100,23 +100,23 @@ jobs:
         elif [[ "$CURRENT_TIME" == "0710" ]]; then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 15:10 盘后定稿-最终决策" >> $GITHUB_OUTPUT
-        # cron-job.org 触发：根据北京时间范围智能选择
-        elif [[ $BEIJING_HOUR -ge 9 && $BEIJING_HOUR -lt 10 ]]; then
+        # cron-job.org 触发：根据北京时间范围智能选择 (使用算术扩展避免八进制解析)
+        elif (( BEIJING_HOUR >= 9 && BEIJING_HOUR < 10 )); then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=⏰ 早盘卖出决策" >> $GITHUB_OUTPUT
-        elif [[ $BEIJING_HOUR -ge 10 && $BEIJING_HOUR -lt 14 ]]; then
+        elif (( BEIJING_HOUR >= 10 && BEIJING_HOUR < 14 )); then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=📊 盘中持仓跟踪" >> $GITHUB_OUTPUT
-        elif [[ $BEIJING_HOUR -ge 14 && $BEIJING_HOUR -lt 15 ]]; then
+        elif (( BEIJING_HOUR >= 14 && BEIJING_HOUR < 15 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🔥 14:xx 盘中选股初筛" >> $GITHUB_OUTPUT
-        elif [[ $BEIJING_HOUR -eq 15 && $BEIJING_MIN -ge 10 ]]; then
+        elif (( BEIJING_HOUR == 15 && BEIJING_MIN >= 10 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 15:10+ 盘后选股定稿" >> $GITHUB_OUTPUT
-        elif [[ $BEIJING_HOUR -eq 15 && $BEIJING_MIN -lt 10 ]]; then
+        elif (( BEIJING_HOUR == 15 && BEIJING_MIN < 10 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=📊 15:0x 盘中选股初筛" >> $GITHUB_OUTPUT
-        elif [[ $BEIJING_HOUR -ge 15 ]]; then
+        elif (( BEIJING_HOUR >= 15 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 盘后选股定稿" >> $GITHUB_OUTPUT
         else
