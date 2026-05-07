@@ -1,7 +1,7 @@
 """生成每日推荐报告 - HTML"""
 import os
 import json
-from datetime import date
+from datetime import date, timedelta
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from jinja2 import Template
