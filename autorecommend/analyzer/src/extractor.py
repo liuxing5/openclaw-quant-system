@@ -14,14 +14,14 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 # 主模型配置
-PRIMARY_API_KEY = os.getenv('LLM_API_KEY') or os.getenv('DEEPSEEK_API_KEY')
-PRIMARY_BASE_URL = os.getenv('LLM_BASE_URL') or os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
-PRIMARY_MODEL = os.getenv('LLM_MODEL') or os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')
+PRIMARY_API_KEY = os.getenv('LLM_API_KEY') or os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
+PRIMARY_BASE_URL = os.getenv('LLM_BASE_URL') or os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+PRIMARY_MODEL = os.getenv('LLM_MODEL') or os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
 # 备用模型配置
-BACKUP_API_KEY = os.getenv('DEEPSEEK_API_KEY')
-BACKUP_BASE_URL = os.getenv('DEEPSEEK_BASE_URL', 'https://api.deepseek.com')
-BACKUP_MODEL = os.getenv('DEEPSEEK_MODEL', 'deepseek-chat')
+BACKUP_API_KEY = os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
+BACKUP_BASE_URL = os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
+BACKUP_MODEL = os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
 # 当前使用的模型
 current_api_key = PRIMARY_API_KEY
