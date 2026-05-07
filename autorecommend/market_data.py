@@ -61,7 +61,19 @@ def fetch_with_akshare_full():
     import akshare as ak
 
     logger.info("AKShare 全市场快照...")
-    df = ak.stock_zh_a_spot_em()
+    df = None
+    for attempt in range(5):
+        try:
+            df = ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                break
+        except Exception as e:
+            if attempt < 4:
+                logger.warning(f"AKShare 全市场失败 (尝试 {attempt+1}/5): {e}")
+                time.sleep(10)
+            else:
+                logger.error(f"AKShare 全市场最终失败: {e}")
+                return None
 
     if df is None or df.empty:
         logger.warning("AKShare 返回空")
@@ -254,10 +266,7 @@ def fetch_daily_quotes_today():
     rows = None
 
     # 1. AKShare 全市场（首选，5300+ 只）
-    try:
-        rows = fetch_with_akshare_full()
-    except Exception as e:
-        logger.warning(f"AKShare 全市场失败: {e}")
+    rows = fetch_with_akshare_full()
 
     # 2. BaoStock 写死列表（兜底）
     if not rows:

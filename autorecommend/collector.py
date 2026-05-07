@@ -18,7 +18,8 @@ warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-FETCH_TIMEOUT = 120
+FETCH_TIMEOUT = 60
+CONCEPT_TIMEOUT = 30
 
 
 def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT):
@@ -71,14 +72,19 @@ def fetch_akshare_news():
     rows = []
     try:
         df = ak.stock_news_em()
+        if df is None or df.empty:
+            return rows
         for _, r in df.iterrows():
-            rows.append(make_signal(
-                source='AKShare-财经新闻', tier=2,
-                title=r.get('新闻标题', ''),
-                content=r.get('新闻内容', ''),
-                url=r.get('新闻链接', ''),
-                pub_time=pd.to_datetime(r.get('发布时间')) if r.get('发布时间') else None,
-            ))
+            try:
+                rows.append(make_signal(
+                    source='AKShare-财经新闻', tier=2,
+                    title=str(r.get('新闻标题', ''))[:1000],
+                    content=str(r.get('新闻内容', ''))[:5000],
+                    url=str(r.get('新闻链接', ''))[:500],
+                    pub_time=pd.to_datetime(r.get('发布时间')) if r.get('发布时间') else None,
+                ))
+            except Exception:
+                continue
         logger.info(f"AKShare 财经新闻: {len(rows)} 条")
     except Exception as e:
         logger.warning(f"AKShare news 失败: {e}")
@@ -138,24 +144,16 @@ def fetch_akshare_concept_hot():
     rows = []
     try:
         df = ak.stock_board_concept_name_em()
-        df_sorted = df.sort_values('涨跌幅', ascending=False).head(30)
+        df_sorted = df.sort_values('涨跌幅', ascending=False).head(10)
         for _, r in df_sorted.iterrows():
             concept = r.get('板块名称', '')
             chg = r.get('涨跌幅', 0)
             if chg < 1.5:
                 continue
-            try:
-                cons = ak.stock_board_concept_cons_em(symbol=concept)
-                top5 = cons.sort_values('涨跌幅', ascending=False).head(5)
-                stocks_str = ', '.join(
-                    f"{r2['名称']}({r2['代码']})" for _, r2 in top5.iterrows()
-                )
-            except Exception:
-                stocks_str = ''
             rows.append(make_signal(
                 source='AKShare-热点概念', tier=2,
                 title=f"概念异动: {concept} 涨{chg:.2f}%",
-                content=f"{concept} 板块今日涨幅 {chg:.2f}% 领涨股: {stocks_str}",
+                content=f"{concept} 板块今日涨幅 {chg:.2f}%",
             ))
         logger.info(f"热点概念: {len(rows)} 条")
     except Exception as e:
@@ -169,11 +167,26 @@ def fetch_akshare_research():
     rows = []
     try:
         df = ak.stock_research_report_em(symbol="全部")
-        df['日期'] = pd.to_datetime(df['日期'])
+        if df is None or df.empty:
+            return rows
+
+        date_col = None
+        for c in ['日期', 'report_date', 'date']:
+            if c in df.columns:
+                date_col = c
+                break
+        if not date_col:
+            logger.warning("research: 找不到日期列")
+            return rows
+
+        df[date_col] = pd.to_datetime(df[date_col])
         cutoff = pd.Timestamp(date.today() - timedelta(days=3))
-        df = df[df['日期'] >= cutoff]
+        df = df[df[date_col] >= cutoff]
+
         for _, r in df.iterrows():
             code = str(r.get('股票代码', '')).zfill(6)
+            if not code or code == 'nan' or len(code) < 4:
+                continue
             name = r.get('股票简称', '')
             ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
             rows.append(make_signal(
@@ -182,7 +195,7 @@ def fetch_akshare_research():
                 content=f"代码 {code} {name} 评级 {r.get('评级', '')} "
                        f"目标价 {r.get('目标价', '')} 报告标题 {r.get('报告名称', '')} "
                        f"机构 {r.get('机构名称', '')}",
-                pub_time=r['日期'],
+                pub_time=r[date_col],
             ))
         logger.info(f"个股研报: {len(rows)} 条")
     except Exception as e:
@@ -195,18 +208,29 @@ def fetch_akshare_jgdy():
     import akshare as ak
     rows = []
     try:
-        today_str = date.today().strftime('%Y%m%d')
-        start = (date.today() - timedelta(days=7)).strftime('%Y%m%d')
-        df = ak.stock_jgdy_detail_em(start_date=start, end_date=today_str)
+        df = ak.stock_jgdy_detail_em()
+        if df is None or df.empty:
+            return rows
+        cutoff = date.today() - timedelta(days=7)
+        date_col = None
+        for c in ['调研日期', 'date', 'report_date']:
+            if c in df.columns:
+                date_col = c
+                break
+        if date_col:
+            df[date_col] = pd.to_datetime(df[date_col])
+            df = df[df[date_col] >= pd.Timestamp(cutoff)]
         for _, r in df.iterrows():
             code = str(r.get('股票代码', '')).zfill(6)
+            if not code or code == 'nan' or len(code) < 4:
+                continue
             name = r.get('股票简称', '')
             ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
             rows.append(make_signal(
                 source='AKShare-机构调研', tier=1,
                 title=f"机构调研: {name} {ts} - {r.get('接待机构数量', 0)}家",
                 content=f"代码 {code} {name} 接待 {r.get('接待机构数量', 0)} 家机构 "
-                       f"调研日期 {r.get('调研日期', '')}",
+                       f"调研日期 {r.get(date_col, '')}",
             ))
         logger.info(f"机构调研: {len(rows)} 条")
     except Exception as e:
@@ -250,16 +274,16 @@ def main():
 
     all_rows = []
 
-    for fetcher, name in [
-        (fetch_akshare_news, '财经新闻'),
-        (fetch_akshare_lhb, '龙虎榜'),
-        (fetch_akshare_zt_pool, '涨停板'),
-        (fetch_akshare_concept_hot, '热点概念'),
-        (fetch_akshare_research, '个股研报'),
-        (fetch_akshare_jgdy, '机构调研'),
+    for fetcher, name, timeout_override in [
+        (fetch_akshare_news, '财经新闻', FETCH_TIMEOUT),
+        (fetch_akshare_lhb, '龙虎榜', FETCH_TIMEOUT),
+        (fetch_akshare_zt_pool, '涨停板', FETCH_TIMEOUT),
+        (fetch_akshare_concept_hot, '热点概念', CONCEPT_TIMEOUT),
+        (fetch_akshare_research, '个股研报', FETCH_TIMEOUT),
+        (fetch_akshare_jgdy, '机构调研', FETCH_TIMEOUT),
     ]:
         try:
-            rows = fetch_with_timeout(fetcher, timeout=FETCH_TIMEOUT)
+            rows = fetch_with_timeout(fetcher, timeout=timeout_override)
             all_rows.extend(rows)
             time.sleep(1)
         except Exception as e:
