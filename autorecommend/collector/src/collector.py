@@ -67,7 +67,7 @@ def main(once=False):
     
     # 从数据库获取 feeds
     conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT id, feed_url FROM feed_sources WHERE active=TRUE;")
+    cur.execute("SELECT id, route FROM feed_sources WHERE enabled=TRUE;")
     feeds = cur.fetchall()
     cur.close(); conn.close()
     
