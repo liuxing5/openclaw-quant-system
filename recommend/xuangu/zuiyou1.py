@@ -1,6 +1,12 @@
 """
-隔夜选股法·最优融合版 (zuiyou1 v1.3)
+隔夜选股法·最优融合版 (zuiyou1 v1.4)
 ========================================
+v1.4 修订（2026-05-07）：
+  ✓ 细粒度排序因子 —— 大单/距涨停/MA5区分同分标的
+  ✓ 乖离动态阈值 —— 高位路径0.12，高潮期+0.03
+  ✓ 情绪逆向思维 —— 高潮扣分10分，推荐数压缩到3只
+  ✓ 推荐数限制 —— >=100涨停限3只，>=80涨停限4只
+
 v1.3 修订（2026-05-07）：
   ✓ 尾盘回落检测 —— post模式从最高回撤>3%扣15分
   ✓ 冷门行业过滤 —— 银行/保险/煤炭/钢铁扣20分（证监会分类子串匹配）
@@ -508,6 +514,7 @@ def analyze_ultimate(
     zt_count: int,
     time_weight: float,
     reject_stats: Optional[dict] = None,
+    mood: str = "",
 ) -> Optional[dict]:
 
     if hist_df is None or len(hist_df) < 15:
@@ -734,10 +741,18 @@ def analyze_ultimate(
         score += max(net, 0)
         tags.append(f"{streak}连板(高度风险)")
 
-    # F. 情绪高潮期加成
-    if zt_count >= CONFIG["sentiment_hot"] and in_upper:
-        score += 10
-        tags.append("情绪高潮加成")
+    # F. 情绪周期判断（逆向思维）
+    if zt_count >= CONFIG["sentiment_hot"]:
+        # 高潮期反而扣分，因为是顶部信号
+        score -= 10
+        tags.append("高潮警惕↓")
+    elif zt_count >= 80:
+        # 偏热期不加分
+        pass
+    elif zt_count >= 50:
+        # 正常期加分
+        score += 5
+        tags.append("情绪正常+")
 
     # --- 风险扣分 ---
     if curr_turn > CONFIG["penalty_hot_turn"]:
@@ -751,8 +766,14 @@ def analyze_ultimate(
         if "爆量博弈" in tags:
             tags.remove("爆量博弈")
 
+    # 乖离惩罚：动态阈值（分路径分情绪）
     bias_ma5 = (curr_price - ma5_yest) / ma5_yest if ma5_yest > 0 else 0
-    if bias_ma5 > CONFIG["penalty_ma_bias"]:
+    bias_threshold = 0.08
+    if in_upper:
+        bias_threshold = 0.12
+    if mood == "高潮":
+        bias_threshold += 0.03
+    if bias_ma5 > bias_threshold:
         score -= 20
         tags.append("乖离过大↓")
 
@@ -770,6 +791,39 @@ def analyze_ultimate(
             if drawdown_from_high > 0.03:
                 score -= 15
                 tags.append("尾盘回落↓")
+
+    # --- 细粒度排序因子（区分度增强）---
+    fine_score = 0
+
+    # F1. 量价配合（成交额/换手 比值，反映平均单笔大小）
+    if curr_amount > 0 and curr_turn > 0:
+        avg_trade_size = curr_amount / (curr_turn * 1e6)
+        if avg_trade_size > 50000:
+            fine_score += 5
+            tags.append("大单为主")
+        elif avg_trade_size < 10000:
+            fine_score -= 3
+            tags.append("散户为主")
+
+    # F2. 距离涨停的远近（高位路径才用）
+    if in_upper:
+        distance_to_limit = limit_pct - curr_pct
+        if distance_to_limit < 1.0:
+            fine_score += 5
+            tags.append("濒临涨停")
+        elif distance_to_limit < 2.0:
+            fine_score += 3
+
+    # F3. 收盘价是否守住5日均线（post模式独有）
+    if CONFIG["MODE"] == "post":
+        if curr_price > ma5_yest * 1.02:
+            fine_score += 3
+            tags.append("稳守MA5+")
+        elif curr_price < ma5_yest:
+            fine_score -= 5
+            tags.append("破MA5↓")
+
+    score += fine_score
 
     # --- 最终判定 ---
     if score < CONFIG["score_threshold"]:
@@ -858,7 +912,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
             continue
 
         hist_df = pd.DataFrame(data_list, columns=k_rs.fields)
-        res = analyze_ultimate(hist_df, code, real_info, zt_count, time_weight, reject_stats)
+        res = analyze_ultimate(hist_df, code, real_info, zt_count, time_weight, reject_stats, mood)
         if res:
             res["pool"] = pool_name
             results.append(res)
@@ -1133,6 +1187,18 @@ def main():
         .reset_index(drop=True)
     )
 
+    # 情绪高潮时推荐数自动减半（逆向思维）
+    final_count_limit = 5
+    if zt_count >= 100:
+        final_count_limit = 3
+        print(f"\n  ⚠️ 市场高潮(>=100涨停),推荐数压缩到 {final_count_limit} 只,提示防顶部")
+    elif zt_count >= 80:
+        final_count_limit = 4
+        print(f"\n  ⚠️ 市场偏热(>=80涨停),推荐数压缩到 {final_count_limit} 只")
+
+    stable_picks = final_df[final_df["path"] == "稳健"].head(final_count_limit)
+    upper_picks = final_df[final_df["path"] == "高位"].head(final_count_limit)
+
     total_candidates = len(results_stable) + len(results_upper)
     total_scanned = sum(total_rejects.values()) + total_candidates
 
@@ -1150,17 +1216,16 @@ def main():
     else:
         print(f"\n  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入（等待15:10后盘后定稿）")
 
-    for path_label in ["稳健", "高位"]:
-        sub = final_df[final_df["path"] == path_label]
-        if sub.empty:
+    for path_label, picks in [("稳健", stable_picks), ("高位", upper_picks)]:
+        if picks.empty:
             continue
 
         pos_hint = CONFIG_UPPER["position_ratio"] if path_label == "高位" else CONFIG_STABLE["position_ratio"]
-        print(f"\n  ── {path_label}路径 ({len(sub)} 只)  💰 {pos_hint}")
+        print(f"\n  ── {path_label}路径 ({len(picks)} 只)  💰 {pos_hint}")
         print(f"  {'代码':<14} {'池子':<16} {'价格':>7} {'涨幅%':>7} {'量比':>6} "
               f"{'换手%':>7} {'连板':>5} {'乖离%':>7} {'得分':>5}  特征")
         print(f"  {'-' * 125}")
-        for _, row in sub.iterrows():
+        for _, row in picks.iterrows():
             print(
                 f"  {row['code']:<14} {row['pool']:<16} {row['price']:>7.2f} "
                 f"{row['pct']:>7.2f} {row['vol_ratio']:>6.2f} {row['turn']:>7.2f} "
@@ -1196,20 +1261,25 @@ def main():
             title = f"zuiyou1 v1.3 {mode_label}"
             mood_info = f"情绪: {mood} ({zt_count}家涨停)"
 
-            stable_picks = []
-            upper_picks = []
-            for _, row in final_df.iterrows():
-                pick = {
+            # 使用已筛选的 stable_picks 和 upper_picks（已应用推荐数限制）
+            stable_list = []
+            upper_list = []
+            for _, row in stable_picks.iterrows():
+                stable_list.append({
                     "code": row["code"],
                     "price": row["price"],
                     "pct": row["pct"],
                     "score": row["score"],
                     "tags": row["tags"],
-                }
-                if row["path"] == "稳健":
-                    stable_picks.append(pick)
-                else:
-                    upper_picks.append(pick)
+                })
+            for _, row in upper_picks.iterrows():
+                upper_list.append({
+                    "code": row["code"],
+                    "price": row["price"],
+                    "pct": row["pct"],
+                    "score": row["score"],
+                    "tags": row["tags"],
+                })
 
             operation_note = (
                 "稳健: 次日09:35未维持昨收+1%即出\n"
@@ -1226,7 +1296,7 @@ def main():
             reject_summary = "\n".join(reject_lines[:5]) if reject_lines else "无"
 
             try:
-                ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_picks, upper_picks, operation_note, reject_summary)
+                ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary)
                 if ok:
                     print("  ✅ 已推送到 Telegram\n")
                 else:
