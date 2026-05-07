@@ -21,10 +21,10 @@
 8. 所有字段如未提及一律 null
 
 # 输出 JSON 格式（严格遵循，不要任何额外文字）
-{
+{{
   "is_recommendation": true/false,
   "items": [
-    {
+    {{
       "ts_code": "600519.SH",
       "stock_name": "贵州茅台",
       "recommendation_type": "buy" | "strong_buy" | "watch" | "sell" | "neutral",
@@ -37,6 +37,6 @@
       "risk_flag": false,
       "raw_excerpt": "≤200字原文摘录",
       "confidence": 0.0-1.0
-    }
+    }}
   ]
-}
+}}
