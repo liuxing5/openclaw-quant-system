@@ -90,7 +90,7 @@ def call_llm(prompt: str) -> dict:
 
 def fetch_pending(limit=20):
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
+    cur.execute(f"""
         SELECT r.id, r.title, r.content, r.pub_time,
                r.source_name, r.source_tier,
                CASE
@@ -104,9 +104,9 @@ def fetch_pending(limit=20):
         WHERE NOT EXISTS (
             SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id=r.id
         )
-        AND (r.title ~ '\d{6}' OR r.content ~ '\d{6}')
-        ORDER BY r.fetch_time DESC LIMIT %s;
-    """, (limit,))
+        AND (r.title ~ '\d{{6}}' OR r.content ~ '\d{{6}}')
+        ORDER BY r.fetch_time DESC LIMIT {int(limit)};
+    """)
     rows = cur.fetchall()
     cur.close(); conn.close()
     return rows
