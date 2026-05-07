@@ -1,6 +1,17 @@
 """
-隔夜选股法·最优融合版 (zuiyou1 v1.2)
+隔夜选股法·最优融合版 (zuiyou1 v1.3)
 ========================================
+v1.3 修订（2026-05-07）：
+  ✓ 尾盘回落检测 —— post模式从最高回撤>3%扣15分
+  ✓ 冷门行业过滤 —— 银行/保险/煤炭/钢铁扣20分（证监会分类子串匹配）
+  ✓ 行业缓存预热 —— 启动时批量查询，文件缓存7天
+  ✓ 过滤统计 —— 每次扫描输出各环节淘汰分布，无标的时显示TOP3瓶颈
+  ✓ tqdm进度条 —— 自动检测，兼容打印不破坏进度
+  ✓ 成交量递增修复 —— 使用hist_vols+预估量替代baostock延迟数据
+  ✓ 连板高度修复 —— realtime模式用curr_pct判断今日涨停
+  ✓ 双池信号保留 —— 同一股票命中双池时标记"stable+upper"
+  ✓ DEBUG日志开关 —— ZUIYOU_DEBUG环境变量控制
+
 v1.2 修订（2026-04-30）：
   ✓ 市值过滤按池子分档 —— 稳健池100-2000亿，高位池30-300亿
   ✓ 涨停阈值按板块动态判断 —— 主板10%/创业板20%/科创板20%/北交所30%
@@ -8,16 +19,15 @@ v1.2 修订（2026-04-30）：
   ✓ 盘后时间安全检查 —— 15:10前运行post模式会警告
 
 v1.1 修订（2026-04-29）：
-  ✓ 市值过滤不再受 MODE 限制 —— post 模式同样启用 50-200亿过滤
+  ✓ 市值过滤不再受 MODE 限制 —— post 模式同样启用
   ✓ MA 计算统一不含今日 —— 严格无未来函数（修复 realtime 模式的潜在偏差）
   ✓ 当日记录覆盖而非跳过 —— 支持盘中→盘后二次验证回写
 
 v1.0 改进：
   ✓ post 模式也使用腾讯实时接口（修复 baostock 数据延迟导致的假信号）
-  ✓ 流通市值50-200亿硬过滤（8步法第4步）
-  ✓ 成交量递增验证（8步法第5步）
-  ✓ K线上方压力检测（8步法第6步后半段）
-  ✓ 换手率恢复5%-10%硬过滤（8步法第3步原始要求）
+  ✓ 成交量递增验证
+  ✓ K线上方压力检测
+  ✓ 换手率硬过滤
   ✓ 稳健路径涨幅3%-5%严格遵循8步法
 
 继承最优特性：
@@ -41,21 +51,63 @@ import pandas as pd
 import requests
 import time
 import os
+import json
 from datetime import datetime, timedelta
 
 # 调试模式开关（环境变量 ZUIYOU_DEBUG=true 时启用）
 DEBUG = os.environ.get("ZUIYOU_DEBUG", "").lower() == "true"
 
-# 冷门行业列表（隔夜溢价较低的行业）
-COLD_INDUSTRIES = {"银行", "保险", "煤炭", "钢铁"}
+# 冷门行业关键词（匹配证监会行业分类的子串）
+COLD_INDUSTRIES_KEYWORDS = ["银行", "保险", "煤炭", "钢铁", "黑色金属"]
 
-try:
-    from tqdm import tqdm
-    HAS_TQDM = True
-except ImportError:
-    HAS_TQDM = False
-    print("ℹ️ tqdm 未安装，使用传统进度打印")
-from typing import Optional, Tuple, List, Dict
+def is_cold_industry(industry: str) -> bool:
+    """判断是否为冷门行业（隔夜溢价较低）"""
+    if not industry:
+        return False
+    return any(kw in industry for kw in COLD_INDUSTRIES_KEYWORDS)
+
+# 行业缓存（内存+文件双缓存，7天更新一次）
+_industry_cache = {}
+_INDUSTRY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "industry_cache.json")
+
+def preload_industries(stock_pool: list):
+    """启动时一次性查询所有股票行业，缓存到本地文件，7天更新一次"""
+    if os.path.exists(_INDUSTRY_CACHE_FILE):
+        mtime = os.path.getmtime(_INDUSTRY_CACHE_FILE)
+        if time.time() - mtime < 7 * 86400:
+            try:
+                with open(_INDUSTRY_CACHE_FILE, "r", encoding="utf-8") as f:
+                    _industry_cache.update(json.load(f))
+                return
+            except Exception:
+                pass
+
+    print("  预热行业缓存（首次或过期）...")
+    for code in stock_pool:
+        get_stock_industry(code)
+
+    try:
+        with open(_INDUSTRY_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(_industry_cache, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+def get_stock_industry(code: str) -> str:
+    """获取股票所属行业，带内存+文件双缓存"""
+    if code in _industry_cache:
+        return _industry_cache[code]
+    try:
+        rs = bs.query_stock_industry(code=code)
+        if rs.error_code == '0':
+            row = rs.get_row_data()
+            if row and len(row) > 0:
+                industry = row[0] if row[0] else ""
+                _industry_cache[code] = industry
+                return industry
+    except Exception:
+        pass
+    _industry_cache[code] = ""
+    return ""
 
 # ============================================================
 #  Telegram 推送（可选,未配置时不影响主流程）
@@ -438,29 +490,6 @@ def get_stock_pool() -> list:
 
 
 # ============================================================
-#  5b. 行业信息获取（baostock query_stock_industry）
-# ============================================================
-_industry_cache = {}
-
-def get_stock_industry(code: str) -> str:
-    """获取股票所属行业，带缓存"""
-    if code in _industry_cache:
-        return _industry_cache[code]
-    try:
-        rs = bs.query_stock_industry(code=code)
-        if rs.error_code == '0':
-            row = rs.get_row_data()
-            if row and len(row) > 0:
-                industry = row[0] if row[0] else ""
-                _industry_cache[code] = industry
-                return industry
-    except Exception:
-        pass
-    _industry_cache[code] = ""
-    return ""
-
-
-# ============================================================
 #  6. 核心量化逻辑（8步法完整实现）
 # ============================================================
 def analyze_ultimate(
@@ -720,7 +749,7 @@ def analyze_ultimate(
 
     # 冷门行业过滤：隔夜溢价较低的行业扣分
     industry = get_stock_industry(code)
-    if industry in COLD_INDUSTRIES:
+    if is_cold_industry(industry):
         score -= 20
         tags.append(f"冷门行业({industry})↓")
 
@@ -757,7 +786,7 @@ def analyze_ultimate(
 # ============================================================
 #  7. 单池扫描引擎
 # ============================================================
-def scan_pool(cfg: dict, zt_count: int, mood: str) -> tuple:
+def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
     global CONFIG
     CONFIG = cfg
 
@@ -770,6 +799,9 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> tuple:
     print(f"{'=' * 60}")
 
     stock_pool = get_stock_pool()
+
+    # 预热行业缓存（首次或7天过期时批量查询）
+    preload_industries(stock_pool)
 
     # post 模式也用腾讯接口获取收盘数据（baostock 历史数据有延迟）
     real_map = get_realtime_quotes(stock_pool)
@@ -789,7 +821,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> tuple:
     print(f"  开始扫描 {total} 只股票...\n")
 
     iterator = tqdm(stock_pool, desc=f"扫描{pool_name}") if HAS_TQDM else stock_pool
-    for i, code in enumerate(iterator):
+    for code in iterator:
         key = code.replace(".", "").lower()
         real_info = real_map.get(key)
         if real_info is None:
@@ -821,9 +853,13 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> tuple:
         if res:
             res["pool"] = pool_name
             results.append(res)
-            print(f"  🎯 {code:<14} 涨幅:{res['pct']:>6.2f}%  "
-                  f"路径:{res['path']}  连板:{res['streak']}  得分:{res['score']}  "
-                  f"换手:{res['turn']}%  量比:{res['vol_ratio']}")
+            msg = (f"  🎯 {code:<14} 涨幅:{res['pct']:>6.2f}%  "
+                   f"路径:{res['path']}  连板:{res['streak']}  得分:{res['score']}  "
+                   f"换手:{res['turn']}%  量比:{res['vol_ratio']}")
+            if HAS_TQDM:
+                tqdm.write(msg)
+            else:
+                print(msg)
 
     print(f"\n  📊 过滤统计 [{pool_name}]:")
     for reason, count in sorted(reject_stats.items(), key=lambda x: -x[1]):
@@ -831,7 +867,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> tuple:
             bar = "█" * min(count // 5, 20)
             print(f"    {reason:>8}: {count:>5} {bar}")
 
-    return results
+    return results, reject_stats
 
 
 # ============================================================
@@ -978,9 +1014,15 @@ def main():
 
     end_d = beijing_now().strftime("%Y-%m-%d")
 
-    results_stable = scan_pool(CONFIG_STABLE, zt_count, mood)
+    results_stable, rejects_stable = scan_pool(CONFIG_STABLE, zt_count, mood)
 
-    results_upper = scan_pool(CONFIG_UPPER, zt_count, mood)
+    results_upper, rejects_upper = scan_pool(CONFIG_UPPER, zt_count, mood)
+
+    # 聚合两次扫描的reject_stats
+    total_rejects = {}
+    for stats in (rejects_stable, rejects_upper):
+        for reason, count in stats.items():
+            total_rejects[reason] = total_rejects.get(reason, 0) + count
 
     bs.logout()
 
@@ -1006,11 +1048,11 @@ def main():
 
     if not all_results:
         print("\n  今日暂无符合条件的标的。")
-        print("  可能原因：")
-        print("  1. 市场整体低迷，涨幅3%-5%区间标的不足")
-        print("  2. 换手率5%-10%过滤过严（可适当放宽至3%-12%）")
-        print("  3. 流通市值50-200亿过滤排除了部分标的")
-        print("  4. 量比或均线条件未满足")
+        top3 = sorted(total_rejects.items(), key=lambda x: -x[1])[:3]
+        if top3:
+            print("  过滤瓶颈 TOP3:")
+            for reason, count in top3:
+                print(f"    {reason}: {count} 只")
         return
 
     final_df = (
@@ -1055,8 +1097,8 @@ def main():
     print("  全局止损线          ：任意标的亏损超2.5%当日无条件止损")
     print("  ─────────────────────────────────────────────────────")
     print("  📋 8步法完整度检查：")
-    print("  ✅ Step1 涨幅3%-5%   ✅ Step2 量比≥1.5   ✅ Step3 换手5%-10%")
-    print("  ✅ Step4 市值50-200亿 ✅ Step5 量能递增   ✅ Step6 均线多头+压力检测")
+    print("  ✅ Step1 涨幅筛选   ✅ Step2 量比   ✅ Step3 换手率")
+    print("  ✅ Step4 市值过滤   ✅ Step5 量能递增   ✅ Step6 均线+压力检测")
     print("  ⚠️ Step7 分时均价线上方（需盘中人工确认）")
     print("  ⚠️ Step8 14:30创新高回踩入场（需盘中人工确认）")
     print("─" * 70 + "\n")
