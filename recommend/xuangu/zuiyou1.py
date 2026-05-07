@@ -53,6 +53,7 @@ import time
 import os
 import json
 from datetime import datetime, timedelta
+from typing import Tuple, Optional, List
 
 # 调试模式开关（环境变量 ZUIYOU_DEBUG=true 时启用）
 DEBUG = os.environ.get("ZUIYOU_DEBUG", "").lower() == "true"
