@@ -35,25 +35,39 @@ def fmt_md_v2(text: str) -> str:
     return text
 
 
+def fmt_html(text: str) -> str:
+    """HTML 转义"""
+    if not text: return ''
+    return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
 def build_message(c: dict) -> str:
     sources = c.get('sources') or []
     if isinstance(sources, str):
         sources = json.loads(sources)
     src_names = ', '.join(set(s.get('source','') for s in sources[:5]))
     
-    msg = f"""🎯 *候选* `{fmt_md_v2(c['ts_code'])}` {fmt_md_v2(c['stock_name'] or '')}
+    entry_low = c['entry_low'] if c['entry_low'] else '—'
+    entry_high = c['entry_high'] if c['entry_high'] else '—'
+    stop_loss = c['stop_loss'] if c['stop_loss'] else '—'
+    target_1 = c['target_1'] if c['target_1'] else '—'
+    target_2 = c['target_2'] if c['target_2'] else '—'
+    position_pct = (c['position_pct'] or 0) * 100
+    logic_tags = ', '.join(c.get('logic_tags') or [])
+    
+    msg = f"""🎯 <b>候选</b> <code>{fmt_html(c['ts_code'])}</code> {fmt_html(c['stock_name'] or '')}
 ━━━━━━━━━━━━━━
-综合分: *{c['final_score']:.1f}* / 100
+综合分: <b>{c['final_score']:.1f}</b> / 100
 共识度: {c['source_diversity']} 源 / {c['mention_count']} 次提及
 LLM: {c['llm_score']:.0f}  量化: {c['quant_score']:.0f}
 
-入场: {c['entry_low'] or '—'} \\- {c['entry_high'] or '—'}
-止损: {c['stop_loss'] or '—'}
-目标: {c['target_1'] or '—'} / {c['target_2'] or '—'}
-建议仓位: {(c['position_pct'] or 0)*100:.0f}%
+入场: {fmt_html(str(entry_low))} - {fmt_html(str(entry_high))}
+止损: {fmt_html(str(stop_loss))}
+目标: {fmt_html(str(target_1))} / {fmt_html(str(target_2))}
+建议仓位: {fmt_html(f'{position_pct:.0f}')}%
 
-逻辑: {fmt_md_v2(', '.join(c.get('logic_tags') or []))}
-源: {fmt_md_v2(src_names)}
+逻辑: {fmt_html(logic_tags)}
+源: {fmt_html(src_names)}
 ━━━━━━━━━━━━━━"""
     return msg
 
@@ -77,12 +91,12 @@ async def push_daily_candidates():
     cands = cur.fetchall()
     
     if not cands:
-        await bot.send_message(CHAT_ID, "今日无候选股", parse_mode=None)
+        await bot.send_message(CHAT_ID, "今日无候选股", parse_mode=ParseMode.HTML)
         return
     
     # 汇总头
-    header = f"📊 *{today}* 候选池\\n共 {len(cands)} 只"
-    await bot.send_message(CHAT_ID, header, parse_mode=ParseMode.MARKDOWN_V2)
+    header = f"📊 <b>{today}</b> 候选池\n共 {len(cands)} 只"
+    await bot.send_message(CHAT_ID, header, parse_mode=ParseMode.HTML)
     
     for c in cands:
         msg = build_message(dict(c))
@@ -93,7 +107,7 @@ async def push_daily_candidates():
         ]])
         try:
             sent = await bot.send_message(
-                CHAT_ID, msg, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=kb)
+                CHAT_ID, msg, parse_mode=ParseMode.HTML, reply_markup=kb)
             cur.execute("""
                 INSERT INTO push_history (candidate_id, push_type, chat_id, message_id)
                 VALUES (%s, 'pre_open', %s, %s);
