@@ -541,21 +541,31 @@ def run():
             if row.get("take_info"):
                 print(f"      {row['take_info']}")
 
-        # v2.1: Telegram 推送紧急信号
+        # v2.1: Telegram 推送紧急信号（每天只推一次，通过状态文件记录）
         if TELEGRAM_ENABLED:
+            today_str = now.strftime("%Y-%m-%d")
+            notified_codes = state.get("_notified_today", {})
+            
             for row in urgent:
-                try:
-                    send_sell_alert(
-                        code=row["code"],
-                        name=row["name"],
-                        action=row["action"],
-                        reason=row["reason"],
-                        profit_pct=row["profit_pct"],
-                        priority=row["priority"],
-                    )
-                except Exception as e:
-                    print(f"  ⚠️ 推送失败 {row['code']}: {e}")
-            print("  📲 紧急信号已推送到 Telegram\n")
+                code = row["code"]
+                action_key = f"{today_str}_{code}_{row['action']}"
+                if action_key not in notified_codes:
+                    try:
+                        send_sell_alert(
+                            code=row["code"],
+                            name=row["name"],
+                            action=row["action"],
+                            reason=row["reason"],
+                            profit_pct=row["profit_pct"],
+                            priority=row["priority"],
+                        )
+                        notified_codes[action_key] = now.strftime("%H:%M:%S")
+                    except Exception as e:
+                        print(f"  ⚠️ 推送失败 {row['code']}: {e}")
+            
+            state["_notified_today"] = notified_codes
+            save_state(state)
+            print("  📲 紧急信号已推送到 Telegram（每日一次）\n")
 
     # v2.1: 即使没有紧急信号,也推送一份完整的卖出建议(每天首次运行时)
     elif TELEGRAM_ENABLED and results_sorted:
