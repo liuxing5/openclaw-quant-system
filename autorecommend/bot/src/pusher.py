@@ -16,8 +16,9 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-# 代理配置（本地 WSL2 需要，GitHub Actions 不需要）
 PROXY_URL = os.getenv('TELEGRAM_PROXY')
+
+MIN_SELECT_SCORE = 50
 
 
 def get_db():
@@ -39,6 +40,30 @@ def fmt_html(text: str) -> str:
     """HTML 转义"""
     if not text: return ''
     return str(text).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+
+
+def check_market_state(cur, today):
+    """市场极弱时不推荐"""
+    cur.execute("""
+        SELECT COUNT(*) FILTER (WHERE pct_chg > 9.5) AS up_limit,
+               COUNT(*) FILTER (WHERE pct_chg < -9.5) AS down_limit,
+               COUNT(*) FILTER (WHERE pct_chg < 0) AS down_count,
+               COUNT(*) FILTER (WHERE pct_chg > 0) AS up_count,
+               AVG(pct_chg) AS market_avg
+        FROM daily_quotes WHERE trade_date=%s;
+    """, (today,))
+    r = cur.fetchone()
+    if not r:
+        return True, None
+    up_limit = r['up_limit'] or 0
+    down_limit = r['down_limit'] or 0
+    avg = r['market_avg'] or 0
+    
+    if down_limit > up_limit * 3 and down_limit > 50:
+        return False, f"市场极弱: 跌停 {down_limit} vs 涨停 {up_limit}, 暂不推荐"
+    if avg < -3:
+        return False, f"全市场平均跌 {avg:.2f}%, 暂不推荐"
+    return True, None
 
 
 def build_message(c: dict) -> str:
@@ -73,7 +98,6 @@ LLM: {c['llm_score']:.0f}  量化: {c['quant_score']:.0f}
 
 
 async def push_daily_candidates():
-    # 配置 request（有代理则用代理）
     request_kwargs = {}
     if PROXY_URL:
         request_kwargs['proxy'] = PROXY_URL
@@ -83,6 +107,13 @@ async def push_daily_candidates():
     today = date.today()
     
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    can_push, reason = check_market_state(cur, today)
+    if not can_push:
+        await bot.send_message(CHAT_ID, f"⚠️ <b>{today}</b>\n{reason}", parse_mode=ParseMode.HTML)
+        cur.close(); conn.close()
+        return
+    
     cur.execute("""
         SELECT * FROM daily_candidates
         WHERE snapshot_date=%s AND selected=TRUE
@@ -91,10 +122,19 @@ async def push_daily_candidates():
     cands = cur.fetchall()
     
     if not cands:
-        await bot.send_message(CHAT_ID, "今日无候选股", parse_mode=ParseMode.HTML)
+        cur.execute("""
+            SELECT COUNT(*) FROM daily_candidates
+            WHERE snapshot_date=%s;
+        """, (today,))
+        total = cur.fetchone()[0]
+        msg = (f"📊 <b>{today}</b> 推荐报告\n\n"
+               f"今日无符合条件的推荐\n"
+               f"（共分析 {total} 只候选股，均未达到阈值 {MIN_SELECT_SCORE} 分）\n\n"
+               f"建议: 空仓观望 或 持有现有仓位")
+        await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
+        cur.close(); conn.close()
         return
     
-    # 合并所有候选股为一条消息
     lines = [f"📊 <b>{today}</b> 候选池\n共 {len(cands)} 只\n"]
     
     for c in cands:
@@ -126,7 +166,6 @@ async def push_daily_candidates():
     except Exception as e:
         logger.error(f"push failed: {e}")
     
-    conn.commit()
     cur.close(); conn.close()
 
 

@@ -108,10 +108,9 @@ if page == "📈 今日候选":
                 
                 # 查看来源详情
                 sources = query_df("""
-                    SELECT s.name, s.category, s.tier, e.recommendation_type, 
+                    SELECT e.source_name, e.recommendation_type, 
                            e.strength, e.logic_summary, e.confidence, e.pub_time
                     FROM extracted_recommendations e
-                    JOIN feed_sources s ON e.source_id = s.id
                     WHERE e.ts_code = %s AND e.pub_time >= %s
                     ORDER BY e.strength DESC;
                 """, (row['ts_code'], selected_date - pd.Timedelta(days=2)))
@@ -137,10 +136,8 @@ elif page == "🔍 信号提取":
     df = query_df("""
         SELECT e.ts_code, e.stock_name, e.recommendation_type, e.strength,
                e.logic_category, e.logic_summary, e.confidence, e.pub_time,
-               s.name AS source_name, s.category AS source_category, s.tier AS source_tier,
-               r.title AS article_title, r.url AS article_url
+               e.source_name, r.title AS article_title, r.url AS article_url
         FROM extracted_recommendations e
-        JOIN feed_sources s ON e.source_id = s.id
         LEFT JOIN raw_signals r ON e.raw_signal_id = r.id
         WHERE e.recommendation_type = ANY(%s) AND e.strength >= %s
         ORDER BY e.pub_time DESC
@@ -159,53 +156,41 @@ elif page == "🔍 信号提取":
                 st.markdown(f"[{row['article_title'] or '无标题'}]({row['article_url']}) - {row['source_name']}")
 
 elif page == "📡 数据源":
-    st.header("数据源管理")
+    st.header("数据源统计")
     
-    df = query_df("""
-        SELECT name, route, category, tier, weight, active, poll_interval_sec
-        FROM feed_sources 
-        ORDER BY tier, name;
+    stats = query_df("""
+        SELECT source_name, COUNT(*) as signal_count, 
+               AVG(confidence) as avg_confidence,
+               AVG(strength) as avg_strength
+        FROM extracted_recommendations
+        GROUP BY source_name
+        ORDER BY signal_count DESC;
     """)
     
-    if not df.empty:
-        st.dataframe(df, use_container_width=True)
-        
-        # 统计
-        st.subheader("各源信号数量")
-        stats = query_df("""
-            SELECT s.name, COUNT(*) as signal_count, 
-                   AVG(e.confidence) as avg_confidence,
-                   AVG(e.strength) as avg_strength
-            FROM feed_sources s
-            LEFT JOIN extracted_recommendations e ON s.id = e.source_id
-            GROUP BY s.name
-            ORDER BY signal_count DESC;
-        """)
+    if not stats.empty:
         st.dataframe(stats, use_container_width=True)
 
 elif page == "📰 原始资讯":
     st.header("原始资讯")
     
     # 选择数据源
-    sources = query_df("SELECT id, name FROM feed_sources ORDER BY name;")
-    source_filter = st.selectbox("数据源", ["全部"] + sources['name'].tolist())
+    sources = query_df("SELECT DISTINCT source_name FROM raw_signals ORDER BY source_name;")
+    source_filter = st.selectbox("数据源", ["全部"] + sources['source_name'].tolist())
     
     if source_filter == "全部":
         df = query_df("""
             SELECT r.title, r.content, r.url, r.pub_time, r.fetch_time,
-                   s.name AS source_name
+                   r.source_name
             FROM raw_signals r
-            JOIN feed_sources s ON r.source_id = s.id
             ORDER BY r.fetch_time DESC
             LIMIT 100;
         """)
     else:
         df = query_df("""
             SELECT r.title, r.content, r.url, r.pub_time, r.fetch_time,
-                   s.name AS source_name
+                   r.source_name
             FROM raw_signals r
-            JOIN feed_sources s ON r.source_id = s.id
-            WHERE s.name = %s
+            WHERE r.source_name = %s
             ORDER BY r.fetch_time DESC
             LIMIT 100;
         """, (source_filter,))

@@ -1,4 +1,4 @@
-"""LLM 信号提取 - 消费 raw_signals → 写入 extracted_recommendations"""
+"""LLM 信号提取 - 消费 raw_signals -> 写入 extracted_recommendations"""
 import os
 import json
 import time
@@ -13,17 +13,14 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-# 主模型配置
 PRIMARY_API_KEY = os.getenv('LLM_API_KEY') or os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
 PRIMARY_BASE_URL = os.getenv('LLM_BASE_URL') or os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 PRIMARY_MODEL = os.getenv('LLM_MODEL') or os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
-# 备用模型配置
 BACKUP_API_KEY = os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
 BACKUP_BASE_URL = os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 BACKUP_MODEL = os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
-# 当前使用的模型
 current_api_key = PRIMARY_API_KEY
 current_base_url = PRIMARY_BASE_URL
 current_model = PRIMARY_MODEL
@@ -90,13 +87,13 @@ def call_llm(prompt: str) -> dict:
 
 def fetch_pending(limit=20):
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute(f"""
+    cur.execute("""
         SELECT r.id, r.title, r.content, r.pub_time,
                r.source_name, r.source_tier,
                CASE
                    WHEN r.source_name LIKE '%新闻%' OR r.source_name LIKE '%快讯%' OR r.source_name LIKE '%电报%' THEN 'news'
-                   WHEN r.source_name LIKE '%研报%' OR r.source_name LIKE '%公告%' THEN 'research'
-                   WHEN r.source_name LIKE '%热门%' OR r.source_name LIKE '%龙虎榜%' THEN 'kol'
+                   WHEN r.source_name LIKE '%研报%' OR r.source_name LIKE '%调研%' THEN 'research'
+                   WHEN r.source_name LIKE '%涨停%' OR r.source_name LIKE '%龙虎榜%' THEN 'lhb'
                    WHEN r.source_name LIKE '%概念%' THEN 'concept'
                    ELSE 'news'
                END AS category
@@ -104,9 +101,21 @@ def fetch_pending(limit=20):
         WHERE NOT EXISTS (
             SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id=r.id
         )
-        AND (r.title ~ '\d{{6}}' OR r.content ~ '\d{{6}}')
-        ORDER BY r.fetch_time DESC LIMIT {int(limit)};
-    """)
+        AND (
+            r.title ~ '[0-9]{6}'
+            OR r.content ~ '[0-9]{6}'
+            OR EXISTS (
+                SELECT 1 FROM stock_basic_info sb
+                WHERE LENGTH(sb.stock_name) >= 2
+                  AND (r.title LIKE '%' || sb.stock_name || '%'
+                       OR r.content LIKE '%' || sb.stock_name || '%')
+                LIMIT 1
+            )
+        )
+        AND r.fetch_time > NOW() - INTERVAL '48 hours'
+        ORDER BY r.source_tier ASC, r.fetch_time DESC
+        LIMIT %s;
+    """, (limit,))
     rows = cur.fetchall()
     cur.close(); conn.close()
     return rows
@@ -153,7 +162,7 @@ def process_one(row):
         result = call_llm(prompt)
         items = result.get('items', []) if result.get('is_recommendation', False) else []
         n = store_extraction(row['id'], row['source_name'], row['pub_time'], items)
-        logger.info(f"raw_id={row['id']} → {n or 0} signals")
+        logger.info(f"raw_id={row['id']} -> {n or 0} signals")
         if current_model != PRIMARY_MODEL:
             switch_to_primary()
     except Exception as e:
@@ -164,24 +173,27 @@ def main(once=False):
     log_file = os.path.join(BASE_DIR, 'logs', 'extractor.log')
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     logger.add(log_file, rotation='100 MB')
-    
+
     logger.info(f"启动提取器 - 主模型: {PRIMARY_MODEL}, 备用: {BACKUP_MODEL}")
-    
-    while True:
+
+    MAX_BATCH = 200
+    total_processed = 0
+
+    while total_processed < MAX_BATCH:
         rows = fetch_pending(20)
         if not rows:
-            if once:
-                logger.info("无待处理数据，退出")
-                return
-            time.sleep(30)
-            continue
+            logger.info("无待处理数据，退出")
+            break
         for r in rows:
             process_one(r)
-            time.sleep(0.5)
-        if once:
-            logger.info(f"处理完成，共 {len(rows)} 条")
-            return
-        time.sleep(5)
+            total_processed += 1
+            time.sleep(0.3)
+            if total_processed >= MAX_BATCH:
+                break
+        if once and total_processed > 0:
+            time.sleep(2)
+
+    logger.info(f"提取完成，处理 {total_processed} 条")
 
 
 if __name__ == '__main__':
