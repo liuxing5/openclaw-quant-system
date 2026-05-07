@@ -4,6 +4,7 @@ import re
 import time
 import hashlib
 import warnings
+import threading
 from datetime import date, timedelta, datetime
 import pandas as pd
 import psycopg2
@@ -16,6 +17,32 @@ warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+FETCH_TIMEOUT = 120
+
+
+def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT):
+    """带超时的采集包装器"""
+    result = [None]
+    error = [None]
+
+    def target():
+        try:
+            result[0] = fetcher_func()
+        except Exception as e:
+            error[0] = e
+
+    t = threading.Thread(target=target, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+
+    if t.is_alive():
+        logger.warning(f"{fetcher_func.__name__} 超时 ({timeout}s)，跳过")
+        return []
+    if error[0]:
+        logger.warning(f"{fetcher_func.__name__} 异常: {error[0]}")
+        return []
+    return result[0] or []
 
 
 def get_db():
@@ -232,7 +259,7 @@ def main():
         (fetch_akshare_jgdy, '机构调研'),
     ]:
         try:
-            rows = fetcher()
+            rows = fetch_with_timeout(fetcher, timeout=FETCH_TIMEOUT)
             all_rows.extend(rows)
             time.sleep(1)
         except Exception as e:
