@@ -201,44 +201,54 @@ def get_time_weight() -> float:
 # ============================================================
 def fetch_market_sentiment() -> Tuple[int, str]:
     """
-    获取真实涨停家数（东财数据中心接口）。
+    获取真实涨停家数（东财涨停池接口）。
     返回 (涨停家数, 情绪描述)。
     """
     try:
         # 使用统一的北京时间函数
-        today_dash = beijing_now().strftime('%Y-%m-%d')
+        today_ymd = beijing_now().strftime('%Y%m%d')
         
-        url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-        params = {
-            "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",
-            "columns": "ALL",
-            "pageNumber": 1,
-            "pageSize": 100,
-            "sortColumns": "BILLBOARD_NET_AMT",
-            "sortTypes": -1,
-            "filter": f"(TRADE_DATE='{today_dash}')"
+        # 方案1：东财涨停池接口（最直接）
+        url = f"https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&Pagesize=500&sort=fbt%3Aasc&date={today_ymd}&_={int(time.time() * 1000)}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Referer": "https://quote.eastmoney.com/ztb/detail"
         }
-        headers = {"User-Agent": "Mozilla/5.0", "Referer": "https://data.eastmoney.com/"}
         
-        r = requests.get(url, params=params, headers=headers, timeout=10)
+        r = requests.get(url, headers=headers, timeout=10)
         data = r.json()
-        result = data.get('result') or {}
-        zt_count = result.get('count', 0) if isinstance(result, dict) else 0
         
-        # 如果接口返回0，可能是非交易时间或接口问题，使用备用方案
+        # 解析涨停池数据
+        if data.get('data') and data['data'].get('pool'):
+            zt_count = len(data['data']['pool'])
+        else:
+            zt_count = 0
+        
+        # 方案2：如果涨停池接口返回0，尝试数据中心接口
         if zt_count == 0:
-            # 尝试用腾讯接口估算涨停家数
             try:
-                test_codes = ["sh000001", "sz399001", "sh600519", "sz000858"]
-                code_str = ",".join(test_codes)
-                test_url = f"http://qt.gtimg.cn/q={code_str}"
-                test_r = requests.get(test_url, timeout=5)
-                # 如果能获取到数据，说明网络正常，可能是非交易时间
-                if test_r.status_code == 200:
-                    return 50, "正常"  # 非交易时间默认值
+                today_dash = beijing_now().strftime('%Y-%m-%d')
+                url2 = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+                params2 = {
+                    "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",
+                    "columns": "ALL",
+                    "pageNumber": 1,
+                    "pageSize": 100,
+                    "sortColumns": "BILLBOARD_NET_AMT",
+                    "sortTypes": -1,
+                    "filter": f"(TRADE_DATE='{today_dash}')"
+                }
+                r2 = requests.get(url2, params=params2, headers=headers, timeout=10)
+                data2 = r2.json()
+                result = data2.get('result') or {}
+                zt_count = result.get('count', 0) if isinstance(result, dict) else 0
             except:
                 pass
+        
+        # 如果两个接口都返回0，可能是非交易时间
+        if zt_count == 0:
             return 50, "正常"
+            
     except Exception as e:
         print(f"  ⚠️ 情绪接口异常: {e}")
         return 50, "正常"
