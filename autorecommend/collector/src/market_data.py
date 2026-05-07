@@ -55,7 +55,11 @@ def ensure_market_tables():
 
 def fetch_daily_quotes_today():
     """全市场当日行情快照"""
-    df = ak.stock_zh_a_spot_em()
+    try:
+        df = ak.stock_zh_a_spot_em()
+    except Exception as e:
+        logger.warning(f"daily_quotes skipped (海外服务器无法访问东方财富): {e}")
+        return
     today = date.today()
     rows = []
     for _, r in df.iterrows():
