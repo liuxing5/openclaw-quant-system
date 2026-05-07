@@ -39,7 +39,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas numpy baostock
+        pip install requests pandas numpy baostock python-dotenv
 
     - name: Check if trading day
       id: check_trading

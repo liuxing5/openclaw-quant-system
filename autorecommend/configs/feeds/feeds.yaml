@@ -1,0 +1,65 @@
+# 数据源配置 - 每条对应一个 RSSHub 路由
+# tier: 1=核心研报/金股, 2=快讯/热点, 3=KOL/情绪
+# weight: 初始权重，会被 source_performance 动态覆盖
+
+sources:
+  # === Tier 1: 机构观点 ===
+  - name: cls_telegraph
+    route: /cls/telegraph
+    category: news
+    tier: 1
+    weight: 1.0
+    poll_interval_sec: 60
+
+  - name: wallstreet_news
+    route: /wallstreetcn/news/global
+    category: news
+    tier: 1
+    weight: 0.9
+    poll_interval_sec: 300
+
+  - name: eastmoney_research
+    route: /eastmoney/report/strategyreport
+    category: research
+    tier: 1
+    weight: 1.2
+    poll_interval_sec: 1800
+
+  - name: eastmoney_industry
+    route: /eastmoney/report/industry
+    category: research
+    tier: 1
+    weight: 1.1
+    poll_interval_sec: 1800
+
+  # === Tier 2: 雪球大V（按你关注的填 user_id）===
+  # 这些 ID 需要你自己挑选，给几个示例位
+  - name: xueqiu_user_example1
+    route: /xueqiu/user/3970288464
+    category: kol
+    tier: 2
+    weight: 0.8
+    poll_interval_sec: 900
+
+  # === Tier 2: 雪球热门讨论 ===
+  - name: xueqiu_hot
+    route: /xueqiu/today_topic
+    category: kol
+    tier: 2
+    weight: 0.6
+    poll_interval_sec: 900
+
+  # === Tier 3: 微博财经 ===
+  # - name: weibo_finance_kol
+  #   route: /weibo/user/xxxxxxx
+  #   category: kol
+  #   tier: 3
+  #   weight: 0.4
+  #   poll_interval_sec: 1800
+
+# 全局配置
+global:
+  max_concurrent: 5
+  request_timeout_sec: 30
+  retry_attempts: 3
+  retry_backoff_sec: 5

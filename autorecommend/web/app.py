@@ -1,0 +1,221 @@
+"""AI Stock Recommendation - Web UI"""
+import os
+import pandas as pd
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import streamlit as st
+from datetime import date, datetime
+import json
+
+st.set_page_config(page_title="AI 股票推荐系统", layout="wide", page_icon="📊")
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 从环境变量或 .env 读取配置
+def get_db_config():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(os.path.join(BASE_DIR, '.env'))
+    except:
+        pass
+    return {
+        'host': os.getenv('POSTGRES_HOST', 'localhost'),
+        'user': os.getenv('POSTGRES_USER', 'stockrec'),
+        'password': os.getenv('POSTGRES_PASSWORD', ''),
+        'dbname': os.getenv('POSTGRES_DB', 'stockrec_db'),
+    }
+
+
+@st.cache_data(ttl=60)
+def query_df(sql, params=None):
+    cfg = get_db_config()
+    conn = psycopg2.connect(**cfg)
+    df = pd.read_sql(sql, conn, params=params)
+    conn.close()
+    return df
+
+
+def get_db():
+    cfg = get_db_config()
+    return psycopg2.connect(**cfg)
+
+
+# 侧边栏
+st.sidebar.title("📊 AI 股票推荐")
+st.sidebar.markdown("---")
+page = st.sidebar.radio("导航", ["📈 今日候选", "🔍 信号提取", "📡 数据源", "📰 原始资讯"])
+
+# 主标题
+st.title("AI 股票推荐系统")
+
+if page == "📈 今日候选":
+    st.header("今日候选股")
+    
+    # 日期选择
+    selected_date = st.date_input("选择日期", value=date.today())
+    
+    # 查询候选
+    df = query_df("""
+        SELECT ts_code, stock_name, final_score, llm_score, quant_score, 
+               consensus_score, mention_count, source_diversity,
+               selected, position_pct, entry_low, entry_high, stop_loss, 
+               target_1, target_2, logic_tags
+        FROM daily_candidates 
+        WHERE snapshot_date = %s 
+        ORDER BY final_score DESC;
+    """, (selected_date,))
+    
+    if df.empty:
+        st.info(f"{selected_date} 暂无候选数据")
+    else:
+        # 高亮选中的
+        def highlight_selected(row):
+            if row['selected']:
+                return ['background-color: #d4edda'] * len(row)
+            return [''] * len(row)
+        
+        st.dataframe(
+            df.style.apply(highlight_selected, axis=1),
+            use_container_width=True,
+            height=600,
+            column_config={
+                "ts_code": "代码",
+                "stock_name": "名称",
+                "final_score": st.column_config.NumberColumn("综合分", format="%.1f"),
+                "llm_score": st.column_config.NumberColumn("LLM分", format="%.1f"),
+                "quant_score": st.column_config.NumberColumn("量化分", format="%.1f"),
+                "selected": "已选中",
+                "position_pct": st.column_config.NumberColumn("仓位%", format="%.0f%%"),
+            }
+        )
+        
+        # 详情展开
+        st.subheader("候选详情")
+        for _, row in df.iterrows():
+            with st.expander(f"{row['ts_code']} {row['stock_name']} - 综合分: {row['final_score']:.1f}"):
+                col1, col2, col3 = st.columns(3)
+                col1.metric("LLM 分数", f"{row['llm_score']:.1f}")
+                col2.metric("量化分数", f"{row['quant_score']:.1f}")
+                col3.metric("共识度", f"{row['consensus_score']:.2f}")
+                
+                col4, col5, col6 = st.columns(3)
+                col4.metric("入场区间", f"{row['entry_low']} - {row['entry_high']}")
+                col5.metric("止损", f"{row['stop_loss']}")
+                col6.metric("目标", f"{row['target_1']} / {row['target_2']}")
+                
+                st.write(f"**逻辑标签**: {', '.join(row['logic_tags'] or [])}")
+                st.write(f"**提及次数**: {row['mention_count']} | **来源数**: {row['source_diversity']}")
+                
+                # 查看来源详情
+                sources = query_df("""
+                    SELECT s.name, s.category, s.tier, e.recommendation_type, 
+                           e.strength, e.logic_summary, e.confidence, e.pub_time
+                    FROM extracted_recommendations e
+                    JOIN feed_sources s ON e.source_id = s.id
+                    WHERE e.ts_code = %s AND e.pub_time >= %s
+                    ORDER BY e.strength DESC;
+                """, (row['ts_code'], selected_date - pd.Timedelta(days=2)))
+                
+                if not sources.empty:
+                    st.write("**来源详情**:")
+                    st.dataframe(sources, use_container_width=True)
+
+elif page == "🔍 信号提取":
+    st.header("LLM 信号提取结果")
+    
+    # 过滤条件
+    col1, col2 = st.columns(2)
+    with col1:
+        rec_type = st.multiselect(
+            "推荐类型", 
+            ["buy", "strong_buy", "watch", "sell", "neutral"],
+            default=["buy", "strong_buy", "watch"]
+        )
+    with col2:
+        min_strength = st.slider("最小强度", 1, 5, 2)
+    
+    df = query_df("""
+        SELECT e.ts_code, e.stock_name, e.recommendation_type, e.strength,
+               e.logic_category, e.logic_summary, e.confidence, e.pub_time,
+               s.name AS source_name, s.category AS source_category, s.tier AS source_tier,
+               r.title AS article_title, r.url AS article_url
+        FROM extracted_recommendations e
+        JOIN feed_sources s ON e.source_id = s.id
+        LEFT JOIN raw_signals r ON e.raw_signal_id = r.id
+        WHERE e.recommendation_type = ANY(%s) AND e.strength >= %s
+        ORDER BY e.pub_time DESC
+        LIMIT 200;
+    """, (rec_type, min_strength))
+    
+    if df.empty:
+        st.info("暂无数据")
+    else:
+        st.dataframe(df, use_container_width=True, height=700)
+        
+        # 点击查看原文
+        st.subheader("原文链接")
+        for _, row in df.iterrows():
+            if row['article_url']:
+                st.markdown(f"[{row['article_title'] or '无标题'}]({row['article_url']}) - {row['source_name']}")
+
+elif page == "📡 数据源":
+    st.header("数据源管理")
+    
+    df = query_df("""
+        SELECT name, route, category, tier, weight, active, poll_interval_sec
+        FROM feed_sources 
+        ORDER BY tier, name;
+    """)
+    
+    if not df.empty:
+        st.dataframe(df, use_container_width=True)
+        
+        # 统计
+        st.subheader("各源信号数量")
+        stats = query_df("""
+            SELECT s.name, COUNT(*) as signal_count, 
+                   AVG(e.confidence) as avg_confidence,
+                   AVG(e.strength) as avg_strength
+            FROM feed_sources s
+            LEFT JOIN extracted_recommendations e ON s.id = e.source_id
+            GROUP BY s.name
+            ORDER BY signal_count DESC;
+        """)
+        st.dataframe(stats, use_container_width=True)
+
+elif page == "📰 原始资讯":
+    st.header("原始资讯")
+    
+    # 选择数据源
+    sources = query_df("SELECT id, name FROM feed_sources ORDER BY name;")
+    source_filter = st.selectbox("数据源", ["全部"] + sources['name'].tolist())
+    
+    if source_filter == "全部":
+        df = query_df("""
+            SELECT r.title, r.content, r.url, r.pub_time, r.fetch_time,
+                   s.name AS source_name
+            FROM raw_signals r
+            JOIN feed_sources s ON r.source_id = s.id
+            ORDER BY r.fetch_time DESC
+            LIMIT 100;
+        """)
+    else:
+        df = query_df("""
+            SELECT r.title, r.content, r.url, r.pub_time, r.fetch_time,
+                   s.name AS source_name
+            FROM raw_signals r
+            JOIN feed_sources s ON r.source_id = s.id
+            WHERE s.name = %s
+            ORDER BY r.fetch_time DESC
+            LIMIT 100;
+        """, (source_filter,))
+    
+    if not df.empty:
+        for _, row in df.iterrows():
+            with st.expander(f"{row['source_name']} | {row['title'] or '无标题'}"):
+                st.write(f"**发布时间**: {row['pub_time']}")
+                st.write(f"**采集时间**: {row['fetch_time']}")
+                if row['url']:
+                    st.markdown(f"[🔗 原文链接]({row['url']})")
+                st.markdown("---")
+                st.write(row['content'][:500] + "..." if row['content'] and len(row['content']) > 500 else row['content'])

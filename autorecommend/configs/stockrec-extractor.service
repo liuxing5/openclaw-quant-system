@@ -1,0 +1,15 @@
+[Unit]
+Description=Stock Recommender - LLM Extractor
+After=network.target stockrec-collector.service
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=/home/$USER/stock-recommender/analyzer
+Environment="PATH=/home/$USER/stock-recommender/venv/bin"
+ExecStart=/home/$USER/stock-recommender/venv/bin/python src/extractor.py
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

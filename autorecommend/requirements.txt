@@ -1,0 +1,24 @@
+# Core
+loguru
+python-dotenv
+pyyaml
+psycopg2-binary
+
+# LLM
+openai
+
+# Data Collection
+akshare
+pandas
+pyarrow
+
+# Telegram
+python-telegram-bot==21.3
+httpx
+
+# Utilities
+requests
+
+# Web UI
+jinja2
+streamlit

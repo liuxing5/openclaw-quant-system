@@ -1,0 +1,55 @@
+services:
+  rsshub:
+    image: diygod/rsshub:chromium-bundled
+    container_name: rsshub
+    restart: always
+    ports:
+      - "127.0.0.1:1200:1200"   # Only bind to localhost, external access via nginx
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: redis
+      REDIS_URL: redis://rsshub-redis:6379/
+      CACHE_EXPIRE: 300          # Cache 5 minutes
+      CACHE_CONTENT_EXPIRE: 3600
+      ACCESS_KEY: ${RSSHUB_ACCESS_KEY}
+      REQUEST_RETRY: 2
+      REQUEST_TIMEOUT: 30000
+      LOGGER_LEVEL: info
+      # Xueqiu login state (critical)
+      XUEQIU_COOKIES: ${XUEQIU_COOKIES}
+      # Weibo login state
+      WEIBO_COOKIES: ${WEIBO_COOKIES}
+      # Browser configuration
+      PUPPETEER_WS_ENDPOINT: ws://rsshub-browserless:3000
+    depends_on:
+      - rsshub-redis
+    networks:
+      - rsshub-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  rsshub-redis:
+    image: redis:7-alpine
+    container_name: rsshub-redis
+    restart: always
+    volumes:
+      - ./redis-data:/data
+    networks:
+      - rsshub-net
+
+  rsshub-browserless:
+    image: browserless/chrome:latest
+    container_name: rsshub-browserless
+    restart: always
+    environment:
+      MAX_CONCURRENT_SESSIONS: 5
+      CONNECTION_TIMEOUT: 60000
+    networks:
+      - rsshub-net
+
+networks:
+  rsshub-net:
+    driver: bridge

@@ -1,0 +1,15 @@
+[Unit]
+Description=Stock Recommender - RSS Collector
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=/home/$USER/stock-recommender/collector
+Environment="PATH=/home/$USER/stock-recommender/venv/bin"
+ExecStart=/home/$USER/stock-recommender/venv/bin/python src/collector.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

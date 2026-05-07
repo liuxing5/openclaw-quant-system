@@ -27,7 +27,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        pip install requests
+        pip install requests python-dotenv
 
     - name: Poll Telegram and handle commands
       working-directory: recommend/xuangu
