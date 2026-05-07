@@ -1,6 +1,9 @@
 # Quant System Core Dependencies
 # Complete production requirements
 
+# Environment variables management
+python-dotenv>=1.0.0
+
 # Core data and computation
 pandas>=2.0.0
 numpy>=1.24.0

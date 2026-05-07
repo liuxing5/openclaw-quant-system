@@ -20,6 +20,10 @@ import os
 import requests
 import time
 from typing import Optional
+from dotenv import load_dotenv
+
+# 加载 .env 文件
+load_dotenv()
 
 # ============================================================
 # 配置（优先用环境变量，fallback 到下面的默认值）
