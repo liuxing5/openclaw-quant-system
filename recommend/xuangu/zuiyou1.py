@@ -45,6 +45,16 @@ from datetime import datetime, timedelta
 
 # 调试模式开关（环境变量 ZUIYOU_DEBUG=true 时启用）
 DEBUG = os.environ.get("ZUIYOU_DEBUG", "").lower() == "true"
+
+# 冷门行业列表（隔夜溢价较低的行业）
+COLD_INDUSTRIES = {"银行", "保险", "煤炭", "钢铁"}
+
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+    print("ℹ️ tqdm 未安装，使用传统进度打印")
 from typing import Optional, Tuple, List, Dict
 
 # ============================================================
@@ -428,6 +438,29 @@ def get_stock_pool() -> list:
 
 
 # ============================================================
+#  5b. 行业信息获取（baostock query_stock_industry）
+# ============================================================
+_industry_cache = {}
+
+def get_stock_industry(code: str) -> str:
+    """获取股票所属行业，带缓存"""
+    if code in _industry_cache:
+        return _industry_cache[code]
+    try:
+        rs = bs.query_stock_industry(code=code)
+        if rs.error_code == '0':
+            row = rs.get_row_data()
+            if row and len(row) > 0:
+                industry = row[0] if row[0] else ""
+                _industry_cache[code] = industry
+                return industry
+    except Exception:
+        pass
+    _industry_cache[code] = ""
+    return ""
+
+
+# ============================================================
 #  6. 核心量化逻辑（8步法完整实现）
 # ============================================================
 def analyze_ultimate(
@@ -436,15 +469,20 @@ def analyze_ultimate(
     real_info: Optional[dict],
     zt_count: int,
     time_weight: float,
+    reject_stats: Optional[dict] = None,
 ) -> Optional[dict]:
 
     if hist_df is None or len(hist_df) < 15:
+        if reject_stats is not None:
+            reject_stats["数据不足"] += 1
         return None
 
     # ST过滤：从实时行情中获取股票名称判断
     if real_info:
         name = real_info.get("name", "")
         if "ST" in name or "*ST" in name or "退" in name:
+            if reject_stats is not None:
+                reject_stats["ST/退市"] += 1
             return None
 
     df = hist_df.copy()
@@ -454,6 +492,8 @@ def analyze_ultimate(
 
     df = df[df["volume"] > 0]
     if len(df) < 12:
+        if reject_stats is not None:
+            reject_stats["数据不足"] += 1
         return None
 
     # --- 6.1 决定今日数据来源 ---
@@ -485,17 +525,25 @@ def analyze_ultimate(
     in_upper = CONFIG["upper_pct_lo"] <= curr_pct <= CONFIG["upper_pct_hi"]
 
     if zt_count < CONFIG["sentiment_normal"] and not in_stable:
+        if reject_stats is not None:
+            reject_stats["情绪冷淡"] += 1
         return None
 
     if not (in_stable or in_upper):
+        if reject_stats is not None:
+            reject_stats["涨幅不符"] += 1
         return None
 
     # --- STEP 2: 成交额硬过滤 ---
     if curr_amount < CONFIG["min_amount"] or curr_amount > CONFIG["max_amount"]:
+        if reject_stats is not None:
+            reject_stats["成交额"] += 1
         return None
 
     # --- STEP 3: 换手率硬过滤（8步法原始5%-10%）---
     if curr_turn < CONFIG["turn_min"] or curr_turn > CONFIG["turn_max"]:
+        if reject_stats is not None:
+            reject_stats["换手率"] += 1
         return None
 
     # --- STEP 4: 流通市值过滤（8步法50亿-200亿）---
@@ -503,17 +551,23 @@ def analyze_ultimate(
     mktcap = real_info.get("mktcap", 0) if real_info else 0
     if mktcap > 0:
         if mktcap < CONFIG["min_mktcap"] or mktcap > CONFIG["max_mktcap"]:
+            if reject_stats is not None:
+                reject_stats["市值"] += 1
             return None
 
     # --- STEP 5: 量比计算（10日去极值均量 + 时间加权）---
     recent_vols = sorted(hist_vols[-12:])
     if len(recent_vols) < 4:
+        if reject_stats is not None:
+            reject_stats["量比"] += 1
         return None
     trimmed = recent_vols[1:-1] if len(recent_vols) > 2 else recent_vols
     avg_vol_trimmed = sum(trimmed) / len(trimmed)
 
     vol_ratio = est_full_vol / avg_vol_trimmed if avg_vol_trimmed > 0 else 0
     if not (CONFIG["vol_ratio_min"] <= vol_ratio <= CONFIG["vol_ratio_max"]):
+        if reject_stats is not None:
+            reject_stats["量比"] += 1
         return None
 
     # --- STEP 6a: 均线验证（昨收序列，严格无未来函数）---
@@ -523,6 +577,8 @@ def analyze_ultimate(
     hist_close = df["close"].tolist()[:-1]
 
     if len(hist_close) < 10:
+        if reject_stats is not None:
+            reject_stats["均线"] += 1
         return None
 
     ma5_yest = sum(hist_close[-5:]) / 5
@@ -530,6 +586,8 @@ def analyze_ultimate(
     ma20_yest = sum(hist_close[-20:]) / 20 if len(hist_close) >= 20 else ma10_yest
 
     if not (curr_price > ma5_yest > ma10_yest):
+        if reject_stats is not None:
+            reject_stats["均线"] += 1
         return None
 
     # --- STEP 6b: K线上方压力检测 ---
@@ -540,6 +598,8 @@ def analyze_ultimate(
         resistance_ratio = (max_recent_high - curr_price) / curr_price
         resistance_threshold = 0.15 if in_upper else 0.08
         if resistance_ratio > resistance_threshold:
+            if reject_stats is not None:
+                reject_stats["压力"] += 1
             return None
 
     # --- STEP 5b: 成交量递增验证 ---
@@ -658,8 +718,25 @@ def analyze_ultimate(
         score -= 20
         tags.append("乖离过大↓")
 
+    # 冷门行业过滤：隔夜溢价较低的行业扣分
+    industry = get_stock_industry(code)
+    if industry in COLD_INDUSTRIES:
+        score -= 20
+        tags.append(f"冷门行业({industry})↓")
+
+    # 尾盘回落检测：post模式下检查今日是否从高点大幅回落
+    if CONFIG["MODE"] == "post":
+        today_high = float(df.iloc[-1]["high"]) if "high" in df.columns else 0
+        if today_high > 0 and curr_price > 0:
+            drawdown_from_high = (today_high - curr_price) / today_high
+            if drawdown_from_high > 0.03:
+                score -= 15
+                tags.append("尾盘回落↓")
+
     # --- 最终判定 ---
     if score < CONFIG["score_threshold"]:
+        if reject_stats is not None:
+            reject_stats["得分不足"] += 1
         return None
 
     return {
@@ -680,7 +757,7 @@ def analyze_ultimate(
 # ============================================================
 #  7. 单池扫描引擎
 # ============================================================
-def scan_pool(cfg: dict, zt_count: int, mood: str) -> list:
+def scan_pool(cfg: dict, zt_count: int, mood: str) -> tuple:
     global CONFIG
     CONFIG = cfg
 
@@ -703,9 +780,16 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> list:
     end_d = beijing_now().strftime("%Y-%m-%d")
     start_d = (beijing_now() - timedelta(days=45)).strftime("%Y-%m-%d")
 
+    reject_stats = {
+        "数据不足": 0, "ST/退市": 0, "情绪冷淡": 0, "涨幅不符": 0,
+        "成交额": 0, "换手率": 0, "市值": 0, "量比": 0, "均线": 0,
+        "压力": 0, "得分不足": 0,
+    }
+
     print(f"  开始扫描 {total} 只股票...\n")
 
-    for i, code in enumerate(stock_pool):
+    iterator = tqdm(stock_pool, desc=f"扫描{pool_name}") if HAS_TQDM else stock_pool
+    for i, code in enumerate(iterator):
         key = code.replace(".", "").lower()
         real_info = real_map.get(key)
         if real_info is None:
@@ -733,7 +817,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> list:
             continue
 
         hist_df = pd.DataFrame(data_list, columns=k_rs.fields)
-        res = analyze_ultimate(hist_df, code, real_info, zt_count, time_weight)
+        res = analyze_ultimate(hist_df, code, real_info, zt_count, time_weight, reject_stats)
         if res:
             res["pool"] = pool_name
             results.append(res)
@@ -741,8 +825,11 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> list:
                   f"路径:{res['path']}  连板:{res['streak']}  得分:{res['score']}  "
                   f"换手:{res['turn']}%  量比:{res['vol_ratio']}")
 
-        if i % 100 == 0 and i > 0:
-            print(f"  进度: {i}/{total}  已命中: {len(results)}")
+    print(f"\n  📊 过滤统计 [{pool_name}]:")
+    for reason, count in sorted(reject_stats.items(), key=lambda x: -x[1]):
+        if count > 0:
+            bar = "█" * min(count // 5, 20)
+            print(f"    {reason:>8}: {count:>5} {bar}")
 
     return results
 
