@@ -220,7 +220,13 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         
         # 解析涨停池数据
         if data.get('data') and data['data'].get('pool'):
-            zt_count = len(data['data']['pool'])
+            pool = data['data']['pool']
+            zt_count = len(pool)
+            # 调试：打印前3只涨停股票验证数据真实性
+            if zt_count > 0:
+                sample = pool[:3]
+                sample_names = [s.get('n', '') for s in sample]
+                print(f"  [DEBUG] 涨停池验证: 共{zt_count}家, 示例: {', '.join(sample_names)}")
         else:
             zt_count = 0
         
