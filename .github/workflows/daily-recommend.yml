@@ -64,16 +64,7 @@ jobs:
           POSTGRES_DB: stockrec_db
           POSTGRES_PASSWORD: stockrec123
       
-      - name: Load feed sources
-        run: |
-          python autorecommend/configs/load_feeds.py
-        env:
-          POSTGRES_HOST: localhost
-          POSTGRES_USER: stockrec
-          POSTGRES_PASSWORD: stockrec123
-          POSTGRES_DB: stockrec_db
-      
-      - name: Collect market data (Tushare/yfinance/AKShare)
+      - name: Collect market data (BaoStock/AKShare)
         run: python autorecommend/collector/src/market_data.py
         env:
           POSTGRES_HOST: localhost
@@ -82,14 +73,14 @@ jobs:
           POSTGRES_DB: stockrec_db
           TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
       
-      - name: Collect RSS signals
+      - name: Collect news signals (4-layer: AKShare→RSSHub→HTTP→Playwright)
         run: python autorecommend/collector/src/collector.py --once
         env:
           POSTGRES_HOST: localhost
           POSTGRES_USER: stockrec
           POSTGRES_PASSWORD: stockrec123
           POSTGRES_DB: stockrec_db
-          RSSHUB_BASE_URL: http://rsshub.app
+          RSSHUB_BASE_URL: http://localhost:1200
       
       - name: Extract signals with LLM
         run: python autorecommend/analyzer/src/extractor.py --once

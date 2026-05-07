@@ -22,6 +22,7 @@ httpx
 # Utilities
 requests
 feedparser
+beautifulsoup4
 
 # Web UI
 jinja2

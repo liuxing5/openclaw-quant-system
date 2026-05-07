@@ -29,15 +29,14 @@ def aggregate_today():
         SELECT 
           e.ts_code, MAX(e.stock_name) AS stock_name, 
           COUNT(*) AS mention_count, 
-          COUNT(DISTINCT e.source_id) AS source_diversity, 
-          AVG(e.strength * COALESCE(s.weight,1) * COALESCE(e.confidence,0.5)) AS llm_score, 
+          COUNT(DISTINCT e.source_name) AS source_diversity, 
+          AVG(e.strength * COALESCE(e.confidence,0.5)) AS llm_score, 
           ARRAY_AGG(DISTINCT e.logic_category) AS logic_tags, 
           JSON_AGG(JSON_BUILD_OBJECT( 
-            'source', s.name, 'tier', s.tier, 'strength', e.strength, 
+            'source', e.source_name, 'tier', 2, 'strength', e.strength, 
             'logic', e.logic_summary, 'pub_time', e.pub_time 
           )) AS sources 
         FROM extracted_recommendations e 
-        JOIN feed_sources s ON e.source_id=s.id 
         WHERE e.pub_time >= %s 
           AND e.recommendation_type IN ('buy','strong_buy','watch') 
           AND e.strength >= 2 

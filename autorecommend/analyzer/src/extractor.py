@@ -91,9 +91,16 @@ def call_llm(prompt: str) -> dict:
 def fetch_pending(limit=20):
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
-        SELECT r.id, r.title, r.content, r.pub_time, r.source_id,
-               s.category, s.tier, s.name AS source_name
-        FROM raw_signals r JOIN feed_sources s ON r.source_id=s.id
+        SELECT r.id, r.title, r.content, r.pub_time,
+               r.source_name, r.source_tier,
+               CASE
+                   WHEN r.source_name LIKE '%新闻%' OR r.source_name LIKE '%快讯%' OR r.source_name LIKE '%电报%' THEN 'news'
+                   WHEN r.source_name LIKE '%研报%' OR r.source_name LIKE '%公告%' THEN 'research'
+                   WHEN r.source_name LIKE '%热门%' OR r.source_name LIKE '%龙虎榜%' THEN 'kol'
+                   WHEN r.source_name LIKE '%概念%' THEN 'concept'
+                   ELSE 'news'
+               END AS category
+        FROM raw_signals r
         WHERE NOT EXISTS (
             SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id=r.id
         )
@@ -138,14 +145,14 @@ def store_extraction(raw_id: int, source_id: int, pub_time, items: list):
 
 def process_one(row):
     prompt = PROMPT_TPL.format(
-        source_category=row['category'], source_tier=row['tier'],
+        source_category=row['category'], source_tier=row['source_tier'],
         pub_time=row['pub_time'], title=row['title'] or '',
         content=(row['content'] or '')[:4000],
     )
     try:
         result = call_llm(prompt)
         items = result.get('items', []) if result.get('is_recommendation') else []
-        n = store_extraction(row['id'], row['source_id'], row['pub_time'], items)
+        n = store_extraction(row['id'], None, row['pub_time'], items)
         logger.info(f"raw_id={row['id']} → {n or 0} signals")
         if current_model != PRIMARY_MODEL:
             switch_to_primary()

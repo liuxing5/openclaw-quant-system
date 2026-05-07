@@ -193,21 +193,19 @@ def generate_report():
     
     # 数据源统计
     cur.execute("""
-        SELECT s.name, COUNT(*) as signal_count, 
-               AVG(e.confidence) as avg_confidence,
-               AVG(e.strength) as avg_strength
-        FROM feed_sources s
-        LEFT JOIN extracted_recommendations e ON s.id = e.source_id
-        GROUP BY s.name ORDER BY signal_count DESC;
-    """)
+        SELECT source_name, COUNT(*) as signal_count, source_tier
+        FROM raw_signals
+        WHERE fetch_time >= %s
+        GROUP BY source_name, source_tier
+        ORDER BY signal_count DESC;
+    """, (today - timedelta(days=2),))
     source_stats = cur.fetchall()
     
     # 最新资讯
     cur.execute("""
-        SELECT r.title, r.link as url, r.pub_time, s.name as source_name
-        FROM raw_signals r
-        JOIN feed_sources s ON r.source_id = s.id
-        ORDER BY r.fetch_time DESC LIMIT 20;
+        SELECT title, url, pub_time, source_name
+        FROM raw_signals
+        ORDER BY fetch_time DESC LIMIT 20;
     """)
     articles = cur.fetchall()
     
