@@ -23,6 +23,8 @@ def aggregate_today():
     cutoff = today - timedelta(days=2)
     
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # 1. 尝试从 LLM 提取的推荐中聚合
     cur.execute("""
         SELECT 
           e.ts_code, MAX(e.stock_name) AS stock_name, 
@@ -44,50 +46,101 @@ def aggregate_today():
     """, (cutoff,))
     rows = cur.fetchall()
     
-    # 只保留 A 股
-    rows = [r for r in rows if r['ts_code'].endswith('.SH') or r['ts_code'].endswith('.SZ')]
-    rows = [r for r in rows if not (r['stock_name'] and 'ST' in r['stock_name'].upper())]
-    
     candidates = []
-    for r in rows:
+    
+    if rows:
+        # 有 LLM 推荐数据
+        logger.info(f"从 LLM 提取到 {len(rows)} 只推荐股票")
+        rows = [r for r in rows if r['ts_code'].endswith('.SH') or r['ts_code'].endswith('.SZ')]
+        rows = [r for r in rows if not (r['stock_name'] and 'ST' in r['stock_name'].upper())]
+        
+        for r in rows:
+            cur.execute("""
+                SELECT close, pct_chg, turnover_rate, amount 
+                FROM daily_quotes WHERE ts_code=%s AND trade_date=%s;
+            """, (r['ts_code'], today))
+            q = cur.fetchone()
+            
+            quant_score = 0
+            close_price = None
+            has_market_data = False
+            
+            if q:
+                has_market_data = True
+                close_price = float(q['close']) if q['close'] else None
+                if (q['amount'] or 0) < 1e8:
+                    continue
+                if q['pct_chg'] and -3 < q['pct_chg'] < 7:
+                    quant_score += 30
+                if (q['turnover_rate'] or 0) > 3:
+                    quant_score += 20
+                if (q['amount'] or 0) > 5e8:
+                    quant_score += 20
+            else:
+                quant_score = 50
+                logger.warning(f"{r['ts_code']} 无行情数据，使用默认量化分")
+            
+            consensus = min(r['source_diversity'] / 3.0, 1.0)
+            llm_n = min(r['llm_score'] / 5.0, 1.0)
+            quant_n = quant_score / 100.0
+            final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
+            
+            candidates.append({
+                'ts_code': r['ts_code'], 'stock_name': r['stock_name'],
+                'mention_count': r['mention_count'], 'source_diversity': r['source_diversity'],
+                'consensus_score': consensus, 'llm_score': llm_n * 100,
+                'quant_score': quant_score, 'final_score': final,
+                'logic_tags': r['logic_tags'], 'sources': r['sources'],
+                'close': close_price,
+            })
+    else:
+        # 无 LLM 推荐数据，使用纯量化选股
+        logger.info("无 LLM 推荐数据，使用纯量化选股")
         cur.execute("""
-            SELECT close, pct_chg, turnover_rate, amount 
-            FROM daily_quotes WHERE ts_code=%s AND trade_date=%s;
-        """, (r['ts_code'], today))
-        q = cur.fetchone()
+            SELECT ts_code, close, pct_chg, turnover_rate, amount, volume
+            FROM daily_quotes 
+            WHERE trade_date = %s 
+              AND amount > 1e8
+              AND pct_chg BETWEEN -3 AND 7
+              AND turnover_rate > 3
+            ORDER BY amount DESC
+            LIMIT 50;
+        """, (today,))
+        quotes = cur.fetchall()
         
-        quant_score = 0
-        close_price = None
-        has_market_data = False
-        
-        if q:
-            has_market_data = True
-            close_price = float(q['close']) if q['close'] else None
-            if (q['amount'] or 0) < 1e8:
+        for q in quotes:
+            ts_code = q['ts_code']
+            if not (ts_code.endswith('.SH') or ts_code.endswith('.SZ')):
                 continue
-            if q['pct_chg'] and -3 < q['pct_chg'] < 7:
+            
+            close_price = float(q['close']) if q['close'] else None
+            pct_chg = q['pct_chg'] or 0
+            turnover = q['turnover_rate'] or 0
+            amount = q['amount'] or 0
+            
+            # 量化评分
+            quant_score = 0
+            if -2 < pct_chg < 5:
+                quant_score += 40
+            if turnover > 5:
                 quant_score += 30
-            if (q['turnover_rate'] or 0) > 3:
+            elif turnover > 3:
                 quant_score += 20
-            if (q['amount'] or 0) > 5e8:
+            if amount > 10e8:
+                quant_score += 30
+            elif amount > 5e8:
                 quant_score += 20
-        else:
-            quant_score = 50
-            logger.warning(f"{r['ts_code']} 无行情数据，使用默认量化分")
-        
-        consensus = min(r['source_diversity'] / 3.0, 1.0)
-        llm_n = min(r['llm_score'] / 5.0, 1.0)
-        quant_n = quant_score / 100.0
-        final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
-        
-        candidates.append({
-            'ts_code': r['ts_code'], 'stock_name': r['stock_name'],
-            'mention_count': r['mention_count'], 'source_diversity': r['source_diversity'],
-            'consensus_score': consensus, 'llm_score': llm_n * 100,
-            'quant_score': quant_score, 'final_score': final,
-            'logic_tags': r['logic_tags'], 'sources': r['sources'],
-            'close': close_price,
-        })
+            
+            final = quant_score * 0.8  # 纯量化，降低权重
+            
+            candidates.append({
+                'ts_code': ts_code, 'stock_name': None,
+                'mention_count': 1, 'source_diversity': 1,
+                'consensus_score': 0.3, 'llm_score': 0,
+                'quant_score': quant_score, 'final_score': final,
+                'logic_tags': ['量化选股'], 'sources': [{'source': 'quant', 'tier': 2}],
+                'close': close_price,
+            })
     
     candidates.sort(key=lambda x: x['final_score'], reverse=True)
     top_n = candidates[:15]
