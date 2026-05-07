@@ -151,7 +151,7 @@ def process_one(row):
     )
     try:
         result = call_llm(prompt)
-        items = result.get('items', []) if result.get('is_recommendation') else []
+        items = result.get('items', []) if result.get('is_recommendation', False) else []
         n = store_extraction(row['id'], row['source_name'], row['pub_time'], items)
         logger.info(f"raw_id={row['id']} → {n or 0} signals")
         if current_model != PRIMARY_MODEL:
