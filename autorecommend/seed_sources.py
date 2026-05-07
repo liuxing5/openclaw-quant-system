@@ -17,9 +17,10 @@ SOURCES = [
 
 
 def seed():
+    port_str = os.getenv('POSTGRES_PORT') or '5432'
     conn = psycopg2.connect(
         host=os.getenv('POSTGRES_HOST'),
-        port=int(os.getenv('POSTGRES_PORT', 5432)),
+        port=int(port_str),
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),

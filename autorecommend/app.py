@@ -19,7 +19,7 @@ def get_db_config():
         pass
     return {
         'host': os.getenv('POSTGRES_HOST', 'localhost'),
-        'port': int(os.getenv('POSTGRES_PORT', 5432)),
+        'port': int(os.getenv('POSTGRES_PORT') or '5432'),
         'user': os.getenv('POSTGRES_USER', 'stockrec'),
         'password': os.getenv('POSTGRES_PASSWORD', ''),
         'dbname': os.getenv('POSTGRES_DB', 'stockrec_db'),
