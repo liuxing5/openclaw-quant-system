@@ -156,8 +156,8 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         
         r = requests.get(url, params=params, headers=headers, timeout=10)
         data = r.json()
-        result = data.get('result', {})
-        zt_count = result.get('count', 0)
+        result = data.get('result') or {}
+        zt_count = result.get('count', 0) if isinstance(result, dict) else 0
         
         if zt_count == 0:
             return 50, "正常"

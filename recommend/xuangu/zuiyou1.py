@@ -222,8 +222,8 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         
         r = requests.get(url, params=params, headers=headers, timeout=10)
         data = r.json()
-        result = data.get('result', {})
-        zt_count = result.get('count', 0)
+        result = data.get('result') or {}
+        zt_count = result.get('count', 0) if isinstance(result, dict) else 0
         
         # 如果接口返回0，可能是非交易时间或接口问题，使用备用方案
         if zt_count == 0:
