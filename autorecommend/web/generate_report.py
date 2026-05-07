@@ -204,7 +204,7 @@ def generate_report():
     
     # 最新资讯
     cur.execute("""
-        SELECT r.title, r.url, r.pub_time, s.name as source_name
+        SELECT r.title, r.link as url, r.pub_time, s.name as source_name
         FROM raw_signals r
         JOIN feed_sources s ON r.source_id = s.id
         ORDER BY r.fetch_time DESC LIMIT 20;
