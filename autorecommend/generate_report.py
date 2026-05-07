@@ -1,20 +1,23 @@
 """生成每日推荐报告 - HTML"""
 import os
 import json
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from jinja2 import Template
 from dotenv import load_dotenv
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 
 def get_db():
     return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'), user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'), dbname=os.getenv('POSTGRES_DB'),
+        host=os.getenv('POSTGRES_HOST'),
+        port=int(os.getenv('POSTGRES_PORT', 5432)),
+        user=os.getenv('POSTGRES_USER'),
+        password=os.getenv('POSTGRES_PASSWORD'),
+        dbname=os.getenv('POSTGRES_DB'),
     )
 
 
@@ -184,14 +187,12 @@ def generate_report():
     today = date.today()
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
-    # 候选股
     cur.execute("""
         SELECT * FROM daily_candidates 
         WHERE snapshot_date = %s ORDER BY final_score DESC;
     """, (today,))
     candidates = cur.fetchall()
     
-    # 数据源统计
     cur.execute("""
         SELECT source_name, COUNT(*) as signal_count, source_tier
         FROM raw_signals
@@ -201,7 +202,6 @@ def generate_report():
     """, (today - timedelta(days=2),))
     source_stats = cur.fetchall()
     
-    # 最新资讯
     cur.execute("""
         SELECT title, url, pub_time, source_name
         FROM raw_signals
@@ -209,7 +209,6 @@ def generate_report():
     """)
     articles = cur.fetchall()
     
-    # 历史日期
     cur.execute("""
         SELECT DISTINCT snapshot_date FROM daily_candidates 
         ORDER BY snapshot_date DESC LIMIT 10;
@@ -218,7 +217,6 @@ def generate_report():
     
     cur.close(); conn.close()
     
-    # 渲染 HTML
     template = Template(HTML_TEMPLATE)
     html = template.render(
         date=str(today),
@@ -229,13 +227,11 @@ def generate_report():
         history_dates=history_dates,
     )
     
-    # 保存到 docs/ 目录（GitHub Pages）
     output_dir = os.path.join(BASE_DIR, 'docs', str(today))
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, 'index.html'), 'w', encoding='utf-8') as f:
         f.write(html)
     
-    # 同时更新最新报告
     latest_dir = os.path.join(BASE_DIR, 'docs', 'latest')
     os.makedirs(latest_dir, exist_ok=True)
     with open(os.path.join(latest_dir, 'index.html'), 'w', encoding='utf-8') as f:

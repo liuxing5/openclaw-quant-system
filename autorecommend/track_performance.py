@@ -4,19 +4,22 @@ from datetime import date, timedelta
 import psycopg2
 from dotenv import load_dotenv
 
-load_dotenv(os.path.expanduser('~/stock-recommender/.env'))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 
 def get_db():
     return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'), user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'), dbname=os.getenv('POSTGRES_DB'),
+        host=os.getenv('POSTGRES_HOST'),
+        port=int(os.getenv('POSTGRES_PORT', 5432)),
+        user=os.getenv('POSTGRES_USER'),
+        password=os.getenv('POSTGRES_PASSWORD'),
+        dbname=os.getenv('POSTGRES_DB'),
     )
 
 
 def update_tracking():
     conn = get_db(); cur = conn.cursor()
-    # 找所有需要更新的候选
     cur.execute("""
         SELECT c.id, c.ts_code, c.snapshot_date, c.entry_high, c.target_1, c.stop_loss
         FROM daily_candidates c

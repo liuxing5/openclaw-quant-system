@@ -11,7 +11,7 @@ from telegram.request import HTTPXRequest
 from loguru import logger
 from dotenv import load_dotenv
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -23,8 +23,11 @@ MIN_SELECT_SCORE = 50
 
 def get_db():
     return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'), user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'), dbname=os.getenv('POSTGRES_DB'),
+        host=os.getenv('POSTGRES_HOST'),
+        port=int(os.getenv('POSTGRES_PORT', 5432)),
+        user=os.getenv('POSTGRES_USER'),
+        password=os.getenv('POSTGRES_PASSWORD'),
+        dbname=os.getenv('POSTGRES_DB'),
     )
 
 

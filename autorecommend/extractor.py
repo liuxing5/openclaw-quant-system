@@ -10,7 +10,7 @@ from loguru import logger
 from dotenv import load_dotenv
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 PRIMARY_API_KEY = os.getenv('LLM_API_KEY') or os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
@@ -29,14 +29,17 @@ MAX_ERRORS_BEFORE_SWITCH = 3
 
 client = OpenAI(api_key=current_api_key, base_url=current_base_url)
 
-with open(os.path.join(BASE_DIR, 'analyzer', 'prompts', 'extract_v1.txt')) as f:
+with open(os.path.join(BASE_DIR, 'extract_v1.txt')) as f:
     PROMPT_TPL = f.read()
 
 
 def get_db():
     return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'), user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'), dbname=os.getenv('POSTGRES_DB'),
+        host=os.getenv('POSTGRES_HOST'),
+        port=int(os.getenv('POSTGRES_PORT', 5432)),
+        user=os.getenv('POSTGRES_USER'),
+        password=os.getenv('POSTGRES_PASSWORD'),
+        dbname=os.getenv('POSTGRES_DB'),
     )
 
 

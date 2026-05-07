@@ -9,9 +9,8 @@ import json
 
 st.set_page_config(page_title="AI 股票推荐系统", layout="wide", page_icon="📊")
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# 从环境变量或 .env 读取配置
 def get_db_config():
     try:
         from dotenv import load_dotenv
@@ -20,6 +19,7 @@ def get_db_config():
         pass
     return {
         'host': os.getenv('POSTGRES_HOST', 'localhost'),
+        'port': int(os.getenv('POSTGRES_PORT', 5432)),
         'user': os.getenv('POSTGRES_USER', 'stockrec'),
         'password': os.getenv('POSTGRES_PASSWORD', ''),
         'dbname': os.getenv('POSTGRES_DB', 'stockrec_db'),
@@ -40,21 +40,17 @@ def get_db():
     return psycopg2.connect(**cfg)
 
 
-# 侧边栏
 st.sidebar.title("📊 AI 股票推荐")
 st.sidebar.markdown("---")
 page = st.sidebar.radio("导航", ["📈 今日候选", "🔍 信号提取", "📡 数据源", "📰 原始资讯"])
 
-# 主标题
 st.title("AI 股票推荐系统")
 
 if page == "📈 今日候选":
     st.header("今日候选股")
     
-    # 日期选择
     selected_date = st.date_input("选择日期", value=date.today())
     
-    # 查询候选
     df = query_df("""
         SELECT ts_code, stock_name, final_score, llm_score, quant_score, 
                consensus_score, mention_count, source_diversity,
@@ -68,7 +64,6 @@ if page == "📈 今日候选":
     if df.empty:
         st.info(f"{selected_date} 暂无候选数据")
     else:
-        # 高亮选中的
         def highlight_selected(row):
             if row['selected']:
                 return ['background-color: #d4edda'] * len(row)
@@ -89,7 +84,6 @@ if page == "📈 今日候选":
             }
         )
         
-        # 详情展开
         st.subheader("候选详情")
         for _, row in df.iterrows():
             with st.expander(f"{row['ts_code']} {row['stock_name']} - 综合分: {row['final_score']:.1f}"):
@@ -106,7 +100,6 @@ if page == "📈 今日候选":
                 st.write(f"**逻辑标签**: {', '.join(row['logic_tags'] or [])}")
                 st.write(f"**提及次数**: {row['mention_count']} | **来源数**: {row['source_diversity']}")
                 
-                # 查看来源详情
                 sources = query_df("""
                     SELECT e.source_name, e.recommendation_type, 
                            e.strength, e.logic_summary, e.confidence, e.pub_time
@@ -122,7 +115,6 @@ if page == "📈 今日候选":
 elif page == "🔍 信号提取":
     st.header("LLM 信号提取结果")
     
-    # 过滤条件
     col1, col2 = st.columns(2)
     with col1:
         rec_type = st.multiselect(
@@ -149,7 +141,6 @@ elif page == "🔍 信号提取":
     else:
         st.dataframe(df, use_container_width=True, height=700)
         
-        # 点击查看原文
         st.subheader("原文链接")
         for _, row in df.iterrows():
             if row['article_url']:
@@ -173,7 +164,6 @@ elif page == "📡 数据源":
 elif page == "📰 原始资讯":
     st.header("原始资讯")
     
-    # 选择数据源
     sources = query_df("SELECT DISTINCT source_name FROM raw_signals ORDER BY source_name;")
     source_filter = st.selectbox("数据源", ["全部"] + sources['source_name'].tolist())
     

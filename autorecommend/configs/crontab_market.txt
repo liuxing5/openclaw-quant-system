@@ -1,4 +1,0 @@
-# Stock Recommender - Market Data Cron Jobs
-# Each trading day 15:30, 16:30, 17:30 run market data collection
-
-30 15,16,17 * * 1-5 /home/$USER/stock-recommender/venv/bin/python /home/$USER/stock-recommender/collector/src/market_data.py >> /home/$USER/stock-recommender/logs/market.log 2>&1

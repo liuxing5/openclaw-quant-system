@@ -46,33 +46,36 @@ jobs:
           pip install psycopg2-binary
       
       - name: Ensure schema (idempotent)
-        run: psql "$DATABASE_URL" -f autorecommend/configs/schema.sql
+        run: psql "$DATABASE_URL" -f autorecommend/schema.sql
         env:
           DATABASE_URL: postgresql://${{ secrets.SUPABASE_USER }}:${{ secrets.SUPABASE_PASSWORD }}@${{ secrets.SUPABASE_HOST }}:${{ secrets.SUPABASE_PORT }}/${{ secrets.SUPABASE_DB }}
       
+      - name: Seed source registry
+        run: python autorecommend/seed_sources.py
+      
       - name: Sync stock basic info
-        run: python autorecommend/collector/src/sync_stock_info.py
+        run: python autorecommend/sync_stock_info.py
       
       - name: Collect market data (full A-share)
-        run: python autorecommend/collector/src/market_data.py
+        run: python autorecommend/market_data.py
       
       - name: Collect news signals (AKShare-only mode)
-        run: python autorecommend/collector/src/collector.py --once
+        run: python autorecommend/collector.py --once
       
       - name: Extract signals with LLM
-        run: python autorecommend/analyzer/src/extractor.py --once
+        run: python autorecommend/extractor.py --once
       
       - name: Aggregate candidates
-        run: python autorecommend/strategy/src/aggregate.py
+        run: python autorecommend/aggregate.py
       
       - name: Track performance (T+1/T+5/T+20)
-        run: python autorecommend/strategy/src/track_performance.py
+        run: python autorecommend/track_performance.py
       
       - name: Generate HTML report
-        run: python autorecommend/web/generate_report.py
+        run: python autorecommend/generate_report.py
       
       - name: Push to Telegram
-        run: python autorecommend/bot/src/pusher.py
+        run: python autorecommend/pusher.py
       
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
