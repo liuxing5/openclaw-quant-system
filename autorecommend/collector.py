@@ -159,6 +159,9 @@ def fetch_akshare_zt_pool():
     rows = []
     try:
         df = ak.stock_zt_pool_em(date=today_str)
+        if df is None or not hasattr(df, 'empty') or df.empty:
+            logger.info("涨停板: 无数据")
+            return rows
         for _, r in df.iterrows():
             code = str(r.get('代码', '')).zfill(6)
             name = r.get('名称', '')
@@ -212,6 +215,7 @@ def fetch_akshare_research():
                 continue
             df = func(**kwargs) if kwargs else func()
             if df is None or not hasattr(df, 'empty') or df.empty:
+                logger.debug(f"research {func_name}: 无数据")
                 continue
             col_code = next((c for c in ['股票代码', '代码', 'symbol'] if c in df.columns), None)
             col_name = next((c for c in ['股票简称', '股票名称', '名称'] if c in df.columns), None)
@@ -265,11 +269,13 @@ def fetch_akshare_jgdy():
             try:
                 df = ak.stock_jgdy_detail_em(date=d)
                 if df is None or not hasattr(df, 'empty') or df.empty:
+                    logger.debug(f"jgdy {d}: 无数据")
                     continue
                 col_code = next((c for c in ['股票代码', '代码'] if c in df.columns), None)
                 col_name = next((c for c in ['股票简称', '名称'] if c in df.columns), None)
                 col_count = next((c for c in ['接待机构数量', '机构数'] if c in df.columns), None)
                 if not col_code:
+                    logger.debug(f"jgdy {d}: 列不全 {list(df.columns)[:10]}")
                     continue
                 for _, r in df.iterrows():
                     code = str(r.get(col_code, '') or '').zfill(6)

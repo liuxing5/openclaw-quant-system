@@ -32,6 +32,23 @@ def aggregate_today():
 
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
 
+    # 自动迁移：检查并添加 run_mode 列
+    cur.execute("""
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name = 'daily_candidates' AND column_name = 'run_mode';
+    """)
+    if not cur.fetchone():
+        logger.info("自动迁移：添加 run_mode 列")
+        cur.execute("""
+            ALTER TABLE daily_candidates ADD COLUMN run_mode VARCHAR(20) DEFAULT 'afternoon';
+        """)
+        cur.execute("""
+            ALTER TABLE daily_candidates ADD CONSTRAINT daily_candidates_unique_mode
+            UNIQUE (snapshot_date, ts_code, run_mode);
+        """)
+        conn.commit()
+        logger.info("迁移完成")
+
     # 批量加载今日行情到内存，避免逐个查询
     cur.execute("""
         SELECT ts_code, close, pct_chg, turnover_rate, amount

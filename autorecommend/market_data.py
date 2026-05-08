@@ -384,7 +384,7 @@ def fetch_lhb_today():
     execute_values(cur, """
         INSERT INTO lhb_detail (trade_date, ts_code, stock_name, reason, buy_amt, sell_amt, net_amt, is_inst)
         VALUES %s
-        ON CONFLICT (trade_date, ts_code, reason) DO NOTHING;
+        ON CONFLICT ON CONSTRAINT lhb_unique DO NOTHING;
     """, rows)
     conn.commit()
     logger.info(f"lhb: {len(rows)} rows")
