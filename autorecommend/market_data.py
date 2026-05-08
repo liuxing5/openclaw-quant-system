@@ -99,7 +99,6 @@ def fetch_with_akshare_full():
             r.get('涨跌幅'), r.get('换手率'),
         ))
 
-    logger.info(f"AKShare 获取到 {len(rows)} 条全市场行情")
     return rows
 
 
