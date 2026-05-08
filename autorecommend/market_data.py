@@ -65,16 +65,16 @@ def fetch_with_akshare_full():
     df = None
 
     logger.info("AKShare 全市场快照（新浪源）...")
-    for attempt in range(5):
+    for attempt in range(3):
         try:
             df = ak.stock_zh_a_spot()
             if df is not None and not df.empty:
                 logger.info(f"新浪源成功: {len(df)} 条")
                 break
         except Exception as e:
-            if attempt < 4:
-                wait = 3 * (attempt + 1)
-                logger.warning(f"AKShare 新浪源失败 (尝试 {attempt+1}/5), 等待 {wait}s: {e}")
+            if attempt < 2:
+                wait = 2 * (attempt + 1)
+                logger.warning(f"AKShare 新浪源失败 (尝试 {attempt+1}/3), 等待 {wait}s: {e}")
                 time.sleep(wait)
             else:
                 logger.warning(f"AKShare 新浪源最终失败，切换东财: {e}")
@@ -82,39 +82,39 @@ def fetch_with_akshare_full():
 
     if df is None or df.empty:
         logger.info("AKShare 全市场快照（东财源）...")
-        for attempt in range(5):
-            try:
-                df = ak.stock_zh_a_spot_em()
-                if df is not None and not df.empty:
-                    logger.info(f"东财源成功: {len(df)} 条")
-                    break
-            except Exception as e:
-                if attempt < 4:
-                    wait = 5 * (attempt + 1)
-                    logger.warning(f"AKShare 东财源失败 (尝试 {attempt+1}/5), 等待 {wait}s: {e}")
-                    time.sleep(wait)
-                else:
-                    logger.error(f"AKShare 东财源最终失败: {e}")
-                    return None
+        try:
+            df = ak.stock_zh_a_spot_em()
+            if df is not None and not df.empty:
+                logger.info(f"东财源成功: {len(df)} 条")
+        except Exception as e:
+            logger.error(f"AKShare 东财源失败: {e}")
+            return None
 
     if df is None or df.empty:
         logger.warning("AKShare 所有源均返回空")
         return None
 
     is_em = '最新价' in df.columns
+    code_col = '代码' if is_em else 'code'
+
+    logger.info(f"解析 {len(df)} 条原始数据 (is_em={is_em}, code_col={code_col})")
+    logger.debug(f"可用列: {list(df.columns)[:10]}...")
 
     rows = []
     today = date.today()
+    skipped_prefix = 0
+    skipped_price = 0
     for _, r in df.iterrows():
-        code_col = '代码' if is_em else 'code'
         code = str(r.get(code_col, '')).zfill(6)
         if not code or not (code.startswith(('6', '688', '000', '001', '002', '003', '300', '301'))):
+            skipped_prefix += 1
             continue
         ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
 
         if is_em:
             latest = r.get('最新价')
             if not latest or pd.isna(latest) or latest == 0:
+                skipped_price += 1
                 continue
             rows.append((
                 ts, today,
@@ -126,6 +126,7 @@ def fetch_with_akshare_full():
         else:
             latest = r.get('trade')
             if not latest or pd.isna(latest) or latest == 0:
+                skipped_price += 1
                 continue
             rows.append((
                 ts, today,
@@ -135,6 +136,7 @@ def fetch_with_akshare_full():
                 r.get('pricechange'), r.get('turnoverratio'),
             ))
 
+    logger.info(f"解析完成: {len(rows)} 条有效, 跳过前缀{skipped_prefix}, 跳过价格{skipped_price}")
     return rows
 
 
