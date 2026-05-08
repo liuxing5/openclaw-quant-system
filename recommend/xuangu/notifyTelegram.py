@@ -138,7 +138,7 @@ def send_stock_picks(
 ) -> bool:
     """
     格式化推送选股结果(zuiyou1 专用便捷接口)。
-    每条股票信息单独推送一条消息，不折行。
+    合并为一条消息推送。
 
     Args:
         title: 标题(如 "🔥 zuiyou1 v1.3 盘后定稿")
@@ -149,43 +149,55 @@ def send_stock_picks(
         operation_note: 操作建议
         reject_summary: 过滤统计摘要
     """
-    # 先发送标题汇总
-    header = f"🔥 {title}\n📅 {end_d}\n📊 {mood_info}"
+    lines = []
+    lines.append(f"🔥 {title}")
+    lines.append(f"📅 {end_d}")
+    lines.append(f"📊 {mood_info}")
+
     if not stable_picks and not upper_picks:
-        header += "\n\n⚠️ 今日无符合条件的标的\n(空仓也是仓位)"
+        lines.append("")
+        lines.append("⚠️ 今日无符合条件的标的")
+        lines.append("(空仓也是仓位)")
         if reject_summary:
-            header += f"\n\n━━ 过滤瓶颈 ━\n{reject_summary}"
-        send_message(header)
+            lines.append("")
+            lines.append("━━ 过滤瓶颈 ━━")
+            lines.append(reject_summary)
+        send_message("\n".join(lines))
         return True
 
-    # 发送稳健路径标题
+    # 稳健路径
     if stable_picks:
-        send_message(f"━━ 稳健路径 ({len(stable_picks)}只) 单票≤15% ━━")
+        lines.append("")
+        lines.append(f"━━ 稳健路径 ({len(stable_picks)}只) 单票≤15% ━━")
         for s in stable_picks:
             tags_short = s.get('tags', '')
             if len(tags_short) > 30:
                 tags_short = tags_short[:28] + "..."
-            msg = f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 得分{s['score']} | {tags_short}"
-            send_message(msg)
+            lines.append(f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 得分{s['score']} | {tags_short}")
 
-    # 发送高位路径标题
+    # 高位路径
     if upper_picks:
-        send_message(f"━━ 高位路径 ({len(upper_picks)}只) 单票≤8% ━━")
+        lines.append("")
+        lines.append(f"━━ 高位路径 ({len(upper_picks)}只) 单票≤8% ━━")
         for s in upper_picks:
             tags_short = s.get('tags', '')
             if len(tags_short) > 30:
                 tags_short = tags_short[:28] + "..."
-            msg = f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 得分{s['score']} | {tags_short}"
-            send_message(msg)
+            lines.append(f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 得分{s['score']} | {tags_short}")
 
-    # 发送过滤统计
+    # 过滤统计
     if reject_summary:
-        send_message(f"━━ 过滤统计 ━━\n{reject_summary}")
+        lines.append("")
+        lines.append("━━ 过滤统计 ━━")
+        lines.append(reject_summary)
 
-    # 发送操作建议
+    # 操作建议
     if operation_note:
-        send_message(f"━━ 操作建议 ━━\n{operation_note}")
+        lines.append("")
+        lines.append("━━ 操作建议 ━━")
+        lines.append(operation_note)
 
+    send_message("\n".join(lines))
     return True
 
 
