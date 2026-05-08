@@ -37,6 +37,7 @@ def get_db():
 def aggregate_today():
     today = get_beijing_date()
     cutoff = today - timedelta(days=2)
+    logger.info(f"=== 开始聚合，today={today}, cutoff={cutoff}, RUN_MODE={RUN_MODE} ===")
 
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
 
@@ -71,6 +72,7 @@ def aggregate_today():
         logger.warning(f"迁移检查失败: {e}")
 
     # 批量加载今日行情到内存，避免逐个查询
+    logger.info(f"查询 daily_quotes WHERE trade_date={today}")
     cur.execute("""
         SELECT ts_code, close, pct_chg, turnover_rate, amount
         FROM daily_quotes WHERE trade_date=%s;
@@ -105,6 +107,7 @@ def aggregate_today():
         HAVING COUNT(*) >= 1;
     """, (cutoff,))
     rows = cur.fetchall()
+    logger.info(f"从 extracted_recommendations 查询到 {len(rows)} 条记录 (cutoff={cutoff})")
 
     candidates = []
 
@@ -226,6 +229,9 @@ def aggregate_today():
             })
 
     candidates.sort(key=lambda x: x['final_score'], reverse=True)
+    logger.info(f"排序后候选池: {len(candidates)} 只")
+    for c in candidates[:5]:
+        logger.info(f"  {c['ts_code']} final={c['final_score']:.1f} llm={c['llm_score']:.0f} quant={c['quant_score']:.0f}")
 
     if RUN_MODE == 'intraday':
         filtered = []
@@ -269,11 +275,14 @@ def aggregate_today():
                   json.dumps(c['sources'], default=str, ensure_ascii=False),
                   RUN_MODE))
         conn.commit()
+        logger.info(f"写入 {len(observation)} 条观察记录到 daily_candidates (snapshot_date={today})")
         cur.close(); conn.close()
         return
 
     selected_list = qualified[:MAX_SELECTED]
     logger.info(f"合格 {len(qualified)} 只，选中 {len(selected_list)} 只")
+    for c in selected_list:
+        logger.info(f"  选中: {c['ts_code']} {c['stock_name']} final={c['final_score']:.1f}")
 
     for i, c in enumerate(qualified[:15]):
         is_selected = c in selected_list
@@ -317,7 +326,7 @@ def aggregate_today():
 
     conn.commit()
     cur.close(); conn.close()
-    logger.info(f"候选池生成完毕")
+    logger.info(f"候选池生成完毕，snapshot_date={today}，共写入 {len(qualified[:15])} 条记录")
 
 
 if __name__ == '__main__':
