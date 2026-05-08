@@ -29,30 +29,9 @@ def ensure_market_tables():
         trade_date DATE,
         open NUMERIC(10,3), high NUMERIC(10,3), low NUMERIC(10,3), close NUMERIC(10,3),
         volume BIGINT, amount NUMERIC(20,2),
-        pct_chg FLOAT, turnover_rate FLOAT
+        pct_chg FLOAT, turnover_rate FLOAT,
+        PRIMARY KEY (ts_code, trade_date)
     );
-    
-    -- 清理重复数据（保留每组中 ctid 最大的行）
-    DELETE FROM daily_quotes a
-    USING (
-        SELECT ts_code, trade_date, MAX(ctid) AS max_ctid
-        FROM daily_quotes
-        GROUP BY ts_code, trade_date
-        HAVING COUNT(*) > 1
-    ) b
-    WHERE a.ts_code = b.ts_code
-      AND a.trade_date = b.trade_date
-      AND a.ctid < b.max_ctid;
-    
-    -- 确保主键约束存在（对已存在的表）
-    DO $$
-    BEGIN
-        IF NOT EXISTS (
-            SELECT 1 FROM pg_constraint WHERE conname = 'daily_quotes_pkey'
-        ) THEN
-            ALTER TABLE daily_quotes ADD PRIMARY KEY (ts_code, trade_date);
-        END IF;
-    END $$;
     
     CREATE TABLE IF NOT EXISTS lhb_detail (
         id BIGSERIAL PRIMARY KEY,
@@ -79,47 +58,76 @@ def ensure_market_tables():
 
 
 def fetch_with_akshare_full():
-    """全 A 股一次性快照 - 首选数据源"""
+    """全 A 股一次性快照 - 新浪源优先，东财兜底"""
     import akshare as ak
 
-    logger.info("AKShare 全市场快照...")
+    logger.info("AKShare 全市场快照（新浪源）...")
     df = None
     for attempt in range(2):
         try:
-            df = ak.stock_zh_a_spot_em()
+            df = ak.stock_zh_a_spot()
             if df is not None and not df.empty:
                 break
         except Exception as e:
             if attempt < 1:
-                logger.warning(f"AKShare 全市场失败 (尝试 {attempt+1}/2): {e}")
-                time.sleep(3)
+                logger.warning(f"AKShare 新浪源失败 (尝试 {attempt+1}/2): {e}")
+                time.sleep(2)
             else:
-                logger.error(f"AKShare 全市场最终失败: {e}")
-                return None
+                logger.warning(f"AKShare 新浪源最终失败，切换东财: {e}")
+                break
+
+    if df is None or df.empty:
+        logger.info("AKShare 全市场快照（东财源）...")
+        for attempt in range(2):
+            try:
+                df = ak.stock_zh_a_spot_em()
+                if df is not None and not df.empty:
+                    break
+            except Exception as e:
+                if attempt < 1:
+                    logger.warning(f"AKShare 东财源失败 (尝试 {attempt+1}/2): {e}")
+                    time.sleep(3)
+                else:
+                    logger.error(f"AKShare 东财源最终失败: {e}")
+                    return None
 
     if df is None or df.empty:
         logger.warning("AKShare 返回空")
         return None
 
+    is_em = '最新价' in df.columns
+
     rows = []
     today = date.today()
     for _, r in df.iterrows():
-        code = str(r['代码']).zfill(6)
-        if not (code.startswith(('6', '688', '000', '001', '002', '003', '300', '301'))):
+        code_col = '代码' if is_em else 'code'
+        code = str(r.get(code_col, '')).zfill(6)
+        if not code or not (code.startswith(('6', '688', '000', '001', '002', '003', '300', '301'))):
             continue
         ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
 
-        latest = r.get('最新价')
-        if not latest or pd.isna(latest) or latest == 0:
-            continue
-
-        rows.append((
-            ts, today,
-            r.get('今开'), r.get('最高'), r.get('最低'), latest,
-            int(r['成交量']) if pd.notna(r.get('成交量')) else None,
-            r.get('成交额'),
-            r.get('涨跌幅'), r.get('换手率'),
-        ))
+        if is_em:
+            latest = r.get('最新价')
+            if not latest or pd.isna(latest) or latest == 0:
+                continue
+            rows.append((
+                ts, today,
+                r.get('今开'), r.get('最高'), r.get('最低'), latest,
+                int(r['成交量']) if pd.notna(r.get('成交量')) else None,
+                r.get('成交额'),
+                r.get('涨跌幅'), r.get('换手率'),
+            ))
+        else:
+            latest = r.get('trade')
+            if not latest or pd.isna(latest) or latest == 0:
+                continue
+            rows.append((
+                ts, today,
+                r.get('open'), r.get('high'), r.get('low'), latest,
+                int(r.get('volume', 0)) if pd.notna(r.get('volume')) else None,
+                r.get('amount'),
+                r.get('pricechange'), r.get('turnoverratio'),
+            ))
 
     return rows
 
@@ -393,9 +401,12 @@ def fetch_hsgt_top10():
 
 
 if __name__ == '__main__':
+    import concurrent.futures
     ensure_market_tables()
-    fetch_daily_quotes_today()
-    time.sleep(2)
-    fetch_lhb_today()
-    time.sleep(2)
-    fetch_hsgt_top10()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        f1 = executor.submit(fetch_daily_quotes_today)
+        f2 = executor.submit(fetch_lhb_today)
+        f3 = executor.submit(fetch_hsgt_top10)
+        f1.result()
+        f2.result()
+        f3.result()

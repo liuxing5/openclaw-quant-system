@@ -27,14 +27,15 @@ def sync():
 
     logger.info("同步 A 股代码-名称表...")
     df = None
-    for attempt in range(2):
+    for attempt in range(5):
         try:
             df = ak.stock_info_a_code_name()
             break
         except Exception as e:
-            if attempt < 1:
-                logger.warning(f"AKShare stock_info_a_code_name 失败 (尝试 {attempt+1}/2): {e}")
-                time.sleep(3)
+            wait = 5 * (2 ** attempt)
+            if attempt < 4:
+                logger.warning(f"AKShare stock_info_a_code_name 失败 (尝试 {attempt+1}/5), 等待 {wait}s: {e}")
+                time.sleep(wait)
             else:
                 logger.error(f"AKShare stock_info_a_code_name 最终失败: {e}")
                 return

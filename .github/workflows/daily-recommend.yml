@@ -54,7 +54,10 @@ jobs:
           python autorecommend/market_data.py
           python autorecommend/collector.py --once
       
-      - name: Extract signals with LLM
+      - name: Fast path extraction (structured data)
+        run: python autorecommend/structured_extraction.py
+      
+      - name: Extract signals with LLM (news + research only)
         run: python autorecommend/extractor.py --once
       
       - name: Aggregate & report

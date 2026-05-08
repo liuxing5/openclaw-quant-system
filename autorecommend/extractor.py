@@ -98,6 +98,7 @@ def fetch_pending(limit=20):
         WHERE NOT EXISTS (
             SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id=r.id
         )
+        AND r.source_name NOT IN ('AKShare-龙虎榜', 'AKShare-涨停板', 'AKShare-机构调研')
         AND (
             r.title ~ '[0-9]{6}'
             OR r.content ~ '[0-9]{6}'
