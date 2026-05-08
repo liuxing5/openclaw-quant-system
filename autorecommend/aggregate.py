@@ -50,15 +50,28 @@ def get_or_fetch_quote(cur, ts_code, today):
                 (ts_code, trade_date, open, high, low, close, volume, amount, pct_chg, turnover_rate)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 ON CONFLICT (ts_code, trade_date) DO UPDATE SET close=EXCLUDED.close;
-            """, (ts_code, today, r['今开'], r['最高'], r['最低'], r['最新价'],
-                  int(r['成交量']) if r.get('成交量') else None,
-                  r.get('成交额'), r.get('涨跌幅'), r.get('换手率')))
+            """, (
+                ts_code, today,
+                float(r['今开']) if r.get('今开') else None,
+                float(r['最高']) if r.get('最高') else None,
+                float(r['最低']) if r.get('最低') else None,
+                float(r['最新价']) if r.get('最新价') else None,
+                int(r['成交量']) if r.get('成交量') else None,
+                float(r.get('成交额')) if r.get('成交额') else None,
+                float(r.get('涨跌幅')) if r.get('涨跌幅') else None,
+                float(r.get('换手率')) if r.get('换手率') else None,
+            ))
             return {
-                'close': r['最新价'], 'pct_chg': r['涨跌幅'],
-                'turnover_rate': r['换手率'], 'amount': r['成交额']
+                'close': float(r['最新价']), 'pct_chg': float(r['涨跌幅']),
+                'turnover_rate': float(r['换手率']), 'amount': float(r.get('成交额') or 0)
             }
     except Exception as e:
         logger.warning(f"实时拉 {ts_code} 失败: {e}")
+        # 事务中断时回滚，避免后续查询全部失败
+        try:
+            cur.execute("ROLLBACK")
+        except Exception:
+            pass
     return None
 
 
