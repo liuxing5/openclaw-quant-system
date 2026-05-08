@@ -304,11 +304,17 @@ def fetch_daily_quotes_today():
 
     # 3. Tushare（兜底）
     if not rows:
-        rows = fetch_with_tushare()
+        try:
+            rows = fetch_with_tushare()
+        except ModuleNotFoundError:
+            pass
 
     # 4. yfinance（最后）
     if not rows:
-        rows = fetch_with_yfinance()
+        try:
+            rows = fetch_with_yfinance()
+        except ModuleNotFoundError:
+            pass
 
     if not rows:
         logger.error("所有数据源均失败")
