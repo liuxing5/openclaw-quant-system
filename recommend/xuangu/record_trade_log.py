@@ -1,22 +1,33 @@
 """
-实战日志记录脚本 v1.1
+实战日志记录脚本 v2.0
 ========================================
-每天 16:00 自动从 zuiyou1 选股结果中拉取
-稳健路径和高位路径得分最高的各一只股票
-记录当日表现，2 周后可用 Excel 直接出胜率/盈亏统计图
+两段式架构:
+  早上模式 (09:50): 读取昨天 CSV, 补 T+1 数据(开盘价/最高/最低/收盘)
+  晚上模式 (16:00): 读取 zuiyou 当日推荐 + 实际买入记录, 记录新行
 
-修复 v1.0 问题:
-  1. 使用交易日而非自然日计算"次日"
-  2. 补充所有未填次日数据的记录（不局限于昨天）
-  3. entry_price 明确标注为"理论收盘价"（非实际成交价）
+CSV 字段:
+  - 入选日: 代码/名称/路径/入选价/涨幅/得分/量比/换手/连板/乖离
+  - T+1 数据: 开盘价/最高/最低/收盘/涨跌幅/换手率
+  - 盈亏指标:
+      t1_open_pnl: T+1 开盘卖的盈亏(最接近实战卖点)
+      t1_high_pnl: T+1 最高点理论盈亏
+      t1_close_pnl: T+1 收盘盈亏
+  - 实战标记:
+      actually_bought: yes/no (是否实际买入)
+      actual_buy_price: 实际成交价(手动录入或 sell_new.py 写入)
+      actual_sell_price: 实际清仓价(由 sell_new.py 写入)
+      actual_pnl: 真实盈亏
 
 用法:
-    python record_trade_log.py
-    或配置 cron 每天 16:00 运行
+    python record_trade_log.py morning   # 早上 09:50 补充 T+1 数据
+    python record_trade_log.py evening   # 晚上 16:00 记录当日推荐
+    python record_trade_log.py           # 默认 evening 模式
 """
 
 import os
 import csv
+import sys
+import json
 import requests
 from datetime import datetime, timedelta
 from typing import Optional
@@ -26,11 +37,38 @@ from typing import Optional
 # ============================================================
 LOG_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_FILE = os.path.join(LOG_DIR, "trade_log.csv")
+MY_TRADES_FILE = os.path.join(LOG_DIR, "my_trades.json")
 ZUIYOU1_FILE = os.path.join(LOG_DIR, "zuiyou1.py")
 
-# 腾讯行情接口字段索引
-# 0: 市场+代码, 1: 名称, 3: 现价, 4: 昨收, 5: 开盘, 32: 涨跌幅%, 33: 最高, 34: 最低
-# 37: 成交额(万元), 38: 换手率%, 44: 总市值(亿)
+# CSV 字段定义
+FIELDNAMES = [
+    "date",              # 入选日期
+    "code",              # 股票代码
+    "name",              # 股票名称
+    "path",              # 路径(稳健/高位)
+    "entry_price",       # 入选价(入选日收盘价)
+    "entry_pct",         # 入选日涨幅%
+    "entry_score",       # 入选得分
+    "entry_vol_ratio",   # 入选量比
+    "entry_turn",        # 入选换手率%
+    "entry_streak",      # 入选连板数
+    "entry_bias",        # 入选乖离%
+    "actually_bought",   # 是否实际买入 yes/no
+    "actual_buy_price",  # 实际成交价
+    "actual_sell_price", # 实际清仓价
+    "actual_pnl",        # 真实盈亏%
+    "t1_open",           # T+1 开盘价
+    "t1_high",           # T+1 最高价
+    "t1_low",            # T+1 最低价
+    "t1_close",          # T+1 收盘价
+    "t1_pct",            # T+1 涨跌幅%
+    "t1_turn",           # T+1 换手率%
+    "t1_open_pnl",       # T+1 开盘卖的盈亏%
+    "t1_high_pnl",       # T+1 最高点理论盈亏%
+    "t1_low_pnl",        # T+1 最低点理论盈亏%
+    "t1_close_pnl",      # T+1 收盘盈亏%
+    "notes",             # 备注
+]
 
 
 def get_latest_trading_day() -> str:
@@ -38,23 +76,9 @@ def get_latest_trading_day() -> str:
     today = datetime.now()
     for delta in range(7):
         day = today - timedelta(days=delta)
-        if day.weekday() < 5:  # 周一到周五
-            return day.strftime("%Y-%m-%d")
-    return today.strftime("%Y-%m-%d")
-
-
-def get_previous_trading_day(date_str: str = None) -> str:
-    """获取上一个交易日"""
-    if date_str:
-        base = datetime.strptime(date_str, "%Y-%m-%d")
-    else:
-        base = datetime.now()
-    
-    for delta in range(1, 8):  # 从昨天往前找
-        day = base - timedelta(days=delta)
         if day.weekday() < 5:
             return day.strftime("%Y-%m-%d")
-    return base.strftime("%Y-%m-%d")
+    return today.strftime("%Y-%m-%d")
 
 
 def get_next_trading_day(date_str: str) -> str:
@@ -67,157 +91,8 @@ def get_next_trading_day(date_str: str) -> str:
     return base.strftime("%Y-%m-%d")
 
 
-def parse_zuiyou1_results() -> tuple:
-    """
-    从 zuiyou1.py 的选股记录汇总文件中解析当日推荐结果
-    返回: (stable_best, upper_best) 每只是 dict
-    """
-    summary_file = os.path.join(LOG_DIR, "..", "选股记录汇总.txt")
-    
-    if not os.path.exists(summary_file):
-        print("⚠️ 选股记录汇总文件不存在")
-        return None, None
-    
-    today = get_latest_trading_day()
-    
-    try:
-        with open(summary_file, "r", encoding="utf-8") as f:
-            content = f.read()
-    except Exception as e:
-        print(f"⚠️ 读取汇总文件失败: {e}")
-        return None, None
-    
-    # 查找当日记录
-    if today not in content:
-        print(f"⚠️ 今日({today})无选股记录")
-        return None, None
-    
-    # 按分隔符切块
-    blocks = content.split("=" * 80)
-    today_blocks = [b for b in blocks if today in b]
-    if not today_blocks:
-        print(f"⚠️ 今日({today})无选股记录块")
-        return None, None
-    
-    # 取最后一块（最新）
-    block = today_blocks[-1]
-    
-    stable_best = None
-    upper_best = None
-    stable_max_score = -1
-    upper_max_score = -1
-    
-    # 解析稳健路径
-    if "稳健路径" in block:
-        stable_section = block.split("稳健路径")[1].split("高位路径")[0] if "高位路径" in block else block.split("稳健路径")[1]
-        for line in stable_section.split("\n"):
-            line = line.strip()
-            if not line or line.startswith("━") or line.startswith("单票"):
-                continue
-            parts = line.split()
-            if len(parts) >= 8:
-                try:
-                    code = parts[0]
-                    score_idx = -2
-                    for i, p in enumerate(parts):
-                        if p.startswith("得分"):
-                            score_idx = i
-                            break
-                    score = int(parts[score_idx].replace("得分", ""))
-                    if score > stable_max_score:
-                        stable_max_score = score
-                        price = 0.0
-                        pct = 0.0
-                        vol_ratio = 0.0
-                        turn = 0.0
-                        streak = 0
-                        bias = 0.0
-                        for p in parts[1:]:
-                            if p.startswith("¥"):
-                                price = float(p.replace("¥", ""))
-                            elif p.startswith("+") or p.startswith("-"):
-                                pct = float(p.replace("%", ""))
-                            elif p.startswith("量比"):
-                                vol_ratio = float(p.replace("量比", ""))
-                            elif p.startswith("换手"):
-                                turn = float(p.replace("%", "").replace("换手", ""))
-                            elif p.startswith("连板"):
-                                streak = int(p.replace("连板", ""))
-                            elif p.startswith("乖离"):
-                                bias = float(p.replace("%", "").replace("乖离", ""))
-                        
-                        stable_best = {
-                            "code": code,
-                            "price": price,
-                            "pct": pct,
-                            "vol_ratio": vol_ratio,
-                            "turn": turn,
-                            "streak": streak,
-                            "bias": bias,
-                            "score": score,
-                            "path": "稳健",
-                        }
-                except (ValueError, IndexError):
-                    continue
-    
-    # 解析高位路径
-    if "高位路径" in block:
-        upper_section = block.split("高位路径")[1]
-        for line in upper_section.split("\n"):
-            line = line.strip()
-            if not line or line.startswith("━") or line.startswith("单票"):
-                continue
-            parts = line.split()
-            if len(parts) >= 8:
-                try:
-                    code = parts[0]
-                    score_idx = -2
-                    for i, p in enumerate(parts):
-                        if p.startswith("得分"):
-                            score_idx = i
-                            break
-                    score = int(parts[score_idx].replace("得分", ""))
-                    if score > upper_max_score:
-                        upper_max_score = score
-                        price = 0.0
-                        pct = 0.0
-                        vol_ratio = 0.0
-                        turn = 0.0
-                        streak = 0
-                        bias = 0.0
-                        for p in parts[1:]:
-                            if p.startswith("¥"):
-                                price = float(p.replace("¥", ""))
-                            elif p.startswith("+") or p.startswith("-"):
-                                pct = float(p.replace("%", ""))
-                            elif p.startswith("量比"):
-                                vol_ratio = float(p.replace("量比", ""))
-                            elif p.startswith("换手"):
-                                turn = float(p.replace("%", "").replace("换手", ""))
-                            elif p.startswith("连板"):
-                                streak = int(p.replace("连板", ""))
-                            elif p.startswith("乖离"):
-                                bias = float(p.replace("%", "").replace("乖离", ""))
-                        
-                        upper_best = {
-                            "code": code,
-                            "price": price,
-                            "pct": pct,
-                            "vol_ratio": vol_ratio,
-                            "turn": turn,
-                            "streak": streak,
-                            "bias": bias,
-                            "score": score,
-                            "path": "高位",
-                        }
-                except (ValueError, IndexError):
-                    continue
-    
-    return stable_best, upper_best
-
-
 def fetch_stock_info(code: str) -> Optional[dict]:
-    """从腾讯接口获取股票信息（名称、昨收、开盘、最高、最低等）"""
+    """从腾讯接口获取股票实时行情"""
     api_code = code.replace(".", "").lower()
     url = f"http://qt.gtimg.cn/q={api_code}"
     try:
@@ -253,112 +128,181 @@ def fetch_stock_info(code: str) -> Optional[dict]:
     return None
 
 
-def record_trade(stocks: list, date_str: str):
+def parse_zuiyou1_results() -> tuple:
     """
-    记录交易到 CSV
-    
-    Args:
-        stocks: 股票列表，每项包含 {code, path, price, pct, score, ...}
-        date_str: 日期字符串 YYYY-MM-DD
+    从 zuiyou1.py 的选股记录汇总文件中解析当日推荐结果
+    返回: (stable_best, upper_best)
     """
-    fieldnames = [
-        "date",           # 记录日期
-        "code",           # 股票代码
-        "name",           # 股票名称
-        "path",           # 路径(稳健/高位)
-        "entry_price",    # 入选价(入选日收盘价，非实际成交价)
-        "entry_pct",      # 入选日涨幅%
-        "entry_score",    # 入选得分
-        "entry_vol_ratio", # 入选量比
-        "entry_turn",     # 入选换手率%
-        "entry_streak",   # 入选连板数
-        "entry_bias",     # 入选乖离%
-        "next_open",      # 次日开盘价
-        "next_high",      # 次日最高价
-        "next_low",       # 次日最低价
-        "next_close",     # 次日收盘价
-        "next_pct",       # 次日涨跌幅%
-        "next_turn",      # 次日换手率%
-        "pnl_pct",        # 盈亏% = (次日收盘-入选价)/入选价
-        "max_profit_pct", # 最大盈利% = (次日最高-入选价)/入选价
-        "max_loss_pct",   # 最大亏损% = (次日最低-入选价)/入选价
-        "win",            # 是否盈利(次日收盘>入选价)
-        "notes",          # 备注
-    ]
+    summary_file = os.path.join(LOG_DIR, "..", "选股记录汇总.txt")
     
+    if not os.path.exists(summary_file):
+        print("⚠️ 选股记录汇总文件不存在")
+        return None, None
+    
+    today = get_latest_trading_day()
+    
+    try:
+        with open(summary_file, "r", encoding="utf-8") as f:
+            content = f.read()
+    except Exception as e:
+        print(f"⚠️ 读取汇总文件失败: {e}")
+        return None, None
+    
+    if today not in content:
+        print(f"⚠️ 今日({today})无选股记录")
+        return None, None
+    
+    blocks = content.split("=" * 80)
+    today_blocks = [b for b in blocks if today in b]
+    if not today_blocks:
+        print(f"⚠️ 今日({today})无选股记录块")
+        return None, None
+    
+    block = today_blocks[-1]
+    
+    stable_best = None
+    upper_best = None
+    stable_max_score = -1
+    upper_max_score = -1
+    
+    def parse_stock_line(line: str) -> Optional[dict]:
+        """解析单行股票信息"""
+        parts = line.split()
+        if len(parts) < 8:
+            return None
+        
+        try:
+            code = parts[0]
+            price = pct = vol_ratio = turn = bias = 0.0
+            streak = 0
+            score = -1
+            
+            for p in parts:
+                if p.startswith("¥"):
+                    price = float(p.replace("¥", ""))
+                elif p.startswith("+") or p.startswith("-"):
+                    pct = float(p.replace("%", ""))
+                elif p.startswith("量比"):
+                    vol_ratio = float(p.replace("量比", ""))
+                elif p.startswith("换手"):
+                    turn = float(p.replace("%", "").replace("换手", ""))
+                elif p.startswith("连板"):
+                    streak = int(p.replace("连板", ""))
+                elif p.startswith("乖离"):
+                    bias = float(p.replace("%", "").replace("乖离", ""))
+                elif p.startswith("得分"):
+                    score = int(p.replace("得分", ""))
+            
+            if score < 0 or price <= 0:
+                return None
+            
+            return {
+                "code": code,
+                "price": price,
+                "pct": pct,
+                "vol_ratio": vol_ratio,
+                "turn": turn,
+                "streak": streak,
+                "bias": bias,
+                "score": score,
+            }
+        except (ValueError, IndexError):
+            return None
+    
+    # 解析稳健路径
+    if "稳健路径" in block:
+        stable_section = block.split("稳健路径")[1].split("高位路径")[0] if "高位路径" in block else block.split("稳健路径")[1]
+        for line in stable_section.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("━") or line.startswith("单票"):
+                continue
+            stock = parse_stock_line(line)
+            if stock and stock["score"] > stable_max_score:
+                stable_max_score = stock["score"]
+                stable_best = {**stock, "path": "稳健"}
+    
+    # 解析高位路径
+    if "高位路径" in block:
+        upper_section = block.split("高位路径")[1]
+        for line in upper_section.split("\n"):
+            line = line.strip()
+            if not line or line.startswith("━") or line.startswith("单票"):
+                continue
+            stock = parse_stock_line(line)
+            if stock and stock["score"] > upper_max_score:
+                upper_max_score = stock["score"]
+                upper_best = {**stock, "path": "高位"}
+    
+    return stable_best, upper_best
+
+
+def load_my_trades() -> dict:
+    """
+    加载用户实际买入记录
+    格式: { "sh.603267": { "buy_price": 56.85, "date": "2026-05-08", "bought": true } }
+    """
+    if not os.path.exists(MY_TRADES_FILE):
+        return {}
+    try:
+        with open(MY_TRADES_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def load_csv_rows() -> list:
+    """读取 CSV 所有行"""
+    if not os.path.exists(LOG_FILE):
+        return []
+    with open(LOG_FILE, "r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        return list(reader)
+
+
+def save_csv_rows(rows: list):
+    """保存 CSV 所有行"""
+    with open(LOG_FILE, "w", encoding="utf-8-sig", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def append_csv_row(row: dict):
+    """追加单行到 CSV"""
     file_exists = os.path.exists(LOG_FILE)
-    
     with open(LOG_FILE, "a", encoding="utf-8-sig", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         if not file_exists:
             writer.writeheader()
-        
-        for stock in stocks:
-            code = stock["code"]
-            info = fetch_stock_info(code)
-            if info is None:
-                print(f"  ⚠️ {code} 获取信息失败")
-                continue
-            
-            row = {
-                "date": date_str,
-                "code": code,
-                "name": info["name"],
-                "path": stock["path"],
-                "entry_price": stock["price"],
-                "entry_pct": stock["pct"],
-                "entry_score": stock["score"],
-                "entry_vol_ratio": stock.get("vol_ratio", 0),
-                "entry_turn": stock.get("turn", 0),
-                "entry_streak": stock.get("streak", 0),
-                "entry_bias": stock.get("bias", 0),
-                "next_open": "",
-                "next_high": "",
-                "next_low": "",
-                "next_close": "",
-                "next_pct": "",
-                "next_turn": "",
-                "pnl_pct": "",
-                "max_profit_pct": "",
-                "max_loss_pct": "",
-                "win": "",
-                "notes": "entry_price为理论收盘价，非实际成交价",
-            }
-            writer.writerow(row)
-            print(f"  ✓ {code} ({info['name']}) {stock['path']} 得分{stock['score']} 已记录")
+        writer.writerow(row)
 
 
-def fill_next_day_data():
+def morning_mode():
     """
-    为所有未填次日数据的记录补充数据
-    修复 v1.0:
-      1. 不用"yesterday"，而是找所有 next_close 为空的记录
-      2. 校验"今天 >= 该记录的下一个交易日"才补充
-      3. 处理周末/节假日边界情况
+    早上模式 (09:50): 补充 T+1 数据
+    读取 CSV 中所有未填 T+1 数据的记录，拉取腾讯接口补充
     """
-    if not os.path.exists(LOG_FILE):
+    print("=" * 50)
+    print("  早上模式: 补充 T+1 数据")
+    print("=" * 50)
+    
+    rows = load_csv_rows()
+    if not rows:
+        print("  CSV 为空，无记录需要补充")
         return
     
     today = datetime.now().date()
-    
-    # 读取 CSV
-    rows = []
-    with open(LOG_FILE, "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        fieldnames = reader.fieldnames
-        for row in reader:
-            rows.append(row)
-    
     updated = False
+    
     for row in rows:
-        # 只处理还没补充次日数据的记录
-        if row.get("next_close", "") != "":
+        # 跳过已填 T+1 数据的记录
+        if row.get("t1_close", "") != "":
             continue
         
         code = row["code"]
         entry_date_str = row["date"]
         
-        # 计算该记录的"下一个交易日"
+        # 计算下一个交易日
         next_trading_day_str = get_next_trading_day(entry_date_str)
         next_trading_day = datetime.strptime(next_trading_day_str, "%Y-%m-%d").date()
         
@@ -366,139 +310,67 @@ def fill_next_day_data():
         if today < next_trading_day:
             continue
         
-        # 拉取腾讯接口获取行情
-        api_code = code.replace(".", "").lower()
-        url = f"http://qt.gtimg.cn/q={api_code}"
-        try:
-            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-            if resp.status_code != 200:
-                print(f"  ⚠️ {code} 接口返回失败")
-                continue
-            
-            parsed = False
-            for line in resp.text.split(";"):
-                if len(line) < 50:
-                    continue
-                p = line.split("~")
-                if len(p) < 40:
-                    continue
-                
-                def _f(idx, default=0.0):
-                    try:
-                        return float(p[idx]) if p[idx].strip() else default
-                    except (ValueError, IndexError):
-                        return default
-                
-                entry_price = float(row["entry_price"])
-                next_open = _f(5)
-                next_high = _f(33)
-                next_low = _f(34)
-                next_close = _f(3)
-                next_pct = _f(32)
-                next_turn = _f(38)
-                
-                if next_close <= 0 or entry_price <= 0:
-                    break
-                
-                pnl = (next_close - entry_price) / entry_price * 100
-                max_profit = (next_high - entry_price) / entry_price * 100
-                max_loss = (next_low - entry_price) / entry_price * 100
-                win = "是" if pnl > 0 else "否"
-                
-                row["next_open"] = f"{next_open:.2f}"
-                row["next_high"] = f"{next_high:.2f}"
-                row["next_low"] = f"{next_low:.2f}"
-                row["next_close"] = f"{next_close:.2f}"
-                row["next_pct"] = f"{next_pct:.2f}"
-                row["next_turn"] = f"{next_turn:.2f}"
-                row["pnl_pct"] = f"{pnl:.2f}"
-                row["max_profit_pct"] = f"{max_profit:.2f}"
-                row["max_loss_pct"] = f"{max_loss:.2f}"
-                row["win"] = win
-                
-                updated = True
-                print(f"  ✓ {code} 次日数据已补充: 收盘{next_close:.2f} 盈亏{pnl:.2f}%")
-                parsed = True
-                break
-            
-            if not parsed:
-                print(f"  ⚠️ {code} 解析行情失败")
-        except Exception as e:
-            print(f"  ⚠️ {code} 补充数据失败: {e}")
+        # 拉取腾讯接口
+        info = fetch_stock_info(code)
+        if info is None:
+            print(f"  ⚠️ {code} 获取行情失败")
+            continue
+        
+        entry_price = float(row.get("entry_price", 0))
+        t1_open = info["open"]
+        t1_high = info["high"]
+        t1_low = info["low"]
+        t1_close = info["now"]
+        t1_pct = info["pct"]
+        t1_turn = info["turn"]
+        
+        if entry_price <= 0 or t1_close <= 0:
+            print(f"  ⚠️ {code} 价格异常")
+            continue
+        
+        # 计算盈亏
+        t1_open_pnl = (t1_open - entry_price) / entry_price * 100
+        t1_high_pnl = (t1_high - entry_price) / entry_price * 100
+        t1_low_pnl = (t1_low - entry_price) / entry_price * 100
+        t1_close_pnl = (t1_close - entry_price) / entry_price * 100
+        
+        row["t1_open"] = f"{t1_open:.2f}"
+        row["t1_high"] = f"{t1_high:.2f}"
+        row["t1_low"] = f"{t1_low:.2f}"
+        row["t1_close"] = f"{t1_close:.2f}"
+        row["t1_pct"] = f"{t1_pct:.2f}"
+        row["t1_turn"] = f"{t1_turn:.2f}"
+        row["t1_open_pnl"] = f"{t1_open_pnl:.2f}"
+        row["t1_high_pnl"] = f"{t1_high_pnl:.2f}"
+        row["t1_low_pnl"] = f"{t1_low_pnl:.2f}"
+        row["t1_close_pnl"] = f"{t1_close_pnl:.2f}"
+        
+        updated = True
+        print(f"  ✓ {code} T+1 数据: 开盘{t1_open:.2f} 最高{t1_high:.2f} 最低{t1_low:.2f} 收盘{t1_close:.2f}")
+        print(f"    开盘盈亏: {t1_open_pnl:+.2f}%  最高盈亏: {t1_high_pnl:+.2f}%  收盘盈亏: {t1_close_pnl:+.2f}%")
     
-    # 写回 CSV
     if updated:
-        with open(LOG_FILE, "w", encoding="utf-8-sig", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
+        save_csv_rows(rows)
+        print(f"\n✅ 已更新 {sum(1 for r in rows if r.get('t1_close', ''))} 条记录")
+    else:
+        print("  无需要补充的记录")
 
 
-def print_statistics():
-    """打印统计摘要"""
-    if not os.path.exists(LOG_FILE):
-        print("暂无交易记录")
-        return
+def evening_mode():
+    """
+    晚上模式 (16:00): 记录当日推荐
+    1. 先跑 morning_mode 补充旧记录
+    2. 解析 zuiyou1 当日推荐
+    3. 加载 my_trades.json 标记实际买入
+    4. 写入新行到 CSV
+    """
+    print("=" * 50)
+    print("  晚上模式: 记录当日推荐")
+    print("=" * 50)
     
-    rows = []
-    with open(LOG_FILE, "r", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            if row.get("pnl_pct") and row["pnl_pct"] != "":
-                rows.append(row)
-    
-    if not rows:
-        print("暂无已结算的交易记录")
-        return
-    
-    total = len(rows)
-    wins = sum(1 for r in rows if r["win"] == "是")
-    losses = total - wins
-    win_rate = wins / total * 100 if total > 0 else 0
-    
-    avg_pnl = sum(float(r["pnl_pct"]) for r in rows) / total
-    max_profit = max(float(r["max_profit_pct"]) for r in rows)
-    max_loss = min(float(r["max_loss_pct"]) for r in rows)
-    
-    # 按路径统计
-    stable_rows = [r for r in rows if r["path"] == "稳健"]
-    upper_rows = [r for r in rows if r["path"] == "高位"]
-    
-    print(f"\n{'=' * 50}")
-    print(f"  实战统计摘要")
-    print(f"{'=' * 50}")
-    print(f"  总交易: {total} 笔")
-    print(f"  盈利: {wins} 笔  亏损: {losses} 笔")
-    print(f"  胜率: {win_rate:.1f}%")
-    print(f"  平均盈亏: {avg_pnl:+.2f}%")
-    print(f"  最大盈利: {max_profit:+.2f}%")
-    print(f"  最大亏损: {max_loss:+.2f}%")
-    
-    if stable_rows:
-        s_total = len(stable_rows)
-        s_wins = sum(1 for r in stable_rows if r["win"] == "是")
-        s_rate = s_wins / s_total * 100
-        s_avg = sum(float(r["pnl_pct"]) for r in stable_rows) / s_total
-        print(f"\n  稳健路径: {s_total}笔 胜率{s_rate:.1f}% 平均{s_avg:+.2f}%")
-    
-    if upper_rows:
-        u_total = len(upper_rows)
-        u_wins = sum(1 for r in upper_rows if r["win"] == "是")
-        u_rate = u_wins / u_total * 100
-        u_avg = sum(float(r["pnl_pct"]) for r in upper_rows) / u_total
-        print(f"  高位路径: {u_total}笔 胜率{u_rate:.1f}% 平均{u_avg:+.2f}%")
-    
-    print(f"{'=' * 50}")
-
-
-def main():
-    print(f"实战日志记录脚本 v1.1")
-    print(f"运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print()
-    
-    # Step 1: 先补充所有未填次日数据的记录
-    print("Step 1: 补充未填次日数据...")
-    fill_next_day_data()
+    # Step 1: 先补充旧记录
+    print("\nStep 1: 补充 T+1 数据...")
+    morning_mode()
     
     # Step 2: 解析 zuiyou1 选股结果
     print("\nStep 2: 解析 zuiyou1 选股结果...")
@@ -521,17 +393,148 @@ def main():
         print("\n⚠️ 无股票需要记录")
         return
     
-    # Step 3: 记录到 CSV
-    print(f"\nStep 3: 记录到 CSV...")
+    # Step 3: 加载实际买入记录
+    print("\nStep 3: 加载实际买入记录...")
+    my_trades = load_my_trades()
     today = get_latest_trading_day()
-    record_trade(stocks_to_record, today)
     
-    # Step 4: 打印统计
-    print("\nStep 4: 统计摘要...")
+    # Step 4: 写入新行
+    print(f"\nStep 4: 记录到 CSV...")
+    for stock in stocks_to_record:
+        code = stock["code"]
+        info = fetch_stock_info(code)
+        if info is None:
+            print(f"  ⚠️ {code} 获取信息失败")
+            continue
+        
+        # 检查是否实际买入
+        trade_key = code
+        actually_bought = "no"
+        actual_buy_price = ""
+        
+        if trade_key in my_trades:
+            trade = my_trades[trade_key]
+            if trade.get("date") == today and trade.get("bought", False):
+                actually_bought = "yes"
+                actual_buy_price = trade.get("buy_price", "")
+        
+        row = {
+            "date": today,
+            "code": code,
+            "name": info["name"],
+            "path": stock["path"],
+            "entry_price": stock["price"],
+            "entry_pct": stock["pct"],
+            "entry_score": stock["score"],
+            "entry_vol_ratio": stock.get("vol_ratio", 0),
+            "entry_turn": stock.get("turn", 0),
+            "entry_streak": stock.get("streak", 0),
+            "entry_bias": stock.get("bias", 0),
+            "actually_bought": actually_bought,
+            "actual_buy_price": actual_buy_price,
+            "actual_sell_price": "",
+            "actual_pnl": "",
+            "t1_open": "",
+            "t1_high": "",
+            "t1_low": "",
+            "t1_close": "",
+            "t1_pct": "",
+            "t1_turn": "",
+            "t1_open_pnl": "",
+            "t1_high_pnl": "",
+            "t1_low_pnl": "",
+            "t1_close_pnl": "",
+            "notes": "entry_price为理论收盘价",
+        }
+        
+        append_csv_row(row)
+        bought_str = f"实际买入¥{actual_buy_price}" if actually_bought == "yes" else "未记录买入"
+        print(f"  ✓ {code} ({info['name']}) {stock['path']} 得分{stock['score']} {bought_str}")
+    
+    # Step 5: 打印统计
+    print("\nStep 5: 统计摘要...")
     print_statistics()
     
     print(f"\n✅ 日志文件: {LOG_FILE}")
-    print(f"   用 Excel 打开后可直接生成胜率/盈亏统计图")
+
+
+def print_statistics():
+    """打印统计摘要"""
+    rows = load_csv_rows()
+    if not rows:
+        print("  暂无交易记录")
+        return
+    
+    # 只统计已填 T+1 数据的
+    settled = [r for r in rows if r.get("t1_close", "") != ""]
+    if not settled:
+        print("  暂无已结算的交易记录")
+        return
+    
+    total = len(settled)
+    
+    # 按 T+1 开盘盈亏统计（最接近实战卖点）
+    open_wins = sum(1 for r in settled if float(r.get("t1_open_pnl", 0)) > 0)
+    open_losses = total - open_wins
+    open_win_rate = open_wins / total * 100 if total > 0 else 0
+    open_avg_pnl = sum(float(r.get("t1_open_pnl", 0)) for r in settled) / total
+    
+    # 按 T+1 收盘盈亏统计
+    close_wins = sum(1 for r in settled if float(r.get("t1_close_pnl", 0)) > 0)
+    close_win_rate = close_wins / total * 100 if total > 0 else 0
+    close_avg_pnl = sum(float(r.get("t1_close_pnl", 0)) for r in settled) / total
+    
+    # 最高/最低盈亏
+    max_high = max(float(r.get("t1_high_pnl", 0)) for r in settled)
+    max_low = min(float(r.get("t1_low_pnl", 0)) for r in settled)
+    
+    # 按路径统计
+    stable_rows = [r for r in settled if r["path"] == "稳健"]
+    upper_rows = [r for r in settled if r["path"] == "高位"]
+    
+    # 按实际买入统计
+    bought_rows = [r for r in settled if r.get("actually_bought") == "yes"]
+    
+    print(f"\n{'=' * 50}")
+    print(f"  实战统计摘要 (共{total}笔)")
+    print(f"{'=' * 50}")
+    print(f"  T+1 开盘卖点: 胜率{open_win_rate:.1f}% 平均{open_avg_pnl:+.2f}%")
+    print(f"  T+1 收盘卖点: 胜率{close_win_rate:.1f}% 平均{close_avg_pnl:+.2f}%")
+    print(f"  最高理论盈亏: {max_high:+.2f}%  最低理论盈亏: {max_low:+.2f}%")
+    
+    if stable_rows:
+        s_total = len(stable_rows)
+        s_wins = sum(1 for r in stable_rows if float(r.get("t1_open_pnl", 0)) > 0)
+        s_rate = s_wins / s_total * 100
+        s_avg = sum(float(r.get("t1_open_pnl", 0)) for r in stable_rows) / s_total
+        print(f"\n  稳健路径: {s_total}笔 开盘胜率{s_rate:.1f}% 平均{s_avg:+.2f}%")
+    
+    if upper_rows:
+        u_total = len(upper_rows)
+        u_wins = sum(1 for r in upper_rows if float(r.get("t1_open_pnl", 0)) > 0)
+        u_rate = u_wins / u_total * 100
+        u_avg = sum(float(r.get("t1_open_pnl", 0)) for r in upper_rows) / u_total
+        print(f"  高位路径: {u_total}笔 开盘胜率{u_rate:.1f}% 平均{u_avg:+.2f}%")
+    
+    if bought_rows:
+        b_total = len(bought_rows)
+        b_wins = sum(1 for r in bought_rows if float(r.get("t1_open_pnl", 0)) > 0)
+        b_rate = b_wins / b_total * 100
+        b_avg = sum(float(r.get("t1_open_pnl", 0)) for r in bought_rows) / b_total
+        print(f"\n  实际买入: {b_total}笔 开盘胜率{b_rate:.1f}% 平均{b_avg:+.2f}%")
+    
+    print(f"{'=' * 50}")
+
+
+def main():
+    mode = "evening"
+    if len(sys.argv) > 1:
+        mode = sys.argv[1].lower()
+    
+    if mode == "morning":
+        morning_mode()
+    else:
+        evening_mode()
 
 
 if __name__ == "__main__":

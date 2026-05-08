@@ -1,0 +1,11 @@
+{
+  "_comment": "用户实际买入记录，格式: { 股票代码: { buy_price: 成交价, date: 日期, bought: true } }",
+  "_example": {
+    "sh.603267": {
+      "buy_price": 56.85,
+      "date": "2026-05-08",
+      "bought": true,
+      "notes": "14:52 买入"
+    }
+  }
+}

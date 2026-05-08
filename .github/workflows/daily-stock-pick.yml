@@ -6,6 +6,8 @@ on:
   schedule:
     # 北京时间 09:26 卖出决策 (UTC 01:26) - 09:25竞价结束后执行
     - cron: '26 1 * * *'
+    # 北京时间 09:50 实战日志补充T+1数据 (UTC 01:50)
+    - cron: '50 1 * * *'
     # 北京时间 09:55 盘中跟踪 (UTC 01:55)
     - cron: '55 1 * * *'
     # 北京时间 10:25 盘中跟踪 (UTC 02:25)
@@ -81,6 +83,9 @@ jobs:
         if [[ "$CURRENT_TIME" == "0126" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=⏰ 09:26 卖出决策" >> $GITHUB_OUTPUT
+        elif [[ "$CURRENT_TIME" == "0150" ]]; then
+          echo "script=record_trade_log.py morning" >> $GITHUB_OUTPUT
+          echo "title=📝 09:50 实战日志补充T+1" >> $GITHUB_OUTPUT
         elif [[ "$CURRENT_TIME" == "0155" ]]; then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=📊 09:55 盘中跟踪" >> $GITHUB_OUTPUT
@@ -103,8 +108,8 @@ jobs:
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 15:10 盘后定稿-最终决策" >> $GITHUB_OUTPUT
         elif [[ "$CURRENT_TIME" == "0800" ]]; then
-          echo "script=record_trade_log.py" >> $GITHUB_OUTPUT
-          echo "title=📝 16:00 实战日志记录" >> $GITHUB_OUTPUT
+          echo "script=record_trade_log.py evening" >> $GITHUB_OUTPUT
+          echo "title=📝 16:00 实战日志记录推荐" >> $GITHUB_OUTPUT
         # cron-job.org 触发：根据北京时间范围智能选择 (使用算术扩展避免八进制解析)
         elif (( BEIJING_HOUR >= 9 && BEIJING_HOUR < 10 )); then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
