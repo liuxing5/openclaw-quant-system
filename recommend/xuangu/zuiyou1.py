@@ -881,10 +881,9 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
         "压力": 0, "得分不足": 0,
     }
 
-    print(f"  开始扫描 {total} 只股票...\n")
+    print(f"  开始扫描 {total} 只股票...")
 
-    iterator = tqdm(stock_pool, desc=f"扫描{pool_name}") if HAS_TQDM else stock_pool
-    for code in iterator:
+    for code in stock_pool:
         key = code.replace(".", "").lower()
         real_info = real_map.get(key)
         if real_info is None:
