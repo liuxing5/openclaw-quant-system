@@ -29,9 +29,31 @@ def ensure_market_tables():
         trade_date DATE,
         open NUMERIC(10,3), high NUMERIC(10,3), low NUMERIC(10,3), close NUMERIC(10,3),
         volume BIGINT, amount NUMERIC(20,2),
-        pct_chg FLOAT, turnover_rate FLOAT,
-        PRIMARY KEY (ts_code, trade_date)
+        pct_chg FLOAT, turnover_rate FLOAT
     );
+    
+    -- 清理重复数据（保留每组中 ctid 最大的行）
+    DELETE FROM daily_quotes a
+    USING (
+        SELECT ts_code, trade_date, MAX(ctid) AS max_ctid
+        FROM daily_quotes
+        GROUP BY ts_code, trade_date
+        HAVING COUNT(*) > 1
+    ) b
+    WHERE a.ts_code = b.ts_code
+      AND a.trade_date = b.trade_date
+      AND a.ctid < b.max_ctid;
+    
+    -- 确保主键约束存在（对已存在的表）
+    DO $$
+    BEGIN
+        IF NOT EXISTS (
+            SELECT 1 FROM pg_constraint WHERE conname = 'daily_quotes_pkey'
+        ) THEN
+            ALTER TABLE daily_quotes ADD PRIMARY KEY (ts_code, trade_date);
+        END IF;
+    END $$;
+    
     CREATE TABLE IF NOT EXISTS lhb_detail (
         id BIGSERIAL PRIMARY KEY,
         trade_date DATE, ts_code VARCHAR(20), stock_name VARCHAR(50),
