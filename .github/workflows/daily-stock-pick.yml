@@ -20,6 +20,8 @@ on:
     - cron: '35 6 * * *'
     # 北京时间 15:10 盘后定稿 (UTC 07:10) - 收盘后数据稳定
     - cron: '10 7 * * *'
+    # 北京时间 16:00 实战日志记录 (UTC 08:00) - 记录当日推荐股票表现
+    - cron: '0 8 * * *'
   workflow_dispatch:
 
 jobs:
@@ -100,6 +102,9 @@ jobs:
         elif [[ "$CURRENT_TIME" == "0710" ]]; then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 15:10 盘后定稿-最终决策" >> $GITHUB_OUTPUT
+        elif [[ "$CURRENT_TIME" == "0800" ]]; then
+          echo "script=record_trade_log.py" >> $GITHUB_OUTPUT
+          echo "title=📝 16:00 实战日志记录" >> $GITHUB_OUTPUT
         # cron-job.org 触发：根据北京时间范围智能选择 (使用算术扩展避免八进制解析)
         elif (( BEIJING_HOUR >= 9 && BEIJING_HOUR < 10 )); then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
