@@ -1,9 +1,14 @@
 """
-实战日志记录脚本
+实战日志记录脚本 v1.1
 ========================================
 每天 16:00 自动从 zuiyou1 选股结果中拉取
 稳健路径和高位路径得分最高的各一只股票
 记录当日表现，2 周后可用 Excel 直接出胜率/盈亏统计图
+
+修复 v1.0 问题:
+  1. 使用交易日而非自然日计算"次日"
+  2. 补充所有未填次日数据的记录（不局限于昨天）
+  3. entry_price 明确标注为"理论收盘价"（非实际成交价）
 
 用法:
     python record_trade_log.py
@@ -24,7 +29,8 @@ LOG_FILE = os.path.join(LOG_DIR, "trade_log.csv")
 ZUIYOU1_FILE = os.path.join(LOG_DIR, "zuiyou1.py")
 
 # 腾讯行情接口字段索引
-# 0: 市场+代码, 1: 名称, 3: 现价, 4: 昨收, 32: 涨跌幅%, 37: 成交额(万元), 38: 换手率%
+# 0: 市场+代码, 1: 名称, 3: 现价, 4: 昨收, 5: 开盘, 32: 涨跌幅%, 33: 最高, 34: 最低
+# 37: 成交额(万元), 38: 换手率%, 44: 总市值(亿)
 
 
 def get_latest_trading_day() -> str:
@@ -35,6 +41,30 @@ def get_latest_trading_day() -> str:
         if day.weekday() < 5:  # 周一到周五
             return day.strftime("%Y-%m-%d")
     return today.strftime("%Y-%m-%d")
+
+
+def get_previous_trading_day(date_str: str = None) -> str:
+    """获取上一个交易日"""
+    if date_str:
+        base = datetime.strptime(date_str, "%Y-%m-%d")
+    else:
+        base = datetime.now()
+    
+    for delta in range(1, 8):  # 从昨天往前找
+        day = base - timedelta(days=delta)
+        if day.weekday() < 5:
+            return day.strftime("%Y-%m-%d")
+    return base.strftime("%Y-%m-%d")
+
+
+def get_next_trading_day(date_str: str) -> str:
+    """获取指定日期之后的下一个交易日"""
+    base = datetime.strptime(date_str, "%Y-%m-%d")
+    for delta in range(1, 8):
+        day = base + timedelta(days=delta)
+        if day.weekday() < 5:
+            return day.strftime("%Y-%m-%d")
+    return base.strftime("%Y-%m-%d")
 
 
 def parse_zuiyou1_results() -> tuple:
@@ -84,12 +114,11 @@ def parse_zuiyou1_results() -> tuple:
             line = line.strip()
             if not line or line.startswith("━") or line.startswith("单票"):
                 continue
-            # 格式: sh.603267  ¥56.91  +4.21%  量比1.84  换手5.6%  连板0  乖离7.20%  得分120  稳健蓄势 | ...
             parts = line.split()
             if len(parts) >= 8:
                 try:
                     code = parts[0]
-                    score_idx = -2  # 得分在倒数第二个位置
+                    score_idx = -2
                     for i, p in enumerate(parts):
                         if p.startswith("得分"):
                             score_idx = i
@@ -97,7 +126,6 @@ def parse_zuiyou1_results() -> tuple:
                     score = int(parts[score_idx].replace("得分", ""))
                     if score > stable_max_score:
                         stable_max_score = score
-                        # 提取其他信息
                         price = 0.0
                         pct = 0.0
                         vol_ratio = 0.0
@@ -189,7 +217,7 @@ def parse_zuiyou1_results() -> tuple:
 
 
 def fetch_stock_info(code: str) -> Optional[dict]:
-    """从腾讯接口获取股票信息（名称、昨收等）"""
+    """从腾讯接口获取股票信息（名称、昨收、开盘、最高、最低等）"""
     api_code = code.replace(".", "").lower()
     url = f"http://qt.gtimg.cn/q={api_code}"
     try:
@@ -216,6 +244,9 @@ def fetch_stock_info(code: str) -> Optional[dict]:
                 "open": _f(5),
                 "high": _f(33),
                 "low": _f(34),
+                "now": _f(3),
+                "pct": _f(32),
+                "turn": _f(38),
             }
     except Exception:
         return None
@@ -230,13 +261,12 @@ def record_trade(stocks: list, date_str: str):
         stocks: 股票列表，每项包含 {code, path, price, pct, score, ...}
         date_str: 日期字符串 YYYY-MM-DD
     """
-    # CSV 字段定义
     fieldnames = [
         "date",           # 记录日期
         "code",           # 股票代码
         "name",           # 股票名称
         "path",           # 路径(稳健/高位)
-        "entry_price",    # 入选价(入选日收盘价)
+        "entry_price",    # 入选价(入选日收盘价，非实际成交价)
         "entry_pct",      # 入选日涨幅%
         "entry_score",    # 入选得分
         "entry_vol_ratio", # 入选量比
@@ -249,14 +279,13 @@ def record_trade(stocks: list, date_str: str):
         "next_close",     # 次日收盘价
         "next_pct",       # 次日涨跌幅%
         "next_turn",      # 次日换手率%
-        "pnl_pct",        # 盈亏% = 次日收盘相对入选价
+        "pnl_pct",        # 盈亏% = (次日收盘-入选价)/入选价
         "max_profit_pct", # 最大盈利% = (次日最高-入选价)/入选价
         "max_loss_pct",   # 最大亏损% = (次日最低-入选价)/入选价
         "win",            # 是否盈利(次日收盘>入选价)
         "notes",          # 备注
     ]
     
-    # 如果文件不存在，写入表头
     file_exists = os.path.exists(LOG_FILE)
     
     with open(LOG_FILE, "a", encoding="utf-8-sig", newline="") as f:
@@ -271,19 +300,12 @@ def record_trade(stocks: list, date_str: str):
                 print(f"  ⚠️ {code} 获取信息失败")
                 continue
             
-            # 计算盈亏
-            entry_price = stock["price"]
-            pre_close = info["pre_close"]
-            next_close = entry_price  # 入选日收盘价即次日开盘参考
-            # 实际盈亏需要次日数据，这里先记录入选日数据
-            # 次日数据由第二天 16:00 的脚本补充
-            
             row = {
                 "date": date_str,
                 "code": code,
                 "name": info["name"],
                 "path": stock["path"],
-                "entry_price": entry_price,
+                "entry_price": stock["price"],
                 "entry_pct": stock["pct"],
                 "entry_score": stock["score"],
                 "entry_vol_ratio": stock.get("vol_ratio", 0),
@@ -300,7 +322,7 @@ def record_trade(stocks: list, date_str: str):
                 "max_profit_pct": "",
                 "max_loss_pct": "",
                 "win": "",
-                "notes": "",
+                "notes": "entry_price为理论收盘价，非实际成交价",
             }
             writer.writerow(row)
             print(f"  ✓ {code} ({info['name']}) {stock['path']} 得分{stock['score']} 已记录")
@@ -308,14 +330,16 @@ def record_trade(stocks: list, date_str: str):
 
 def fill_next_day_data():
     """
-    为昨日记录补充次日数据
-    每天运行时，先给昨天的记录填上今天的行情数据
+    为所有未填次日数据的记录补充数据
+    修复 v1.0:
+      1. 不用"yesterday"，而是找所有 next_close 为空的记录
+      2. 校验"今天 >= 该记录的下一个交易日"才补充
+      3. 处理周末/节假日边界情况
     """
     if not os.path.exists(LOG_FILE):
         return
     
-    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now().date()
     
     # 读取 CSV
     rows = []
@@ -325,62 +349,82 @@ def fill_next_day_data():
         for row in reader:
             rows.append(row)
     
-    # 找出昨日的记录（次日数据为空的）
     updated = False
     for row in rows:
-        if row["date"] == yesterday and row["next_close"] == "":
-            code = row["code"]
-            api_code = code.replace(".", "").lower()
-            url = f"http://qt.gtimg.cn/q={api_code}"
-            try:
-                resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
-                if resp.status_code == 200:
-                    for line in resp.text.split(";"):
-                        if len(line) < 50:
-                            continue
-                        p = line.split("~")
-                        if len(p) < 40:
-                            continue
-                        
-                        def _f(idx, default=0.0):
-                            try:
-                                return float(p[idx]) if p[idx].strip() else default
-                            except (ValueError, IndexError):
-                                return default
-                        
-                        entry_price = float(row["entry_price"])
-                        next_open = _f(5)
-                        next_high = _f(33)
-                        next_low = _f(34)
-                        next_close = _f(3)
-                        next_pct = _f(32)
-                        next_turn = _f(38)
-                        
-                        if entry_price > 0 and next_close > 0:
-                            pnl = (next_close - entry_price) / entry_price * 100
-                            max_profit = (next_high - entry_price) / entry_price * 100
-                            max_loss = (next_low - entry_price) / entry_price * 100
-                            win = "是" if pnl > 0 else "否"
-                        else:
-                            pnl = max_profit = max_loss = 0
-                            win = ""
-                        
-                        row["next_open"] = f"{next_open:.2f}"
-                        row["next_high"] = f"{next_high:.2f}"
-                        row["next_low"] = f"{next_low:.2f}"
-                        row["next_close"] = f"{next_close:.2f}"
-                        row["next_pct"] = f"{next_pct:.2f}"
-                        row["next_turn"] = f"{next_turn:.2f}"
-                        row["pnl_pct"] = f"{pnl:.2f}"
-                        row["max_profit_pct"] = f"{max_profit:.2f}"
-                        row["max_loss_pct"] = f"{max_loss:.2f}"
-                        row["win"] = win
-                        
-                        updated = True
-                        print(f"  ✓ {code} 次日数据已补充: 收盘{next_close:.2f} 盈亏{pnl:.2f}%")
-                        break
-            except Exception as e:
-                print(f"  ⚠️ {code} 补充数据失败: {e}")
+        # 只处理还没补充次日数据的记录
+        if row.get("next_close", "") != "":
+            continue
+        
+        code = row["code"]
+        entry_date_str = row["date"]
+        
+        # 计算该记录的"下一个交易日"
+        next_trading_day_str = get_next_trading_day(entry_date_str)
+        next_trading_day = datetime.strptime(next_trading_day_str, "%Y-%m-%d").date()
+        
+        # 只有当"今天 >= 下一个交易日"时才能补充
+        if today < next_trading_day:
+            continue
+        
+        # 拉取腾讯接口获取行情
+        api_code = code.replace(".", "").lower()
+        url = f"http://qt.gtimg.cn/q={api_code}"
+        try:
+            resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
+            if resp.status_code != 200:
+                print(f"  ⚠️ {code} 接口返回失败")
+                continue
+            
+            parsed = False
+            for line in resp.text.split(";"):
+                if len(line) < 50:
+                    continue
+                p = line.split("~")
+                if len(p) < 40:
+                    continue
+                
+                def _f(idx, default=0.0):
+                    try:
+                        return float(p[idx]) if p[idx].strip() else default
+                    except (ValueError, IndexError):
+                        return default
+                
+                entry_price = float(row["entry_price"])
+                next_open = _f(5)
+                next_high = _f(33)
+                next_low = _f(34)
+                next_close = _f(3)
+                next_pct = _f(32)
+                next_turn = _f(38)
+                
+                if next_close <= 0 or entry_price <= 0:
+                    break
+                
+                pnl = (next_close - entry_price) / entry_price * 100
+                max_profit = (next_high - entry_price) / entry_price * 100
+                max_loss = (next_low - entry_price) / entry_price * 100
+                win = "是" if pnl > 0 else "否"
+                
+                row["next_open"] = f"{next_open:.2f}"
+                row["next_high"] = f"{next_high:.2f}"
+                row["next_low"] = f"{next_low:.2f}"
+                row["next_close"] = f"{next_close:.2f}"
+                row["next_pct"] = f"{next_pct:.2f}"
+                row["next_turn"] = f"{next_turn:.2f}"
+                row["pnl_pct"] = f"{pnl:.2f}"
+                row["max_profit_pct"] = f"{max_profit:.2f}"
+                row["max_loss_pct"] = f"{max_loss:.2f}"
+                row["win"] = win
+                
+                updated = True
+                print(f"  ✓ {code} 次日数据已补充: 收盘{next_close:.2f} 盈亏{pnl:.2f}%")
+                parsed = True
+                break
+            
+            if not parsed:
+                print(f"  ⚠️ {code} 解析行情失败")
+        except Exception as e:
+            print(f"  ⚠️ {code} 补充数据失败: {e}")
     
     # 写回 CSV
     if updated:
@@ -400,7 +444,7 @@ def print_statistics():
     with open(LOG_FILE, "r", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            if row["pnl_pct"] and row["pnl_pct"] != "":
+            if row.get("pnl_pct") and row["pnl_pct"] != "":
                 rows.append(row)
     
     if not rows:
@@ -448,12 +492,12 @@ def print_statistics():
 
 
 def main():
-    print(f"实战日志记录脚本 v1.0")
+    print(f"实战日志记录脚本 v1.1")
     print(f"运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print()
     
-    # Step 1: 先补充昨日记录的次日数据
-    print("Step 1: 补充昨日记录次日数据...")
+    # Step 1: 先补充所有未填次日数据的记录
+    print("Step 1: 补充未填次日数据...")
     fill_next_day_data()
     
     # Step 2: 解析 zuiyou1 选股结果
@@ -474,7 +518,7 @@ def main():
         print("  高位路径: 无推荐")
     
     if not stocks_to_record:
-        print("\n️ 无股票需要记录")
+        print("\n⚠️ 无股票需要记录")
         return
     
     # Step 3: 记录到 CSV
