@@ -203,9 +203,11 @@ def send_stock_picks(
                 tags_display = ' | '.join(ordered_tags)
             else:
                 tags_display = ''
+            # 截断过长标签避免折行
+            if len(tags_display) > 40:
+                tags_display = tags_display[:38] + "..."
             msg = (
-                f"• {s['code']} ({s.get('pool','')}) "
-                f"¥{s['price']} +{s['pct']:.2f}% "
+                f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% "
                 f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
                 f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
                 f"得分{s['score']} | {tags_display}"
@@ -227,9 +229,11 @@ def send_stock_picks(
                 tags_display = ' | '.join(ordered_tags)
             else:
                 tags_display = ''
+            # 截断过长标签避免折行
+            if len(tags_display) > 40:
+                tags_display = tags_display[:38] + "..."
             msg = (
-                f"• {s['code']} ({s.get('pool','')}) "
-                f"¥{s['price']} +{s['pct']:.2f}% "
+                f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% "
                 f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
                 f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
                 f"得分{s['score']} | {tags_display}"

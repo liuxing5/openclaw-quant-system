@@ -1293,11 +1293,11 @@ def main():
 
         pos_hint = CONFIG_UPPER["position_ratio"] if path_label == "高位" else CONFIG_STABLE["position_ratio"]
         print(f"\n{path_label}路径 ({len(picks)} 只)  {pos_hint}")
-        print(f"{'代码':<14} {'池子':<16} {'价格':>7} {'涨幅%':>7} {'量比':>6} "
+        print(f"{'代码':<14} {'价格':>7} {'涨幅%':>7} {'量比':>6} "
               f"{'换手%':>7} {'连板':>5} {'乖离%':>7} {'得分':>5}  特征")
         for _, row in picks.iterrows():
             print(
-                f"{row['code']:<14} {row['pool']:<16} {row['price']:>7.2f} "
+                f"{row['code']:<14} {row['price']:>7.2f} "
                 f"{row['pct']:>7.2f} {row['vol_ratio']:>6.2f} {row['turn']:>7.2f} "
                 f"{row['streak']:>5} {row['bias_ma5']:>7.2f} {row['score']:>5}  {row['tags']}"
             )
