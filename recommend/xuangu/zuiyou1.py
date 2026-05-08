@@ -1042,14 +1042,18 @@ def append_to_summary(
 _REJECT_TREND_FILE = os.path.join(os.path.dirname(__file__), "reject_trend.json")
 
 def _print_reject_summary(rejects: dict, total: int = 0):
-    """打印过滤统计，带百分比"""
+    """打印漏斗式过滤统计"""
     if total == 0:
         total = sum(rejects.values())
     print("过滤统计:")
+    remaining = total
     for reason, count in sorted(rejects.items(), key=lambda x: -x[1]):
         if count > 0:
             pct = count / total * 100 if total > 0 else 0
-            print(f"  ✗ {reason:>8}: {count:>5} ({pct:5.1f}%)")
+            remaining -= count
+            print(f"  ✗ {reason}: {count}只({pct:.0f}%)")
+            print(f"    ↓ 剩 {remaining} 只")
+    print(f"  ✓ 通过: {remaining} 只")
 
 def _save_reject_trend(date_str: str, rejects: dict):
     """保存当日过滤瓶颈到文件，展示5日趋势"""
@@ -1300,13 +1304,17 @@ def main():
             "Step8 14:30创新高回踩入场（需盘中人工确认）"
         )
 
-        # 构建过滤统计摘要
+        # 构建过滤统计摘要（漏斗式）
         reject_lines = []
+        remaining = total_scanned
         for reason, count in sorted(total_rejects.items(), key=lambda x: -x[1]):
             if count > 0:
                 pct = count / total_scanned * 100
+                remaining -= count
                 reject_lines.append(f"✗ {reason}: {count}只({pct:.0f}%)")
-        reject_summary = "\n".join(reject_lines[:5]) if reject_lines else "无"
+                reject_lines.append(f"  ↓ 剩 {remaining} 只")
+        reject_lines.append(f"✓ 通过: {remaining} 只")
+        reject_summary = "\n".join(reject_lines)
 
         try:
             ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary, header_info)
