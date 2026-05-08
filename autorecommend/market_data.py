@@ -84,15 +84,15 @@ def fetch_with_akshare_full():
 
     logger.info("AKShare 全市场快照...")
     df = None
-    for attempt in range(5):
+    for attempt in range(2):
         try:
             df = ak.stock_zh_a_spot_em()
             if df is not None and not df.empty:
                 break
         except Exception as e:
-            if attempt < 4:
-                logger.warning(f"AKShare 全市场失败 (尝试 {attempt+1}/5): {e}")
-                time.sleep(10)
+            if attempt < 1:
+                logger.warning(f"AKShare 全市场失败 (尝试 {attempt+1}/2): {e}")
+                time.sleep(3)
             else:
                 logger.error(f"AKShare 全市场最终失败: {e}")
                 return None

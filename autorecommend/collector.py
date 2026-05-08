@@ -5,6 +5,7 @@ import time
 import hashlib
 import warnings
 import threading
+import concurrent.futures
 from datetime import date, timedelta, datetime
 import pandas as pd
 import psycopg2
@@ -18,8 +19,8 @@ warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-FETCH_TIMEOUT = 60
-CONCEPT_TIMEOUT = 30
+FETCH_TIMEOUT = 30
+CONCEPT_TIMEOUT = 20
 
 
 def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT):
@@ -291,25 +292,34 @@ def main():
     logger.add(log_file, rotation='100 MB')
 
     logger.info("=" * 60)
-    logger.info("AKShare 信息采集启动")
+    logger.info("AKShare 信息采集启动（并行模式）")
     logger.info("=" * 60)
 
-    all_rows = []
-
-    for fetcher, name, timeout_override in [
+    fetchers = [
         (fetch_akshare_news, '财经新闻', FETCH_TIMEOUT),
         (fetch_akshare_lhb, '龙虎榜', FETCH_TIMEOUT),
         (fetch_akshare_zt_pool, '涨停板', FETCH_TIMEOUT),
         (fetch_akshare_concept_hot, '热点概念', CONCEPT_TIMEOUT),
         (fetch_akshare_research, '个股研报', FETCH_TIMEOUT),
         (fetch_akshare_jgdy, '机构调研', FETCH_TIMEOUT),
-    ]:
-        try:
-            rows = fetch_with_timeout(fetcher, timeout=timeout_override)
-            all_rows.extend(rows)
-            time.sleep(1)
-        except Exception as e:
-            logger.error(f"{name} 完全失败: {e}")
+    ]
+
+    all_rows = []
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+        future_map = {}
+        for fetcher, name, timeout_override in fetchers:
+            future = executor.submit(fetch_with_timeout, fetcher, timeout_override)
+            future_map[future] = name
+
+        for future in concurrent.futures.as_completed(future_map):
+            name = future_map[future]
+            try:
+                rows = future.result()
+                all_rows.extend(rows)
+                logger.info(f"{name}: {len(rows)} 条")
+            except Exception as e:
+                logger.error(f"{name} 完全失败: {e}")
 
     inserted = store_signals(all_rows)
     logger.info(f"采集总计 {len(all_rows)} 条，新入库 {inserted} 条")
