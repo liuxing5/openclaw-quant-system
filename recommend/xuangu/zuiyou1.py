@@ -1278,6 +1278,15 @@ def main():
                 "tags": row["tags"],
             })
 
+        header_info = (
+            "双池策略：稳健[hs300+zz500] + 高位[zz1000]\n"
+            "完整八步：涨幅→量比→换手→市值→量能→均线→压力→评分\n"
+            f"运行时间：{current_beijing.strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"情绪偏热，高位路径(6%-9.7%)已开放，注意风控\n"
+            f"稳健路径仓位: 单票≤15%总仓位\n"
+            f"高位路径仓位: 单票≤8%总仓位，严守止损"
+        )
+
         operation_note = (
             "稳健: 次日09:35未维持昨收+1%即出\n"
             "高位: 次日竞价弱于昨收即清仓\n"
@@ -1300,7 +1309,7 @@ def main():
         reject_summary = "\n".join(reject_lines[:5]) if reject_lines else "无"
 
         try:
-            ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary)
+            ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary, header_info)
             if ok:
                 print("✅ 已推送到 Telegram\n")
             else:

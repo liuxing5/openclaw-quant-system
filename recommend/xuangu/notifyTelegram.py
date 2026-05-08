@@ -135,6 +135,7 @@ def send_stock_picks(
     upper_picks: list,
     operation_note: str = "",
     reject_summary: str = "",
+    header_info: str = "",
 ) -> bool:
     """
     格式化推送选股结果(zuiyou1 专用便捷接口)。
@@ -154,6 +155,10 @@ def send_stock_picks(
     lines.append(f"📅 {end_d}")
     lines.append(f"📊 {mood_info}")
 
+    if header_info:
+        lines.append("")
+        lines.append(header_info)
+
     if not stable_picks and not upper_picks:
         lines.append("")
         lines.append("⚠️ 今日无符合条件的标的")
@@ -164,6 +169,12 @@ def send_stock_picks(
             lines.append(reject_summary)
         send_message("\n".join(lines))
         return True
+
+    # 过滤统计（放在推荐股票之上）
+    if reject_summary:
+        lines.append("")
+        lines.append("━━ 过滤统计 ━━")
+        lines.append(reject_summary)
 
     # 稳健路径
     if stable_picks:
@@ -198,12 +209,6 @@ def send_stock_picks(
                 f"得分{s['score']} | {tags_short}"
             )
             lines.append(msg)
-
-    # 过滤统计
-    if reject_summary:
-        lines.append("")
-        lines.append("━━ 过滤统计 ━━")
-        lines.append(reject_summary)
 
     # 操作建议
     if operation_note:
