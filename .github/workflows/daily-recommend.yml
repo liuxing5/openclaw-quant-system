@@ -2,9 +2,18 @@ name: Daily Stock Recommendation
 
 on:
   schedule:
-    # 北京时间 15:30 = UTC 07:30
+    - cron: '30 0 * * 1-5'
     - cron: '30 7 * * 1-5'
   workflow_dispatch:
+    inputs:
+      run_mode:
+        description: '盘前(morning) 或 盘后(afternoon)'
+        required: false
+        default: 'morning'
+        type: choice
+        options:
+          - morning
+          - afternoon
 
 jobs:
   recommend:
@@ -34,6 +43,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Determine run mode
+        id: mode
+        run: |
+          HOUR=$(date -u +%H)
+          if [ "$HOUR" -lt 4 ]; then
+            echo "mode=morning" >> $GITHUB_OUTPUT
+            echo "盘前模式 (UTC ${HOUR}:30 = 北京时间 08:30)"
+          else
+            echo "mode=afternoon" >> $GITHUB_OUTPUT
+            echo "盘后模式 (UTC ${HOUR}:30 = 北京时间 15:30)"
+          fi
+      
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -61,6 +82,8 @@ jobs:
         run: python autorecommend/extractor.py --once
       
       - name: Aggregate & report
+        env:
+          RUN_MODE: ${{ steps.mode.outputs.mode }}
         run: |
           python autorecommend/aggregate.py
           python autorecommend/track_performance.py

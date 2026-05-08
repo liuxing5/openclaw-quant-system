@@ -1,4 +1,4 @@
-"""每日候选池生成 - 跑在 15:30 收盘后"""
+"""每日候选池生成 - 盘前/盘后双跑"""
 import os
 import json
 from datetime import date, timedelta
@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
+RUN_MODE = os.getenv('RUN_MODE', 'morning')
 MIN_SELECT_SCORE = 50
 MAX_SELECTED = 8
 MIN_LIQUIDITY = 1e8
@@ -115,6 +116,9 @@ def aggregate_today():
             has_lhb = any('龙虎榜' in (s.get('source') or '') for s in (r['sources'] or []))
             has_zt = any('涨停' in (s.get('source') or '') for s in (r['sources'] or []))
             if has_lhb and has_zt:
+                if RUN_MODE == 'morning':
+                    logger.info(f"{r['ts_code']} 龙虎榜+涨停板共振，盘前模式直接过滤（T+1陷阱风险）")
+                    continue
                 final = final * 0.6
                 logger.debug(f"{r['ts_code']} 龙虎榜+涨停板共振，降权 40%（T+1陷阱风险）")
 

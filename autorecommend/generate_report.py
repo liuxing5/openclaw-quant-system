@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
+RUN_MODE = os.getenv('RUN_MODE', 'morning')
+
 
 def get_db():
     return psycopg2.connect(
@@ -69,11 +71,23 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
     <div class="container">
-        <h1>📊 AI 股票推荐系统</h1>
-        <p class="subtitle">报告日期: {{ date }} | 生成时间: {{ generated_at }}</p>
+        <h1> AI 股票推荐系统</h1>
+        <p class="subtitle">
+            {% if run_mode == 'morning' %}
+             盘前参考 | 报告日期: {{ date }} | 生成时间: {{ generated_at }}
+            {% else %}
+             盘后复盘 | 报告日期: {{ date }} | 生成时间: {{ generated_at }}
+            {% endif %}
+        </p>
         
         <div class="card">
-            <h2>🎯 今日候选池 ({{ candidates|length }} 只)</h2>
+            <h2>
+                {% if run_mode == 'morning' %}
+                🎯 今日候选池 ({{ candidates|length }} 只)
+                {% else %}
+                🎯 明日候选池 ({{ candidates|length }} 只)
+                {% endif %}
+            </h2>
             <div class="stock-grid">
                 {% for c in candidates %}
                 <div class="stock-card {% if c.selected %}selected{% endif %}">
@@ -225,6 +239,7 @@ def generate_report():
         source_stats=[dict(s) for s in source_stats],
         articles=[dict(a) for a in articles],
         history_dates=history_dates,
+        run_mode=RUN_MODE,
     )
     
     output_dir = os.path.join(BASE_DIR, 'docs', str(today))

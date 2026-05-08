@@ -17,6 +17,7 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 PROXY_URL = os.getenv('TELEGRAM_PROXY')
+RUN_MODE = os.getenv('RUN_MODE', 'morning')
 
 MIN_SELECT_SCORE = 50
 
@@ -131,15 +132,17 @@ async def push_daily_candidates():
         """, (today,))
         row = cur.fetchone()
         total = row['cnt'] if hasattr(row, 'keys') else row[0]
-        msg = (f"📊 <b>{today}</b> 推荐报告\n\n"
-               f"今日无符合条件的推荐\n"
+        msg = (f"📊 <b>{today}</b> {'盘前参考' if RUN_MODE == 'morning' else '盘后复盘'}\n\n"
+               f"{'今日' if RUN_MODE == 'morning' else '明日'}无符合条件的推荐\n"
                f"（共分析 {total} 只候选股，均未达到阈值 {MIN_SELECT_SCORE} 分）\n\n"
                f"建议: 空仓观望 或 持有现有仓位")
         await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
         cur.close(); conn.close()
         return
     
-    lines = [f"📊 <b>{today}</b>\n共 {len(cands)} 只\n"]
+    header = '盘前参考' if RUN_MODE == 'morning' else '盘后复盘'
+    target = '今日' if RUN_MODE == 'morning' else '明日'
+    lines = [f" <b>{today}</b> {header}\n共 {len(cands)} 只\n"]
     
     for c in cands:
         c = dict(c)
