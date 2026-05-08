@@ -33,21 +33,34 @@ def aggregate_today():
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
 
     # 自动迁移：检查并添加 run_mode 列
-    cur.execute("""
-        SELECT column_name FROM information_schema.columns
-        WHERE table_name = 'daily_candidates' AND column_name = 'run_mode';
-    """)
-    if not cur.fetchone():
-        logger.info("自动迁移：添加 run_mode 列")
+    try:
         cur.execute("""
-            ALTER TABLE daily_candidates ADD COLUMN run_mode VARCHAR(20) DEFAULT 'afternoon';
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'daily_candidates' AND column_name = 'run_mode';
         """)
+        if not cur.fetchone():
+            logger.info("自动迁移：添加 run_mode 列")
+            cur.execute("""
+                ALTER TABLE daily_candidates ADD COLUMN run_mode VARCHAR(20) DEFAULT 'afternoon';
+            """)
+            conn.commit()
+            logger.info("run_mode 列添加成功")
+        
+        # 检查并添加唯一约束
         cur.execute("""
-            ALTER TABLE daily_candidates ADD CONSTRAINT daily_candidates_unique_mode
-            UNIQUE (snapshot_date, ts_code, run_mode);
+            SELECT conname FROM pg_constraint
+            WHERE conname = 'daily_candidates_unique_mode';
         """)
-        conn.commit()
-        logger.info("迁移完成")
+        if not cur.fetchone():
+            logger.info("自动迁移：添加唯一约束")
+            cur.execute("""
+                ALTER TABLE daily_candidates ADD CONSTRAINT daily_candidates_unique_mode
+                UNIQUE (snapshot_date, ts_code, run_mode);
+            """)
+            conn.commit()
+            logger.info("唯一约束添加成功")
+    except Exception as e:
+        logger.warning(f"迁移检查失败: {e}")
 
     # 批量加载今日行情到内存，避免逐个查询
     cur.execute("""
