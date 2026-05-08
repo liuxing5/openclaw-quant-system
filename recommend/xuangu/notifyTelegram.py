@@ -136,6 +136,9 @@ def send_stock_picks(
     operation_note: str = "",
     reject_summary: str = "",
     header_info: str = "",
+    stable_reject_summary: str = "",
+    upper_reject_summary: str = "",
+    pool_summary: str = "",
 ) -> bool:
     """
     格式化推送选股结果(zuiyou1 专用便捷接口)。
@@ -148,7 +151,11 @@ def send_stock_picks(
         stable_picks: 稳健路径推荐列表 [{code, price, pct, vol_ratio, turn, score, tags}, ...]
         upper_picks: 高位路径推荐列表
         operation_note: 操作建议
-        reject_summary: 过滤统计摘要
+        reject_summary: 汇总过滤统计摘要
+        header_info: 头部信息
+        stable_reject_summary: 稳健池过滤统计
+        upper_reject_summary: 高位池过滤统计
+        pool_summary: 各池扫描信息
     """
     lines = []
     lines.append(f"🔥 {title}")
@@ -159,18 +166,23 @@ def send_stock_picks(
         lines.append("")
         lines.append(header_info)
 
+    # 各池扫描信息
+    if pool_summary:
+        lines.append("")
+        lines.append(pool_summary)
+
     if not stable_picks and not upper_picks:
         lines.append("")
         lines.append("⚠️ 今日无符合条件的标的")
         lines.append("(空仓也是仓位)")
         if reject_summary:
             lines.append("")
-            lines.append("━━ 过滤瓶颈 ━━")
+            lines.append("━━ 过滤统计 ━━")
             lines.append(reject_summary)
         send_message("\n".join(lines))
         return True
 
-    # 过滤统计（放在推荐股票之上）
+    # 汇总过滤统计
     if reject_summary:
         lines.append("")
         lines.append("━━ 过滤统计 ━━")

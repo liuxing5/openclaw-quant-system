@@ -919,10 +919,12 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
             else:
                 print(msg)
 
-    print(f"\n过滤统计 [{pool_name}]:")
-    for reason, count in sorted(reject_stats.items(), key=lambda x: -x[1]):
-        if count > 0:
-            print(f"  {reason:>8}: {count:>5}")
+    # 计算通过数量
+    passed_count = len(results)
+    total_scanned = sum(reject_stats.values()) + passed_count
+
+    print(f"\n━━ 过滤统计，[{pool_name}]，共{total_scanned}只 ━━")
+    _print_funnel(reject_stats, total_scanned, results)
 
     return results, reject_stats
 
@@ -1041,12 +1043,11 @@ def append_to_summary(
 # ============================================================
 _REJECT_TREND_FILE = os.path.join(os.path.dirname(__file__), "reject_trend.json")
 
-def _print_reject_summary(rejects: dict, total: int = 0):
+def _print_funnel(rejects: dict, total: int, results: list = None):
     """按8步法顺序打印漏斗式过滤统计"""
     if total == 0:
         total = sum(rejects.values())
 
-    # 8步法顺序映射: (显示名称, 条件说明, reject_stats中的key)
     steps = [
         ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
         ("量比", ">=1", ["量比"]),
@@ -1054,11 +1055,8 @@ def _print_reject_summary(rejects: dict, total: int = 0):
         ("市值过滤", "50-500亿/30-200亿", ["市值"]),
         ("量能递增", "", []),
         ("均线+压力检测", "", ["均线", "压力"]),
-        ("分时均价线", "需盘中确认", []),
-        ("14:30回踩", "需盘中确认", []),
     ]
 
-    print("过滤统计:")
     remaining = total
     for step_name, condition, keys in steps:
         count = sum(rejects.get(k, 0) for k in keys)
@@ -1066,8 +1064,7 @@ def _print_reject_summary(rejects: dict, total: int = 0):
             pct = count / total * 100 if total > 0 else 0
             remaining -= count
             cond_str = f"（{condition}）" if condition else ""
-            print(f"  ✗ {step_name}{cond_str} 筛选: {count}只({pct:.0f}%)")
-            print(f"    ↓ 剩 {remaining} 只")
+            print(f"  ✗ {step_name}{cond_str} 筛选剩 {remaining} 只")
 
     # 其他未归类的reject
     known_keys = set()
@@ -1077,8 +1074,50 @@ def _print_reject_summary(rejects: dict, total: int = 0):
     if other_count > 0:
         pct = other_count / total * 100 if total > 0 else 0
         remaining -= other_count
-        print(f"  ✗ 其他: {other_count}只({pct:.0f}%)")
-        print(f"    ↓ 剩 {remaining} 只")
+        print(f"  ✗ 其他 筛选剩 {remaining} 只")
+
+    print(f"  ✓ 通过: {remaining} 只")
+
+    # 打印通过的股票
+    if results:
+        for r in results:
+            msg = (f"  {r['code']:<14} 涨幅:{r['pct']:>6.2f}%  "
+                   f"路径:{r['path']}  连板:{r['streak']}  得分:{r['score']}  "
+                   f"换手:{r['turn']}%  量比:{r['vol_ratio']}")
+            print(msg)
+
+def _print_reject_summary(rejects: dict, total: int = 0):
+    """按8步法顺序打印漏斗式过滤统计（汇总用）"""
+    if total == 0:
+        total = sum(rejects.values())
+
+    steps = [
+        ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
+        ("量比", ">=1", ["量比"]),
+        ("换手率", ">=5%,<=10%", ["换手率"]),
+        ("市值过滤", "50-500亿/30-200亿", ["市值"]),
+        ("量能递增", "", []),
+        ("均线+压力检测", "", ["均线", "压力"]),
+    ]
+
+    remaining = total
+    for step_name, condition, keys in steps:
+        count = sum(rejects.get(k, 0) for k in keys)
+        if count > 0:
+            pct = count / total * 100 if total > 0 else 0
+            remaining -= count
+            cond_str = f"（{condition}）" if condition else ""
+            print(f"  ✗ {step_name}{cond_str} 筛选剩 {remaining} 只")
+
+    # 其他未归类的reject
+    known_keys = set()
+    for _, _, keys in steps:
+        known_keys.update(keys)
+    other_count = sum(v for k, v in rejects.items() if k not in known_keys and v > 0)
+    if other_count > 0:
+        pct = other_count / total * 100 if total > 0 else 0
+        remaining -= other_count
+        print(f"  ✗ 其他 筛选剩 {remaining} 只")
 
     print(f"  ✓ 通过: {remaining} 只")
 
@@ -1225,9 +1264,9 @@ def main():
     total_candidates = len(results_stable) + len(results_upper)
     total_scanned = sum(total_rejects.values()) + total_candidates
 
-    # 打印过滤统计主报告
+    # 打印汇总过滤统计
     print(f"\n今日扫描汇总: {total_scanned} 只")
-    print(f"通过: {total_candidates} 只")
+    print(f"━━ 过滤统计，共{total_scanned}只 ━━")
     _print_reject_summary(total_rejects, total_scanned)
     _save_reject_trend(end_d, total_rejects)
 
@@ -1331,7 +1370,54 @@ def main():
             "Step8 14:30创新高回踩入场（需盘中人工确认）"
         )
 
-        # 构建过滤统计摘要（8步法漏斗式）
+        # 构建各池过滤统计摘要（8步法漏斗式）
+        def build_pool_reject_summary(pool_name, pool_results, pool_rejects, pool_total):
+            steps = [
+                ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
+                ("量比", ">=1", ["量比"]),
+                ("换手率", ">=5%,<=10%", ["换手率"]),
+                ("市值过滤", "50-500亿/30-200亿", ["市值"]),
+                ("量能递增", "", []),
+                ("均线+压力检测", "", ["均线", "压力"]),
+            ]
+            reject_lines = []
+            remaining = pool_total
+            for step_name, condition, keys in steps:
+                count = sum(pool_rejects.get(k, 0) for k in keys)
+                if count > 0:
+                    remaining -= count
+                    cond_str = f"（{condition}）" if condition else ""
+                    reject_lines.append(f"✗ {step_name}{cond_str} 筛选剩 {remaining} 只")
+
+            known_keys = set()
+            for _, _, keys in steps:
+                known_keys.update(keys)
+            other_count = sum(v for k, v in pool_rejects.items() if k not in known_keys and v > 0)
+            if other_count > 0:
+                remaining -= other_count
+                reject_lines.append(f"✗ 其他 筛选剩 {remaining} 只")
+
+            reject_lines.append(f"✓ 通过: {remaining} 只")
+            # 添加通过的股票
+            for r in pool_results:
+                reject_lines.append(
+                    f"  {r['code']:<14} 涨幅:{r['pct']:>6.2f}%  "
+                    f"路径:{r['path']}  连板:{r['streak']}  得分:{r['score']}  "
+                    f"换手:{r['turn']}%  量比:{r['vol_ratio']}"
+                )
+            return "\n".join(reject_lines)
+
+        stable_total = sum(rejects_stable.values()) + len(results_stable)
+        upper_total = sum(rejects_upper.values()) + len(results_upper)
+
+        stable_reject_summary = build_pool_reject_summary(
+            CONFIG_STABLE["POOL"], results_stable, rejects_stable, stable_total
+        )
+        upper_reject_summary = build_pool_reject_summary(
+            CONFIG_UPPER["POOL"], results_upper, rejects_upper, upper_total
+        )
+
+        # 构建汇总过滤统计摘要（8步法漏斗式）
         steps = [
             ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
             ("量比", ">=1", ["量比"]),
@@ -1345,28 +1431,48 @@ def main():
         for step_name, condition, keys in steps:
             count = sum(total_rejects.get(k, 0) for k in keys)
             if count > 0:
-                pct = count / total_scanned * 100
                 remaining -= count
                 cond_str = f"（{condition}）" if condition else ""
-                reject_lines.append(f"✗ {step_name}{cond_str} 筛选: {count}只({pct:.0f}%)")
-                reject_lines.append(f"  ↓ 剩 {remaining} 只")
+                reject_lines.append(f"✗ {step_name}{cond_str} 筛选剩 {remaining} 只")
 
-        # 其他未归类的reject
         known_keys = set()
         for _, _, keys in steps:
             known_keys.update(keys)
         other_count = sum(v for k, v in total_rejects.items() if k not in known_keys and v > 0)
         if other_count > 0:
-            pct = other_count / total_scanned * 100
             remaining -= other_count
-            reject_lines.append(f"✗ 其他: {other_count}只({pct:.0f}%)")
-            reject_lines.append(f"  ↓ 剩 {remaining} 只")
+            reject_lines.append(f"✗ 其他 筛选剩 {remaining} 只")
 
         reject_lines.append(f"✓ 通过: {remaining} 只")
         reject_summary = "\n".join(reject_lines)
 
+        # 构建各池扫描信息
+        stable_pool = get_stock_pool()
+        stable_real = get_realtime_quotes(stable_pool)
+        upper_pool = get_stock_pool()
+        upper_real = get_realtime_quotes(upper_pool)
+
+        pool_summary = (
+            f"扫描池: [{CONFIG_STABLE['POOL']}]  模式: post  时间权重: 1.00\n"
+            f"股票池: [{CONFIG_STABLE['POOL']}] 共 {len(stable_pool)} 只\n"
+            f"行情获取: 成功={len(stable_real)} 只\n"
+            f"━━ 过滤统计，[{CONFIG_STABLE['POOL']}]，共{stable_total}只 ━━\n"
+            f"{stable_reject_summary}\n"
+            f"\n"
+            f"扫描池: [{CONFIG_UPPER['POOL']}]  模式: post  时间权重: 1.00\n"
+            f"股票池: [{CONFIG_UPPER['POOL']}] 共 {len(upper_pool)} 只\n"
+            f"行情获取: 成功={len(upper_real)} 只\n"
+            f"━━ 过滤统计，[{CONFIG_UPPER['POOL']}]，共{upper_total}只 ━━\n"
+            f"{upper_reject_summary}"
+        )
+
         try:
-            ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary, header_info)
+            ok = send_stock_picks(
+                title, current_beijing.strftime("%Y-%m-%d"), mood_info,
+                stable_list, upper_list, operation_note,
+                reject_summary, header_info,
+                stable_reject_summary, upper_reject_summary, pool_summary
+            )
             if ok:
                 print("✅ 已推送到 Telegram\n")
             else:
