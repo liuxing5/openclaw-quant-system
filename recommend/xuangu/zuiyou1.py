@@ -799,15 +799,19 @@ def analyze_ultimate(
     # --- 细粒度排序因子（区分度增强）---
     fine_score = 0
 
-    # F1. 量价配合（成交额/换手 比值，反映平均单笔大小）
-    if curr_amount > 0 and curr_turn > 0:
-        avg_trade_size = curr_amount / (curr_turn * 1e6)
-        if avg_trade_size > 50000:
-            fine_score += 5
-            tags.append("大单为主")
-        elif avg_trade_size < 10000:
-            fine_score -= 3
-            tags.append("散户为主")
+    # F1. 成交额放大度（今日成交额 vs 5日均值）
+    if curr_amount > 0 and "amount" in df.columns and len(df) >= 5:
+        # baostock的amount单位是元，腾讯的curr_amount单位是万元
+        hist_amounts = df["amount"].astype(float) / 10000  # 转为万元
+        avg_amount_5d = hist_amounts.iloc[-5:].mean()
+        if avg_amount_5d > 0:
+            amount_ratio = curr_amount / avg_amount_5d
+            if amount_ratio > 2.0:
+                fine_score += 5
+                tags.append("成交额翻倍")
+            elif amount_ratio < 0.8:
+                fine_score -= 3
+                tags.append("成交额萎缩↓")
 
     # F2. 距离涨停的远近（高位路径才用）
     if in_upper:
