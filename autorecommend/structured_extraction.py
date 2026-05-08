@@ -2,7 +2,7 @@
 龙虎榜/涨停板/机构调研 -> extracted_recommendations
 """
 import os
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from loguru import logger
@@ -10,6 +10,14 @@ from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# 北京时间时区
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def get_beijing_date():
+    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
+    return datetime.now(BEIJING_TZ).date()
 
 
 def get_db():
@@ -28,7 +36,7 @@ def lhb_to_extraction():
     机构席位 -> strength=4, type=buy
     """
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
-    today = date.today()
+    today = get_beijing_date()
     cutoff = today - timedelta(days=2)
 
     cur.execute("""
@@ -101,7 +109,7 @@ def zt_pool_to_extraction():
     所有涨停板统一 watch，连板数越高置信度越低
     """
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
-    today = date.today()
+    today = get_beijing_date()
     cutoff = today - timedelta(days=2)
 
     cur.execute("""
@@ -178,7 +186,7 @@ def jgdy_to_extraction():
     接待机构数 >= 30 -> strength=4, type=buy
     """
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
-    today = date.today()
+    today = get_beijing_date()
     cutoff = today - timedelta(days=7)
 
     cur.execute("""

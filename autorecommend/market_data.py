@@ -1,7 +1,7 @@
 """行情数据每日采集 - AKShare 全市场为主，BaoStock/Tushare/yfinance 为备用"""
 import os
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta, timezone
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
@@ -10,6 +10,14 @@ from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+# 北京时间时区
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def get_beijing_date():
+    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
+    return datetime.now(BEIJING_TZ).date()
 
 
 def get_db():
@@ -101,7 +109,7 @@ def fetch_with_akshare_full():
     logger.debug(f"可用列: {list(df.columns)[:10]}...")
 
     rows = []
-    today = date.today()
+    today = get_beijing_date()
     skipped_prefix = 0
     skipped_price = 0
     for _, r in df.iterrows():
@@ -152,7 +160,7 @@ def fetch_with_baostock():
         return None
 
     try:
-        today_str = date.today().strftime('%Y-%m-%d')
+        today_str = get_beijing_date().strftime('%Y-%m-%d')
 
         major_codes = [
             'sh.600519', 'sh.601318', 'sh.600036', 'sh.601166', 'sh.600887',
@@ -222,14 +230,15 @@ def fetch_with_tushare():
     ts.set_token(token)
     pro = ts.pro_api()
 
-    today_str = date.today().strftime('%Y%m%d')
+    today_str = get_beijing_date().strftime('%Y%m%d')
 
     try:
         df = pro.daily(trade_date=today_str)
     except Exception as e:
         logger.warning(f"Tushare daily 获取失败: {e}")
         try:
-            df = pro.daily(trade_date=(date.today().replace(day=max(1, date.today().day-1))).strftime('%Y%m%d'))
+            yesterday = get_beijing_date() - timedelta(days=1)
+            df = pro.daily(trade_date=yesterday.strftime('%Y%m%d'))
         except Exception as e2:
             logger.warning(f"Tushare 备用日期也失败: {e2}")
             return None
@@ -269,7 +278,7 @@ def fetch_with_yfinance():
     ]
 
     rows = []
-    today = date.today()
+    today = get_beijing_date()
 
     for code in major_stocks:
         try:
@@ -343,7 +352,7 @@ def fetch_daily_quotes_today():
 
 def fetch_lhb_today():
     """龙虎榜"""
-    today_str = date.today().strftime('%Y%m%d')
+    today_str = get_beijing_date().strftime('%Y%m%d')
     try:
         import akshare as ak
         df = ak.stock_lhb_detail_em(start_date=today_str, end_date=today_str)
@@ -374,7 +383,7 @@ def fetch_lhb_today():
             name = r.get(col_name, '') or '' if col_name else ''
             reason = r.get(col_reason, '') or '' if col_reason else ''
             net = r.get(col_net, 0) or 0 if col_net else 0
-            rows.append((date.today(), ts, name, reason, 0, 0, net, False))
+            rows.append((get_beijing_date(), ts, name, reason, 0, 0, net, False))
         except Exception as e:
             logger.debug(f"lhb row error: {e}")
             continue
@@ -403,7 +412,7 @@ def fetch_hsgt_top10():
     for _, r in df.iterrows():
         code = str(r.get('代码','')).zfill(6)
         ts = code + ('.SH' if code.startswith('6') else '.SZ')
-        rows.append((ts, date.today(), 0, r.get('今日持股市值',0), 0))
+        rows.append((ts, get_beijing_date(), 0, r.get('今日持股市值',0), 0))
     if rows:
         conn = get_db(); cur = conn.cursor()
         execute_values(cur, """

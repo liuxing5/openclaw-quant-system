@@ -1,7 +1,7 @@
 """每日候选池生成 - 盘前/盘后双跑"""
 import os
 import json
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime, timezone
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from loguru import logger
@@ -15,6 +15,14 @@ MIN_SELECT_SCORE = 50
 MAX_SELECTED = 8
 MIN_LIQUIDITY = 1e8
 
+# 北京时间时区
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def get_beijing_date():
+    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
+    return datetime.now(BEIJING_TZ).date()
+
 
 def get_db():
     return psycopg2.connect(
@@ -27,7 +35,7 @@ def get_db():
 
 
 def aggregate_today():
-    today = date.today()
+    today = get_beijing_date()
     cutoff = today - timedelta(days=2)
 
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)

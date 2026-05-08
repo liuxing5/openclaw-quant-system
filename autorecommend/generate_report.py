@@ -1,7 +1,7 @@
 """生成每日推荐报告 - HTML + 文本格式"""
 import os
 import json
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from jinja2 import Template
@@ -11,6 +11,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
+
+# 北京时间时区
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def get_beijing_date():
+    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
+    return datetime.now(BEIJING_TZ).date()
 
 
 def get_db():
@@ -198,7 +206,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 
 def generate_report():
-    today = date.today()
+    today = get_beijing_date()
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
     cur.execute("""
@@ -257,7 +265,7 @@ def generate_report():
 
 def generate_text_report():
     """生成文本格式的报告"""
-    today = date.today()
+    today = get_beijing_date()
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
     # 获取候选股

@@ -6,7 +6,7 @@ import hashlib
 import warnings
 import threading
 import concurrent.futures
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 import pandas as pd
 import psycopg2
 from psycopg2.extras import execute_values
@@ -21,6 +21,14 @@ load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 FETCH_TIMEOUT = 30
 CONCEPT_TIMEOUT = 20
+
+# 北京时间时区
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def get_beijing_date():
+    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
+    return datetime.now(BEIJING_TZ).date()
 
 
 def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT):
@@ -71,6 +79,7 @@ def fetch_akshare_news():
     """AKShare 财经新闻 - 多接口兜底"""
     import akshare as ak
     rows = []
+    today = get_beijing_date()
     for fetch_func in [
         lambda: ak.news_cctv(),
         lambda: ak.stock_info_cjzc_em(),
@@ -113,7 +122,7 @@ def fetch_akshare_news():
 def fetch_akshare_lhb():
     """龙虎榜 -> 信号"""
     import akshare as ak
-    today_str = date.today().strftime('%Y%m%d')
+    today_str = get_beijing_date().strftime('%Y%m%d')
     rows = []
     try:
         df = ak.stock_lhb_detail_em(start_date=today_str, end_date=today_str)
@@ -155,7 +164,7 @@ def fetch_akshare_lhb():
 def fetch_akshare_zt_pool():
     """涨停板池 -> 信号"""
     import akshare as ak
-    today_str = date.today().strftime('%Y%m%d')
+    today_str = get_beijing_date().strftime('%Y%m%d')
     rows = []
     try:
         df = ak.stock_zt_pool_em(date=today_str)
@@ -228,7 +237,7 @@ def fetch_akshare_research():
                 logger.warning(f"research {func_name}: 列不全 {list(df.columns)[:10]}")
                 continue
             df[col_date] = pd.to_datetime(df[col_date], errors='coerce')
-            cutoff = pd.Timestamp(date.today() - timedelta(days=3))
+            cutoff = pd.Timestamp(get_beijing_date() - timedelta(days=3))
             df = df[df[col_date] >= cutoff]
             for _, r in df.iterrows():
                 try:
@@ -264,7 +273,7 @@ def fetch_akshare_jgdy():
     import akshare as ak
     rows = []
     try:
-        target_dates = [(date.today() - timedelta(days=i)).strftime('%Y%m%d') for i in range(3)]
+        target_dates = [(get_beijing_date() - timedelta(days=i)).strftime('%Y%m%d') for i in range(3)]
         for d in target_dates:
             try:
                 df = ak.stock_jgdy_detail_em(date=d)

@@ -2,7 +2,7 @@
 import os
 import asyncio
 import json
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from telegram import Bot
@@ -18,6 +18,14 @@ BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 PROXY_URL = os.getenv('TELEGRAM_PROXY')
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
+
+# 北京时间时区
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def get_beijing_date():
+    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
+    return datetime.now(BEIJING_TZ).date()
 
 MIN_SELECT_SCORE = 50
 
@@ -108,7 +116,7 @@ async def push_daily_candidates():
     request = HTTPXRequest(**request_kwargs)
     
     bot = Bot(BOT_TOKEN, request=request)
-    today = date.today()
+    today = get_beijing_date()
     
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
