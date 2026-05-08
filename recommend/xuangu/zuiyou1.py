@@ -138,7 +138,7 @@ except ImportError:
 #  1. 全局配置
 # ============================================================
 CONFIG_STABLE = {
-    "MODE": "realtime",
+    "MODE": "post",
     "POOL": "hs300+zz500",
     "min_amount": 200_000_000,
     "max_amount": 5_000_000_000,

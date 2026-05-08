@@ -181,7 +181,10 @@ def main(once=False):
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     logger.add(log_file, rotation='100 MB')
 
-    logger.info(f"启动提取器 - 主模型: {PRIMARY_MODEL}, 备用: {BACKUP_MODEL}")
+    logger.info("=" * 50)
+    logger.info(f"主模型: {PRIMARY_MODEL}")
+    logger.info(f"备用模型: {BACKUP_MODEL}")
+    logger.info("=" * 50)
 
     MAX_BATCH = 200
     total_processed = 0
