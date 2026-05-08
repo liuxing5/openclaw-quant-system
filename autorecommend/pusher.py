@@ -126,10 +126,11 @@ async def push_daily_candidates():
     
     if not cands:
         cur.execute("""
-            SELECT COUNT(*) FROM daily_candidates
+            SELECT COUNT(*) as cnt FROM daily_candidates
             WHERE snapshot_date=%s;
         """, (today,))
-        total = cur.fetchone()[0]
+        row = cur.fetchone()
+        total = row['cnt'] if hasattr(row, 'keys') else row[0]
         msg = (f"📊 <b>{today}</b> 推荐报告\n\n"
                f"今日无符合条件的推荐\n"
                f"（共分析 {total} 只候选股，均未达到阈值 {MIN_SELECT_SCORE} 分）\n\n"

@@ -3,12 +3,13 @@ import os
 import json
 import time
 import argparse
+import threading
+import concurrent.futures
 from openai import OpenAI
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from loguru import logger
 from dotenv import load_dotenv
-from tenacity import retry, stop_after_attempt, wait_exponential
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
@@ -21,16 +22,48 @@ BACKUP_API_KEY = os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
 BACKUP_BASE_URL = os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 BACKUP_MODEL = os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
-current_api_key = PRIMARY_API_KEY
-current_base_url = PRIMARY_BASE_URL
-current_model = PRIMARY_MODEL
-consecutive_errors = 0
-MAX_ERRORS_BEFORE_SWITCH = 3
-
-client = OpenAI(api_key=current_api_key, base_url=current_base_url)
+CONCURRENCY = 10
 
 with open(os.path.join(BASE_DIR, 'extract_v1.txt')) as f:
     PROMPT_TPL = f.read()
+
+_thread_local = threading.local()
+
+
+def get_client():
+    """每个线程独立的 OpenAI client"""
+    if not hasattr(_thread_local, 'client'):
+        _thread_local.client = OpenAI(api_key=PRIMARY_API_KEY, base_url=PRIMARY_BASE_URL)
+        _thread_local.model = PRIMARY_MODEL
+        _thread_local.errors = 0
+    return _thread_local.client, _thread_local.model
+
+
+def call_llm(prompt: str) -> dict:
+    """LLM 调用，带重试和模型切换"""
+    for attempt in range(3):
+        client, model = get_client()
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.1,
+                max_tokens=2000,
+                response_format={"type": "json_object"},
+            )
+            _thread_local.errors = 0
+            return json.loads(resp.choices[0].message.content)
+        except Exception as e:
+            _thread_local.errors += 1
+            logger.warning(f"LLM 调用失败 (线程{threading.current_thread().name}, 第{attempt+1}次): {e}")
+            if _thread_local.errors >= 3 and model == PRIMARY_MODEL:
+                logger.warning(f"切换到备用模型: {BACKUP_MODEL}")
+                _thread_local.client = OpenAI(api_key=BACKUP_API_KEY, base_url=BACKUP_BASE_URL)
+                _thread_local.model = BACKUP_MODEL
+                _thread_local.errors = 0
+            if attempt < 2:
+                time.sleep(2 ** attempt)
+    return {}
 
 
 def get_db():
@@ -41,51 +74,6 @@ def get_db():
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),
     )
-
-
-def switch_to_backup():
-    global client, current_api_key, current_base_url, current_model, consecutive_errors
-    if current_model == BACKUP_MODEL:
-        return
-    logger.warning(f"切换到备用模型: {BACKUP_MODEL}")
-    current_api_key = BACKUP_API_KEY
-    current_base_url = BACKUP_BASE_URL
-    current_model = BACKUP_MODEL
-    client = OpenAI(api_key=current_api_key, base_url=current_base_url)
-    consecutive_errors = 0
-
-
-def switch_to_primary():
-    global client, current_api_key, current_base_url, current_model, consecutive_errors
-    if current_model == PRIMARY_MODEL:
-        return
-    logger.info(f"切换回主模型: {PRIMARY_MODEL}")
-    current_api_key = PRIMARY_API_KEY
-    current_base_url = PRIMARY_BASE_URL
-    current_model = PRIMARY_MODEL
-    client = OpenAI(api_key=current_api_key, base_url=current_base_url)
-    consecutive_errors = 0
-
-
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(min=2, max=30))
-def call_llm(prompt: str) -> dict:
-    global consecutive_errors
-    try:
-        resp = client.chat.completions.create(
-            model=current_model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.1,
-            max_tokens=2000,
-            response_format={"type": "json_object"},
-        )
-        consecutive_errors = 0
-        return json.loads(resp.choices[0].message.content)
-    except Exception as e:
-        consecutive_errors += 1
-        logger.warning(f"LLM 调用失败 (连续{consecutive_errors}次): {e}")
-        if consecutive_errors >= MAX_ERRORS_BEFORE_SWITCH:
-            switch_to_backup()
-        raise
 
 
 def fetch_pending(limit=20):
@@ -165,15 +153,15 @@ def process_one(row):
         pub_time=row['pub_time'], title=row['title'] or '',
         content=(row['content'] or '')[:4000],
     )
+    n = 0
     try:
         result = call_llm(prompt)
         items = result.get('items', []) if result.get('is_recommendation', False) else []
         n = store_extraction(row['id'], row['source_name'], row['pub_time'], items)
         logger.info(f"raw_id={row['id']} -> {n or 0} signals")
-        if current_model != PRIMARY_MODEL:
-            switch_to_primary()
     except Exception as e:
         logger.error(f"extract failed for {row['id']}: {e}")
+    return row['id'], n
 
 
 def main(once=False):
@@ -184,24 +172,30 @@ def main(once=False):
     logger.info("=" * 50)
     logger.info(f"主模型: {PRIMARY_MODEL}")
     logger.info(f"备用模型: {BACKUP_MODEL}")
+    logger.info(f"并发数: {CONCURRENCY}")
     logger.info("=" * 50)
 
-    MAX_BATCH = 200
+    MAX_BATCH = 500
     total_processed = 0
 
     while total_processed < MAX_BATCH:
-        rows = fetch_pending(20)
+        rows = fetch_pending(50)
         if not rows:
             logger.info("无待处理数据，退出")
             break
-        for r in rows:
-            process_one(r)
-            total_processed += 1
-            time.sleep(0.3)
-            if total_processed >= MAX_BATCH:
-                break
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
+            futures = {executor.submit(process_one, r): r for r in rows}
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    rid, n = future.result()
+                    total_processed += 1
+                except Exception as e:
+                    logger.error(f"线程异常: {e}")
+                    total_processed += 1
+
         if once and total_processed > 0:
-            time.sleep(2)
+            break
 
     logger.info(f"提取完成，处理 {total_processed} 条")
 
