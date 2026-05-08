@@ -25,61 +25,26 @@ def get_db():
     )
 
 
-def get_or_fetch_quote(cur, ts_code, today):
-    """优先查库，没有则实时拉一次"""
-    cur.execute("""
-        SELECT close, pct_chg, turnover_rate, amount
-        FROM daily_quotes WHERE ts_code=%s AND trade_date=%s;
-    """, (ts_code, today))
-    q = cur.fetchone()
-    if q:
-        return dict(q) if hasattr(q, 'keys') else {
-            'close': q[0], 'pct_chg': q[1],
-            'turnover_rate': q[2], 'amount': q[3]
-        }
-
-    try:
-        import akshare as ak
-        code_pure = ts_code.split('.')[0]
-        df = ak.stock_zh_a_spot_em()
-        match = df[df['代码'] == code_pure]
-        if not match.empty:
-            r = match.iloc[0]
-            cur.execute("""
-                INSERT INTO daily_quotes
-                (ts_code, trade_date, open, high, low, close, volume, amount, pct_chg, turnover_rate)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-                ON CONFLICT (ts_code, trade_date) DO UPDATE SET close=EXCLUDED.close;
-            """, (
-                ts_code, today,
-                float(r['今开']) if r.get('今开') else None,
-                float(r['最高']) if r.get('最高') else None,
-                float(r['最低']) if r.get('最低') else None,
-                float(r['最新价']) if r.get('最新价') else None,
-                int(r['成交量']) if r.get('成交量') else None,
-                float(r.get('成交额')) if r.get('成交额') else None,
-                float(r.get('涨跌幅')) if r.get('涨跌幅') else None,
-                float(r.get('换手率')) if r.get('换手率') else None,
-            ))
-            return {
-                'close': float(r['最新价']), 'pct_chg': float(r['涨跌幅']),
-                'turnover_rate': float(r['换手率']), 'amount': float(r.get('成交额') or 0)
-            }
-    except Exception as e:
-        logger.warning(f"实时拉 {ts_code} 失败: {e}")
-        # 事务中断时回滚，避免后续查询全部失败
-        try:
-            cur.execute("ROLLBACK")
-        except Exception:
-            pass
-    return None
-
-
 def aggregate_today():
     today = date.today()
     cutoff = today - timedelta(days=2)
 
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    # 批量加载今日行情到内存，避免逐个查询
+    cur.execute("""
+        SELECT ts_code, close, pct_chg, turnover_rate, amount
+        FROM daily_quotes WHERE trade_date=%s;
+    """, (today,))
+    quote_cache = {}
+    for q in cur.fetchall():
+        quote_cache[q['ts_code']] = {
+            'close': float(q['close']) if q['close'] else None,
+            'pct_chg': float(q['pct_chg']) if q['pct_chg'] else 0,
+            'turnover_rate': float(q['turnover_rate']) if q['turnover_rate'] else 0,
+            'amount': float(q['amount']) if q['amount'] else 0,
+        }
+    logger.info(f"加载 {len(quote_cache)} 条行情到缓存")
 
     cur.execute("""
         SELECT
@@ -109,10 +74,10 @@ def aggregate_today():
         rows = [r for r in rows if not (r['stock_name'] and 'ST' in r['stock_name'].upper())]
 
         for r in rows:
-            q = get_or_fetch_quote(cur, r['ts_code'], today)
+            q = quote_cache.get(r['ts_code'])
 
             if not q or not q.get('close'):
-                logger.warning(f"{r['ts_code']} 无行情，跳过")
+                logger.debug(f"{r['ts_code']} 无行情，跳过")
                 continue
 
             close_price = float(q['close'])

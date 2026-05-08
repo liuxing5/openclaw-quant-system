@@ -139,7 +139,7 @@ async def push_daily_candidates():
         cur.close(); conn.close()
         return
     
-    lines = [f"📊 <b>{today}</b> 候选池\n共 {len(cands)} 只\n"]
+    lines = [f"📊 <b>{today}</b>\n共 {len(cands)} 只\n"]
     
     for c in cands:
         c = dict(c)
