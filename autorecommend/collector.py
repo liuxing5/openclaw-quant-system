@@ -103,21 +103,32 @@ def fetch_akshare_lhb():
     rows = []
     try:
         df = ak.stock_lhb_detail_em(start_date=today_str, end_date=today_str)
-        if df is None or df.empty:
+        if df is None:
+            logger.warning("lhb: 接口返回 None")
+            return rows
+        if not hasattr(df, 'empty') or df.empty:
+            logger.info("lhb: 今日无数据")
+            return rows
+        col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
+        col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
+        col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
+        col_net = next((c for c in ['龙虎榜净买额', '净买额', '净额'] if c in df.columns), None)
+        if not col_code:
+            logger.warning(f"lhb: 找不到代码列，可用列: {list(df.columns)}")
             return rows
         for _, r in df.iterrows():
             try:
-                code = str(r.get('代码', '') or '').zfill(6)
+                code = str(r.get(col_code, '') or '').zfill(6)
                 if not code or code == 'nan' or len(code) < 4:
                     continue
-                name = r.get('名称', '') or ''
+                name = r.get(col_name, '') or '' if col_name else ''
                 ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-                net = r.get('龙虎榜净买额', 0) or 0
+                net = r.get(col_net, 0) or 0 if col_net else 0
+                reason = r.get(col_reason, '') or '' if col_reason else ''
                 rows.append(make_signal(
                     source='AKShare-龙虎榜', tier=1,
                     title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
-                    content=f"代码 {code} {name} 上榜原因: {r.get('上榜原因', '') or ''} "
-                           f"龙虎榜净买额 {net} 元",
+                    content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net} 元",
                 ))
             except Exception:
                 continue
@@ -174,51 +185,59 @@ def fetch_akshare_concept_hot():
 
 
 def fetch_akshare_research():
-    """个股研报"""
+    """个股研报 - 多接口兜底"""
     import akshare as ak
     rows = []
-    try:
-        df = ak.stock_research_report_em(symbol="全部")
-        if df is None or df.empty:
-            return rows
-
-        date_col = None
-        for c in ['日期', 'report_date', 'date']:
-            if c in df.columns:
-                date_col = c
-                break
-        if not date_col:
-            logger.warning("research: 找不到日期列")
-            return rows
-
-        df[date_col] = pd.to_datetime(df[date_col])
-        cutoff = pd.Timestamp(date.today() - timedelta(days=3))
-        df = df[df[date_col] >= cutoff]
-
-        for _, r in df.iterrows():
-            try:
-                code = str(r.get('股票代码', '') or '').zfill(6)
-                if not code or code == 'nan' or len(code) < 4:
-                    continue
-                name = r.get('股票简称', '') or ''
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-                rating = r.get('评级', '') or ''
-                org = r.get('机构名称', '') or ''
-                target_price = r.get('目标价', '') or ''
-                report_title = r.get('报告名称', '') or ''
-                rows.append(make_signal(
-                    source='AKShare-个股研报', tier=1,
-                    title=f"研报: {name} {ts} {rating} - {org}",
-                    content=f"代码 {code} {name} 评级 {rating} "
-                           f"目标价 {target_price} 报告标题 {report_title} "
-                           f"机构 {org}",
-                    pub_time=r[date_col],
-                ))
-            except Exception:
+    for func_name, kwargs in [
+        ('stock_research_report_em', {'symbol': '全部'}),
+        ('stock_industry_research_em', {}),
+    ]:
+        try:
+            func = getattr(ak, func_name, None)
+            if not func:
                 continue
-        logger.info(f"个股研报: {len(rows)} 条")
-    except Exception as e:
-        logger.warning(f"research 失败: {e}")
+            df = func(**kwargs) if kwargs else func()
+            if df is None or not hasattr(df, 'empty') or df.empty:
+                continue
+            col_code = next((c for c in ['股票代码', '代码', 'symbol'] if c in df.columns), None)
+            col_name = next((c for c in ['股票简称', '股票名称', '名称'] if c in df.columns), None)
+            col_date = next((c for c in ['日期', '发布日期', 'date'] if c in df.columns), None)
+            col_rating = next((c for c in ['评级', '最新评级', 'rating'] if c in df.columns), None)
+            col_org = next((c for c in ['机构名称', '机构', 'org'] if c in df.columns), None)
+            col_target = next((c for c in ['目标价', 'target_price'] if c in df.columns), None)
+            col_title = next((c for c in ['报告名称', '标题', 'title'] if c in df.columns), None)
+            if not col_code or not col_date:
+                logger.warning(f"research {func_name}: 列不全 {list(df.columns)[:10]}")
+                continue
+            df[col_date] = pd.to_datetime(df[col_date], errors='coerce')
+            cutoff = pd.Timestamp(date.today() - timedelta(days=3))
+            df = df[df[col_date] >= cutoff]
+            for _, r in df.iterrows():
+                try:
+                    code = str(r.get(col_code, '') or '').zfill(6)
+                    if not code or code == 'nan' or len(code) < 6:
+                        continue
+                    name = r.get(col_name, '') or '' if col_name else ''
+                    ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                    rating = r.get(col_rating, '') or '' if col_rating else ''
+                    org = r.get(col_org, '') or '' if col_org else ''
+                    target_price = r.get(col_target, '') or '' if col_target else ''
+                    report_title = r.get(col_title, '') or '' if col_title else ''
+                    rows.append(make_signal(
+                        source='AKShare-个股研报', tier=1,
+                        title=f"研报: {name} {ts} {rating} - {org}",
+                        content=f"代码 {code} {name} 评级 {rating} 目标价 {target_price} "
+                               f"报告 {report_title} 机构 {org}",
+                        pub_time=r[col_date],
+                    ))
+                except Exception:
+                    continue
+            logger.info(f"个股研报 ({func_name}): {len(rows)} 条")
+            if rows:
+                return rows
+        except Exception as e:
+            logger.warning(f"research {func_name} 失败: {e}")
+            continue
     return rows
 
 

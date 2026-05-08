@@ -328,18 +328,30 @@ def fetch_lhb_today():
     except Exception as e:
         logger.warning(f"lhb skipped: {e}")
         return
-    if df is None or df.empty:
+    if df is None:
+        logger.warning("lhb: 接口返回 None")
+        return
+    if not hasattr(df, 'empty') or df.empty:
         logger.info("lhb: 无数据")
+        return
+    col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
+    col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
+    col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
+    col_net = next((c for c in ['龙虎榜净买额', '净买额', '净额'] if c in df.columns), None)
+    if not col_code:
+        logger.warning(f"lhb: 找不到代码列，可用列: {list(df.columns)}")
         return
     rows = []
     for _, r in df.iterrows():
         try:
-            code = str(r.get('代码','') or '').zfill(6)
+            code = str(r.get(col_code, '') or '').zfill(6)
             if not code or code == 'nan' or len(code) < 4:
                 continue
             ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-            rows.append((date.today(), ts, r.get('名称','') or '',
-                         r.get('上榜原因','') or '', 0, 0, r.get('龙虎榜净买额',0) or 0, False))
+            name = r.get(col_name, '') or '' if col_name else ''
+            reason = r.get(col_reason, '') or '' if col_reason else ''
+            net = r.get(col_net, 0) or 0 if col_net else 0
+            rows.append((date.today(), ts, name, reason, 0, 0, net, False))
         except Exception as e:
             logger.debug(f"lhb row error: {e}")
             continue
