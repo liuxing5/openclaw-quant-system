@@ -1042,17 +1042,44 @@ def append_to_summary(
 _REJECT_TREND_FILE = os.path.join(os.path.dirname(__file__), "reject_trend.json")
 
 def _print_reject_summary(rejects: dict, total: int = 0):
-    """打印漏斗式过滤统计"""
+    """按8步法顺序打印漏斗式过滤统计"""
     if total == 0:
         total = sum(rejects.values())
+
+    # 8步法顺序映射: (显示名称, 条件说明, reject_stats中的key)
+    steps = [
+        ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
+        ("量比", ">=1", ["量比"]),
+        ("换手率", ">=5%,<=10%", ["换手率"]),
+        ("市值过滤", "50-500亿/30-200亿", ["市值"]),
+        ("量能递增", "", []),
+        ("均线+压力检测", "", ["均线", "压力"]),
+        ("分时均价线", "需盘中确认", []),
+        ("14:30回踩", "需盘中确认", []),
+    ]
+
     print("过滤统计:")
     remaining = total
-    for reason, count in sorted(rejects.items(), key=lambda x: -x[1]):
+    for step_name, condition, keys in steps:
+        count = sum(rejects.get(k, 0) for k in keys)
         if count > 0:
             pct = count / total * 100 if total > 0 else 0
             remaining -= count
-            print(f"  ✗ {reason}: {count}只({pct:.0f}%)")
+            cond_str = f"（{condition}）" if condition else ""
+            print(f"  ✗ {step_name}{cond_str} 筛选: {count}只({pct:.0f}%)")
             print(f"    ↓ 剩 {remaining} 只")
+
+    # 其他未归类的reject
+    known_keys = set()
+    for _, _, keys in steps:
+        known_keys.update(keys)
+    other_count = sum(v for k, v in rejects.items() if k not in known_keys and v > 0)
+    if other_count > 0:
+        pct = other_count / total * 100 if total > 0 else 0
+        remaining -= other_count
+        print(f"  ✗ 其他: {other_count}只({pct:.0f}%)")
+        print(f"    ↓ 剩 {remaining} 只")
+
     print(f"  ✓ 通过: {remaining} 只")
 
 def _save_reject_trend(date_str: str, rejects: dict):
@@ -1304,15 +1331,37 @@ def main():
             "Step8 14:30创新高回踩入场（需盘中人工确认）"
         )
 
-        # 构建过滤统计摘要（漏斗式）
+        # 构建过滤统计摘要（8步法漏斗式）
+        steps = [
+            ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
+            ("量比", ">=1", ["量比"]),
+            ("换手率", ">=5%,<=10%", ["换手率"]),
+            ("市值过滤", "50-500亿/30-200亿", ["市值"]),
+            ("量能递增", "", []),
+            ("均线+压力检测", "", ["均线", "压力"]),
+        ]
         reject_lines = []
         remaining = total_scanned
-        for reason, count in sorted(total_rejects.items(), key=lambda x: -x[1]):
+        for step_name, condition, keys in steps:
+            count = sum(total_rejects.get(k, 0) for k in keys)
             if count > 0:
                 pct = count / total_scanned * 100
                 remaining -= count
-                reject_lines.append(f"✗ {reason}: {count}只({pct:.0f}%)")
+                cond_str = f"（{condition}）" if condition else ""
+                reject_lines.append(f"✗ {step_name}{cond_str} 筛选: {count}只({pct:.0f}%)")
                 reject_lines.append(f"  ↓ 剩 {remaining} 只")
+
+        # 其他未归类的reject
+        known_keys = set()
+        for _, _, keys in steps:
+            known_keys.update(keys)
+        other_count = sum(v for k, v in total_rejects.items() if k not in known_keys and v > 0)
+        if other_count > 0:
+            pct = other_count / total_scanned * 100
+            remaining -= other_count
+            reject_lines.append(f"✗ 其他: {other_count}只({pct:.0f}%)")
+            reject_lines.append(f"  ↓ 剩 {remaining} 只")
+
         reject_lines.append(f"✓ 通过: {remaining} 只")
         reject_summary = "\n".join(reject_lines)
 
