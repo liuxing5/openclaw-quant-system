@@ -154,7 +154,7 @@ CONFIG_STABLE = {
     "turn_max": 10.0,
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
-    "score_threshold": 70,
+    "score_threshold": 78,
     "sentiment_cold": 30,
     "sentiment_normal": 60,
     "sentiment_hot": 100,
@@ -181,7 +181,7 @@ CONFIG_UPPER = {
     "turn_max": 10.0,
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
-    "score_threshold": 70,
+    "score_threshold": 78,
     "sentiment_cold": 30,
     "sentiment_normal": 60,
     "sentiment_hot": 100,
@@ -807,9 +807,9 @@ def analyze_ultimate(
         avg_amount_5d = hist_amounts.iloc[-5:].mean()
         if avg_amount_5d > 0:
             amount_ratio = curr_amount / avg_amount_5d
-            if amount_ratio > 2.0:
+            if amount_ratio > 3.0:
                 fine_score += 5
-                tags.append("成交额翻倍")
+                tags.append("成交额三倍量")
             elif amount_ratio < 0.8:
                 fine_score -= 3
                 tags.append("成交额萎缩↓")
@@ -823,12 +823,9 @@ def analyze_ultimate(
         elif distance_to_limit < 2.0:
             fine_score += 3
 
-    # F3. 收盘价是否守住5日均线（post模式独有）
+    # F3. 收盘价是否守住5日均线（post模式独有）—— 只扣分不加分
     if CONFIG["MODE"] == "post":
-        if curr_price > ma5_yest * 1.02:
-            fine_score += 3
-            tags.append("稳守MA5+")
-        elif curr_price < ma5_yest:
+        if curr_price < ma5_yest:
             fine_score -= 5
             tags.append("破MA5↓")
 
