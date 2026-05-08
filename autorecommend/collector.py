@@ -19,8 +19,8 @@ warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-FETCH_TIMEOUT = 30
-CONCEPT_TIMEOUT = 20
+FETCH_TIMEOUT = 60
+CONCEPT_TIMEOUT = 40
 
 # 北京时间时区
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -31,28 +31,40 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
-def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT):
-    """带超时的采集包装器"""
-    result = [None]
-    error = [None]
+def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=2):
+    """带超时的采集包装器（支持重试）"""
+    for attempt in range(max_retries + 1):
+        result = [None]
+        error = [None]
 
-    def target():
-        try:
-            result[0] = fetcher_func()
-        except Exception as e:
-            error[0] = e
+        def target():
+            try:
+                result[0] = fetcher_func()
+            except Exception as e:
+                error[0] = e
 
-    t = threading.Thread(target=target, daemon=True)
-    t.start()
-    t.join(timeout=timeout)
+        t = threading.Thread(target=target, daemon=True)
+        t.start()
+        t.join(timeout=timeout)
 
-    if t.is_alive():
-        logger.warning(f"{fetcher_func.__name__} 超时 ({timeout}s)，跳过")
-        return []
-    if error[0]:
-        logger.warning(f"{fetcher_func.__name__} 异常: {error[0]}")
-        return []
-    return result[0] or []
+        if t.is_alive():
+            if attempt < max_retries:
+                logger.warning(f"{fetcher_func.__name__} 超时 ({timeout}s)，第 {attempt + 1} 次重试...")
+                time.sleep(2)
+                continue
+            else:
+                logger.warning(f"{fetcher_func.__name__} 超时 ({timeout}s)，已重试 {max_retries} 次，跳过")
+                return []
+        if error[0]:
+            if attempt < max_retries:
+                logger.warning(f"{fetcher_func.__name__} 异常: {error[0]}，第 {attempt + 1} 次重试...")
+                time.sleep(2)
+                continue
+            else:
+                logger.warning(f"{fetcher_func.__name__} 异常: {error[0]}，已重试 {max_retries} 次")
+                return []
+        return result[0] or []
+    return []
 
 
 def get_db():
