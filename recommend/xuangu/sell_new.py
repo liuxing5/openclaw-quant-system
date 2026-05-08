@@ -101,7 +101,7 @@ except ImportError:
         # {"code": "002439", "cost": 15.30, "path": "稳健", "entry_date": "2026-04-28"},
         # {"code": "601933", "cost": 4.10},
         # {"code": "002510", "cost": 7.80},
-        # {"code": "000632", "cost": 4.60},
+        {"code": "603319", "cost": 40.04},
     ]
 
 CONFIG = {

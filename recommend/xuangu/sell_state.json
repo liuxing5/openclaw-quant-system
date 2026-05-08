@@ -1,11 +1,11 @@
 {
-  "600520": {
-    "cost": 29.8,
-    "high_water": 0.570469798657712,
-    "high_water_price": 29.97,
+  "603319": {
+    "cost": 40.04,
+    "high_water": 0.1771,
+    "high_water_price": 47.13,
     "take1_done": false,
     "take2_done": false,
     "limit_up_hit": false,
-    "first_seen": "2026-04-30 09:13:35"
+    "first_seen": "2026-05-07 14:45:35"
   }
 }
