@@ -112,6 +112,12 @@ def aggregate_today():
             else:
                 final = 0
 
+            has_lhb = any('龙虎榜' in (s.get('source') or '') for s in (r['sources'] or []))
+            has_zt = any('涨停' in (s.get('source') or '') for s in (r['sources'] or []))
+            if has_lhb and has_zt:
+                final = final * 0.6
+                logger.debug(f"{r['ts_code']} 龙虎榜+涨停板共振，降权 40%（T+1陷阱风险）")
+
             candidates.append({
                 'ts_code': r['ts_code'], 'stock_name': r['stock_name'],
                 'mention_count': r['mention_count'], 'source_diversity': r['source_diversity'],
@@ -197,11 +203,21 @@ def aggregate_today():
     for i, c in enumerate(qualified[:15]):
         is_selected = c in selected_list
         close = c['close']
-        entry_low = round(close * 0.99, 2)
-        entry_high = round(close * 1.01, 2)
-        stop = round(close * 0.97, 2)
-        t1 = round(close * 1.05, 2)
-        t2 = round(close * 1.10, 2)
+        code = c['ts_code'].split('.')[0]
+
+        if code.startswith(('688', '300', '301')):
+            entry_low = round(close * 0.985, 2)
+            entry_high = round(close * 1.015, 2)
+            stop = round(close * 0.95, 2)
+            t1 = round(close * 1.08, 2)
+            t2 = round(close * 1.15, 2)
+        else:
+            entry_low = round(close * 0.99, 2)
+            entry_high = round(close * 1.01, 2)
+            stop = round(close * 0.97, 2)
+            t1 = round(close * 1.05, 2)
+            t2 = round(close * 1.10, 2)
+
         position = 0.08 if is_selected else 0
 
         cur.execute("""
