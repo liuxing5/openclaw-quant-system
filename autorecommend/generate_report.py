@@ -1,4 +1,4 @@
-"""生成每日推荐报告 - HTML"""
+"""生成每日推荐报告 - HTML + 文本格式"""
 import os
 import json
 from datetime import date, timedelta, datetime
@@ -255,6 +255,67 @@ def generate_report():
     print(f"Report generated: {output_dir}/index.html")
 
 
+def generate_text_report():
+    """生成文本格式的报告"""
+    today = date.today()
+    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    
+    # 获取候选股
+    cur.execute("""
+        SELECT * FROM daily_candidates 
+        WHERE snapshot_date = %s ORDER BY final_score DESC;
+    """, (today,))
+    candidates = cur.fetchall()
+    
+    # 获取数据源统计
+    cur.execute("""
+        SELECT source_name, COUNT(*) as signal_count
+        FROM raw_signals
+        WHERE fetch_time >= %s
+        GROUP BY source_name
+        ORDER BY signal_count DESC;
+    """, (today - timedelta(days=2),))
+    source_stats = cur.fetchall()
+    
+    cur.close(); conn.close()
+    
+    mode_text = "盘后复盘" if RUN_MODE == 'afternoon' else "盘前参考"
+    lines = []
+    lines.append(f"{today} {mode_text}")
+    lines.append("")
+    lines.append("数据采集开始：")
+    
+    # 数据源统计
+    for s in source_stats:
+        lines.append(f"  {s['source_name']}: {s['signal_count']} 条")
+    
+    lines.append("")
+    lines.append(f"共 {len(candidates)} 只候选股")
+    lines.append("")
+    
+    # 股票详情
+    for i, c in enumerate(candidates):
+        prefix = "🎯 " if c.get('selected') else "  "
+        lines.append(f"{prefix}{c['stock_name']} {c['ts_code']}")
+        lines.append(f"  综合分: {c['final_score']:.1f} | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+        
+        if c.get('entry_low') and c.get('entry_high'):
+            lines.append(f"  入场: {c['entry_low']:.3f}-{c['entry_high']:.3f}  止损: {c['stop_loss']:.3f}")
+        
+        if c.get('target_1') and c.get('target_2'):
+            lines.append(f"  目标: {c['target_1']:.3f}/{c['target_2']:.3f}  仓位: {c['position_pct']*100:.0f}%")
+        
+        if c.get('logic_tags'):
+            tags = c['logic_tags'] if isinstance(c['logic_tags'], list) else []
+            lines.append(f"  逻辑: {', '.join(tags)}")
+        
+        lines.append("")
+    
+    return "\n".join(lines)
+
+
 if __name__ == '__main__':
     from datetime import datetime
     generate_report()
+    print("\n" + "="*50 + "\n")
+    print(generate_text_report())
