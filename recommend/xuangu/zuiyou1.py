@@ -335,11 +335,11 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         
         # 如果两个接口都返回0，可能是非交易时间
         if zt_count == 0:
-            return 50, "正常"
+            return 0, "未知"
             
     except Exception as e:
         print(f"  ⚠️ 情绪接口异常: {e}")
-        return 50, "正常"
+        return 0, "未知"
 
     if zt_count < CONFIG["sentiment_cold"]:
         mood = "冷淡"
@@ -366,13 +366,9 @@ def get_realtime_quotes(stock_list: list) -> dict:
 
     results = {}
     api_codes = [s.replace(".", "").lower() for s in stock_list]
-    total_batches = (len(api_codes) + 49) // 50
-
-    print(f"  [行情] 共 {len(api_codes)} 只，分 {total_batches} 批请求...")
 
     ok_count = 0
     for i in range(0, len(api_codes), 50):
-        batch_no = i // 50 + 1
         chunk = api_codes[i: i + 50]
         url = f"http://qt.gtimg.cn/q={','.join(chunk)}"
         try:
@@ -417,15 +413,11 @@ def get_realtime_quotes(stock_list: list) -> dict:
                 except Exception:
                     continue
 
-            if batch_no % 10 == 0 or batch_no == total_batches:
-                print(f"  [行情] 进度 {batch_no}/{total_batches} | 累计 {ok_count} 只")
-
         except Exception:
             continue
 
         time.sleep(0.12)
 
-    print(f"  [行情] 完成 | 成功={ok_count}")
     return results
 
 
@@ -1212,8 +1204,6 @@ def main():
     is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
     if is_post_time:
         append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
-    else:
-        print(f"\n  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入（等待15:10后盘后定稿）")
 
     for path_label, picks in [("稳健", stable_picks), ("高位", upper_picks)]:
         if picks.empty:

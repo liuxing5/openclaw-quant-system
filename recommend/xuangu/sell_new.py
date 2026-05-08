@@ -1,9 +1,23 @@
 """
-自动卖出系统 v2.1（sell_new.py）
+自动卖出系统 v2.2（sell_new.py）
 ========================================
-基于v2.0新增「跟踪止盈 + 状态持久化」
+基于 v2.1 新增「封板成交率评估(猎手公式)」
 
-v2.1 新增特性：
+v2.2 新增特性：
+  ✓ 封板成交率评估（基于猎手公式）
+    - 公式: 封单成交率 = (收盘买一封单量 / 全天成交量) × 100%
+    - 5档强度判断: 超强/中强/偏弱/极弱/无承接
+    - 流通市值动态阈值(小盘从严,大盘放宽)
+  ✓ POSITIONS 新字段:
+    - limit_up_at_buy: 标记买入时是涨停状态
+    - mktcap_yi: 流通市值(亿),用于动态阈值
+  ✓ 高位路径决策升级:
+    - T+1 09:25 评估封板强度
+    - 强(level≥4): 强势持有,等盘中跟踪止盈
+    - 弱(level≤2): 竞价直接清仓,不博次日
+  ✓ Telegram 推送显示封板强度等级
+
+v2.1 继承特性：
   ✓ 持久化最高盈利点（high_water）到 ./sell_state.json
   ✓ 跟踪止盈：从最高点回落 N% 自动卖出
     - 稳健路径：高点≥+3% 后回落 ≥2% 触发
@@ -11,7 +25,6 @@ v2.1 新增特性：
   ✓ 首批止盈状态保护：已止盈的股票不会重复触发"首批止盈"提示
   ✓ 涨停后炸板检测：从涨停回落 ≥2% 强制清仓信号
   ✓ 09:25 集合竞价挂单建议（开盘前预挂限价单）
-  ✓ T+1 日历对齐：自动比较 entry_date 与今日，区分 T+1 / T+N 持仓
 
 路径区分（继承v2.0）：
   稳健路径（来自hs300+zz500池）：
@@ -26,10 +39,19 @@ v2.1 新增特性：
     - 全局止损 -2.5%
     - 跟踪止盈触发线 +5%、回落3%
     - 涨停板锁仓持有，炸板回落2%清仓
+    - 【v2.2 新】涨停板买入的票,T+1开盘前评估封板强度
+
+封板强度判断标准(基于流通市值动态调整):
+  中盘股(50-200亿)基准:
+    >30%: 超强涨停 - 持有等连板
+    15-30%: 中强涨停 - 冲高即走
+    5-15%: 偏弱涨停 - 9:30冲高出
+    1-5%: 极弱涨停 - 竞价立即出
+    <1%: 无承接 - 平开即弱势
 
 运行时间：
   09:20-09:25：查看集合竞价委比，建议挂单价
-  09:26-09:30：竞价结束稳定后，主决策窗口
+  09:26-09:30：竞价结束稳定后，主决策窗口（含封板强度评估）
   盘中定时：09:30 / 10:00 / 10:30 / 13:00 / 14:00
 """
 
@@ -86,6 +108,26 @@ CONFIG = {
     "state_file": "./sell_state.json",
     "check_times": ["09:30", "10:00", "10:30", "13:00", "14:00"],
     "stop_loss_global": -2.5,
+
+    # ============== v2.2 新增:封板强度评估配置 ==============
+    "limit_strength": {
+        # 基准阈值(中盘股 50-200亿 标准)
+        "threshold_super": 30.0,    # >30% 超强涨停
+        "threshold_strong": 15.0,   # 15-30% 中强
+        "threshold_weak": 5.0,      # 5-15% 偏弱
+        "threshold_dead": 1.0,      # 1-5% 极弱, <1% 无承接
+
+        # 流通市值动态系数
+        # 小盘股(<50亿)阈值×1.5,要求更严
+        # 大盘股(>500亿)阈值×0.5,门槛更低
+        "mktcap_multipliers": [
+            (50,   1.5),   # <50亿  → ×1.5
+            (200,  1.0),   # 50-200亿 → ×1.0(基准)
+            (500,  0.7),   # 200-500亿 → ×0.7
+            (10000, 0.5),  # >500亿 → ×0.5
+        ],
+    },
+
     "paths": {
         "稳健": {
             "open_stop": -1.0,
@@ -156,6 +198,10 @@ def get_position_state(state: Dict, code: str, cost: float) -> Dict:
         "take1_done": False,      # 首批止盈已触发
         "take2_done": False,      # 二级止盈已触发
         "limit_up_hit": False,    # 是否曾经涨停
+        # v2.2: 封板强度评估状态
+        "limit_strength_evaluated": False,  # 是否已评估过封板强度(只评估一次)
+        "limit_strength_level": 0,          # 评估出的强度等级 1-5
+        "limit_strength_ratio": 0.0,        # 评估出的封单成交率
         "first_seen": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
@@ -240,7 +286,136 @@ def get_realtime_data(codes: list) -> dict:
 
 
 # ============================================================
-#  卖出决策引擎（v2.1）
+#  v2.2: 封板强度评估(基于猎手公式)
+# ============================================================
+def get_limit_pct(code: str) -> float:
+    """根据股票代码返回涨停阈值(动态判断板块)"""
+    pure_code = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
+    # 创业板/科创板 20%
+    if pure_code.startswith("30") or pure_code.startswith("68"):
+        return 19.8
+    # 北交所 30%
+    if pure_code.startswith("8") or pure_code.startswith("43"):
+        return 29.8
+    # 主板/中小板 10%
+    return 9.8
+
+
+def evaluate_limit_strength(
+    code: str,
+    market_data: dict,
+    mktcap_yi: float = 0,
+) -> Optional[Dict]:
+    """
+    评估封板强度(基于猎手公式)
+    
+    封单成交率 = (收盘买一封单量 / 全天成交量) × 100%
+    
+    Args:
+        code: 股票代码(腾讯接口格式如 sh600519)
+        market_data: get_realtime_data 返回的数据字典
+        mktcap_yi: 流通市值(亿),用于动态调整阈值
+    
+    Returns:
+        None: 不是涨停板或数据不足
+        dict: {
+            "ratio": 封单成交率%,
+            "level": 强度等级 1-5(5最强),
+            "label": 中文标签,
+            "action": 建议动作,
+            "advice": 详细建议,
+        }
+    """
+    info = market_data.get(code)
+    if not info:
+        return None
+
+    curr_pct = info.get("curr_pct", 0)
+
+    # 判断是否当日涨停(允许 0.2% 浮点误差)
+    limit_pct = get_limit_pct(code)
+    if curr_pct < limit_pct - 0.2:
+        return None
+
+    # 拿封单量和成交量(腾讯接口字段都有)
+    bid1_vol = info.get("bid1_vol", 0)
+    today_vol = info.get("vol", 0)
+
+    if today_vol <= 0:
+        return None
+
+    # 封板成交率(用股数比,腾讯接口直接给手数)
+    ratio = (bid1_vol / today_vol) * 100
+
+    # 流通市值动态调整阈值
+    multiplier = 1.0
+    if mktcap_yi > 0:
+        for mktcap_threshold, mult in CONFIG["limit_strength"]["mktcap_multipliers"]:
+            if mktcap_yi < mktcap_threshold:
+                multiplier = mult
+                break
+
+    cfg = CONFIG["limit_strength"]
+    th_super = cfg["threshold_super"] * multiplier
+    th_strong = cfg["threshold_strong"] * multiplier
+    th_weak = cfg["threshold_weak"] * multiplier
+    th_dead = cfg["threshold_dead"] * multiplier
+
+    if ratio > th_super:
+        return {
+            "ratio": round(ratio, 2),
+            "level": 5,
+            "label": "🚀 超强涨停",
+            "action": "强势持有",
+            "advice": (
+                f"封单率{ratio:.1f}% > {th_super:.1f}%(超强阈值),"
+                f"次日易连板/高溢价"
+            ),
+        }
+    elif ratio > th_strong:
+        return {
+            "ratio": round(ratio, 2),
+            "level": 4,
+            "label": "💪 中强涨停",
+            "action": "冲高落袋",
+            "advice": (
+                f"封单率{ratio:.1f}%(中强),9:30冲高即走,保利润"
+            ),
+        }
+    elif ratio > th_weak:
+        return {
+            "ratio": round(ratio, 2),
+            "level": 3,
+            "label": "⚠️ 偏弱涨停",
+            "action": "9:30冲高即出",
+            "advice": (
+                f"封单率{ratio:.1f}%(偏弱),开盘冲高第一时间出货"
+            ),
+        }
+    elif ratio > th_dead:
+        return {
+            "ratio": round(ratio, 2),
+            "level": 2,
+            "label": "🔴 极弱涨停",
+            "action": "竞价直接挂卖",
+            "advice": (
+                f"封单率{ratio:.1f}%(极弱),集合竞价即挂卖单"
+            ),
+        }
+    else:
+        return {
+            "ratio": round(ratio, 2),
+            "level": 1,
+            "label": "💀 无承接",
+            "action": "立即离场",
+            "advice": (
+                f"封单率{ratio:.1f}%(无承接),平开即弱势,无幻想"
+            ),
+        }
+
+
+# ============================================================
+#  卖出决策引擎（v2.2）
 # ============================================================
 def decide_sell(
     code: str,
@@ -248,8 +423,11 @@ def decide_sell(
     path: str,
     market_data: dict,
     state_rec: Dict,
+    pos_meta: Optional[Dict] = None,  # v2.2: 持仓元数据(limit_up_at_buy, mktcap_yi)
 ) -> dict:
     cfg = CONFIG["paths"].get(path, CONFIG["paths"]["稳健"])
+    if pos_meta is None:
+        pos_meta = {}
 
     info = market_data.get(code)
     if not info:
@@ -327,6 +505,48 @@ def decide_sell(
         result["reason"] = "高位路径竞价≤0立即清仓"
         result["priority"] = 5
         return result
+
+    # ---------- 优先级 4.5: v2.2 封板强度评估(开盘前用) ----------
+    # 仅适用: 高位路径 + 买入时是涨停状态 + T+1 开盘前(09:30 前)
+    # 评估 T 日收盘的封板强度,决定 T+1 是持有还是卖出
+    
+    if (
+        path == "高位" 
+        and pos_meta.get("limit_up_at_buy")
+        and not state_rec.get("limit_strength_evaluated")  # 只评估一次
+    ):
+        mktcap_yi = pos_meta.get("mktcap_yi", 0)
+        strength = evaluate_limit_strength(code, market_data, mktcap_yi)
+        
+        if strength:
+            # 把封板强度写入状态(只评估一次)
+            state_rec["limit_strength_evaluated"] = True
+            state_rec["limit_strength_level"] = strength["level"]
+            state_rec["limit_strength_ratio"] = strength["ratio"]
+            
+            # 把强度信息写入 result
+            result["limit_strength"] = strength
+            
+            # 根据强度等级触发不同动作
+            if strength["level"] >= 4:
+                # 超强(5) + 中强(4): 强势持有,等盘中跟踪止盈
+                result["action"] = f"{strength['label']}持有"
+                result["reason"] = strength["advice"]
+                result["priority"] = 0
+                result["take_info"] = "等盘中跟踪止盈/分批止盈触发"
+                # 不 return,让后续判断继续(可能被全局止损/竞价低开覆盖)
+            elif strength["level"] == 3:
+                # 偏弱: 9:30 冲高即出
+                result["action"] = f"{strength['label']}冲高出"
+                result["reason"] = strength["advice"]
+                result["priority"] = 2
+                # 不 return,继续走开盘弱势判断
+            elif strength["level"] <= 2:
+                # 极弱(2) + 无承接(1): 竞价立即清仓
+                result["action"] = f"{strength['label']}清仓"
+                result["reason"] = strength["advice"]
+                result["priority"] = 4
+                return result  # 直接返回,优先级足够高
 
     # ---------- 优先级 4：涨停炸板 / 跟踪止盈 ----------
 
@@ -457,7 +677,7 @@ def auction_advice(code: str, cost: float, path: str, market_data: dict) -> Opti
 def run():
     now = get_beijing_time()
     print("=" * 70)
-    print("  自动卖出系统 v2.1（含跟踪止盈 + 状态持久化）")
+    print("  自动卖出系统 v2.2（含封板强度评估 + 跟踪止盈 + 状态持久化）")
     print(f"  运行时间: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)
 
@@ -498,8 +718,15 @@ def run():
         cost = p["cost"]
         path = p.get("path", "稳健")
 
+        # v2.2: 提取持仓元数据(用于封板强度评估)
+        pos_meta = {
+            "limit_up_at_buy": p.get("limit_up_at_buy", False),
+            "mktcap_yi": p.get("mktcap_yi", 0),
+            "entry_date": p.get("entry_date", ""),
+        }
+
         state_rec = get_position_state(state, code, cost)
-        res = decide_sell(code, cost, path, market_data, state_rec)
+        res = decide_sell(code, cost, path, market_data, state_rec, pos_meta)
         res["path"] = path
         results.append(res)
 
@@ -531,6 +758,11 @@ def run():
         )
         if row.get("take_info"):
             print(f"{'':<10}{'':<10}{'':<6}{'':<55}    └─ {row['take_info']}")
+        # v2.2: 显示封板强度评估结果
+        if row.get("limit_strength"):
+            ls = row["limit_strength"]
+            print(f"{'':<10}{'':<10}{'':<6}{'':<55}    🎯 封板强度: {ls['label']} "
+                  f"(率{ls['ratio']}% / 等级{ls['level']}/5)")
 
     # 紧急清单
     urgent = [r for r in results_sorted if r["priority"] >= 4]
@@ -550,12 +782,21 @@ def run():
                 code = row["code"]
                 action_key = f"{today_str}_{code}_{row['action']}"
                 if action_key not in notified_codes:
+                    # v2.2: 如果有封板强度信息,附加到 reason
+                    reason_with_strength = row["reason"]
+                    if row.get("limit_strength"):
+                        ls = row["limit_strength"]
+                        reason_with_strength = (
+                            f"{row['reason']}\n"
+                            f"封板强度: {ls['label']} "
+                            f"(率{ls['ratio']}%/等级{ls['level']}/5)"
+                        )
                     try:
                         send_sell_alert(
                             code=row["code"],
                             name=row["name"],
                             action=row["action"],
-                            reason=row["reason"],
+                            reason=reason_with_strength,
                             profit_pct=row["profit_pct"],
                             priority=row["priority"],
                         )
@@ -591,6 +832,10 @@ def run():
     print("  分批止盈：")
     print("    稳健[+3%→1/3 / +5%→1/3 / +6%清仓]（已止盈状态自动跳过）")
     print("    高位[+5%→1/3 / +7%→1/3 / +9%清仓]（已止盈状态自动跳过）")
+    print("  v2.2 封板强度评估(仅 limit_up_at_buy=True 的高位票):")
+    print("    超强(>30%)→持有 | 中强(15-30%)→冲高出 | 偏弱(5-15%)→9:30出")
+    print("    极弱(1-5%)→竞价清 | 无承接(<1%)→平开即出")
+    print("    (按流通市值动态调整: 小盘×1.5 / 中盘×1.0 / 大盘×0.5)")
     print(f"  状态文件：{CONFIG['state_file']}（每次运行自动更新最高盈利点）")
     print("=" * 70)
 
