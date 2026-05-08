@@ -97,7 +97,7 @@ def preload_industries(stock_pool: list):
             except Exception:
                 pass
 
-    print("  预热行业缓存（首次或过期）...")
+    print("预热行业缓存（首次或过期）...")
     for code in stock_pool:
         get_stock_industry(code)
 
@@ -421,7 +421,7 @@ def get_realtime_quotes(stock_list: list) -> dict:
 
         time.sleep(0.12)
 
-    print(f"  [行情] 完成 | 成功={ok_count}")
+    print(f"行情获取: 成功={ok_count} 只")
     return results
 
 
@@ -853,18 +853,18 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
     pool_name = cfg["POOL"]
     mode = cfg["MODE"]
 
-    print(f"\n{'=' * 60}")
-    print(f"  扫描池: [{pool_name}]  模式: {mode}  时间权重: {time_weight:.2f}")
-    print(f"{'=' * 60}")
+    print(f"\n扫描池: [{pool_name}]  模式: {mode}  时间权重: {time_weight:.2f}")
+    print()
 
     stock_pool = get_stock_pool()
+    print(f"股票池: [{pool_name}] 共 {len(stock_pool)} 只")
 
     # 预热行业缓存（首次或7天过期时批量查询）
     preload_industries(stock_pool)
 
     # post 模式也用腾讯接口获取收盘数据（baostock 历史数据有延迟）
     real_map = get_realtime_quotes(stock_pool)
-    print(f"  实时行情获取: {len(real_map)} 只")
+    print(f"实时行情获取: {len(real_map)} 只")
 
     results = []
     total = len(stock_pool)
@@ -877,7 +877,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
         "压力": 0, "得分不足": 0,
     }
 
-    print(f"  开始扫描 {total} 只股票...")
+    print(f"开始扫描 {total} 只股票...")
 
     for code in stock_pool:
         key = code.replace(".", "").lower()
@@ -919,11 +919,10 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
             else:
                 print(msg)
 
-    print(f"\n  📊 过滤统计 [{pool_name}]:")
+    print(f"\n过滤统计 [{pool_name}]:")
     for reason, count in sorted(reject_stats.items(), key=lambda x: -x[1]):
         if count > 0:
-            bar = "█" * min(count // 5, 20)
-            print(f"    {reason:>8}: {count:>5} {bar}")
+            print(f"  {reason:>8}: {count:>5}")
 
     return results, reject_stats
 
@@ -1046,12 +1045,11 @@ def _print_reject_summary(rejects: dict, total: int = 0):
     """打印过滤统计，带百分比"""
     if total == 0:
         total = sum(rejects.values())
-    print("  过滤统计:")
+    print("过滤统计:")
     for reason, count in sorted(rejects.items(), key=lambda x: -x[1]):
         if count > 0:
             pct = count / total * 100 if total > 0 else 0
-            bar = "█" * min(int(pct // 3), 20)
-            print(f"    ✗ {reason:>8}: {count:>5} ({pct:5.1f}%) {bar}")
+            print(f"  ✗ {reason:>8}: {count:>5} ({pct:5.1f}%)")
 
 def _save_reject_trend(date_str: str, rejects: dict):
     """保存当日过滤瓶颈到文件，展示5日趋势"""
@@ -1107,12 +1105,11 @@ def _save_reject_trend(date_str: str, rejects: dict):
 #  8. 主程序
 # ============================================================
 def main():
-    print("=" * 70)
-    print(f"  隔夜选股法·最优融合版 v1.2")
-    print(f"  双池策略：稳健[hs300+zz500] + 高位[zz1000]")
-    print(f"  完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
-    print(f"  运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 70)
+    print(f"隔夜选股法·最优融合版 v1.2")
+    print(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
+    print(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
+    print(f"运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print()
 
     lg = bs.login()
     if lg.error_code != "0":
@@ -1127,14 +1124,14 @@ def main():
     print(f"\n📊 市场情绪: 今日涨停 {zt_count} 家 → [{mood}]")
 
     if mood == "冷淡":
-        print("  ⚠️ 情绪冷淡，仅启用稳健路径(3%-5%)，高位路径自动关闭")
+        print("情绪冷淡，仅启用稳健路径(3%-5%)，高位路径自动关闭")
     elif mood in ("活跃", "高潮"):
-        print("  🔥 情绪偏热，高位路径(6%-9.7%)已开放，注意风控")
+        print("情绪偏热，高位路径(6%-9.7%)已开放，注意风控")
     else:
-        print("  📌 情绪正常，双路径运行")
+        print("情绪正常，双路径运行")
 
-    print(f"  稳健路径仓位: {CONFIG_STABLE['position_ratio']}")
-    print(f"  高位路径仓位: {CONFIG_UPPER['position_ratio']}")
+    print(f"稳健路径仓位: {CONFIG_STABLE['position_ratio']}")
+    print(f"高位路径仓位: {CONFIG_UPPER['position_ratio']}")
 
     end_d = beijing_now().strftime("%Y-%m-%d")
 
@@ -1166,9 +1163,9 @@ def main():
                 if r["pool"] not in all_results[c]["pool"]:
                     all_results[c]["pool"] += "+" + r["pool"]
 
-    print("\n" + "=" * 70)
-    print(f"  🔥 隔夜选股法·最优精选清单  ({end_d})  情绪: {mood}({zt_count}家涨停)")
-    print("=" * 70)
+    print()
+    print(f"隔夜选股法·最优精选清单  ({end_d})  情绪: {mood}({zt_count}家涨停)")
+    print()
 
     if not all_results:
         print("\n  今日暂无符合条件的标的。")
@@ -1186,10 +1183,10 @@ def main():
     final_count_limit = 5
     if zt_count >= 100:
         final_count_limit = 3
-        print(f"\n  ⚠️ 市场高潮(>=100涨停),推荐数压缩到 {final_count_limit} 只,提示防顶部")
+        print(f"\n市场高潮(>=100涨停),推荐数压缩到 {final_count_limit} 只,提示防顶部")
     elif zt_count >= 80:
         final_count_limit = 4
-        print(f"\n  ⚠️ 市场偏热(>=80涨停),推荐数压缩到 {final_count_limit} 只")
+        print(f"\n市场偏热(>=80涨停),推荐数压缩到 {final_count_limit} 只")
 
     stable_picks = final_df[final_df["path"] == "稳健"].head(final_count_limit)
     upper_picks = final_df[final_df["path"] == "高位"].head(final_count_limit)
@@ -1198,8 +1195,8 @@ def main():
     total_scanned = sum(total_rejects.values()) + total_candidates
 
     # 打印过滤统计主报告
-    print(f"\n  📊 今日扫描汇总: {total_scanned} 只")
-    print(f"    ✓ 通过: {total_candidates} 只")
+    print(f"\n今日扫描汇总: {total_scanned} 只")
+    print(f"通过: {total_candidates} 只")
     _print_reject_summary(total_rejects, total_scanned)
     _save_reject_trend(end_d, total_rejects)
 
@@ -1209,7 +1206,7 @@ def main():
     if is_post_time:
         append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
     else:
-        print(f"\n  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入和推送（等待15:10后盘后定稿）")
+        print(f"\n当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入和推送（等待15:10后盘后定稿）")
         # 非盘后时间，跳过后续推送
         return
 
@@ -1218,31 +1215,27 @@ def main():
             continue
 
         pos_hint = CONFIG_UPPER["position_ratio"] if path_label == "高位" else CONFIG_STABLE["position_ratio"]
-        print(f"\n  ── {path_label}路径 ({len(picks)} 只)  💰 {pos_hint}")
-        print(f"  {'代码':<14} {'池子':<16} {'价格':>7} {'涨幅%':>7} {'量比':>6} "
+        print(f"\n{path_label}路径 ({len(picks)} 只)  {pos_hint}")
+        print(f"{'代码':<14} {'池子':<16} {'价格':>7} {'涨幅%':>7} {'量比':>6} "
               f"{'换手%':>7} {'连板':>5} {'乖离%':>7} {'得分':>5}  特征")
-        print(f"  {'-' * 125}")
         for _, row in picks.iterrows():
             print(
-                f"  {row['code']:<14} {row['pool']:<16} {row['price']:>7.2f} "
+                f"{row['code']:<14} {row['pool']:<16} {row['price']:>7.2f} "
                 f"{row['pct']:>7.2f} {row['vol_ratio']:>6.2f} {row['turn']:>7.2f} "
                 f"{row['streak']:>5} {row['bias_ma5']:>7.2f} {row['score']:>5}  {row['tags']}"
             )
 
-    print("\n" + "─" * 70)
-    print("  💡 操作指引")
-    print("  ─────────────────────────────────────────────────────")
-    print("  稳健路径(hs300+zz500)：仓位≤15%，次日09:35未维持昨收+1%即出")
-    print("  高位路径(zz1000)    ：仓位≤8%，次日竞价弱于昨收即清仓")
-    print("  连板≥3板            ：高度风险，仓位再减半，不超过4%")
-    print("  全局止损线          ：任意标的亏损超2.5%当日无条件止损")
-    print("  ─────────────────────────────────────────────────────")
-    print("  📋 8步法完整度检查：")
-    print("  ✅ Step1 涨幅筛选   ✅ Step2 量比   ✅ Step3 换手率")
-    print("  ✅ Step4 市值过滤   ✅ Step5 量能递增   ✅ Step6 均线+压力检测")
-    print("  ⚠️ Step7 分时均价线上方（需盘中人工确认）")
-    print("  ⚠️ Step8 14:30创新高回踩入场（需盘中人工确认）")
-    print("─" * 70 + "\n")
+    print(f"\n操作指引")
+    print(f"稳健路径(hs300+zz500)：仓位≤15%，次日09:35未维持昨收+1%即出")
+    print(f"高位路径(zz1000)    ：仓位≤8%，次日竞价弱于昨收即清仓")
+    print(f"连板≥3板            ：高度风险，仓位再减半，不超过4%")
+    print(f"全局止损线          ：任意标的亏损超2.5%当日无条件止损")
+    print(f"8步法完整度检查：")
+    print("Step1 涨幅筛选   Step2 量比   Step3 换手率")
+    print("Step4 市值过滤   Step5 量能递增   Step6 均线+压力检测")
+    print("Step7 分时均价线上方（需盘中人工确认）")
+    print("Step8 14:30创新高回踩入场（需盘中人工确认）")
+    print()
 
     # ============================================================
     #  v1.1: Telegram 推送(如已配置)
@@ -1293,9 +1286,9 @@ def main():
         try:
             ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary)
             if ok:
-                print("  ✅ 已推送到 Telegram\n")
+                print("已推送到 Telegram\n")
             else:
-                print("  ⚠️ Telegram 推送失败,请检查 token/chat_id\n")
+                print("Telegram 推送失败,请检查 token/chat_id\n")
         except Exception as e:
             print(f"  ️ Telegram 推送异常: {e}\n")
 
