@@ -82,8 +82,9 @@ CREATE TABLE IF NOT EXISTS daily_candidates (
     target_1 NUMERIC(10,3),
     target_2 NUMERIC(10,3),
     sources JSONB,
+    run_mode VARCHAR(20) DEFAULT 'afternoon',
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(snapshot_date, ts_code)
+    UNIQUE(snapshot_date, ts_code, run_mode)
 );
 
 CREATE INDEX IF NOT EXISTS idx_cand_date ON daily_candidates(snapshot_date DESC);

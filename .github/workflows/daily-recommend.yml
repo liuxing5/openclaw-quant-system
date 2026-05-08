@@ -3,16 +3,18 @@ name: Daily Stock Recommendation
 on:
   schedule:
     - cron: '30 0 * * 1-5'
+    - cron: '30 3 * * 1-5'
     - cron: '30 7 * * 1-5'
   workflow_dispatch:
     inputs:
       run_mode:
-        description: '盘前(morning) 或 盘后(afternoon)'
+        description: '运行模式'
         required: false
         default: 'morning'
         type: choice
         options:
           - morning
+          - intraday
           - afternoon
 
 jobs:
@@ -47,9 +49,12 @@ jobs:
         id: mode
         run: |
           HOUR=$(date -u +%H)
-          if [ "$HOUR" -lt 4 ]; then
+          if [ "$HOUR" -lt 2 ]; then
             echo "mode=morning" >> $GITHUB_OUTPUT
             echo "盘前模式 (UTC ${HOUR}:30 = 北京时间 08:30)"
+          elif [ "$HOUR" -lt 5 ]; then
+            echo "mode=intraday" >> $GITHUB_OUTPUT
+            echo "盘中模式 (UTC ${HOUR}:30 = 北京时间 11:30)"
           else
             echo "mode=afternoon" >> $GITHUB_OUTPUT
             echo "盘后模式 (UTC ${HOUR}:30 = 北京时间 15:30)"

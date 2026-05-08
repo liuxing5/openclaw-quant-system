@@ -133,7 +133,7 @@ def fetch_with_akshare_full():
                 r.get('open'), r.get('high'), r.get('low'), latest,
                 int(r.get('volume', 0)) if pd.notna(r.get('volume')) else None,
                 r.get('amount'),
-                r.get('pricechange'), r.get('turnoverratio'),
+                r.get('changepercent'), r.get('turnoverratio'),
             ))
 
     logger.info(f"解析完成: {len(rows)} 条有效, 跳过前缀{skipped_prefix}, 跳过价格{skipped_price}")

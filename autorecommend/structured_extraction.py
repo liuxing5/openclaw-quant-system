@@ -97,9 +97,8 @@ def lhb_to_extraction():
 
 def zt_pool_to_extraction():
     """涨停板 -> extracted_recommendations
-    首板 -> strength=2, type=watch
-    2-3 板 -> strength=3, type=watch
-    4 板以上 -> strength=4, type=buy
+    涨停板是市场情绪温度计，不是买入信号
+    所有涨停板统一 watch，连板数越高置信度越低
     """
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     today = date.today()
@@ -140,8 +139,18 @@ def zt_pool_to_extraction():
         if not ts_code:
             continue
 
-        strength = 4 if lianban >= 4 else (3 if lianban >= 2 else 2)
-        rec_type = 'buy' if lianban >= 4 else 'watch'
+        if lianban >= 4:
+            strength = 3
+            rec_type = 'watch'
+            confidence = 0.4
+        elif lianban >= 2:
+            strength = 2
+            rec_type = 'watch'
+            confidence = 0.35
+        else:
+            strength = 2
+            rec_type = 'watch'
+            confidence = 0.3
 
         cur.execute("""
             INSERT INTO extracted_recommendations
@@ -153,7 +162,7 @@ def zt_pool_to_extraction():
             rec_type, strength,
             '连板' if lianban >= 2 else '首板',
             f'{lianban}连板',
-            0.6 if lianban >= 3 else 0.4,
+            confidence,
             r['pub_time'],
         ))
         stored += 1

@@ -140,8 +140,12 @@ async def push_daily_candidates():
         cur.close(); conn.close()
         return
     
-    header = '盘前参考' if RUN_MODE == 'morning' else '盘后复盘'
-    target = '今日' if RUN_MODE == 'morning' else '明日'
+    mode_labels = {
+        'morning': ('盘前参考', '今日'),
+        'intraday': ('盘中速递', '当前'),
+        'afternoon': ('盘后复盘', '明日'),
+    }
+    header, target = mode_labels.get(RUN_MODE, ('盘后复盘', '明日'))
     lines = [f" <b>{today}</b> {header}\n共 {len(cands)} 只\n"]
     
     for c in cands:

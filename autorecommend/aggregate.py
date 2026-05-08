@@ -93,6 +93,14 @@ def aggregate_today():
             pct_chg = q.get('pct_chg') or 0
             turnover = q.get('turnover_rate') or 0
 
+            ts = r['ts_code']
+            is_kc_cy = ts.split('.')[0].startswith(('688', '300', '301'))
+            limit_threshold = 19.5 if is_kc_cy else 9.5
+
+            if RUN_MODE == 'afternoon' and pct_chg >= limit_threshold:
+                logger.info(f"{ts} 今日已涨停 {pct_chg:.1f}%，盘后模式跳过（次日陷阱风险）")
+                continue
+
             if -3 < pct_chg < 7:
                 quant_score += 30
             if turnover > 3:
@@ -129,6 +137,8 @@ def aggregate_today():
                 'quant_score': quant_score, 'final_score': final,
                 'logic_tags': r['logic_tags'], 'sources': r['sources'],
                 'close': close_price,
+                'pct_chg': pct_chg,
+                'turnover_rate': turnover,
             })
     else:
         logger.info("无 LLM 推荐数据，使用纯量化选股")
@@ -179,6 +189,28 @@ def aggregate_today():
 
     candidates.sort(key=lambda x: x['final_score'], reverse=True)
 
+    if RUN_MODE == 'intraday':
+        filtered = []
+        for c in candidates:
+            ts = c['ts_code']
+            pct = c.get('pct_chg', 0)
+            is_kc_cy = ts.split('.')[0].startswith(('688', '300', '301'))
+            limit = 19.5 if is_kc_cy else 9.5
+
+            if pct >= limit:
+                logger.debug(f"{ts} 已涨停 {pct}%，盘中跳过")
+                continue
+
+            if 4 < pct < limit and c.get('turnover_rate', 0) > 5:
+                c['final_score'] *= 1.2
+                if 'logic_tags' not in c:
+                    c['logic_tags'] = []
+                c['logic_tags'].append('准涨停')
+
+            filtered.append(c)
+        candidates = filtered
+        logger.info(f"盘中模式过滤后剩余 {len(candidates)} 只候选")
+
     qualified = [c for c in candidates if c['final_score'] >= MIN_SELECT_SCORE]
 
     if not qualified:
@@ -189,14 +221,15 @@ def aggregate_today():
                 INSERT INTO daily_candidates
                 (snapshot_date, ts_code, stock_name, mention_count, source_diversity,
                  consensus_score, llm_score, quant_score, final_score, logic_tags,
-                 selected, position_pct, sources)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,FALSE,0,%s)
-                ON CONFLICT (snapshot_date, ts_code) DO UPDATE SET
+                 selected, position_pct, sources, run_mode)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,FALSE,0,%s,%s)
+                ON CONFLICT (snapshot_date, ts_code, run_mode) DO UPDATE SET
                   final_score=EXCLUDED.final_score, selected=EXCLUDED.selected;
             """, (today, c['ts_code'], c['stock_name'], c['mention_count'],
                   c['source_diversity'], c['consensus_score'], c['llm_score'],
                   c['quant_score'], c['final_score'], c['logic_tags'],
-                  json.dumps(c['sources'], default=str, ensure_ascii=False)))
+                  json.dumps(c['sources'], default=str, ensure_ascii=False),
+                  RUN_MODE))
         conn.commit()
         cur.close(); conn.close()
         return
@@ -228,9 +261,9 @@ def aggregate_today():
             INSERT INTO daily_candidates
             (snapshot_date, ts_code, stock_name, mention_count, source_diversity,
              consensus_score, llm_score, quant_score, final_score, logic_tags,
-             selected, position_pct, entry_low, entry_high, stop_loss, target_1, target_2, sources)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (snapshot_date, ts_code) DO UPDATE SET
+             selected, position_pct, entry_low, entry_high, stop_loss, target_1, target_2, sources, run_mode)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (snapshot_date, ts_code, run_mode) DO UPDATE SET
               final_score=EXCLUDED.final_score, selected=EXCLUDED.selected,
               entry_low=EXCLUDED.entry_low, entry_high=EXCLUDED.entry_high,
               stop_loss=EXCLUDED.stop_loss, target_1=EXCLUDED.target_1,
@@ -241,6 +274,7 @@ def aggregate_today():
             c['quant_score'], c['final_score'], c['logic_tags'],
             is_selected, position, entry_low, entry_high, stop, t1, t2,
             json.dumps(c['sources'], default=str, ensure_ascii=False),
+            RUN_MODE,
         ))
 
     conn.commit()
