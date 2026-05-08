@@ -162,7 +162,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <tr><th>标题</th><th>来源</th><th>时间</th></tr>
                 {% for a in articles %}
                 <tr>
-                    <td><a href="{{ a.url }}" target="_blank">{{ a.title or '无标题' }}</a></td>
+                    <td>{% if a.url %}<a href="{{ a.url }}" target="_blank">{{ a.title or '无标题' }}</a>{% else %}{{ a.title or '无标题' }}{% endif %}</td>
                     <td>{{ a.source_name }}</td>
                     <td>{{ a.pub_time }}</td>
                 </tr>

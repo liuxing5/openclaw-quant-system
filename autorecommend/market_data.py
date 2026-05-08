@@ -37,7 +37,8 @@ def ensure_market_tables():
         id BIGSERIAL PRIMARY KEY,
         trade_date DATE, ts_code VARCHAR(20), stock_name VARCHAR(50),
         reason TEXT, buy_amt NUMERIC(20,2), sell_amt NUMERIC(20,2),
-        net_amt NUMERIC(20,2), is_inst BOOLEAN
+        net_amt NUMERIC(20,2), is_inst BOOLEAN,
+        CONSTRAINT lhb_unique UNIQUE (trade_date, ts_code, reason)
     );
     CREATE INDEX IF NOT EXISTS idx_lhb_date ON lhb_detail(trade_date DESC, ts_code);
     
@@ -368,7 +369,8 @@ def fetch_lhb_today():
     conn = get_db(); cur = conn.cursor()
     execute_values(cur, """
         INSERT INTO lhb_detail (trade_date, ts_code, stock_name, reason, buy_amt, sell_amt, net_amt, is_inst)
-        VALUES %s;
+        VALUES %s
+        ON CONFLICT (trade_date, ts_code, reason) DO NOTHING;
     """, rows)
     conn.commit()
     logger.info(f"lhb: {len(rows)} rows")

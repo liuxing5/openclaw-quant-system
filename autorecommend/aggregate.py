@@ -54,10 +54,11 @@ def aggregate_today():
           AVG(e.strength * COALESCE(e.confidence,0.5)) AS llm_score,
           ARRAY_AGG(DISTINCT e.logic_category) AS logic_tags,
           JSON_AGG(JSON_BUILD_OBJECT(
-            'source', e.source_name, 'tier', 2, 'strength', e.strength,
+            'source', e.source_name, 'tier', COALESCE(fs.tier, 2), 'strength', e.strength,
             'logic', e.logic_summary, 'pub_time', e.pub_time
           )) AS sources
         FROM extracted_recommendations e
+        LEFT JOIN feed_sources fs ON fs.name = e.source_name
         WHERE e.pub_time >= %s
           AND e.recommendation_type IN ('buy','strong_buy','watch')
           AND e.strength >= 2

@@ -22,7 +22,7 @@ BACKUP_API_KEY = os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
 BACKUP_BASE_URL = os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 BACKUP_MODEL = os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
-CONCURRENCY = 10
+CONCURRENCY = int(os.getenv('LLM_CONCURRENCY', 5))
 
 with open(os.path.join(BASE_DIR, 'extract_v1.txt')) as f:
     PROMPT_TPL = f.read()

@@ -112,13 +112,22 @@ CREATE TABLE IF NOT EXISTS performance_tracking (
     t1_low NUMERIC(10,3),
     t1_close NUMERIC(10,3),
     t1_return FLOAT,
+    t1_hit_target BOOLEAN,
+    t1_hit_stop BOOLEAN,
+    t5_high NUMERIC(10,3),
+    t5_low NUMERIC(10,3),
     t5_close NUMERIC(10,3),
     t5_return FLOAT,
+    t5_hit_target BOOLEAN,
+    t5_hit_stop BOOLEAN,
+    t20_high NUMERIC(10,3),
+    t20_low NUMERIC(10,3),
     t20_close NUMERIC(10,3),
     t20_return FLOAT,
-    hit_target BOOLEAN,
-    hit_stop BOOLEAN,
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    t20_hit_target BOOLEAN,
+    t20_hit_stop BOOLEAN,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(candidate_id, rec_date)
 );
 
 -- Source health monitoring
@@ -149,7 +158,8 @@ CREATE TABLE IF NOT EXISTS lhb_detail (
     id BIGSERIAL PRIMARY KEY,
     trade_date DATE, ts_code VARCHAR(20), stock_name VARCHAR(50),
     reason TEXT, buy_amt NUMERIC(20,2), sell_amt NUMERIC(20,2),
-    net_amt NUMERIC(20,2), is_inst BOOLEAN
+    net_amt NUMERIC(20,2), is_inst BOOLEAN,
+    CONSTRAINT lhb_unique UNIQUE (trade_date, ts_code, reason)
 );
 
 CREATE INDEX IF NOT EXISTS idx_lhb_date ON lhb_detail(trade_date DESC, ts_code);
