@@ -1207,9 +1207,8 @@ def main():
         append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
     else:
         print(f"\n当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入和推送（等待15:10后盘后定稿）")
-        # 非盘后时间，跳过后续推送
-        return
 
+    # 打印推荐单（盘中和盘后都显示）
     for path_label, picks in [("稳健", stable_picks), ("高位", upper_picks)]:
         if picks.empty:
             continue
@@ -1236,6 +1235,10 @@ def main():
     print("Step7 分时均价线上方（需盘中人工确认）")
     print("Step8 14:30创新高回踩入场（需盘中人工确认）")
     print()
+
+    # 非盘后时间，跳过推送
+    if not is_post_time:
+        return
 
     # ============================================================
     #  v1.1: Telegram 推送(如已配置)
