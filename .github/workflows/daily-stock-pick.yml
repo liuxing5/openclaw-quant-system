@@ -3,6 +3,9 @@ name: Daily Stock Pick & Sell Signals
 on:
   push:
     branches: [master]
+    paths:
+      - 'recommend/xuangu/**'
+      - '.github/workflows/daily-stock-pick.yml'
   schedule:
     # 北京时间 09:26 卖出决策 (UTC 01:26) - 09:25竞价结束后执行
     - cron: '26 1 * * *'

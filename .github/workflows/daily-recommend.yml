@@ -1,6 +1,11 @@
 name: Daily Stock Recommendation
 
 on:
+  push:
+    branches: [master]
+    paths:
+      - 'autorecommend/**'
+      - '.github/workflows/daily-recommend.yml'
   schedule:
     - cron: '30 0 * * 1-5'
     - cron: '30 3 * * 1-5'
