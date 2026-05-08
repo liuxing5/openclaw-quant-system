@@ -117,6 +117,7 @@ async def push_daily_candidates():
     
     bot = Bot(BOT_TOKEN, request=request)
     today = get_beijing_date()
+    logger.info(f"=== 推送开始，today={today}, RUN_MODE={RUN_MODE} ===")
     
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
@@ -132,6 +133,7 @@ async def push_daily_candidates():
         ORDER BY final_score DESC;
     """, (today,))
     cands = cur.fetchall()
+    logger.info(f"查询 daily_candidates WHERE snapshot_date={today} AND selected=TRUE，找到 {len(cands)} 条")
     
     if not cands:
         cur.execute("""
