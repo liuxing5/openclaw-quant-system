@@ -23,7 +23,7 @@ requests
 # Web UI (only for local development)
 jinja2
 # streamlit  # uncomment for local dev
-# baostock   # uncomment if needed
+baostock
 # tushare    # uncomment if needed
 # yfinance   # uncomment if needed
 # pyarrow    # uncomment if needed
