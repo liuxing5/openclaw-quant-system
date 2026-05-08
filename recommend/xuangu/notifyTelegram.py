@@ -193,15 +193,22 @@ def send_stock_picks(
         lines.append("")
         lines.append(f"━━ 稳健路径 ({len(stable_picks)}只) 单票≤15% ━━")
         for s in stable_picks:
-            tags_short = s.get('tags', '')
-            if len(tags_short) > 30:
-                tags_short = tags_short[:28] + "..."
+            tags_raw = s.get('tags', '')
+            # 格式化标签:扣分标签优先,正向标签后置
+            if tags_raw:
+                tag_list = [t.strip() for t in tags_raw.split('|') if t.strip()]
+                deduct_tags = [t for t in tag_list if '↓' in t]
+                positive_tags = [t for t in tag_list if '↓' not in t]
+                ordered_tags = deduct_tags + positive_tags
+                tags_display = ' | '.join(ordered_tags)
+            else:
+                tags_display = ''
             msg = (
                 f"• {s['code']} ({s.get('pool','')}) "
                 f"¥{s['price']} +{s['pct']:.2f}% "
                 f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
                 f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
-                f"得分{s['score']} | {tags_short}"
+                f"得分{s['score']} | {tags_display}"
             )
             lines.append(msg)
 
@@ -210,15 +217,22 @@ def send_stock_picks(
         lines.append("")
         lines.append(f"━━ 高位路径 ({len(upper_picks)}只) 单票≤8% ━━")
         for s in upper_picks:
-            tags_short = s.get('tags', '')
-            if len(tags_short) > 30:
-                tags_short = tags_short[:28] + "..."
+            tags_raw = s.get('tags', '')
+            # 格式化标签:扣分标签优先,正向标签后置
+            if tags_raw:
+                tag_list = [t.strip() for t in tags_raw.split('|') if t.strip()]
+                deduct_tags = [t for t in tag_list if '↓' in t]
+                positive_tags = [t for t in tag_list if '↓' not in t]
+                ordered_tags = deduct_tags + positive_tags
+                tags_display = ' | '.join(ordered_tags)
+            else:
+                tags_display = ''
             msg = (
                 f"• {s['code']} ({s.get('pool','')}) "
                 f"¥{s['price']} +{s['pct']:.2f}% "
                 f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
                 f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
-                f"得分{s['score']} | {tags_short}"
+                f"得分{s['score']} | {tags_display}"
             )
             lines.append(msg)
 

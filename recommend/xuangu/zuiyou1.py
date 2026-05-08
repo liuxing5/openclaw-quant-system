@@ -762,16 +762,24 @@ def analyze_ultimate(
         if "爆量博弈" in tags:
             tags.remove("爆量博弈")
 
-    # 乖离惩罚：动态阈值（分路径分情绪）
+    # 乖离惩罚：阶梯加重扣分（防追高）
     bias_ma5 = (curr_price - ma5_yest) / ma5_yest if ma5_yest > 0 else 0
     bias_threshold = 0.08
     if in_upper:
         bias_threshold = 0.12
     if mood == "高潮":
         bias_threshold += 0.03
-    if bias_ma5 > bias_threshold:
-        score -= 20
-        tags.append("乖离过大↓")
+    bias_excess = bias_ma5 - bias_threshold
+    if bias_excess > 0:
+        if bias_excess <= 0.02:  # 超出阈值 0-2%
+            score -= 15
+            tags.append(f"乖离偏大({bias_ma5*100:.1f}%)↓")
+        elif bias_excess <= 0.05:  # 超出 2-5%
+            score -= 30
+            tags.append(f"乖离过大({bias_ma5*100:.1f}%)↓↓")
+        else:  # 超出 5%+
+            score -= 50  # 严重追高,几乎否决
+            tags.append(f"乖离严重({bias_ma5*100:.1f}%)↓↓↓")
 
     # 冷门行业过滤：隔夜溢价较低的行业扣分
     industry = get_stock_industry(code)
