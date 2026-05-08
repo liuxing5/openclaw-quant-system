@@ -1268,6 +1268,8 @@ def main():
                     "code": row["code"],
                     "price": row["price"],
                     "pct": row["pct"],
+                    "vol_ratio": row.get("vol_ratio", 0),
+                    "turn": row.get("turn", 0),
                     "score": row["score"],
                     "tags": row["tags"],
                 })
@@ -1276,6 +1278,8 @@ def main():
                     "code": row["code"],
                     "price": row["price"],
                     "pct": row["pct"],
+                    "vol_ratio": row.get("vol_ratio", 0),
+                    "turn": row.get("turn", 0),
                     "score": row["score"],
                     "tags": row["tags"],
                 })

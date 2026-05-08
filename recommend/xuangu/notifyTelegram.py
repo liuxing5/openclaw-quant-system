@@ -138,61 +138,49 @@ def send_stock_picks(
 ) -> bool:
     """
     格式化推送选股结果(zuiyou1 专用便捷接口)。
+    每条股票信息单独推送一条消息，不折行。
 
     Args:
         title: 标题(如 "🔥 zuiyou1 v1.3 盘后定稿")
         end_d: 日期 (2026-04-29)
         mood_info: 情绪信息字符串
-        stable_picks: 稳健路径推荐列表 [{code, price, pct, score, tags}, ...]
+        stable_picks: 稳健路径推荐列表 [{code, price, pct, vol_ratio, turn, score, tags}, ...]
         upper_picks: 高位路径推荐列表
         operation_note: 操作建议
         reject_summary: 过滤统计摘要
     """
-    lines = []
-    lines.append(f"🔥 {title}")
-    lines.append(f"📅 {end_d}")
-    lines.append(f"📊 {mood_info}")
-    lines.append("")
-
+    # 先发送标题汇总
+    header = f"🔥 {title}\n📅 {end_d}\n📊 {mood_info}"
     if not stable_picks and not upper_picks:
-        lines.append("⚠️ 今日无符合条件的标的")
-        lines.append("(空仓也是仓位)")
+        header += "\n\n⚠️ 今日无符合条件的标的\n(空仓也是仓位)"
         if reject_summary:
-            lines.append("")
-            lines.append("━━ 过滤瓶颈 ━━")
-            lines.append(reject_summary)
-        return send_message("\n".join(lines))
+            header += f"\n\n━━ 过滤瓶颈 ━\n{reject_summary}"
+        send_message(header)
+        return True
 
+    # 发送稳健路径标题
     if stable_picks:
-        lines.append(f"━━ 稳健路径 ({len(stable_picks)} 只) ━━")
-        lines.append("💰 单票≤15% 总仓位")
+        send_message(f"━━ 稳健路径 ({len(stable_picks)}只) 单票≤15% ━━")
         for s in stable_picks:
-            lines.append(
-                f"• {s['code']}  ¥{s['price']}  +{s['pct']:.2f}%"
-            )
-            lines.append(f"  得分 {s['score']} | {s['tags']}")
-        lines.append("")
+            msg = f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.2f}% 得分{s['score']} | {s['tags']}"
+            send_message(msg)
 
+    # 发送高位路径标题
     if upper_picks:
-        lines.append(f"━━ 高位路径 ({len(upper_picks)} 只) ━━")
-        lines.append("💰 单票≤8% 总仓位")
+        send_message(f"━━ 高位路径 ({len(upper_picks)}只) 单票≤8% ━━")
         for s in upper_picks:
-            lines.append(
-                f"• {s['code']}  ¥{s['price']}  +{s['pct']:.2f}%"
-            )
-            lines.append(f"  得分 {s['score']} | {s['tags']}")
-        lines.append("")
+            msg = f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.2f}% 得分{s['score']} | {s['tags']}"
+            send_message(msg)
 
+    # 发送过滤统计
     if reject_summary:
-        lines.append("━━ 过滤统计 ━━")
-        lines.append(reject_summary)
-        lines.append("")
+        send_message(f"━━ 过滤统计 ━━\n{reject_summary}")
 
+    # 发送操作建议
     if operation_note:
-        lines.append("━━ 操作建议 ━━")
-        lines.append(operation_note)
+        send_message(f"━━ 操作建议 ━━\n{operation_note}")
 
-    return send_long_message("\n".join(lines))
+    return True
 
 
 def send_stock_picks_with_buttons(
