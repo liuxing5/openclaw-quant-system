@@ -1289,9 +1289,9 @@ def main():
         try:
             ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary)
             if ok:
-                print("已推送到 Telegram\n")
+                print("✅ 已推送到 Telegram\n")
             else:
-                print("Telegram 推送失败,请检查 token/chat_id\n")
+                print("⚠️ Telegram 推送失败,请检查 token/chat_id\n")
         except Exception as e:
             print(f"  ️ Telegram 推送异常: {e}\n")
 
