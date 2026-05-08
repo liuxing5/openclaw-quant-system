@@ -41,28 +41,29 @@ def get_client():
 
 def call_llm(prompt: str) -> dict:
     """LLM 调用，带重试和模型切换"""
-    for attempt in range(3):
+    for attempt in range(2):
         client, model = get_client()
         try:
             resp = client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.1,
-                max_tokens=2000,
+                max_tokens=1500,
                 response_format={"type": "json_object"},
+                timeout=30,
             )
             _thread_local.errors = 0
             return json.loads(resp.choices[0].message.content)
         except Exception as e:
             _thread_local.errors += 1
             logger.warning(f"LLM 调用失败 (线程{threading.current_thread().name}, 第{attempt+1}次): {e}")
-            if _thread_local.errors >= 3 and model == PRIMARY_MODEL:
+            if _thread_local.errors >= 2 and model == PRIMARY_MODEL:
                 logger.warning(f"切换到备用模型: {BACKUP_MODEL}")
                 _thread_local.client = OpenAI(api_key=BACKUP_API_KEY, base_url=BACKUP_BASE_URL)
                 _thread_local.model = BACKUP_MODEL
                 _thread_local.errors = 0
-            if attempt < 2:
-                time.sleep(2 ** attempt)
+            if attempt < 1:
+                time.sleep(1)
     return {}
 
 
