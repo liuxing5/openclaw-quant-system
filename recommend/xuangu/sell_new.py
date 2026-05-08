@@ -93,7 +93,7 @@ try:
             # {"code": "002439", "cost": 15.30, "path": "稳健", "entry_date": "2026-04-28"},
             # {"code": "601933", "cost": 4.10},
             # {"code": "002510", "cost": 7.80},
-            # {"code": "000632", "cost": 4.60},
+            {"code": "603319", "cost": 40.04},
         ]
 except ImportError:
     # 如果 position_manager 不可用，使用硬编码配置
@@ -415,6 +415,37 @@ def evaluate_limit_strength(
 
 
 # ============================================================
+#  封板强度日志记录
+# ============================================================
+_LIMIT_STRENGTH_LOG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "limit_strength_log.csv")
+
+def log_limit_strength(
+    date_str: str,
+    code: str,
+    name: str,
+    path: str,
+    mktcap_yi: float,
+    ratio: float,
+    level: int,
+    label: str,
+    action: str,
+    actual_next_result: str = "",
+):
+    """追加封板强度评估记录到 CSV，5天后可用 Excel 分析准确率"""
+    header = "date,code,name,path,mktcap_yi,ratio,level,label,action,actual_next_result"
+    row = f"{date_str},{code},{name},{path},{mktcap_yi:.1f},{ratio:.2f},{level},{label},{action},{actual_next_result}"
+
+    file_exists = os.path.exists(_LIMIT_STRENGTH_LOG_FILE)
+    try:
+        with open(_LIMIT_STRENGTH_LOG_FILE, "a", encoding="utf-8") as f:
+            if not file_exists:
+                f.write(header + "\n")
+            f.write(row + "\n")
+    except Exception:
+        pass  # 沙箱/只读环境跳过写入
+
+
+# ============================================================
 #  卖出决策引擎（v2.2）
 # ============================================================
 def decide_sell(
@@ -523,6 +554,21 @@ def decide_sell(
             state_rec["limit_strength_evaluated"] = True
             state_rec["limit_strength_level"] = strength["level"]
             state_rec["limit_strength_ratio"] = strength["ratio"]
+            
+            # 记录到 CSV 日志
+            stock_name = market_data.get(code, {}).get("name", "")
+            today_str = get_beijing_time().strftime("%Y-%m-%d")
+            log_limit_strength(
+                date_str=today_str,
+                code=code,
+                name=stock_name,
+                path=path,
+                mktcap_yi=mktcap_yi,
+                ratio=strength["ratio"],
+                level=strength["level"],
+                label=strength["label"],
+                action=strength["action"],
+            )
             
             # 把强度信息写入 result
             result["limit_strength"] = strength

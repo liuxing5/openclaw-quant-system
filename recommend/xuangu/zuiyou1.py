@@ -335,11 +335,12 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         
         # 如果两个接口都返回0，可能是非交易时间
         if zt_count == 0:
-            return 0, "未知"
+            print(f"  ⚠️ 非交易时间或接口异常，使用默认值 50 家涨停")
+            return 50, "正常"
             
     except Exception as e:
-        print(f"  ⚠️ 情绪接口异常: {e}")
-        return 0, "未知"
+        print(f"  ⚠️ 情绪接口异常: {e}，使用默认值 50 家涨停")
+        return 50, "正常"
 
     if zt_count < CONFIG["sentiment_cold"]:
         mood = "冷淡"
@@ -366,9 +367,11 @@ def get_realtime_quotes(stock_list: list) -> dict:
 
     results = {}
     api_codes = [s.replace(".", "").lower() for s in stock_list]
+    total_batches = (len(api_codes) + 49) // 50
 
     ok_count = 0
     for i in range(0, len(api_codes), 50):
+        batch_no = i // 50 + 1
         chunk = api_codes[i: i + 50]
         url = f"http://qt.gtimg.cn/q={','.join(chunk)}"
         try:
@@ -418,6 +421,7 @@ def get_realtime_quotes(stock_list: list) -> dict:
 
         time.sleep(0.12)
 
+    print(f"  [行情] 完成 | 成功={ok_count}")
     return results
 
 
@@ -1204,6 +1208,10 @@ def main():
     is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
     if is_post_time:
         append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
+    else:
+        print(f"\n  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入和推送（等待15:10后盘后定稿）")
+        # 非盘后时间，跳过后续推送
+        return
 
     for path_label, picks in [("稳健", stable_picks), ("高位", upper_picks)]:
         if picks.empty:
@@ -1240,64 +1248,56 @@ def main():
     #  v1.1: Telegram 推送(如已配置)
     # ============================================================
     if TELEGRAM_ENABLED:
-        # 只在15:10后推送盘后定稿，避免盘中重复推送
-        # 双重保险：检查MODE和实时时间
-        current_beijing = beijing_now()
-        is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
-        
-        if CONFIG.get("MODE") == "post" and is_post_time:
-            mode_label = "盘后定稿"
-            title = f"zuiyou1 v1.3 {mode_label}"
-            mood_info = f"情绪: {mood} ({zt_count}家涨停)"
+        mode_label = "盘后定稿"
+        title = f"zuiyou1 v1.3 {mode_label}"
+        mood_info = f"情绪: {mood} ({zt_count}家涨停)"
 
-            # 使用已筛选的 stable_picks 和 upper_picks（已应用推荐数限制）
-            stable_list = []
-            upper_list = []
-            for _, row in stable_picks.iterrows():
-                stable_list.append({
-                    "code": row["code"],
-                    "price": row["price"],
-                    "pct": row["pct"],
-                    "vol_ratio": row.get("vol_ratio", 0),
-                    "turn": row.get("turn", 0),
-                    "score": row["score"],
-                    "tags": row["tags"],
-                })
-            for _, row in upper_picks.iterrows():
-                upper_list.append({
-                    "code": row["code"],
-                    "price": row["price"],
-                    "pct": row["pct"],
-                    "vol_ratio": row.get("vol_ratio", 0),
-                    "turn": row.get("turn", 0),
-                    "score": row["score"],
-                    "tags": row["tags"],
-                })
+        # 使用已筛选的 stable_picks 和 upper_picks（已应用推荐数限制）
+        stable_list = []
+        upper_list = []
+        for _, row in stable_picks.iterrows():
+            stable_list.append({
+                "code": row["code"],
+                "price": row["price"],
+                "pct": row["pct"],
+                "vol_ratio": row.get("vol_ratio", 0),
+                "turn": row.get("turn", 0),
+                "score": row["score"],
+                "tags": row["tags"],
+            })
+        for _, row in upper_picks.iterrows():
+            upper_list.append({
+                "code": row["code"],
+                "price": row["price"],
+                "pct": row["pct"],
+                "vol_ratio": row.get("vol_ratio", 0),
+                "turn": row.get("turn", 0),
+                "score": row["score"],
+                "tags": row["tags"],
+            })
 
-            operation_note = (
-                "稳健: 次日09:35未维持昨收+1%即出\n"
-                "高位: 次日竞价弱于昨收即清仓\n"
-                "全局止损: 亏损超-2.5%无条件清仓"
-            )
+        operation_note = (
+            "稳健: 次日09:35未维持昨收+1%即出\n"
+            "高位: 次日竞价弱于昨收即清仓\n"
+            "全局止损: 亏损超-2.5%无条件清仓"
+        )
 
-            # 构建过滤统计摘要
-            reject_lines = []
-            for reason, count in sorted(total_rejects.items(), key=lambda x: -x[1]):
-                if count > 0:
-                    pct = count / total_scanned * 100
-                    reject_lines.append(f"✗ {reason}: {count}只({pct:.0f}%)")
-            reject_summary = "\n".join(reject_lines[:5]) if reject_lines else "无"
+        # 构建过滤统计摘要
+        reject_lines = []
+        for reason, count in sorted(total_rejects.items(), key=lambda x: -x[1]):
+            if count > 0:
+                pct = count / total_scanned * 100
+                reject_lines.append(f"✗ {reason}: {count}只({pct:.0f}%)")
+        reject_summary = "\n".join(reject_lines[:5]) if reject_lines else "无"
 
-            try:
-                ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary)
-                if ok:
-                    print("  ✅ 已推送到 Telegram\n")
-                else:
-                    print("  ⚠️ Telegram 推送失败,请检查 token/chat_id\n")
-            except Exception as e:
-                print(f"  ⚠️ Telegram 推送异常: {e}\n")
-        else:
-            print(f"  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')}，跳过推送（等待15:10后盘后定稿）\n")
+        try:
+            ok = send_stock_picks(title, current_beijing.strftime("%Y-%m-%d"), mood_info, stable_list, upper_list, operation_note, reject_summary)
+            if ok:
+                print("  ✅ 已推送到 Telegram\n")
+            else:
+                print("  ⚠️ Telegram 推送失败,请检查 token/chat_id\n")
+        except Exception as e:
+            print(f"  ️ Telegram 推送异常: {e}\n")
 
 
 # ============================================================

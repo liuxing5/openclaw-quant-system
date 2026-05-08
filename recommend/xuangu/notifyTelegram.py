@@ -162,18 +162,20 @@ def send_stock_picks(
     if stable_picks:
         send_message(f"━━ 稳健路径 ({len(stable_picks)}只) 单票≤15% ━━")
         for s in stable_picks:
-            tag_list = s['tags'].split(' | ')
-            short_tags = ' | '.join(tag_list[:3])
-            msg = f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.2f}% 得分{s['score']} | {short_tags}"
+            tags_short = s.get('tags', '')
+            if len(tags_short) > 30:
+                tags_short = tags_short[:28] + "..."
+            msg = f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 得分{s['score']} | {tags_short}"
             send_message(msg)
 
     # 发送高位路径标题
     if upper_picks:
         send_message(f"━━ 高位路径 ({len(upper_picks)}只) 单票≤8% ━━")
         for s in upper_picks:
-            tag_list = s['tags'].split(' | ')
-            short_tags = ' | '.join(tag_list[:3])
-            msg = f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.2f}% 得分{s['score']} | {short_tags}"
+            tags_short = s.get('tags', '')
+            if len(tags_short) > 30:
+                tags_short = tags_short[:28] + "..."
+            msg = f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 得分{s['score']} | {tags_short}"
             send_message(msg)
 
     # 发送过滤统计
