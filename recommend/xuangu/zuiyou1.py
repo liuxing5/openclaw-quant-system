@@ -777,9 +777,10 @@ def analyze_ultimate(
         elif bias_excess <= 0.05:  # 超出 2-5%
             score -= 30
             tags.append(f"乖离过大({bias_ma5*100:.1f}%)↓↓")
-        else:  # 超出 5%+
-            score -= 50  # 严重追高,几乎否决
-            tags.append(f"乖离严重({bias_ma5*100:.1f}%)↓↓↓")
+        else:  # 超出 5%+，直接剔除
+            if reject_stats is not None:
+                reject_stats["乖离严重"] += 1
+            return None
 
     # 冷门行业过滤：隔夜溢价较低的行业扣分
     industry = get_stock_industry(code)
@@ -886,7 +887,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
     reject_stats = {
         "数据不足": 0, "ST/退市": 0, "情绪冷淡": 0, "涨幅不符": 0,
         "成交额": 0, "换手率": 0, "市值": 0, "量比": 0, "均线": 0,
-        "压力": 0, "得分不足": 0,
+        "压力": 0, "乖离严重": 0, "得分不足": 0,
     }
 
     print(f"开始扫描 {total} 只股票...")
@@ -1067,6 +1068,7 @@ def _print_funnel(rejects: dict, total: int, results: list = None):
         ("市值过滤", "50-500亿/30-200亿", ["市值"]),
         ("量能递增", "", []),
         ("均线+压力检测", "", ["均线", "压力"]),
+        ("乖离严重", "超阈值5%+", ["乖离严重"]),
     ]
 
     remaining = total
@@ -1110,6 +1112,7 @@ def _print_reject_summary(rejects: dict, total: int = 0):
         ("市值过滤", "50-500亿/30-200亿", ["市值"]),
         ("量能递增", "", []),
         ("均线+压力检测", "", ["均线", "压力"]),
+        ("乖离严重", "超阈值5%+", ["乖离严重"]),
     ]
 
     remaining = total
@@ -1391,6 +1394,7 @@ def main():
                 ("市值过滤", "50-500亿/30-200亿", ["市值"]),
                 ("量能递增", "", []),
                 ("均线+压力检测", "", ["均线", "压力"]),
+                ("乖离严重", "超阈值5%+", ["乖离严重"]),
             ]
             reject_lines = []
             remaining = pool_total
@@ -1437,6 +1441,7 @@ def main():
             ("市值过滤", "50-500亿/30-200亿", ["市值"]),
             ("量能递增", "", []),
             ("均线+压力检测", "", ["均线", "压力"]),
+            ("乖离严重", "超阈值5%+", ["乖离严重"]),
         ]
         reject_lines = []
         remaining = total_scanned
