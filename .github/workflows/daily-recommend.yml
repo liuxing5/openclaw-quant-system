@@ -41,39 +41,28 @@ jobs:
           cache: 'pip'
       
       - name: Install dependencies
+        run: pip install -r autorecommend/requirements.txt
+      
+      - name: Setup & collect
         run: |
-          pip install -r autorecommend/requirements.txt
-          pip install psycopg2-binary
+          python autorecommend/apply_schema.py
+          python autorecommend/seed_sources.py
+          python autorecommend/sync_stock_info.py
       
-      - name: Ensure schema (idempotent)
-        run: python autorecommend/apply_schema.py
-      
-      - name: Seed source registry
-        run: python autorecommend/seed_sources.py
-      
-      - name: Sync stock basic info
-        run: python autorecommend/sync_stock_info.py
-      
-      - name: Collect market data (full A-share)
-        run: python autorecommend/market_data.py
-      
-      - name: Collect news signals (AKShare-only mode)
-        run: python autorecommend/collector.py --once
+      - name: Collect market data
+        run: |
+          python autorecommend/market_data.py
+          python autorecommend/collector.py --once
       
       - name: Extract signals with LLM
         run: python autorecommend/extractor.py --once
       
-      - name: Aggregate candidates
-        run: python autorecommend/aggregate.py
-      
-      - name: Track performance (T+1/T+5/T+20)
-        run: python autorecommend/track_performance.py
-      
-      - name: Generate HTML report
-        run: python autorecommend/generate_report.py
-      
-      - name: Push to Telegram
-        run: python autorecommend/pusher.py
+      - name: Aggregate & report
+        run: |
+          python autorecommend/aggregate.py
+          python autorecommend/track_performance.py
+          python autorecommend/generate_report.py
+          python autorecommend/pusher.py
       
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3

@@ -2,18 +2,16 @@
 loguru
 python-dotenv
 pyyaml
+
+# Database
 psycopg2-binary
 
 # LLM
 openai
 
 # Data Collection
-baostock
-tushare
-yfinance
 akshare
 pandas
-pyarrow
 
 # Telegram
 python-telegram-bot==21.3
@@ -21,9 +19,13 @@ httpx
 
 # Utilities
 requests
-feedparser
-beautifulsoup4
 
-# Web UI
+# Web UI (only for local development)
 jinja2
-streamlit
+# streamlit  # uncomment for local dev
+# baostock   # uncomment if needed
+# tushare    # uncomment if needed
+# yfinance   # uncomment if needed
+# pyarrow    # uncomment if needed
+# feedparser # uncomment if needed
+# beautifulsoup4 # uncomment if needed
