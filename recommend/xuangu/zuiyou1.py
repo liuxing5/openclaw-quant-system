@@ -1254,20 +1254,26 @@ def main():
         for _, row in stable_picks.iterrows():
             stable_list.append({
                 "code": row["code"],
+                "pool": row["pool"],
                 "price": row["price"],
                 "pct": row["pct"],
                 "vol_ratio": row.get("vol_ratio", 0),
                 "turn": row.get("turn", 0),
+                "streak": row.get("streak", 0),
+                "bias_ma5": row.get("bias_ma5", 0),
                 "score": row["score"],
                 "tags": row["tags"],
             })
         for _, row in upper_picks.iterrows():
             upper_list.append({
                 "code": row["code"],
+                "pool": row["pool"],
                 "price": row["price"],
                 "pct": row["pct"],
                 "vol_ratio": row.get("vol_ratio", 0),
                 "turn": row.get("turn", 0),
+                "streak": row.get("streak", 0),
+                "bias_ma5": row.get("bias_ma5", 0),
                 "score": row["score"],
                 "tags": row["tags"],
             })
@@ -1275,7 +1281,14 @@ def main():
         operation_note = (
             "稳健: 次日09:35未维持昨收+1%即出\n"
             "高位: 次日竞价弱于昨收即清仓\n"
-            "全局止损: 亏损超-2.5%无条件清仓"
+            "连板≥3: 高度风险，仓位再减半，不超过4%\n"
+            "全局止损: 亏损超-2.5%无条件清仓\n"
+            "\n"
+            "8步法完整度检查:\n"
+            "Step1 涨幅筛选  Step2 量比  Step3 换手率\n"
+            "Step4 市值过滤  Step5 量能递增  Step6 均线+压力检测\n"
+            "Step7 分时均价线上方（需盘中人工确认）\n"
+            "Step8 14:30创新高回踩入场（需盘中人工确认）"
         )
 
         # 构建过滤统计摘要

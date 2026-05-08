@@ -173,7 +173,14 @@ def send_stock_picks(
             tags_short = s.get('tags', '')
             if len(tags_short) > 30:
                 tags_short = tags_short[:28] + "..."
-            lines.append(f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 得分{s['score']} | {tags_short}")
+            msg = (
+                f"• {s['code']} ({s.get('pool','')}) "
+                f"¥{s['price']} +{s['pct']:.2f}% "
+                f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
+                f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
+                f"得分{s['score']} | {tags_short}"
+            )
+            lines.append(msg)
 
     # 高位路径
     if upper_picks:
@@ -183,7 +190,14 @@ def send_stock_picks(
             tags_short = s.get('tags', '')
             if len(tags_short) > 30:
                 tags_short = tags_short[:28] + "..."
-            lines.append(f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% 得分{s['score']} | {tags_short}")
+            msg = (
+                f"• {s['code']} ({s.get('pool','')}) "
+                f"¥{s['price']} +{s['pct']:.2f}% "
+                f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
+                f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
+                f"得分{s['score']} | {tags_short}"
+            )
+            lines.append(msg)
 
     # 过滤统计
     if reject_summary:
