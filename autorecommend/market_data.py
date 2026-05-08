@@ -62,38 +62,43 @@ def fetch_with_akshare_full():
     """全 A 股一次性快照 - 新浪源优先，东财兜底"""
     import akshare as ak
 
-    logger.info("AKShare 全市场快照（新浪源）...")
     df = None
-    for attempt in range(2):
+
+    logger.info("AKShare 全市场快照（新浪源）...")
+    for attempt in range(5):
         try:
             df = ak.stock_zh_a_spot()
             if df is not None and not df.empty:
+                logger.info(f"新浪源成功: {len(df)} 条")
                 break
         except Exception as e:
-            if attempt < 1:
-                logger.warning(f"AKShare 新浪源失败 (尝试 {attempt+1}/2): {e}")
-                time.sleep(2)
+            if attempt < 4:
+                wait = 3 * (attempt + 1)
+                logger.warning(f"AKShare 新浪源失败 (尝试 {attempt+1}/5), 等待 {wait}s: {e}")
+                time.sleep(wait)
             else:
                 logger.warning(f"AKShare 新浪源最终失败，切换东财: {e}")
                 break
 
     if df is None or df.empty:
         logger.info("AKShare 全市场快照（东财源）...")
-        for attempt in range(2):
+        for attempt in range(5):
             try:
                 df = ak.stock_zh_a_spot_em()
                 if df is not None and not df.empty:
+                    logger.info(f"东财源成功: {len(df)} 条")
                     break
             except Exception as e:
-                if attempt < 1:
-                    logger.warning(f"AKShare 东财源失败 (尝试 {attempt+1}/2): {e}")
-                    time.sleep(3)
+                if attempt < 4:
+                    wait = 5 * (attempt + 1)
+                    logger.warning(f"AKShare 东财源失败 (尝试 {attempt+1}/5), 等待 {wait}s: {e}")
+                    time.sleep(wait)
                 else:
                     logger.error(f"AKShare 东财源最终失败: {e}")
                     return None
 
     if df is None or df.empty:
-        logger.warning("AKShare 返回空")
+        logger.warning("AKShare 所有源均返回空")
         return None
 
     is_em = '最新价' in df.columns
