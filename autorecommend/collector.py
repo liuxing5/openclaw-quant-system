@@ -68,31 +68,45 @@ def make_signal(source, title, content, url='', pub_time=None, tier=2):
 
 
 def fetch_akshare_news():
-    """AKShare 财经新闻"""
+    """AKShare 财经新闻 - 多接口兜底"""
     import akshare as ak
     rows = []
-    try:
-        df = ak.stock_news_em()
-        if df is None or df.empty:
-            return rows
-        for _, r in df.iterrows():
-            try:
-                title = r.get('新闻标题', '')
-                content = r.get('新闻内容', '')
-                if not title or title == 'nan':
-                    continue
-                rows.append(make_signal(
-                    source='AKShare-财经新闻', tier=2,
-                    title=str(title)[:1000],
-                    content=str(content)[:5000] if content else '',
-                    url=str(r.get('新闻链接', ''))[:500],
-                    pub_time=pd.to_datetime(r.get('发布时间')) if r.get('发布时间') else None,
-                ))
-            except Exception:
+    for fetch_func in [
+        lambda: ak.news_cctv(),
+        lambda: ak.stock_info_cjzc_em(),
+    ]:
+        try:
+            df = fetch_func()
+            if df is None or not hasattr(df, 'empty') or df.empty:
                 continue
-        logger.info(f"AKShare 财经新闻: {len(rows)} 条")
-    except Exception as e:
-        logger.warning(f"AKShare news 失败: {e}")
+            col_title = next((c for c in ['title', '标题', '新闻标题'] if c in df.columns), None)
+            col_content = next((c for c in ['content', '内容', '新闻内容', 'summary'] if c in df.columns), None)
+            col_time = next((c for c in ['date', 'pub_time', '发布时间', '时间'] if c in df.columns), None)
+            col_url = next((c for c in ['url', 'link', '链接'] if c in df.columns), None)
+            if not col_title:
+                continue
+            for _, r in df.iterrows():
+                try:
+                    title = str(r.get(col_title, '') or '')
+                    if not title or title == 'nan' or len(title) < 5:
+                        continue
+                    content = str(r.get(col_content, '') or '') if col_content else ''
+                    rows.append(make_signal(
+                        source='AKShare-财经新闻', tier=2,
+                        title=title[:1000],
+                        content=content[:5000],
+                        url=str(r.get(col_url, '') or '')[:500] if col_url else '',
+                        pub_time=pd.to_datetime(r.get(col_time), errors='coerce') if col_time else None,
+                    ))
+                except Exception:
+                    continue
+            if rows:
+                logger.info(f"财经新闻: {len(rows)} 条")
+                return rows
+        except Exception as e:
+            logger.debug(f"news 接口失败: {e}")
+            continue
+    logger.warning("所有新闻接口均失败")
     return rows
 
 
@@ -242,37 +256,35 @@ def fetch_akshare_research():
 
 
 def fetch_akshare_jgdy():
-    """机构调研"""
+    """机构调研 - 按日期分页，只取最近 3 天"""
     import akshare as ak
     rows = []
     try:
-        df = ak.stock_jgdy_detail_em()
-        if df is None or df.empty:
-            return rows
-        cutoff = date.today() - timedelta(days=7)
-        date_col = None
-        for c in ['调研日期', 'date', 'report_date']:
-            if c in df.columns:
-                date_col = c
-                break
-        if date_col:
-            df[date_col] = pd.to_datetime(df[date_col])
-            df = df[df[date_col] >= pd.Timestamp(cutoff)]
-        for _, r in df.iterrows():
+        target_dates = [(date.today() - timedelta(days=i)).strftime('%Y%m%d') for i in range(3)]
+        for d in target_dates:
             try:
-                code = str(r.get('股票代码', '') or '').zfill(6)
-                if not code or code == 'nan' or len(code) < 4:
+                df = ak.stock_jgdy_detail_em(date=d)
+                if df is None or not hasattr(df, 'empty') or df.empty:
                     continue
-                name = r.get('股票简称', '') or ''
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-                count = r.get('接待机构数量', 0) or 0
-                rows.append(make_signal(
-                    source='AKShare-机构调研', tier=1,
-                    title=f"机构调研: {name} {ts} - {count}家",
-                    content=f"代码 {code} {name} 接待 {count} 家机构 "
-                           f"调研日期 {r.get(date_col, '') or ''}",
-                ))
-            except Exception:
+                col_code = next((c for c in ['股票代码', '代码'] if c in df.columns), None)
+                col_name = next((c for c in ['股票简称', '名称'] if c in df.columns), None)
+                col_count = next((c for c in ['接待机构数量', '机构数'] if c in df.columns), None)
+                if not col_code:
+                    continue
+                for _, r in df.iterrows():
+                    code = str(r.get(col_code, '') or '').zfill(6)
+                    if not code or len(code) < 6:
+                        continue
+                    name = r.get(col_name, '') or '' if col_name else ''
+                    count = r.get(col_count, 0) or 0 if col_count else 0
+                    ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                    rows.append(make_signal(
+                        source='AKShare-机构调研', tier=1,
+                        title=f"机构调研: {name} {ts} - {count}家",
+                        content=f"代码 {code} {name} 接待 {count} 家机构 调研日期 {d}",
+                    ))
+            except Exception as e:
+                logger.debug(f"jgdy {d} 失败: {e}")
                 continue
         logger.info(f"机构调研: {len(rows)} 条")
     except Exception as e:
