@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 股票推荐 - 2026-05-08</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #1a1a1a; margin-bottom: 10px; }
+        .subtitle { color: #666; margin-bottom: 30px; }
+        .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        .card h2 { color: #333; margin-bottom: 16px; border-bottom: 2px solid #4CAF50; padding-bottom: 8px; }
+        .stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
+        .stock-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; transition: transform 0.2s; }
+        .stock-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        .stock-card.selected { border-color: #4CAF50; background: #f8fff8; }
+        .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .stock-code { font-size: 18px; font-weight: bold; color: #333; }
+        .stock-name { color: #666; margin-left: 8px; }
+        .score { font-size: 24px; font-weight: bold; color: #4CAF50; }
+        .score-label { font-size: 12px; color: #999; }
+        .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+        .metric { text-align: center; padding: 8px; background: #f5f5f5; border-radius: 4px; }
+        .metric-value { font-size: 16px; font-weight: bold; color: #333; }
+        .metric-label { font-size: 11px; color: #999; }
+        .entry-info { margin: 12px 0; padding: 12px; background: #fafafa; border-radius: 4px; }
+        .entry-row { display: flex; justify-content: space-between; margin: 4px 0; }
+        .entry-label { color: #666; }
+        .entry-value { font-weight: bold; }
+        .sources { margin-top: 12px; }
+        .source-tag { display: inline-block; padding: 4px 8px; background: #e3f2fd; color: #1976D2; border-radius: 4px; margin: 2px; font-size: 12px; }
+        .logic-tag { display: inline-block; padding: 4px 8px; background: #fff3e0; color: #F57C00; border-radius: 4px; margin: 2px; font-size: 12px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .badge-buy { background: #4CAF50; color: white; }
+        .badge-watch { background: #FF9800; color: white; }
+        .badge-strong { background: #2196F3; color: white; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
+        th { background: #f5f5f5; font-weight: 600; }
+        .footer { text-align: center; color: #999; margin-top: 40px; padding: 20px; }
+        .history-link { display: inline-block; margin: 10px 5px; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; }
+        .history-link:hover { background: #45a049; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 AI 股票推荐系统</h1>
+        <p class="subtitle">报告日期: 2026-05-08 | 生成时间: 2026-05-08 09:05:14</p>
+        
+        <div class="card">
+            <h2>🎯 今日候选池 (12 只)</h2>
+            <div class="stock-grid">
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">603937.SH</span>
+                            <span class="stock-name">丽岛新材</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">37.0</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">32</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">80</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">资金</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">603399.SH</span>
+                            <span class="stock-name">永杉锂业</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">36.0</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">30</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">80</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">资金</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 2 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">688811.SH</span>
+                            <span class="stock-name">有研复材</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">35.0</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">28</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">80</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">资金</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">600158.SH</span>
+                            <span class="stock-name">中体产业</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">27.9</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">32</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">资金</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">688167.SH</span>
+                            <span class="stock-name">炬光科技</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">22.0</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">40</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">20</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.67</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">技术</span>
+                        
+                        <span class="logic-tag">资金</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 2 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">002081.SZ</span>
+                            <span class="stock-name">金螳螂</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">21.2</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">64</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">20</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">技术</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">600610.SH</span>
+                            <span class="stock-name">中毅达</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">19.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">54</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">20</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">技术</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">002317.SZ</span>
+                            <span class="stock-name">众生药业</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">19.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">54</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">20</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">技术</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">600707.SH</span>
+                            <span class="stock-name">彩虹股份</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">19.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">54</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">20</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">技术</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">601208.SH</span>
+                            <span class="stock-name">东材科技</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">19.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">54</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">20</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">技术</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">002335.SZ</span>
+                            <span class="stock-name">科华数据</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">19.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">54</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">20</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">技术</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">002757.SZ</span>
+                            <span class="stock-name">南兴股份</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">19.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">54</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">20</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.33</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">— - —</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">—</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">— / —</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">技术</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+        
+        <div class="card">
+            <h2>📡 数据源统计</h2>
+            <table>
+                <tr><th>数据源</th><th>信号数</th><th>平均置信度</th><th>平均强度</th></tr>
+                
+                <tr>
+                    <td></td>
+                    <td>128</td>
+                    <td>0.00</td>
+                    <td>0.0</td>
+                </tr>
+                
+                <tr>
+                    <td></td>
+                    <td>100</td>
+                    <td>0.00</td>
+                    <td>0.0</td>
+                </tr>
+                
+                <tr>
+                    <td></td>
+                    <td>10</td>
+                    <td>0.00</td>
+                    <td>0.0</td>
+                </tr>
+                
+            </table>
+        </div>
+        
+        <div class="card">
+            <h2>📰 最新资讯</h2>
+            <table>
+                <tr><th>标题</th><th>来源</th><th>时间</th></tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: 英伟达概念 涨3.79%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615445+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: ERP概念 涨3.79%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615402+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: 激光雷达 涨3.85%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615357+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: 噪声防治 涨3.93%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615311+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: Kimi概念 涨3.94%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615266+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: F5G概念 涨4.51%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615220+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: 光通信模块 涨4.98%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615174+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: 纳米银 涨5.19%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615127+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: CPO概念 涨5.26%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615078+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">概念异动: 光纤概念 涨5.32%</a></td>
+                    <td>AKShare-热点概念</td>
+                    <td>2026-05-08 00:20:51.615019+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 红板科技 603459.SH 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295579+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 中毅达 600610.SH 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295533+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 振华股份 603067.SH 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295485+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 巨力索具 002342.SZ 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295439+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 苏州高新 600736.SH 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295393+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 真爱美家 003041.SZ 连板2</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295345+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 中青宝 300052.SZ 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295298+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 盈峰环境 000967.SZ 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295251+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 南威软件 603636.SH 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295205+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td><a href="" target="_blank">涨停: 继峰股份 603997.SH 连板1</a></td>
+                    <td>AKShare-涨停板</td>
+                    <td>2026-05-07 23:45:20.295159+00:00</td>
+                </tr>
+                
+            </table>
+        </div>
+        
+        <div class="footer">
+            <p>AI Stock Recommendation System | 每日 15:30 自动更新</p>
+            <p>历史报告: 
+                
+                <a href="2026-05-08/index.html" class="history-link">2026-05-08</a>
+                
+            </p>
+        </div>
+    </div>
+</body>
+</html>
