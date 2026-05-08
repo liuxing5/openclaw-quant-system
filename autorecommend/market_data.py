@@ -341,7 +341,8 @@ def fetch_lhb_today():
         import akshare as ak
         df = ak.stock_lhb_detail_em(start_date=today_str, end_date=today_str)
     except Exception as e:
-        logger.warning(f"lhb skipped: {e}")
+        err_msg = str(e) if e else repr(e)
+        logger.warning(f"lhb skipped: {err_msg}")
         return
     if df is None:
         logger.warning("lhb: 接口返回 None")
