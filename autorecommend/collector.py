@@ -74,6 +74,7 @@ def get_db():
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),
+        sslmode='require',
     )
 
 
@@ -737,19 +738,34 @@ def fetch_akshare_jgdy():
 
 
 def store_signals(rows):
-    """批量入库（去重靠 content_hash）"""
+    """批量入库（去重靠 content_hash，自动关联 source_id）"""
     if not rows:
         return 0
     conn = get_db(); cur = conn.cursor()
+
+    # 预加载 feed_sources 映射
+    cur.execute("SELECT id, name FROM feed_sources;")
+    source_map = {row[1]: row[0] for row in cur.fetchall()}
+    logger.info(f"加载 {len(source_map)} 个数据源映射: {list(source_map.keys())}")
+
     inserted = 0
     for row in rows:
         try:
+            # row 结构: (source_id_placeholder, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
+            source_name = row[1]
+            source_id = source_map.get(source_name)
+            if source_id is None:
+                logger.debug(f"数据源 '{source_name}' 未在 feed_sources 中注册，source_id 设为 NULL")
+
+            # 替换 row 中的 source_id 占位符
+            row_with_id = (source_id,) + row[1:]
+
             cur.execute("""
                 INSERT INTO raw_signals
                 (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (content_hash) DO NOTHING;
-            """, row)
+            """, row_with_id)
             if cur.rowcount > 0:
                 inserted += 1
         except Exception as e:
@@ -798,6 +814,37 @@ def main():
 
     inserted = store_signals(all_rows)
     logger.info(f"采集总计 {len(all_rows)} 条，新入库 {inserted} 条")
+
+    # 更新 feed_sources 状态
+    update_source_status(conn, inserted)
+
+
+def update_source_status(conn, total_inserted):
+    """更新 feed_sources 的成功/失败状态"""
+    if total_inserted > 0:
+        cur = conn.cursor()
+        # 获取今天采集的数据源
+        cur.execute("""
+            SELECT DISTINCT source_name FROM raw_signals
+            WHERE fetch_time >= %s;
+        """, (get_beijing_date(),))
+        active_sources = [row[0] for row in cur.fetchall()]
+
+        for source_name in active_sources:
+            cur.execute("""
+                UPDATE feed_sources
+                SET last_success_at = NOW(),
+                    consecutive_failures = 0,
+                    last_error_at = NULL,
+                    last_error_msg = NULL
+                WHERE name = %s;
+            """, (source_name,))
+
+        conn.commit()
+        cur.close()
+        logger.info(f"更新 {len(active_sources)} 个数据源状态为成功")
+    else:
+        logger.warning("无新数据入库，不更新数据源状态")
 
 
 if __name__ == '__main__':

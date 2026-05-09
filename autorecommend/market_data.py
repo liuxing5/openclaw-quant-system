@@ -28,6 +28,7 @@ def get_db():
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),
+        sslmode='require',
     )
 
 
@@ -358,7 +359,7 @@ def fetch_daily_quotes_today():
 
 
 def fetch_lhb_today():
-    """龙虎榜"""
+    """龙虎榜 - 动态列名映射，提取买卖金额"""
     today_str = get_beijing_date().strftime('%Y%m%d')
     try:
         import akshare as ak
@@ -373,13 +374,21 @@ def fetch_lhb_today():
     if not hasattr(df, 'empty') or df.empty:
         logger.info("lhb: 无数据")
         return
+
     col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
     col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
     col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
     col_net = next((c for c in ['龙虎榜净买额', '净买额', '净额'] if c in df.columns), None)
+    col_buy = next((c for c in ['龙虎榜买入额', '买入额', '买入', 'buy_amt'] if c in df.columns), None)
+    col_sell = next((c for c in ['龙虎榜卖出额', '卖出额', '卖出', 'sell_amt'] if c in df.columns), None)
+
+    logger.debug(f"lhb 列映射: code={col_code}, buy={col_buy}, sell={col_sell}, net={col_net}")
+    logger.debug(f"lhb 可用列: {list(df.columns)}")
+
     if not col_code:
         logger.warning(f"lhb: 找不到代码列，可用列: {list(df.columns)}")
         return
+
     rows = []
     for _, r in df.iterrows():
         try:
@@ -389,8 +398,31 @@ def fetch_lhb_today():
             ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
             name = r.get(col_name, '') or '' if col_name else ''
             reason = r.get(col_reason, '') or '' if col_reason else ''
-            net = r.get(col_net, 0) or 0 if col_net else 0
-            rows.append((get_beijing_date(), ts, name, reason, 0, 0, net, False))
+            net = float(r.get(col_net, 0) or 0) if col_net else 0
+
+            # 提取买卖金额，如果列不存在则从净额推算（净额 = 买入 - 卖出）
+            if col_buy and col_sell:
+                buy_amt = float(r.get(col_buy, 0) or 0)
+                sell_amt = float(r.get(col_sell, 0) or 0)
+            elif col_buy:
+                buy_amt = float(r.get(col_buy, 0) or 0)
+                sell_amt = buy_amt - net
+            elif col_sell:
+                sell_amt = float(r.get(col_sell, 0) or 0)
+                buy_amt = net + sell_amt
+            else:
+                # 无法获取买卖金额，用净额估算（假设买卖比例1:1.2）
+                if net >= 0:
+                    buy_amt = net * 1.2
+                    sell_amt = buy_amt - net
+                else:
+                    sell_amt = abs(net) * 1.2
+                    buy_amt = sell_amt + net
+
+            # 判断是否机构专用（原因中包含"机构"）
+            is_inst = '机构' in (reason or '')
+
+            rows.append((get_beijing_date(), ts, name, reason, buy_amt, sell_amt, net, is_inst))
         except Exception as e:
             logger.debug(f"lhb row error: {e}")
             continue
@@ -408,28 +440,91 @@ def fetch_lhb_today():
 
 
 def fetch_hsgt_top10():
-    """北向资金 top10"""
+    """北向资金 top10 - 动态列名映射，适配AKShare接口变更"""
     try:
         import akshare as ak
         df = ak.stock_hsgt_hold_stock_em(market='北向', indicator='今日排行')
+        if df is None or not hasattr(df, 'empty') or df.empty:
+            logger.warning("hsgt: 返回空数据")
+            return
+        logger.debug(f"hsgt 列名: {list(df.columns)}")
     except Exception as e:
         logger.warning(f"hsgt skipped: {e}")
         return
+
+    # 动态列名映射 - 尝试多种可能的列名（支持新版AKShare返回的列名）
+    col_code = next((c for c in ['代码', 'SCode', 'ORIGINALCODE'] if c in df.columns), None)
+    col_name = next((c for c in ['名称', 'SName'] if c in df.columns), None)
+    col_hold_shares = next((c for c in [
+        '今日持股数量', '持股数量', 'ShareHold', '持股数(股)', '持股数量(股)',
+        '今日持股-股数', '今日持股股数', '持股股数'  # 新版AKShare列名
+    ] if c in df.columns), None)
+    col_hold_cap = next((c for c in [
+        '今日持股市值', '持股市值', 'ShareSZ', '持股市值(元)', '持股市值(万元)',
+        '今日持股-市值', '今日持股市值', '持股市值金额'  # 新版AKShare列名
+    ] if c in df.columns), None)
+    col_net_buy = next((c for c in [
+        '持股数量变化', '当日持股变化', 'ShareHold_Chg_One', '持股变化', '增减数量', '持股数量变化(股)',
+        '今日增持估计-股数', '增持股数', '持股增减'  # 新版AKShare列名
+    ] if c in df.columns), None)
+
+    if not col_code:
+        logger.warning(f"hsgt: 找不到代码列，可用列: {list(df.columns)}")
+        return
+
+    logger.info(f"hsgt 列映射: code={col_code}, hold_shares={col_hold_shares}, hold_cap={col_hold_cap}, net_buy={col_net_buy}")
+
     rows = []
     for _, r in df.iterrows():
-        code = str(r.get('代码','')).zfill(6)
-        ts = code + ('.SH' if code.startswith('6') else '.SZ')
-        rows.append((ts, get_beijing_date(), 0, r.get('今日持股市值',0), 0))
+        try:
+            raw_code = str(r.get(col_code, '') or '')
+            # 清理代码：去掉市场前缀
+            code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+            if not code or code == 'nan' or len(code) < 6:
+                continue
+            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+
+            # 获取持股数据，处理可能的单位差异（万股 vs 股）
+            hold_shares_raw = r.get(col_hold_shares, 0) if col_hold_shares else 0
+            hold_shares_raw = hold_shares_raw if hold_shares_raw else 0
+
+            hold_cap_raw = r.get(col_hold_cap, 0) if col_hold_cap else 0
+            hold_cap_raw = hold_cap_raw if hold_cap_raw else 0
+
+            net_buy_raw = r.get(col_net_buy, 0) if col_net_buy else 0
+            net_buy_raw = net_buy_raw if net_buy_raw else 0
+
+            # 判断单位：如果数值较小（<10000）可能是万股，需要转换
+            # 北向资金持股通常以股为单位，但有些接口返回万股
+            if 0 < abs(hold_shares_raw) < 100000:
+                # 可能是万股，转换为股
+                hold_shares = int(hold_shares_raw * 10000)
+                hold_cap = float(hold_cap_raw * 10000) if hold_cap_raw else 0
+                net_buy = float(net_buy_raw * 10000) if net_buy_raw else 0
+            else:
+                hold_shares = int(hold_shares_raw)
+                hold_cap = float(hold_cap_raw)
+                net_buy = float(net_buy_raw)
+
+            rows.append((ts, get_beijing_date(), hold_shares, hold_cap, net_buy))
+        except Exception as e:
+            logger.debug(f"hsgt row error: {e}")
+            continue
+
     if rows:
         conn = get_db(); cur = conn.cursor()
         execute_values(cur, """
             INSERT INTO hsgt_individual VALUES %s
             ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-            hold_market_cap=EXCLUDED.hold_market_cap;
+            hold_shares=EXCLUDED.hold_shares,
+            hold_market_cap=EXCLUDED.hold_market_cap,
+            net_buy_amount=EXCLUDED.net_buy_amount;
         """, rows)
         conn.commit()
         logger.info(f"hsgt: {len(rows)} rows")
         cur.close(); conn.close()
+    else:
+        logger.warning("hsgt: 无有效数据")
 
 
 if __name__ == '__main__':
