@@ -504,7 +504,7 @@ def fetch_akshare_concept_hot():
     # 接口3: stock_changes_em - 个股异动（作为最后兜底）
     try:
         logger.debug("尝试接口3: stock_changes_em")
-        df = ak.stock_changes_em(symbol="全部")
+        df = ak.stock_changes_em()
         logger.debug(f"接口3返回: {type(df)}, shape={df.shape if df is not None else 'None'}")
         if df is not None and hasattr(df, 'empty') and not df.empty:
             logger.debug(f"接口3列名: {list(df.columns)[:15]}")
