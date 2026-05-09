@@ -211,24 +211,34 @@ def fetch_akshare_zt_pool():
 
 
 def fetch_akshare_concept_hot():
-    """概念板块异动 -> 信号，多接口兜底"""
+    """概念板块异动 -> 信号，多接口兜底，确保获取当日真实数据"""
     import akshare as ak
     rows = []
     
-    # 接口1: stock_board_concept_name_em
+    # 接口1: stock_board_concept_name_em - 获取概念板块实时行情
     try:
+        logger.debug("尝试接口1: stock_board_concept_name_em")
         df = ak.stock_board_concept_name_em()
+        logger.debug(f"接口1返回: {type(df)}, shape={df.shape if df is not None else 'None'}")
         if df is not None and hasattr(df, 'empty') and not df.empty:
-            if '涨跌幅' in df.columns:
-                df_sorted = df.sort_values('涨跌幅', ascending=False).head(10)
+            logger.debug(f"接口1列名: {list(df.columns)[:15]}")
+            # 查找涨跌幅列
+            col_chg = next((c for c in ['涨跌幅', '涨跌幅 (%)', 'change_pct'] if c in df.columns), None)
+            col_name = next((c for c in ['板块名称', '名称', 'concept_name'] if c in df.columns), None)
+            
+            if col_chg and col_name:
+                df_valid = df[df[col_chg].notna()].copy()
+                df_valid[col_chg] = pd.to_numeric(df_valid[col_chg], errors='coerce')
+                df_sorted = df_valid.sort_values(col_chg, ascending=False).head(15)
+                
                 for _, r in df_sorted.iterrows():
-                    concept = r.get('板块名称', '')
-                    chg = r.get('涨跌幅', 0)
+                    concept = r.get(col_name, '')
+                    chg = r.get(col_chg, 0)
                     try:
                         chg = float(chg)
                     except (ValueError, TypeError):
                         continue
-                    if chg < 1.5:
+                    if chg < 1.0:  # 降低阈值到 1%
                         continue
                     rows.append(make_signal(
                         source='AKShare-热点概念', tier=2,
@@ -239,25 +249,35 @@ def fetch_akshare_concept_hot():
                     logger.info(f"热点概念 (board): {len(rows)} 条")
                     return rows
             else:
-                logger.debug(f"concept board: 找不到涨跌幅列，可用列: {list(df.columns)[:10]}")
+                logger.warning(f"接口1找不到列，col_name={col_name}, col_chg={col_chg}, 可用列: {list(df.columns)[:15]}")
+        else:
+            logger.warning(f"接口1返回空数据: {df}")
     except Exception as e:
-        logger.debug(f"concept board 失败: {e}")
+        logger.warning(f"接口1失败: {e}")
     
-    # 接口2: stock_board_concept_hist_em (最近概念历史)
+    # 接口2: stock_board_hot_em - 热门概念板块
     try:
-        df = ak.stock_board_concept_hist_em(symbol="近期异动")
+        logger.debug("尝试接口2: stock_board_hot_em")
+        df = ak.stock_board_hot_em()
+        logger.debug(f"接口2返回: {type(df)}, shape={df.shape if df is not None else 'None'}")
         if df is not None and hasattr(df, 'empty') and not df.empty:
-            col_name = next((c for c in ['板块名称', '名称'] if c in df.columns), None)
-            col_chg = next((c for c in ['涨跌幅', '涨跌幅'] if c in df.columns), None)
-            if col_name and col_chg:
-                for _, r in df.head(10).iterrows():
+            logger.debug(f"接口2列名: {list(df.columns)[:15]}")
+            col_chg = next((c for c in ['涨跌幅', '涨跌幅 (%)', 'change_pct'] if c in df.columns), None)
+            col_name = next((c for c in ['板块名称', '名称', 'concept_name'] if c in df.columns), None)
+            
+            if col_chg and col_name:
+                df_valid = df[df[col_chg].notna()].copy()
+                df_valid[col_chg] = pd.to_numeric(df_valid[col_chg], errors='coerce')
+                df_sorted = df_valid.sort_values(col_chg, ascending=False).head(15)
+                
+                for _, r in df_sorted.iterrows():
                     concept = r.get(col_name, '')
                     chg = r.get(col_chg, 0)
                     try:
                         chg = float(chg)
                     except (ValueError, TypeError):
                         continue
-                    if chg < 1.5:
+                    if chg < 1.0:
                         continue
                     rows.append(make_signal(
                         source='AKShare-热点概念', tier=2,
@@ -265,44 +285,40 @@ def fetch_akshare_concept_hot():
                         content=f"{concept} 板块今日涨幅 {chg:.2f}%",
                     ))
                 if rows:
-                    logger.info(f"热点概念 (hist): {len(rows)} 条")
+                    logger.info(f"热点概念 (hot): {len(rows)} 条")
                     return rows
     except Exception as e:
-        logger.debug(f"concept hist 失败: {e}")
+        logger.warning(f"接口2失败: {e}")
     
-    # 接口3: stock_board_concept_cons_em (概念成分股)
+    # 接口3: stock_changes_em - 个股异动（作为最后兜底）
     try:
-        # 获取热门概念的成分股
-        df_concepts = ak.stock_board_concept_name_em()
-        if df_concepts is not None and hasattr(df_concepts, 'empty') and not df_concepts.empty:
-            if '板块名称' in df_concepts.columns and '涨跌幅' in df_concepts.columns:
-                top_concepts = df_concepts.sort_values('涨跌幅', ascending=False).head(3)
-                for _, concept_row in top_concepts.iterrows():
-                    concept_name = concept_row.get('板块名称', '')
-                    try:
-                        df_cons = ak.stock_board_concept_cons_em(symbol=concept_name)
-                        if df_cons is not None and hasattr(df_cons, 'empty') and not df_cons.empty:
-                            for _, stock_row in df_cons.head(5).iterrows():
-                                col_code = next((c for c in ['代码', '股票代码'] if c in df_cons.columns), None)
-                                col_name = next((c for c in ['名称', '股票名称'] if c in df_cons.columns), None)
-                                if col_code:
-                                    raw_code = str(stock_row.get(col_code, '') or '')
-                                    code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
-                                    if code and code != 'nan' and len(code) >= 4:
-                                        name = stock_row.get(col_name, '') if col_name else ''
-                                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-                                        rows.append(make_signal(
-                                            source='AKShare-热点概念', tier=2,
-                                            title=f"概念成分: {concept_name} {name} {ts}",
-                                            content=f"{name} 属于 {concept_name} 概念板块",
-                                        ))
-                    except Exception as e:
-                        logger.debug(f"concept {concept_name} 成分股获取失败: {e}")
-                    if rows:
-                        logger.info(f"热点概念 (cons): {len(rows)} 条")
-                        return rows
+        logger.debug("尝试接口3: stock_changes_em")
+        df = ak.stock_changes_em()
+        logger.debug(f"接口3返回: {type(df)}, shape={df.shape if df is not None else 'None'}")
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            logger.debug(f"接口3列名: {list(df.columns)[:15]}")
+            col_reason = next((c for c in ['异动类型', '异动原因', 'reason'] if c in df.columns), None)
+            col_name = next((c for c in ['名称', '股票名称'] if c in df.columns), None)
+            col_code = next((c for c in ['代码', '股票代码'] if c in df.columns), None)
+            
+            if col_reason:
+                for _, r in df.head(20).iterrows():
+                    reason = r.get(col_reason, '')
+                    name = r.get(col_name, '') if col_name else ''
+                    raw_code = str(r.get(col_code, '') or '') if col_code else ''
+                    code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                    if code and code != 'nan' and len(code) >= 4 and reason:
+                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        rows.append(make_signal(
+                            source='AKShare-热点概念', tier=2,
+                            title=f"个股异动: {name} {ts} {reason}",
+                            content=f"{name} 异动类型: {reason}",
+                        ))
+                if rows:
+                    logger.info(f"热点概念 (changes): {len(rows)} 条")
+                    return rows
     except Exception as e:
-        logger.debug(f"concept cons 失败: {e}")
+        logger.warning(f"接口3失败: {e}")
     
     logger.info(f"热点概念: {len(rows)} 条")
     return rows

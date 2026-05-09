@@ -156,7 +156,27 @@ async def push_daily_candidates():
         'afternoon': ('盘后复盘', '明日'),
     }
     header, target = mode_labels.get(RUN_MODE, ('盘后复盘', '明日'))
-    lines = [f" <b>{today}</b> {header}\n共 {len(cands)} 只\n"]
+    
+    # 获取数据采集统计
+    cur.execute("""
+        SELECT source_name, COUNT(*) as cnt
+        FROM raw_signals
+        WHERE fetch_time >= %s
+        GROUP BY source_name
+        ORDER BY cnt DESC;
+    """, (today - timedelta(days=2),))
+    source_stats = cur.fetchall()
+    
+    # 构建数据采集统计头部
+    stats_lines = []
+    stats_lines.append(f" <b>{today}</b> {header}")
+    stats_lines.append(f"共 {len(cands)} 只\n")
+    stats_lines.append("数据采集统计：")
+    for s in source_stats:
+        stats_lines.append(f"  {s['source_name']}: {s['cnt']} 条")
+    stats_lines.append("")
+    
+    lines = stats_lines
     
     for c in cands:
         c = dict(c)
