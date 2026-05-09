@@ -12,10 +12,13 @@ from core.utils.env import load_project_env
 load_project_env()
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '50'))  # 改回50
-MAX_SELECTED = 5  # 减少到5只
+MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '50'))
+MAX_SELECTED = 5
 MIN_LIQUIDITY = 1e8
 SOURCE = 'llm_multisource'
+
+# 用集合判断，兼容多种命名
+AFTERHOURS_MODES = {'afterhours', 'afternoon', 'evening'}
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -29,6 +32,31 @@ def is_trading_day(d):
     if d.weekday() > 4:  # 周六(5)或周日(6)
         return False
     return True
+
+
+def calc_price_levels(close, ts_code):
+    """根据板块计算入场/止损/目标价"""
+    if not close:
+        return None
+    code = ts_code.split('.')[0]
+    is_kc_cy = code.startswith(('688', '300', '301'))
+    
+    if is_kc_cy:
+        return {
+            'entry_low': round(close * 0.985, 2),
+            'entry_high': round(close * 1.015, 2),
+            'stop_loss': round(close * 0.95, 2),
+            'target_1': round(close * 1.08, 2),
+            'target_2': round(close * 1.15, 2),
+        }
+    else:
+        return {
+            'entry_low': round(close * 0.99, 2),
+            'entry_high': round(close * 1.01, 2),
+            'stop_loss': round(close * 0.97, 2),
+            'target_1': round(close * 1.05, 2),
+            'target_2': round(close * 1.10, 2),
+        }
 
 
 def aggregate_today():
@@ -76,12 +104,26 @@ def aggregate_today():
             'amount': float(q['amount']) if q['amount'] else 0,
         }
     logger.info(f"加载 {len(quote_cache)} 条行情到缓存 (trade_date={latest_trade_date})")
+    
+    # 加载股票名称缓存
+    cur.execute("SELECT ts_code, stock_name FROM stock_basic_info;")
+    name_cache = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
+    logger.info(f"加载 {len(name_cache)} 条股票名称到缓存")
 
     cur.execute("""
         SELECT
           e.ts_code, MAX(e.stock_name) AS stock_name,
           COUNT(*) AS mention_count,
-          COUNT(DISTINCT e.source_name) AS source_diversity,
+          COUNT(DISTINCT 
+            CASE 
+                WHEN e.source_name IN ('AKShare-龙虎榜', 'AKShare-涨停板') THEN 'capital'
+                WHEN e.source_name = 'AKShare-个股研报' THEN 'research'
+                WHEN e.source_name = 'AKShare-机构调研' THEN 'institution'
+                WHEN e.source_name IN ('AKShare-财经新闻', 'AKShare-热点概念') THEN 'news'
+                ELSE 'other'
+            END
+          ) AS source_diversity,
+          COUNT(DISTINCT e.source_name) AS source_count_raw,
           AVG(e.strength * COALESCE(e.confidence,0.5)) AS llm_score,
           ARRAY_AGG(DISTINCT e.logic_category) AS logic_tags,
           JSON_AGG(JSON_BUILD_OBJECT(
@@ -127,7 +169,7 @@ def aggregate_today():
             is_kc_cy = ts.split('.')[0].startswith(('688', '300', '301'))
             limit_threshold = 19.5 if is_kc_cy else 9.5
 
-            if RUN_MODE == 'afternoon' and pct_chg >= limit_threshold:
+            if RUN_MODE in AFTERHOURS_MODES and pct_chg >= limit_threshold:
                 logger.info(f"{ts} 今日已涨停 {pct_chg:.1f}%，盘后模式跳过（次日陷阱风险）")
                 continue
 
@@ -185,13 +227,14 @@ def aggregate_today():
             has_zt = any('涨停' in (s.get('source') or '') for s in (r['sources'] or []))
             if has_lhb and has_zt:
                 if RUN_MODE == 'morning':
-                    logger.info(f"{r['ts_code']} 龙虎榜+涨停板共振，盘前模式直接过滤（T+1陷阱风险）")
+                    logger.info(f"{r['ts_code']} 龙虎榜+涨停板共振，盘前模式直接过滤")
                     continue
-                final = final * 0.6
-                logger.debug(f"{r['ts_code']} 龙虎榜+涨停板共振，降权 40%（T+1陷阱风险）")
+                elif RUN_MODE in AFTERHOURS_MODES:
+                    final = final * 0.6
+                    logger.debug(f"{r['ts_code']} 龙虎榜+涨停板共振，盘后降权 40%")
 
             candidates.append({
-                'ts_code': r['ts_code'], 'stock_name': r['stock_name'],
+                'ts_code': r['ts_code'], 'stock_name': name_cache.get(r['ts_code']) or r['stock_name'],
                 'mention_count': r['mention_count'], 'source_diversity': r['source_diversity'],
                 'consensus_score': consensus, 'llm_score': llm_n * 100,
                 'quant_score': quant_score, 'final_score': final,
@@ -211,7 +254,7 @@ def aggregate_today():
               AND turnover_rate > 3
             ORDER BY amount DESC
             LIMIT 50;
-        """, (today,))
+        """, (latest_trade_date,))
         quotes = cur.fetchall()
 
         for q in quotes:
@@ -239,7 +282,7 @@ def aggregate_today():
             final = quant_score * 0.8
 
             candidates.append({
-                'ts_code': ts_code, 'stock_name': None,
+                'ts_code': ts_code, 'stock_name': name_cache.get(ts_code, ''),
                 'mention_count': 1, 'source_diversity': 1,
                 'consensus_score': 0.3, 'llm_score': 0,
                 'quant_score': quant_score, 'final_score': final,
@@ -282,6 +325,9 @@ def aggregate_today():
         for c in observation:
             c['selected'] = False
             c['position_pct'] = 0
+            levels = calc_price_levels(c.get('close'), c['ts_code'])
+            if levels:
+                c.update(levels)
         n = write_candidates(observation, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
         cur.close(); conn.close()
         logger.info(f"写入 {n} 条观察记录到 daily_candidates (snapshot_date={today})")
@@ -295,29 +341,11 @@ def aggregate_today():
     items = []
     for c in qualified[:15]:
         is_selected = c in selected_list
-        close = c['close']
-        code = c['ts_code'].split('.')[0]
-
-        if code.startswith(('688', '300', '301')):
-            entry_low = round(close * 0.985, 2)
-            entry_high = round(close * 1.015, 2)
-            stop = round(close * 0.95, 2)
-            t1 = round(close * 1.08, 2)
-            t2 = round(close * 1.15, 2)
-        else:
-            entry_low = round(close * 0.99, 2)
-            entry_high = round(close * 1.01, 2)
-            stop = round(close * 0.97, 2)
-            t1 = round(close * 1.05, 2)
-            t2 = round(close * 1.10, 2)
-
+        levels = calc_price_levels(c['close'], c['ts_code'])
         c['selected'] = is_selected
         c['position_pct'] = 0.08 if is_selected else 0
-        c['entry_low'] = entry_low
-        c['entry_high'] = entry_high
-        c['stop_loss'] = stop
-        c['target_1'] = t1
-        c['target_2'] = t2
+        if levels:
+            c.update(levels)
         items.append(c)
 
     n = write_candidates(items, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)

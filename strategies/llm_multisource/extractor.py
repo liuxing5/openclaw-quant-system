@@ -163,10 +163,12 @@ def process_one(row):
         is_recommendation = result.get('is_recommendation', False)
         items_raw = result.get('items', [])
         
+        # 折中：只容错明确 buy/strong_buy 的
         if not is_recommendation and items_raw:
-            # 容错：即使标记为非推荐，如果有 items 也保留
-            logger.debug(f"raw_id={row['id']}: is_recommendation=false but has {len(items_raw)} items, keeping them")
-            items = items_raw
+            items = [it for it in items_raw
+                     if it.get('recommendation_type') in ('buy', 'strong_buy')]
+            if items:
+                logger.debug(f"raw_id={row['id']}: 容错保留 {len(items)} 个明确 buy 信号")
         elif is_recommendation:
             items = items_raw
         else:
