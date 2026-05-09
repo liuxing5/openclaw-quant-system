@@ -20,6 +20,17 @@ def get_db():
 
 def update_tracking():
     conn = get_db(); cur = conn.cursor()
+    
+    # 自动迁移：添加缺失的列
+    for col in ['t1_hit_target', 't1_hit_stop', 't5_hit_target', 't5_hit_stop', 't20_hit_target', 't20_hit_stop']:
+        cur.execute("""
+            SELECT column_name FROM information_schema.columns
+            WHERE table_schema = 'public' AND table_name = 'performance_tracking' AND column_name = %s;
+        """, (col,))
+        if not cur.fetchone():
+            cur.execute(f"ALTER TABLE performance_tracking ADD COLUMN {col} BOOLEAN;")
+            conn.commit()
+    
     cur.execute("""
         SELECT c.id, c.ts_code, c.snapshot_date,
                (c.entry_low + c.entry_high) / 2 AS avg_entry,
