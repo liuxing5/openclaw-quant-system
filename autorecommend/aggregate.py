@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = 50
+MIN_SELECT_SCORE = 40  # 50 → 40，降低阈值避免空推荐
 MAX_SELECTED = 8
 MIN_LIQUIDITY = 1e8
 
@@ -230,8 +230,8 @@ def aggregate_today():
 
     candidates.sort(key=lambda x: x['final_score'], reverse=True)
     logger.info(f"排序后候选池: {len(candidates)} 只")
-    for c in candidates[:5]:
-        logger.info(f"  {c['ts_code']} final={c['final_score']:.1f} llm={c['llm_score']:.0f} quant={c['quant_score']:.0f}")
+    for c in candidates[:10]:
+        logger.info(f"  {c['ts_code']} {c['stock_name']} final={c['final_score']:.1f} llm={c['llm_score']:.0f} quant={c['quant_score']:.0f} consensus={c['consensus_score']:.2f}")
 
     if RUN_MODE == 'intraday':
         filtered = []
