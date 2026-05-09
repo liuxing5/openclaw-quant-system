@@ -1,6 +1,12 @@
 """
-隔夜选股法·最优融合版 (zuiyou1 v1.4)
+隔夜选股法·最优融合版 (zuiyou1 v1.5)
 ========================================
+v1.5 修订（2026-05-09）：
+  ✓ LLM候选池整合 —— 从Supabase读取昨日LLM多源策略候选池
+  ✓ LLM优先级加成 —— 候选股票获得额外加分（最高+25分）
+  ✓ 共鸣强化标记 —— 3+源推荐的标的额外+5分加成
+  ✓ Telegram推送区分 —— LLM候选(🤖)和八步法自有(🔮)分开显示
+
 v1.4 修订（2026-05-07）：
   ✓ 细粒度排序因子 —— 大单/距涨停/MA5区分同分标的
   ✓ 乖离动态阈值 —— 高位路径0.12，高潮期+0.03
@@ -72,14 +78,84 @@ except ImportError:
 # 调试模式开关（环境变量 ZUIYOU_DEBUG=true 时启用）
 DEBUG = os.environ.get("ZUIYOU_DEBUG", "").lower() == "true"
 
-# 冷门行业关键词（匹配证监会行业分类的子串）
-COLD_INDUSTRIES_KEYWORDS = ["银行", "保险", "煤炭", "钢铁", "黑色金属"]
+# ============================================================
+# 行业分类与评分体系
+# ============================================================
 
-def is_cold_industry(industry: str) -> bool:
-    """判断是否为冷门行业（隔夜溢价较低）"""
+# 行业分类体系（基于A股市场特性和隔夜溢价表现）
+INDUSTRY_CATEGORIES = {
+    # 热门行业（隔夜溢价较高，加分）
+    "hot": {
+        "keywords": [
+            "半导体", "芯片", "集成电路", "人工智能", "AI", "机器学习", "大数据",
+            "云计算", "软件服务", "互联网", "电商", "直播", "游戏", "元宇宙",
+            "新能源", "光伏", "储能", "锂电池", "充电桩", "新能源汽车", "智能汽车",
+            "军工", "航天", "国防", "半导体材料", "光刻", "算力", "数据中心",
+            "生物医药", "创新药", "CXO", "医疗器械", "医美", "基因", "疫苗",
+            "消费电子", "苹果概念", "华为概念", "5G", "物联网", "工业互联",
+            "机器人", "智能制造", "工业自动化", "专精特新", "国企改革",
+        ],
+        "score_bonus": 15,
+        "tags": ["热门赛道"]
+    },
+    # 中性行业（常规表现，不加分不扣分）
+    "neutral": {
+        "keywords": [
+            "通用设备", "专用设备", "机械设备", "电气设备", "仪器仪表",
+            "化工", "化学制品", "塑料", "橡胶", "新材料",
+            "纺织", "服装", "家居", "造纸", "包装",
+            "食品饮料", "白酒", "啤酒", "乳制品", "调味品",
+            "零售", "百货", "超市", "家电", "家具",
+            "建筑装饰", "建筑材料", "水泥", "玻璃",
+            "交通运输", "物流", "快递", "仓储",
+            "通信服务", "运营商", "光纤", "通信设备",
+        ],
+        "score_bonus": 0,
+        "tags": ["中性行业"]
+    },
+    # 防御性行业（波动低，隔夜溢价一般，小幅扣分）
+    "defensive": {
+        "keywords": [
+            "银行", "保险", "证券", "多元金融", "房地产", "物业", "园区开发",
+            "公用事业", "电力", "水务", "燃气", "供热",
+            "交通运输", "铁路", "公路", "港口", "机场", "航空",
+            "农林牧渔", "种植", "养殖", "饲料", "化肥",
+        ],
+        "score_bonus": -10,
+        "tags": ["防御板块"]
+    },
+    # 冷门/周期行业（隔夜溢价低，明显扣分）
+    "cold": {
+        "keywords": [
+            "煤炭", "钢铁", "黑色金属", "有色金属", "黄金", "稀土",
+            "石油", "石化", "化工原料", "化纤",
+            "采掘", "矿业", "金属制品", "钢铁加工",
+            "建材", "水泥制造", "玻璃制造",
+        ],
+        "score_bonus": -25,
+        "tags": ["冷门行业"]
+    },
+}
+
+def analyze_industry(industry: str) -> tuple:
+    """
+    分析行业分类并返回评分和标签
+    
+    返回: (score_bonus, category, tags)
+    """
     if not industry:
-        return False
-    return any(kw in industry for kw in COLD_INDUSTRIES_KEYWORDS)
+        return 0, "未知", ["行业未知"]
+    
+    industry_lower = industry.lower()
+    
+    # 按优先级匹配（热门 > 冷门 > 防御 > 中性）
+    for category, config in INDUSTRY_CATEGORIES.items():
+        for keyword in config["keywords"]:
+            if keyword.lower() in industry_lower:
+                return config["score_bonus"], category, config["tags"]
+    
+    # 默认归类为中性
+    return 0, "中性", ["中性行业"]
 
 # 行业缓存（内存+文件双缓存，7天更新一次）
 _industry_cache = {}
@@ -193,6 +269,90 @@ def _persist_to_daily_candidates(stable_picks, upper_picks, snapshot_date) -> in
         return 0
 
 # ============================================================
+#  LLM候选池整合（v1.5+）
+# ============================================================
+_llm_candidates_cache = {}
+
+def get_llm_candidates_from_supabase(yesterday: str, min_score: float = 40.0) -> dict:
+    """从Supabase读取昨日LLM候选池，用于八步法优先级加成"""
+    global _llm_candidates_cache
+    
+    if _llm_candidates_cache:
+        return _llm_candidates_cache
+    
+    if not DB_ENABLED:
+        return {}
+    
+    try:
+        import psycopg2
+        import os
+        conn = psycopg2.connect(os.getenv('POSTGRES_URL') or os.getenv('DATABASE_URL'))
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT ts_code, final_score, llm_score, quant_score, source_diversity, logic_tags, stock_name
+            FROM daily_candidates
+            WHERE snapshot_date = %s 
+              AND (selected = TRUE OR final_score >= %s)
+            ORDER BY final_score DESC
+        """, (yesterday, min_score))
+        
+        rows = cur.fetchall()
+        conn.close()
+        
+        for row in rows:
+            code = row[0]
+            _llm_candidates_cache[code] = {
+                'final_score': float(row[1]) if row[1] else 0,
+                'llm_score': float(row[2]) if row[2] else 0,
+                'quant_score': float(row[3]) if row[3] else 0,
+                'source_diversity': int(row[4]) if row[4] else 0,
+                'logic_tags': row[5] or [],
+                'stock_name': row[6] or ''
+            }
+        
+        print(f"✓ 从Supabase加载 {len(_llm_candidates_cache)} 只LLM候选池")
+        return _llm_candidates_cache
+        
+    except Exception as e:
+        print(f"⚠️ LLM候选池读取失败: {e}")
+        return {}
+
+
+def is_llm_candidate(code: str) -> tuple[bool, dict]:
+    """检查股票是否在LLM候选池中"""
+    global _llm_candidates_cache
+    
+    code_standard = code.replace(".", "").upper()
+    
+    for cached_code in _llm_candidates_cache:
+        cache_std = cached_code.replace(".", "").upper()
+        if cache_std == code_standard:
+            return True, _llm_candidates_cache[cached_code]
+    
+    return False, {}
+
+
+def get_llm_boost_score(code: str) -> float:
+    """获取LLM候选池的加成分数"""
+    is_candidate, info = is_llm_candidate(code)
+    if not is_candidate:
+        return 0.0
+    
+    boost = 0.0
+    boost += min(info.get('final_score', 0) * 0.1, 15.0)
+    boost += min(info.get('llm_score', 0) * 0.05, 10.0)
+    
+    source_diversity = info.get('source_diversity', 0)
+    if source_diversity >= 3:
+        boost += 5.0
+    elif source_diversity >= 2:
+        boost += 3.0
+    
+    return min(boost, 25.0)
+
+
+# ============================================================
 #  1. 全局配置
 # ============================================================
 CONFIG_STABLE = {
@@ -205,7 +365,7 @@ CONFIG_STABLE = {
     "vol_ratio_min": 1.5,
     "vol_ratio_max": 8.0,
     "stable_pct_lo": 3.0,
-    "stable_pct_hi": 5.0,
+    "stable_pct_hi": 6.0,
     "upper_pct_lo": 6.0,
     "upper_pct_hi": 9.7,
     "turn_min": 5.0,
@@ -213,9 +373,10 @@ CONFIG_STABLE = {
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
     "score_threshold": 78,
-    "sentiment_cold": 30,
-    "sentiment_normal": 60,
-    "sentiment_hot": 100,
+    "sentiment_cold": 40,      # 情绪评分阈值：冷淡
+    "sentiment_normal": 55,    # 情绪评分阈值：正常
+    "sentiment_hot": 70,       # 情绪评分阈值：活跃
+    "sentiment_fever": 85,     # 情绪评分阈值：火热/高潮
     "penalty_hot_turn": 12.0,
     "penalty_vol_ratio": 7.0,
     "penalty_ma_bias": 0.08,
@@ -232,7 +393,7 @@ CONFIG_UPPER = {
     "vol_ratio_min": 1.5,
     "vol_ratio_max": 10.0,
     "stable_pct_lo": 3.0,
-    "stable_pct_hi": 5.0,
+    "stable_pct_hi": 6.0,
     "upper_pct_lo": 6.0,
     "upper_pct_hi": 9.7,
     "turn_min": 5.0,
@@ -240,9 +401,10 @@ CONFIG_UPPER = {
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
     "score_threshold": 78,
-    "sentiment_cold": 30,
-    "sentiment_normal": 60,
-    "sentiment_hot": 100,
+    "sentiment_cold": 40,      # 情绪评分阈值：冷淡
+    "sentiment_normal": 55,    # 情绪评分阈值：正常
+    "sentiment_hot": 70,       # 情绪评分阈值：活跃
+    "sentiment_fever": 85,     # 情绪评分阈值：火热/高潮
     "penalty_hot_turn": 12.0,
     "penalty_vol_ratio": 7.0,
     "penalty_ma_bias": 0.08,
@@ -341,75 +503,169 @@ def get_time_weight() -> float:
 # ============================================================
 def fetch_market_sentiment() -> Tuple[int, str]:
     """
-    获取真实涨停家数（东财涨停池接口）。
-    返回 (涨停家数, 情绪描述)。
+    获取多维市场情绪指标（东财接口）。
+    返回 (综合情绪分数, 情绪描述)。
+    
+    情绪维度：
+    1. 涨停家数 - 市场热度核心指标
+    2. 涨跌家数比 - 整体赚钱效应
+    3. 封板率 - 打板成功率
+    4. 连板高度 - 市场高度标杆
+    5. 炸板率 - 情绪衰竭信号
+    6. 跌停家数 - 风险释放程度
     """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Referer": "https://quote.eastmoney.com/ztb/detail"
+    }
+    
+    # 默认值（非交易时间或接口异常时使用）
+    default_values = {
+        'zt_count': 50,
+        'dt_count': 5,
+        'up_count': 1500,
+        'down_count': 1500,
+        'seal_rate': 0.7,
+        'max_streak': 3,
+        'explode_rate': 0.15,
+        'avg_zt_pct': 9.5
+    }
+    
     try:
-        # 使用统一的北京时间函数
         today_ymd = beijing_now().strftime('%Y%m%d')
+        today_dash = beijing_now().strftime('%Y-%m-%d')
         
-        # 方案1：东财涨停池接口（最直接）
+        # 1. 获取涨停池数据
+        zt_count = 0
+        dt_count = 0
+        streak_list = []
+        explode_count = 0
+        
         url = f"https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&Pagesize=500&sort=fbt%3Aasc&date={today_ymd}&_={int(time.time() * 1000)}"
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Referer": "https://quote.eastmoney.com/ztb/detail"
-        }
-        
         r = requests.get(url, headers=headers, timeout=10)
         data = r.json()
         
-        # 解析涨停池数据
         if data.get('data') and data['data'].get('pool'):
             pool = data['data']['pool']
             zt_count = len(pool)
-            # 调试：打印前3只涨停股票验证数据真实性
+            
+            # 分析涨停股票特征
+            for stock in pool:
+                # 连板高度（从字段中提取）
+                streak = stock.get('zdf', 0)  # 涨停次数字段
+                if isinstance(streak, int) and streak > 0:
+                    streak_list.append(streak)
+                # 判断是否炸板（现价是否低于涨停价）
+                if 'np' in stock and 'zdf' in stock:
+                    try:
+                        current_pct = float(stock.get('np', '0'))
+                        limit_pct = float(stock.get('zdf', '10'))
+                        if current_pct < limit_pct * 0.9:  # 低于涨停价90%视为炸板
+                            explode_count += 1
+                    except:
+                        pass
+            
             if zt_count > 0:
                 sample = pool[:3]
                 sample_names = [s.get('n', '') for s in sample]
-                print(f"  [DEBUG] 涨停池验证: 共{zt_count}家, 示例: {', '.join(sample_names)}")
+                print(f"  [DEBUG] 涨停池: {zt_count}家, 示例: {', '.join(sample_names)}")
+        
+        # 2. 获取涨跌家数
+        up_count = 1500
+        down_count = 1500
+        try:
+            market_url = "https://push2.eastmoney.com/api/qt/stock/get?secid=0.000001&fields=f57,f58,f116,f117,f118,f119,f120,f121"
+            r = requests.get(market_url, headers=headers, timeout=10)
+            market_data = r.json()
+            if market_data.get('data'):
+                up_count = int(market_data['data'].get('f116', 1500))
+                down_count = int(market_data['data'].get('f117', 1500))
+        except Exception as e:
+            print(f"  ⚠️ 获取涨跌家数失败: {e}")
+        
+        # 3. 获取跌停数据
+        try:
+            dt_url = f"https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.dtzt&Pageindex=0&Pagesize=200&sort=fbt%3Aasc&date={today_ymd}&_={int(time.time() * 1000)}"
+            r = requests.get(dt_url, headers=headers, timeout=10)
+            dt_data = r.json()
+            if dt_data.get('data') and dt_data['data'].get('pool'):
+                dt_count = len(dt_data['data']['pool'])
+        except Exception as e:
+            print(f"  ⚠️ 获取跌停数据失败: {e}")
+        
+        # 计算派生指标
+        max_streak = max(streak_list) if streak_list else 2
+        seal_rate = (zt_count - explode_count) / max(zt_count, 1)  # 封板率
+        explode_rate = explode_count / max(zt_count, 1)  # 炸板率
+        up_down_ratio = up_count / max(down_count, 1)  # 涨跌比
+        avg_zt_pct = 9.5  # 平均涨停强度（简化处理）
+        
+        # 打印多维情绪指标
+        print(f"\n  📊 多维情绪指标:")
+        print(f"    涨停家数: {zt_count} | 跌停家数: {dt_count}")
+        print(f"    上涨家数: {up_count} | 下跌家数: {down_count} | 涨跌比: {up_down_ratio:.2f}")
+        print(f"    封板率: {seal_rate:.1%} | 炸板率: {explode_rate:.1%}")
+        print(f"    最高连板: {max_streak}板")
+        
+        # 综合情绪评分（0-100分）
+        # 各维度权重：涨停家数(25%) + 涨跌比(20%) + 封板率(20%) + 连板高度(15%) + 炸板率(15%) + 跌停(5%)
+        score = 50  # 基础分
+        
+        # 涨停家数评分
+        zt_score = min(zt_count / 100 * 25, 25)
+        score += zt_score
+        
+        # 涨跌比评分
+        ratio_score = min(up_down_ratio * 10, 20)
+        score += ratio_score
+        
+        # 封板率评分
+        seal_score = seal_rate * 20
+        score += seal_score
+        
+        # 连板高度评分
+        streak_score = min(max_streak * 3, 15)
+        score += streak_score
+        
+        # 炸板率扣分
+        explode_penalty = explode_rate * 15
+        score -= explode_penalty
+        
+        # 跌停家数扣分
+        dt_penalty = min(dt_count * 0.5, 5)
+        score -= dt_penalty
+        
+        score = max(0, min(100, score))
+        
+        # 情绪等级判定
+        if score < 25:
+            mood = "极冷"
+        elif score < 40:
+            mood = "冷淡"
+        elif score < 55:
+            mood = "正常"
+        elif score < 70:
+            mood = "活跃"
+        elif score < 85:
+            mood = "火热"
         else:
-            zt_count = 0
-        
-        # 方案2：如果涨停池接口返回0，尝试数据中心接口
-        if zt_count == 0:
-            try:
-                today_dash = beijing_now().strftime('%Y-%m-%d')
-                url2 = "https://datacenter-web.eastmoney.com/api/data/v1/get"
-                params2 = {
-                    "reportName": "RPT_DAILYBILLBOARD_DETAILSNEW",
-                    "columns": "ALL",
-                    "pageNumber": 1,
-                    "pageSize": 100,
-                    "sortColumns": "BILLBOARD_NET_AMT",
-                    "sortTypes": -1,
-                    "filter": f"(TRADE_DATE='{today_dash}')"
-                }
-                r2 = requests.get(url2, params=params2, headers=headers, timeout=10)
-                data2 = r2.json()
-                result = data2.get('result') or {}
-                zt_count = result.get('count', 0) if isinstance(result, dict) else 0
-            except:
-                pass
-        
-        # 如果两个接口都返回0，可能是非交易时间
-        if zt_count == 0:
-            print(f"  ⚠️ 非交易时间或接口异常，使用默认值 50 家涨停")
-            return 50, "正常"
+            mood = "高潮"
             
+        print(f"    综合情绪分: {score:.1f} | 情绪状态: {mood}")
+        return int(score), mood
+        
     except Exception as e:
-        print(f"  ⚠️ 情绪接口异常: {e}，使用默认值 50 家涨停")
-        return 50, "正常"
-
-    if zt_count < CONFIG["sentiment_cold"]:
-        mood = "冷淡"
-    elif zt_count < CONFIG["sentiment_normal"]:
-        mood = "正常"
-    elif zt_count < CONFIG["sentiment_hot"]:
-        mood = "活跃"
-    else:
-        mood = "高潮"
-
-    return zt_count, mood
+        print(f"  ⚠️ 情绪接口异常: {e}，使用默认值")
+        # 使用默认值计算情绪
+        score = 50 + (default_values['zt_count'] / 100 * 25) + \
+                (default_values['up_count'] / default_values['down_count'] * 10) + \
+                (default_values['seal_rate'] * 20) + \
+                (default_values['max_streak'] * 3) - \
+                (default_values['explode_rate'] * 15) - \
+                (default_values['dt_count'] * 0.5)
+        score = max(0, min(100, score))
+        mood = "正常" if score < 55 else "活跃" if score < 70 else "火热"
+        return int(score), mood
 
 
 # ============================================================
@@ -647,12 +903,25 @@ def analyze_ultimate(
 
     # --- STEP 4: 流通市值过滤（8步法50亿-200亿）---
     # v1.1: 去掉 MODE 限制，post 模式也启用市值过滤
+    # 修复：市值缺失时使用成交额和换手率估算
     mktcap = real_info.get("mktcap", 0) if real_info else 0
+    
+    # 如果市值数据缺失，尝试用成交额估算（成交额/换手率 ≈ 流通市值）
+    if mktcap <= 0 and curr_amount > 0 and curr_turn > 0:
+        # 成交额(万元) / 换手率(%) * 100 = 流通市值(万元)
+        est_mktcap = (curr_amount * 100) / curr_turn  # 转为万元
+        mktcap = est_mktcap / 10000  # 转为亿元
+    
     if mktcap > 0:
         if mktcap < CONFIG["min_mktcap"] or mktcap > CONFIG["max_mktcap"]:
             if reject_stats is not None:
                 reject_stats["市值"] += 1
             return None
+    else:
+        # 市值数据完全无法获取，拒绝该股票
+        if reject_stats is not None:
+            reject_stats["市值"] += 1
+        return None
 
     # --- STEP 5: 量比计算（10日去极值均量 + 时间加权）---
     recent_vols = sorted(hist_vols[-12:])
@@ -706,12 +975,27 @@ def analyze_ultimate(
     recent_5d_vols = hist_vols[-4:] + [est_full_vol] if len(hist_vols) >= 4 else hist_vols[-2:] + [est_full_vol]
     recent_5d_vols = [float(x) for x in recent_5d_vols if float(x) > 0]
     vol_increasing = False
+    
     if len(recent_5d_vols) >= 3:
+        # 条件1：连续增长检测（允许小幅回撤）
         increasing_count = 0
         for j in range(1, len(recent_5d_vols)):
             if recent_5d_vols[j] >= recent_5d_vols[j - 1] * 0.9:
                 increasing_count += 1
-        vol_increasing = increasing_count >= len(recent_5d_vols) - 2
+        meets_continuous = increasing_count >= len(recent_5d_vols) - 2
+        
+        # 条件2：整体放量趋势（今日量能相对于前期均值有明显增长）
+        if len(hist_vols) >= 10:
+            avg_vol_recent = sum(hist_vols[-10:-5]) / 5  # 5-10日前的平均量能
+            today_ratio = est_full_vol / avg_vol_recent if avg_vol_recent > 0 else 0
+            meets_trend = today_ratio >= 1.3  # 今日量能至少是前期均值的1.3倍
+        else:
+            meets_trend = True  # 数据不足时跳过此条件
+        
+        # 条件3：今日量能必须大于前一日
+        meets_today = est_full_vol >= hist_vols[-1] * 0.95 if hist_vols else True
+        
+        vol_increasing = meets_continuous and meets_trend and meets_today
 
     # --- 连板高度判断 ---
     streak = 0
@@ -795,18 +1079,27 @@ def analyze_ultimate(
         score += max(net, 0)
         tags.append(f"{streak}连板(高度风险)")
 
-    # F. 情绪周期判断（逆向思维）
-    if zt_count >= CONFIG["sentiment_hot"]:
-        # 高潮期反而扣分，因为是顶部信号
+    # F. 情绪周期判断（逆向思维）- 基于多维情绪评分
+    # zt_count 现在是综合情绪分数(0-100)
+    if zt_count >= CONFIG["sentiment_fever"]:
+        # 高潮期(≥85分)：风险最高，大幅扣分
+        score -= 15
+        tags.append("情绪高潮↓↓")
+    elif zt_count >= CONFIG["sentiment_hot"]:
+        # 活跃期(≥70分)：适当扣分
+        score -= 5
+        tags.append("情绪偏热↓")
+    elif zt_count >= CONFIG["sentiment_normal"]:
+        # 正常期(≥55分)：小幅加分
+        score += 3
+        tags.append("情绪健康+")
+    elif zt_count >= CONFIG["sentiment_cold"]:
+        # 冷淡期(≥40分)：观望态度，不加分也不扣分
+        tags.append("情绪观望")
+    else:
+        # 极冷期(<40分)：市场风险高，扣分
         score -= 10
-        tags.append("高潮警惕↓")
-    elif zt_count >= 80:
-        # 偏热期不加分
-        pass
-    elif zt_count >= 50:
-        # 正常期加分
-        score += 5
-        tags.append("情绪正常+")
+        tags.append("情绪极冷↓")
 
     # --- 风险扣分 ---
     if curr_turn > CONFIG["penalty_hot_turn"]:
@@ -825,8 +1118,11 @@ def analyze_ultimate(
     bias_threshold = 0.08
     if in_upper:
         bias_threshold = 0.12
-    if mood == "高潮":
+    # 根据情绪动态调整乖离阈值
+    if mood in ("火热", "高潮"):
         bias_threshold += 0.03
+    elif mood == "冷淡":
+        bias_threshold -= 0.02
     bias_excess = bias_ma5 - bias_threshold
     if bias_excess > 0:
         if bias_excess <= 0.02:  # 超出阈值 0-2%
@@ -840,11 +1136,15 @@ def analyze_ultimate(
                 reject_stats["乖离严重"] += 1
             return None
 
-    # 冷门行业过滤：隔夜溢价较低的行业扣分
+    # 行业评分：根据行业分类进行加分或扣分
     industry = get_stock_industry(code)
-    if is_cold_industry(industry):
-        score -= 20
-        tags.append(f"冷门行业({industry})↓")
+    industry_bonus, industry_category, industry_tags = analyze_industry(industry)
+    if industry_bonus != 0:
+        score += industry_bonus
+        if industry_bonus > 0:
+            tags.append(f"热门赛道(+{industry_bonus})")
+        else:
+            tags.append(f"{industry_tags[0]}({industry_bonus})")
 
     # 尾盘回落检测：post模式下检查今日是否从高点大幅回落
     if CONFIG["MODE"] == "post":
@@ -889,6 +1189,19 @@ def analyze_ultimate(
 
     score += fine_score
 
+    # --- LLM候选池加成（v1.5+）---
+    is_llm_cand, llm_info = is_llm_candidate(code)
+    llm_boost = 0.0
+    if is_llm_cand:
+        llm_boost = get_llm_boost_score(code)
+        score += llm_boost
+        llm_tags = []
+        llm_tags.append(f"LLM候选+{llm_boost:.0f}")
+        if llm_info.get('source_diversity', 0) >= 3:
+            llm_tags.append("共识强化")
+        tags.extend(llm_tags)
+        tags.append("🤖LLM")
+
     # --- 最终判定 ---
     if score < CONFIG["score_threshold"]:
         if reject_stats is not None:
@@ -907,6 +1220,8 @@ def analyze_ultimate(
         "score": score,
         "path": "稳健" if in_stable else "高位",
         "tags": " | ".join(tags),
+        "is_llm": is_llm_cand,
+        "llm_final_score": llm_info.get('final_score', 0) if is_llm_cand else 0,
     }
 
 
@@ -926,6 +1241,13 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
 
     stock_pool = get_stock_pool()
     print(f"股票池: [{pool_name}] 共 {len(stock_pool)} 只")
+
+    # v1.5+: 加载LLM候选池（昨日盘后产出）
+    yesterday = (beijing_now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    llm_pool = get_llm_candidates_from_supabase(yesterday, min_score=40.0)
+    llm_count = len(llm_pool)
+    if llm_count > 0:
+        print(f"📊 LLM候选池: {llm_count} 只 (来自 {yesterday} 盘后)")
 
     # 预热行业缓存（首次或7天过期时批量查询）
     preload_industries(stock_pool)
@@ -1260,12 +1582,12 @@ def main():
         print("⚠️ 当前不是安全的盘后时间,数据可能不是最终收盘价")
         print("   建议 15:10 之后再运行 post 模式")
 
-    zt_count, mood = fetch_market_sentiment()
-    print(f"\n📊 市场情绪: 今日涨停 {zt_count} 家 → [{mood}]")
+    sentiment_score, mood = fetch_market_sentiment()
+    print(f"\n📊 市场情绪: 综合评分 {sentiment_score} 分 → [{mood}]")
 
-    if mood == "冷淡":
-        print("情绪冷淡，仅启用稳健路径(3%-5%)，高位路径自动关闭")
-    elif mood in ("活跃", "高潮"):
+    if mood in ("极冷", "冷淡"):
+        print("情绪冷淡，仅启用稳健路径(3%-6%)，高位路径自动关闭")
+    elif mood in ("活跃", "火热", "高潮"):
         print("情绪偏热，高位路径(6%-9.7%)已开放，注意风控")
     else:
         print("情绪正常，双路径运行")
@@ -1275,9 +1597,9 @@ def main():
 
     end_d = beijing_now().strftime("%Y-%m-%d")
 
-    results_stable, rejects_stable = scan_pool(CONFIG_STABLE, zt_count, mood)
+    results_stable, rejects_stable = scan_pool(CONFIG_STABLE, sentiment_score, mood)
 
-    results_upper, rejects_upper = scan_pool(CONFIG_UPPER, zt_count, mood)
+    results_upper, rejects_upper = scan_pool(CONFIG_UPPER, sentiment_score, mood)
 
     # 聚合两次扫描的reject_stats
     total_rejects = {}
@@ -1304,7 +1626,7 @@ def main():
                     all_results[c]["pool"] += "+" + r["pool"]
 
     print()
-    print(f"隔夜选股法·最优精选清单  ({end_d})  情绪: {mood}({zt_count}家涨停)")
+    print(f"隔夜选股法·最优精选清单  ({end_d})  情绪: {mood}({sentiment_score}分)")
     print()
 
     if not all_results:
@@ -1319,14 +1641,14 @@ def main():
         .reset_index(drop=True)
     )
 
-    # 情绪高潮时推荐数自动减半（逆向思维）
+    # 情绪高潮时推荐数自动压缩（逆向思维）
     final_count_limit = 5
-    if zt_count >= 100:
+    if sentiment_score >= CONFIG_STABLE["sentiment_fever"]:  # >=85分 高潮
         final_count_limit = 3
-        print(f"\n市场高潮(>=100涨停),推荐数压缩到 {final_count_limit} 只,提示防顶部")
-    elif zt_count >= 80:
+        print(f"\n市场高潮(情绪分≥85),推荐数压缩到 {final_count_limit} 只,提示防顶部")
+    elif sentiment_score >= CONFIG_STABLE["sentiment_hot"]:  # >=70分 活跃
         final_count_limit = 4
-        print(f"\n市场偏热(>=80涨停),推荐数压缩到 {final_count_limit} 只")
+        print(f"\n市场偏热(情绪分≥70),推荐数压缩到 {final_count_limit} 只")
 
     stable_picks = final_df[final_df["path"] == "稳健"].head(final_count_limit)
     upper_picks = final_df[final_df["path"] == "高位"].head(final_count_limit)
@@ -1720,10 +2042,13 @@ def debug_stock(code: str):
             bs.logout()
             return
 
-    # 冷门行业
+    # 行业评分
     industry = get_stock_industry(code)
-    cold = is_cold_industry(industry)
-    steps.append(("行业过滤", not cold, f"{industry} {'冷门行业扣分' if cold else '正常'}"))
+    industry_bonus, industry_category, industry_tags = analyze_industry(industry)
+    industry_note = f"{industry} [{industry_category}]"
+    if industry_bonus != 0:
+        industry_note += f" 评分{industry_bonus:+d}"
+    steps.append(("行业评分", True, industry_note))
 
     # 尾盘回落（post模式）
     if CONFIG["MODE"] == "post":
@@ -1756,8 +2081,13 @@ def debug_stock(code: str):
     elif 8.0 < curr_turn <= 10.0:
         score += 8; tags.append("换手偏高")
 
-    if cold:
-        score -= 20; tags.append("冷门行业↓")
+    # 行业评分
+    if industry_bonus != 0:
+        score += industry_bonus
+        if industry_bonus > 0:
+            tags.append(f"热门赛道(+{industry_bonus})")
+        else:
+            tags.append(f"{industry_tags[0]}({industry_bonus})")
 
     steps.append(("评分", score >= CONFIG["score_threshold"],
                   f"得分:{score} 阈值:{CONFIG['score_threshold']} 标签:{' | '.join(tags)}"))

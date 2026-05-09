@@ -127,6 +127,41 @@ def send_long_message(text: str, parse_mode: Optional[str] = None) -> bool:
     return all_ok
 
 
+def _format_pick_message(s: dict, prefix: str = "•") -> str:
+    """格式化单个标的消息"""
+    tags_raw = s.get('tags', '')
+    is_llm = s.get('is_llm', False)
+    
+    # 格式化标签:扣分标签优先,正向标签后置
+    if tags_raw:
+        tag_list = [t.strip() for t in tags_raw.split('|') if t.strip()]
+        deduct_tags = [t for t in tag_list if '↓' in t]
+        positive_tags = [t for t in tag_list if '↓' not in t]
+        ordered_tags = deduct_tags + positive_tags
+        tags_display = ' | '.join(ordered_tags)
+    else:
+        tags_display = ''
+    
+    if len(tags_display) > 40:
+        tags_display = tags_display[:38] + "..."
+    
+    llm_tag = " 🤖" if is_llm else ""
+    msg = (
+        f"{prefix} {s['code']}{llm_tag} ¥{s['price']} +{s['pct']:.2f}% "
+        f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
+        f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
+        f"得分{s['score']} | {tags_display}"
+    )
+    return msg
+
+
+def _split_llm_and_native(picks: list) -> tuple:
+    """分离LLM候选和八步法自有标的"""
+    llm_picks = [p for p in picks if p.get('is_llm', False)]
+    native_picks = [p for p in picks if not p.get('is_llm', False)]
+    return llm_picks, native_picks
+
+
 def send_stock_picks(
     title: str,
     end_d: str,
@@ -142,10 +177,11 @@ def send_stock_picks(
 ) -> bool:
     """
     格式化推送选股结果(zuiyou1 专用便捷接口)。
+    v1.5+: 支持区分LLM候选和八步法自有标的。
     合并为一条消息推送。
 
     Args:
-        title: 标题(如 "🔥 zuiyou1 v1.3 盘后定稿")
+        title: 标题(如 "🔥 zuiyou1 v1.5 盘后定稿")
         end_d: 日期 (2026-04-29)
         mood_info: 情绪信息字符串
         stable_picks: 稳健路径推荐列表 [{code, price, pct, vol_ratio, turn, score, tags}, ...]
@@ -190,55 +226,47 @@ def send_stock_picks(
 
     # 稳健路径
     if stable_picks:
+        # 分离LLM候选和自有标的
+        llm_stable, native_stable = _split_llm_and_native(stable_picks)
+        
         lines.append("")
         lines.append(f"━━ 稳健路径 ({len(stable_picks)}只) 单票≤15% ━━")
-        for s in stable_picks:
-            tags_raw = s.get('tags', '')
-            # 格式化标签:扣分标签优先,正向标签后置
-            if tags_raw:
-                tag_list = [t.strip() for t in tags_raw.split('|') if t.strip()]
-                deduct_tags = [t for t in tag_list if '↓' in t]
-                positive_tags = [t for t in tag_list if '↓' not in t]
-                ordered_tags = deduct_tags + positive_tags
-                tags_display = ' | '.join(ordered_tags)
-            else:
-                tags_display = ''
-            # 截断过长标签避免折行
-            if len(tags_display) > 40:
-                tags_display = tags_display[:38] + "..."
-            msg = (
-                f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% "
-                f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
-                f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
-                f"得分{s['score']} | {tags_display}"
-            )
-            lines.append(msg)
+        
+        # LLM候选优先显示
+        if llm_stable:
+            lines.append("🤖 LLM候选（盘后多源信号共振）:")
+            for s in llm_stable:
+                lines.append(_format_pick_message(s, "  •"))
+        
+        # 八步法自有标的
+        if native_stable:
+            if llm_stable:
+                lines.append("")
+                lines.append("🔮 八步法精选（盘中量能独立发现）:")
+            for s in native_stable:
+                lines.append(_format_pick_message(s, "  •"))
 
     # 高位路径
     if upper_picks:
+        # 分离LLM候选和自有标的
+        llm_upper, native_upper = _split_llm_and_native(upper_picks)
+        
         lines.append("")
         lines.append(f"━━ 高位路径 ({len(upper_picks)}只) 单票≤8% ━━")
-        for s in upper_picks:
-            tags_raw = s.get('tags', '')
-            # 格式化标签:扣分标签优先,正向标签后置
-            if tags_raw:
-                tag_list = [t.strip() for t in tags_raw.split('|') if t.strip()]
-                deduct_tags = [t for t in tag_list if '↓' in t]
-                positive_tags = [t for t in tag_list if '↓' not in t]
-                ordered_tags = deduct_tags + positive_tags
-                tags_display = ' | '.join(ordered_tags)
-            else:
-                tags_display = ''
-            # 截断过长标签避免折行
-            if len(tags_display) > 40:
-                tags_display = tags_display[:38] + "..."
-            msg = (
-                f"• {s['code']} ¥{s['price']} +{s['pct']:.2f}% "
-                f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
-                f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
-                f"得分{s['score']} | {tags_display}"
-            )
-            lines.append(msg)
+        
+        # LLM候选优先显示
+        if llm_upper:
+            lines.append("🤖 LLM候选（盘后多源信号共振）:")
+            for s in llm_upper:
+                lines.append(_format_pick_message(s, "  •"))
+        
+        # 八步法自有标的
+        if native_upper:
+            if llm_upper:
+                lines.append("")
+                lines.append("🔮 八步法精选（盘中量能独立发现）:")
+            for s in native_upper:
+                lines.append(_format_pick_message(s, "  •"))
 
     # 操作建议
     if operation_note:
