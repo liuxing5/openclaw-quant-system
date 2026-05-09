@@ -22,6 +22,13 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
+def is_trading_day(d):
+    """判断是否为交易日（简单版：周一到周五）"""
+    if d.weekday() > 4:  # 周六(5)或周日(6)
+        return False
+    return True
+
+
 def ensure_market_tables():
     sql = """
     CREATE TABLE IF NOT EXISTS daily_quotes (
@@ -427,6 +434,13 @@ def fetch_hsgt_top10():
 
 
 if __name__ == '__main__':
+    today = get_beijing_date()
+    
+    # 非交易日跳过行情采集
+    if not is_trading_day(today):
+        logger.warning(f"{today} 非交易日，跳过行情采集")
+        exit(0)
+    
     import concurrent.futures
     ensure_market_tables()
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:

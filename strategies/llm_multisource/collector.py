@@ -31,6 +31,13 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
+def is_trading_day(d):
+    """判断是否为交易日（简单版：周一到周五）"""
+    if d.weekday() > 4:  # 周六(5)或周日(6)
+        return False
+    return True
+
+
 def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=2):
     """带超时的采集包装器（支持重试）"""
     for attempt in range(max_retries + 1):
@@ -784,18 +791,32 @@ def main():
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     logger.add(log_file, rotation='100 MB')
 
+    today = get_beijing_date()
+    is_trading = is_trading_day(today)
+    
     logger.info("=" * 60)
     logger.info("AKShare 信息采集启动（并行模式）")
+    logger.info(f"日期: {today}, 交易日: {is_trading}")
     logger.info("=" * 60)
 
+    # 非交易日跳过需要行情的数据源
     fetchers = [
         (fetch_akshare_news, '财经新闻', FETCH_TIMEOUT),
-        (fetch_akshare_lhb, '龙虎榜', FETCH_TIMEOUT),
-        (fetch_akshare_zt_pool, '涨停板', FETCH_TIMEOUT),
-        (fetch_akshare_concept_hot, '热点概念', CONCEPT_TIMEOUT),
+    ]
+    
+    if is_trading:
+        # 只有交易日才采集行情相关数据
+        fetchers.extend([
+            (fetch_akshare_lhb, '龙虎榜', FETCH_TIMEOUT),
+            (fetch_akshare_zt_pool, '涨停板', FETCH_TIMEOUT),
+            (fetch_akshare_concept_hot, '热点概念', CONCEPT_TIMEOUT),
+        ])
+    
+    # 研报和机构调研每天都采集（非交易日也可能有更新）
+    fetchers.extend([
         (fetch_akshare_research, '个股研报', FETCH_TIMEOUT),
         (fetch_akshare_jgdy, '机构调研', FETCH_TIMEOUT),
-    ]
+    ])
 
     all_rows = []
 
