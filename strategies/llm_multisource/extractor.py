@@ -158,9 +158,22 @@ def process_one(row):
     n = 0
     try:
         result = call_llm(prompt)
-        items = result.get('items', []) if result.get('is_recommendation', False) else []
+        
+        # 调试：记录 LLM 返回结果
+        is_recommendation = result.get('is_recommendation', False)
+        items_raw = result.get('items', [])
+        
+        if not is_recommendation and items_raw:
+            # 容错：即使标记为非推荐，如果有 items 也保留
+            logger.debug(f"raw_id={row['id']}: is_recommendation=false but has {len(items_raw)} items, keeping them")
+            items = items_raw
+        elif is_recommendation:
+            items = items_raw
+        else:
+            items = []
+        
         n = store_extraction(row['id'], row['source_name'], row['pub_time'], items)
-        logger.info(f"raw_id={row['id']} -> {n or 0} signals")
+        logger.info(f"raw_id={row['id']} -> {n or 0} signals (is_recommendation={is_recommendation}, items_raw={len(items_raw)})")
     except Exception as e:
         logger.error(f"extract failed for {row['id']}: {e}")
     return row['id'], n
