@@ -3,6 +3,7 @@ import os
 from datetime import date, timedelta
 import psycopg2
 from dotenv import load_dotenv
+from loguru import logger
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
@@ -30,6 +31,30 @@ def update_tracking():
         if not cur.fetchone():
             cur.execute(f"ALTER TABLE performance_tracking ADD COLUMN {col} BOOLEAN;")
             conn.commit()
+    
+    # 自动迁移：添加唯一约束
+    try:
+        cur.execute("""
+            SELECT conname FROM pg_constraint
+            WHERE conname = 'performance_tracking_unique';
+        """)
+        if not cur.fetchone():
+            # 先清理重复数据
+            cur.execute("""
+                DELETE FROM performance_tracking a
+                USING performance_tracking b
+                WHERE a.ctid < b.ctid
+                  AND a.candidate_id = b.candidate_id
+                  AND a.rec_date = b.rec_date;
+            """)
+            conn.commit()
+            cur.execute("""
+                ALTER TABLE performance_tracking ADD CONSTRAINT performance_tracking_unique
+                UNIQUE (candidate_id, rec_date);
+            """)
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"约束迁移失败: {e}")
     
     cur.execute("""
         SELECT c.id, c.ts_code, c.snapshot_date,
