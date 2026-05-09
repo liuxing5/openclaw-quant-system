@@ -1,0 +1,80 @@
+name: Test Telegram Push
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-push:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install requests
+
+    - name: Send test message
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        python3 -c "
+        import os
+        import requests
+        
+        token = os.environ.get('TELEGRAM_BOT_TOKEN')
+        chat_id = os.environ.get('TELEGRAM_CHAT_ID')
+        
+        if not token or not chat_id:
+            print('❌ 配置未设置')
+            exit(1)
+        
+        # 测试消息内容
+        msg = '''🔥 zuiyou1 v1.5 测试推送
+📅 2026-05-10
+📊 情绪: 正常 (68分) | 涨停: 58家
+
+📊 LLM候选池: 5只 (来自昨日盘后)
+
+━━ 稳健路径 (3只) 单票≤15% ━━
+🤖 LLM候选（盘后多源信号共振）:
+  • sh.600519 🤖 ¥1700.0 +3.50% 量比2.10 换手5.2% 连板1 乖离1.80% 得分85 | 稳健蓄势 | LLM候选+20 | 共识强化
+  • sz.300750 🤖 ¥178.8 +5.80% 量比3.20 换手7.8% 连板2 乖离3.00% 得分88 | 稳健蓄势 | 二连板 | LLM候选+18
+
+🔮 八步法精选（盘中量能独立发现）:
+  • sz.002594 ¥185.5 +4.20% 量比2.80 换手6.5% 连板0 乖离2.20% 得分82 | 稳健蓄势 | 量能递增
+
+━━ 高位路径 (2只) 单票≤8% ━━
+🤖 LLM候选（盘后多源信号共振）:
+  • sh.688167 🤖 ¥420.0 +7.20% 量比4.50 换手9.2% 连板1 乖离4.50% 得分79 | 高位博弈 | LLM候选+15
+
+🔮 八步法精选（盘中量能独立发现）:
+  • sz.301171 ¥45.6 +8.50% 量比5.10 换手8.8% 连板3 乖离5.20% 得分76 | 高位博弈 | 3连板(高度风险)
+
+━━ 操作建议 ━━
+单票仓位≤15%(稳健)/8%(高位) | 次日竞价≤0立即清仓
+
+✅ 测试完成 - LLM候选和八步法自有标的已区分显示
+'''
+        
+        url = f'https://api.telegram.org/bot{token}/sendMessage'
+        params = {'chat_id': chat_id, 'text': msg, 'parse_mode': 'Markdown'}
+        
+        try:
+            response = requests.post(url, params=params, timeout=10)
+            if response.ok:
+                print('✅ Telegram消息发送成功！')
+            else:
+                print(f'❌ 发送失败: {response.text}')
+        except Exception as e:
+            print(f'❌ 发送异常: {e}')
+        "
