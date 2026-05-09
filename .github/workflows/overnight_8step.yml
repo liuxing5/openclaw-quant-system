@@ -1,4 +1,4 @@
-name: Daily Stock Pick & Sell Signals
+name: overnight_8step
 
 on:
   push:

@@ -1,4 +1,4 @@
-name: Daily Stock Recommendation
+name: llm_multisource
 
 on:
   push:
