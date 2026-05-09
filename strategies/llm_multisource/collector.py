@@ -464,10 +464,10 @@ def fetch_akshare_concept_hot():
     except Exception as e:
         logger.warning(f"接口1失败: {e}")
     
-    # 接口2: stock_board_hot_em - 热门概念板块
+    # 接口2: stock_board_concept_name_em - 概念板块（替代不存在的 stock_board_hot_em）
     try:
-        logger.debug("尝试接口2: stock_board_hot_em")
-        df = ak.stock_board_hot_em()
+        logger.debug("尝试接口2: stock_board_concept_name_em")
+        df = ak.stock_board_concept_name_em()
         logger.debug(f"接口2返回: {type(df)}, shape={df.shape if df is not None else 'None'}")
         if df is not None and hasattr(df, 'empty') and not df.empty:
             logger.debug(f"接口2列名: {list(df.columns)[:15]}")
@@ -494,10 +494,12 @@ def fetch_akshare_concept_hot():
                         content=f"{concept} 板块今日涨幅 {chg:.2f}%",
                     ))
                 if rows:
-                    logger.info(f"热点概念 (hot): {len(rows)} 条")
+                    logger.info(f"热点概念 (concept): {len(rows)} 条")
                     return rows
+    except AttributeError as e:
+        logger.debug(f"接口2不存在: {e}")
     except Exception as e:
-        logger.warning(f"接口2失败: {e}")
+        logger.debug(f"接口2失败: {e}")
     
     # 接口3: stock_changes_em - 个股异动（作为最后兜底）
     try:
@@ -816,33 +818,40 @@ def main():
     logger.info(f"采集总计 {len(all_rows)} 条，新入库 {inserted} 条")
 
     # 更新 feed_sources 状态
-    update_source_status(conn, inserted)
+    update_source_status(inserted)
 
 
-def update_source_status(conn, total_inserted):
+def update_source_status(total_inserted):
     """更新 feed_sources 的成功/失败状态"""
     if total_inserted > 0:
+        conn = get_db()
         cur = conn.cursor()
-        # 获取今天采集的数据源
-        cur.execute("""
-            SELECT DISTINCT source_name FROM raw_signals
-            WHERE fetch_time >= %s;
-        """, (get_beijing_date(),))
-        active_sources = [row[0] for row in cur.fetchall()]
-
-        for source_name in active_sources:
+        try:
+            # 获取今天采集的数据源
             cur.execute("""
-                UPDATE feed_sources
-                SET last_success_at = NOW(),
-                    consecutive_failures = 0,
-                    last_error_at = NULL,
-                    last_error_msg = NULL
-                WHERE name = %s;
-            """, (source_name,))
+                SELECT DISTINCT source_name FROM raw_signals
+                WHERE fetch_time >= %s;
+            """, (get_beijing_date(),))
+            active_sources = [row[0] for row in cur.fetchall()]
 
-        conn.commit()
-        cur.close()
-        logger.info(f"更新 {len(active_sources)} 个数据源状态为成功")
+            for source_name in active_sources:
+                cur.execute("""
+                    UPDATE feed_sources
+                    SET last_success_at = NOW(),
+                        consecutive_failures = 0,
+                        last_error_at = NULL,
+                        last_error_msg = NULL
+                    WHERE name = %s;
+                """, (source_name,))
+
+            conn.commit()
+            logger.info(f"更新 {len(active_sources)} 个数据源状态为成功")
+        except Exception as e:
+            logger.error(f"更新数据源状态失败: {e}")
+            conn.rollback()
+        finally:
+            cur.close()
+            conn.close()
     else:
         logger.warning("无新数据入库，不更新数据源状态")
 
