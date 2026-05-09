@@ -1,5 +1,5 @@
 """每日候选池生成 - 盘前/盘后双跑"""
-import os, sys
+import os, sys, math
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from datetime import date, timedelta, datetime, timezone
 from psycopg2.extras import RealDictCursor
@@ -12,8 +12,8 @@ from core.utils.env import load_project_env
 load_project_env()
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '40'))
-MAX_SELECTED = 8
+MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '50'))  # 改回50
+MAX_SELECTED = 5  # 减少到5只
 MIN_LIQUIDITY = 1e8
 SOURCE = 'llm_multisource'
 
@@ -24,8 +24,21 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
+def is_trading_day(d):
+    """判断是否为交易日（简单版：周一到周五）"""
+    if d.weekday() > 4:  # 周六(5)或周日(6)
+        return False
+    return True
+
+
 def aggregate_today():
     today = get_beijing_date()
+    
+    # 非交易日跳过
+    if not is_trading_day(today):
+        logger.warning(f"{today} 非交易日，跳过候选生成")
+        return
+    
     cutoff = today - timedelta(days=2)
     logger.info(f"=== 开始聚合，today={today}, cutoff={cutoff}, RUN_MODE={RUN_MODE} ===")
 
@@ -80,6 +93,11 @@ def aggregate_today():
         WHERE e.pub_time >= %s
           AND e.recommendation_type IN ('buy','strong_buy','watch')
           AND e.strength >= 2
+          AND (
+            -- 涨停板信号只看 24 小时内（昨日涨停今天不该当推荐依据）
+            (e.source_name = 'AKShare-涨停板' AND e.pub_time >= NOW() - INTERVAL '20 hours')
+            OR e.source_name != 'AKShare-涨停板'
+          )
         GROUP BY e.ts_code
         HAVING COUNT(*) >= 1;
     """, (cutoff,))
@@ -102,12 +120,6 @@ def aggregate_today():
 
             close_price = float(q['close'])
             amount = float(q.get('amount') or 0)
-
-            if amount < MIN_LIQUIDITY:
-                logger.debug(f"{r['ts_code']} 流动性不足 {amount/1e8:.2f}亿")
-                continue
-
-            quant_score = 0
             pct_chg = q.get('pct_chg') or 0
             turnover = q.get('turnover_rate') or 0
 
@@ -119,20 +131,50 @@ def aggregate_today():
                 logger.info(f"{ts} 今日已涨停 {pct_chg:.1f}%，盘后模式跳过（次日陷阱风险）")
                 continue
 
+            # 根据信号源类型给不同流动性门槛
+            sources_in_signal = [s.get('source', '') for s in (r['sources'] or [])]
+            has_research = any('研报' in s for s in sources_in_signal)
+            has_zt = any('涨停' in s for s in sources_in_signal)
+            
+            # 涨停板的票要求流动性高（盘中博弈），研报票可以降低门槛（中长线持有）
+            if has_zt and not has_research:
+                min_liq = 1e8
+            elif has_research:
+                min_liq = 5e7  # 研报票门槛降到 5000 万
+            else:
+                min_liq = 1e8
+            
+            if amount < min_liq:
+                logger.debug(f"{r['ts_code']} 流动性不足 {amount/1e8:.2f}亿 (要求 {min_liq/1e8:.1f}亿)")
+                continue
+
+            # 连续量化评分
+            quant_score = 0
+            
+            # 涨幅：-3%到7%是连续函数，涨幅2%时加分最高
             if -3 < pct_chg < 7:
-                quant_score += 30
-            if turnover > 3:
-                quant_score += 20
-            if amount > 5e8:
-                quant_score += 30
-            elif amount > 2e8:
-                quant_score += 20
-            if pct_chg > 9.5:
+                quant_score += 30 * (1 - abs(pct_chg - 2) / 5)
+            elif 7 <= pct_chg < limit_threshold:
+                quant_score += 10
+            
+            # 换手率：超过3%加分，连续函数，15%换手到顶
+            if turnover > 0:
+                quant_score += min(30, turnover * 2)
+            
+            # 成交额：log函数，10亿对应40分
+            if amount > 0:
+                quant_score += min(40, 10 * math.log10(amount / 1e8 + 1))
+
+            # 涨停惩罚
+            if pct_chg > limit_threshold:
                 quant_score = max(0, quant_score - 30)
 
             consensus = min(r['source_diversity'] / 2.0, 1.0)
-            llm_n = min(r['llm_score'] / 4.0, 1.0)
-            quant_n = quant_score / 80.0
+            llm_n = min(r['llm_score'] / 5.0, 1.0)
+            # 提及次数加成
+            mention_bonus = min(0.2, r['mention_count'] * 0.03)
+            llm_n = min(1.0, llm_n + mention_bonus)
+            quant_n = quant_score / 100.0  # 满分改为100
 
             if llm_n > 0 and quant_n > 0:
                 final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
