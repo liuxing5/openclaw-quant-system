@@ -19,8 +19,8 @@ warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-FETCH_TIMEOUT = 60
-CONCEPT_TIMEOUT = 40
+FETCH_TIMEOUT = 120
+CONCEPT_TIMEOUT = 90
 
 # 北京时间时区
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -88,45 +88,108 @@ def make_signal(source, title, content, url='', pub_time=None, tier=2):
 
 
 def fetch_akshare_news():
-    """AKShare 财经新闻 - 多接口兜底"""
+    """AKShare 财经新闻 - 多接口兜底，确保拿到真实数据"""
     import akshare as ak
     rows = []
     today = get_beijing_date()
-    for fetch_func in [
-        lambda: ak.news_cctv(),
-        lambda: ak.stock_info_cjzc_em(),
-    ]:
-        try:
-            df = fetch_func()
-            if df is None or not hasattr(df, 'empty') or df.empty:
-                continue
+    logger.info(f"财经新闻采集，日期: {today}")
+    
+    # 接口1: news_cctv (央视新闻)
+    try:
+        logger.debug("news 接口1: news_cctv")
+        df = ak.news_cctv()
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            logger.info(f"news_cctv 返回 {len(df)} 条")
             col_title = next((c for c in ['title', '标题', '新闻标题'] if c in df.columns), None)
             col_content = next((c for c in ['content', '内容', '新闻内容', 'summary'] if c in df.columns), None)
             col_time = next((c for c in ['date', 'pub_time', '发布时间', '时间'] if c in df.columns), None)
             col_url = next((c for c in ['url', 'link', '链接'] if c in df.columns), None)
-            if not col_title:
-                continue
-            for _, r in df.iterrows():
-                try:
-                    title = str(r.get(col_title, '') or '')
-                    if not title or title == 'nan' or len(title) < 5:
+            if col_title:
+                for _, r in df.iterrows():
+                    try:
+                        title = str(r.get(col_title, '') or '')
+                        if not title or title == 'nan' or len(title) < 5:
+                            continue
+                        content = str(r.get(col_content, '') or '') if col_content else ''
+                        rows.append(make_signal(
+                            source='AKShare-财经新闻', tier=2,
+                            title=title[:1000],
+                            content=content[:5000],
+                            url=str(r.get(col_url, '') or '')[:500] if col_url else '',
+                            pub_time=pd.to_datetime(r.get(col_time), errors='coerce') if col_time else None,
+                        ))
+                    except Exception:
                         continue
-                    content = str(r.get(col_content, '') or '') if col_content else ''
-                    rows.append(make_signal(
-                        source='AKShare-财经新闻', tier=2,
-                        title=title[:1000],
-                        content=content[:5000],
-                        url=str(r.get(col_url, '') or '')[:500] if col_url else '',
-                        pub_time=pd.to_datetime(r.get(col_time), errors='coerce') if col_time else None,
-                    ))
-                except Exception:
-                    continue
-            if rows:
-                logger.info(f"财经新闻: {len(rows)} 条")
-                return rows
-        except Exception as e:
-            logger.debug(f"news 接口失败: {e}")
-            continue
+                if rows:
+                    logger.info(f"财经新闻 (cctv): {len(rows)} 条")
+                    return rows
+    except Exception as e:
+        logger.debug(f"news_cctv 失败: {e}")
+    
+    # 接口2: stock_info_cjzc_em (财经资讯)
+    try:
+        logger.debug("news 接口2: stock_info_cjzc_em")
+        df = ak.stock_info_cjzc_em()
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            logger.info(f"stock_info_cjzc_em 返回 {len(df)} 条")
+            col_title = next((c for c in ['title', '标题', '新闻标题'] if c in df.columns), None)
+            col_content = next((c for c in ['content', '内容', '新闻内容', 'summary'] if c in df.columns), None)
+            col_time = next((c for c in ['date', 'pub_time', '发布时间', '时间'] if c in df.columns), None)
+            col_url = next((c for c in ['url', 'link', '链接'] if c in df.columns), None)
+            if col_title:
+                for _, r in df.iterrows():
+                    try:
+                        title = str(r.get(col_title, '') or '')
+                        if not title or title == 'nan' or len(title) < 5:
+                            continue
+                        content = str(r.get(col_content, '') or '') if col_content else ''
+                        rows.append(make_signal(
+                            source='AKShare-财经新闻', tier=2,
+                            title=title[:1000],
+                            content=content[:5000],
+                            url=str(r.get(col_url, '') or '')[:500] if col_url else '',
+                            pub_time=pd.to_datetime(r.get(col_time), errors='coerce') if col_time else None,
+                        ))
+                    except Exception:
+                        continue
+                if rows:
+                    logger.info(f"财经新闻 (cjzc): {len(rows)} 条")
+                    return rows
+    except Exception as e:
+        logger.debug(f"stock_info_cjzc_em 失败: {e}")
+    
+    # 接口3: stock_news_em (东方财富新闻)
+    try:
+        logger.debug("news 接口3: stock_news_em")
+        df = ak.stock_news_em(symbol="全部")
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            logger.info(f"stock_news_em 返回 {len(df)} 条")
+            col_title = next((c for c in ['title', '标题', '新闻标题'] if c in df.columns), None)
+            col_content = next((c for c in ['content', '内容', '新闻内容', 'summary'] if c in df.columns), None)
+            col_time = next((c for c in ['date', 'pub_time', '发布时间', '时间'] if c in df.columns), None)
+            col_url = next((c for c in ['url', 'link', '链接'] if c in df.columns), None)
+            if col_title:
+                for _, r in df.head(50).iterrows():
+                    try:
+                        title = str(r.get(col_title, '') or '')
+                        if not title or title == 'nan' or len(title) < 5:
+                            continue
+                        content = str(r.get(col_content, '') or '') if col_content else ''
+                        rows.append(make_signal(
+                            source='AKShare-财经新闻', tier=2,
+                            title=title[:1000],
+                            content=content[:5000],
+                            url=str(r.get(col_url, '') or '')[:500] if col_url else '',
+                            pub_time=pd.to_datetime(r.get(col_time), errors='coerce') if col_time else None,
+                        ))
+                    except Exception:
+                        continue
+                if rows:
+                    logger.info(f"财经新闻 (em): {len(rows)} 条")
+                    return rows
+    except Exception as e:
+        logger.debug(f"stock_news_em 失败: {e}")
+    
     logger.warning("所有新闻接口均失败")
     return rows
 
@@ -136,13 +199,15 @@ def fetch_akshare_lhb():
     import akshare as ak
     today_str = get_beijing_date().strftime('%Y%m%d')
     rows = []
+    logger.info(f"龙虎榜采集，日期: {today_str}")
     
-    # 接口1: stock_lhb_detail_em (龙虎榜详情)
-    for date_str in [today_str, (get_beijing_date() - timedelta(days=1)).strftime('%Y%m%d'), (get_beijing_date() - timedelta(days=2)).strftime('%Y%m%d')]:
+    # 接口1: stock_lhb_detail_em (龙虎榜详情) - 尝试最近3天
+    for date_str in [today_str, (get_beijing_date() - timedelta(days=1)).strftime('%Y%m%d'), (get_beijing_date() - timedelta(days=2)).strftime('%Y%m%d'), (get_beijing_date() - timedelta(days=3)).strftime('%Y%m%d')]:
         try:
             logger.debug(f"lhb 接口1: {date_str}")
             df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
             if df is not None and hasattr(df, 'empty') and not df.empty:
+                logger.info(f"lhb detail {date_str} 返回 {len(df)} 条")
                 col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
                 col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
                 col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
@@ -176,6 +241,7 @@ def fetch_akshare_lhb():
         logger.debug("lhb 接口2: stock_lhb_ggtj_em")
         df = ak.stock_lhb_ggtj_em(start_date=today_str, end_date=today_str)
         if df is not None and hasattr(df, 'empty') and not df.empty:
+            logger.info(f"lhb ggtj 返回 {len(df)} 条")
             col_code = next((c for c in ['代码', '股票代码'] if c in df.columns), None)
             col_name = next((c for c in ['名称', '股票名称'] if c in df.columns), None)
             col_net = next((c for c in ['净买额', '龙虎榜净买额'] if c in df.columns), None)
@@ -207,6 +273,7 @@ def fetch_akshare_lhb():
         logger.debug("lhb 接口3: stock_lhb_jgzz_em")
         df = ak.stock_lhb_jgzz_em(start_date=today_str, end_date=today_str)
         if df is not None and hasattr(df, 'empty') and not df.empty:
+            logger.info(f"lhb jgzz 返回 {len(df)} 条")
             col_code = next((c for c in ['代码', '股票代码'] if c in df.columns), None)
             col_name = next((c for c in ['名称', '股票名称'] if c in df.columns), None)
             if col_code:
@@ -230,6 +297,29 @@ def fetch_akshare_lhb():
                     return rows
     except Exception as e:
         logger.debug(f"lhb 接口3 失败: {e}")
+    
+    # 接口4: stock_lhb_hyyyb_em (龙虎榜活跃营业部)
+    try:
+        logger.debug("lhb 接口4: stock_lhb_hyyyb_em")
+        df = ak.stock_lhb_hyyyb_em(start_date=today_str, end_date=today_str)
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            logger.info(f"lhb hyyyb 返回 {len(df)} 条")
+            for _, r in df.head(10).iterrows():
+                try:
+                    title = str(r.get('营业部名称', '') or '')
+                    if title and title != 'nan':
+                        rows.append(make_signal(
+                            source='AKShare-龙虎榜', tier=2,
+                            title=f"龙虎榜活跃营业部: {title}",
+                            content=f"龙虎榜活跃营业部: {title}",
+                        ))
+                except Exception:
+                    continue
+            if rows:
+                logger.info(f"龙虎榜 (hyyyb): {len(rows)} 条")
+                return rows
+    except Exception as e:
+        logger.debug(f"lhb 接口4 失败: {e}")
     
     logger.info(f"龙虎榜: {len(rows)} 条")
     return rows
@@ -330,6 +420,8 @@ def fetch_akshare_concept_hot():
     """概念板块异动 -> 信号，多接口兜底，确保获取当日真实数据"""
     import akshare as ak
     rows = []
+    today_str = get_beijing_date().strftime('%Y%m%d')
+    logger.info(f"热点概念采集，日期: {today_str}")
     
     # 接口1: stock_board_concept_name_em - 获取概念板块实时行情
     try:
@@ -409,7 +501,7 @@ def fetch_akshare_concept_hot():
     # 接口3: stock_changes_em - 个股异动（作为最后兜底）
     try:
         logger.debug("尝试接口3: stock_changes_em")
-        df = ak.stock_changes_em()
+        df = ak.stock_changes_em(symbol="全部")
         logger.debug(f"接口3返回: {type(df)}, shape={df.shape if df is not None else 'None'}")
         if df is not None and hasattr(df, 'empty') and not df.empty:
             logger.debug(f"接口3列名: {list(df.columns)[:15]}")
@@ -435,6 +527,45 @@ def fetch_akshare_concept_hot():
                     return rows
     except Exception as e:
         logger.warning(f"接口3失败: {e}")
+    
+    # 接口4: stock_board_concept_cons_em - 概念板块成分（获取热门概念的成分股）
+    try:
+        logger.debug("尝试接口4: stock_board_concept_cons_em")
+        # 先获取概念列表，取前几个热门概念的成分股
+        df_concepts = ak.stock_board_concept_name_em()
+        if df_concepts is not None and hasattr(df_concepts, 'empty') and not df_concepts.empty:
+            col_chg = next((c for c in ['涨跌幅', '涨跌幅 (%)', 'change_pct'] if c in df_concepts.columns), None)
+            col_name = next((c for c in ['板块名称', '名称', 'concept_name'] if c in df_concepts.columns), None)
+            if col_chg and col_name:
+                df_concepts[col_chg] = pd.to_numeric(df_concepts[col_chg], errors='coerce')
+                top_concepts = df_concepts.nlargest(5, col_chg)
+                for _, concept_row in top_concepts.iterrows():
+                    concept_name = concept_row.get(col_name, '')
+                    try:
+                        df_cons = ak.stock_board_concept_cons_em(symbol=concept_name)
+                        if df_cons is not None and hasattr(df_cons, 'empty') and not df_cons.empty:
+                            col_code = next((c for c in ['代码', '股票代码'] if c in df_cons.columns), None)
+                            col_stock_name = next((c for c in ['名称', '股票名称'] if c in df_cons.columns), None)
+                            if col_code and col_stock_name:
+                                for _, r in df_cons.head(3).iterrows():
+                                    raw_code = str(r.get(col_code, '') or '')
+                                    code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                                    stock_name = r.get(col_stock_name, '')
+                                    if code and code != 'nan' and len(code) >= 4:
+                                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                                        rows.append(make_signal(
+                                            source='AKShare-热点概念', tier=2,
+                                            title=f"热门概念成分: {concept_name} - {stock_name} {ts}",
+                                            content=f"{concept_name} 概念成分股: {stock_name} {ts}",
+                                        ))
+                    except Exception as e:
+                        logger.debug(f"获取 {concept_name} 成分股失败: {e}")
+                        continue
+                if rows:
+                    logger.info(f"热点概念 (cons): {len(rows)} 条")
+                    return rows
+    except Exception as e:
+        logger.warning(f"接口4失败: {e}")
     
     logger.info(f"热点概念: {len(rows)} 条")
     return rows
