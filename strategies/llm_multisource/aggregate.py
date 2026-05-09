@@ -31,6 +31,16 @@ def aggregate_today():
 
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
 
+    # 跑前清空当天同 run_mode 同 source 的旧数据，避免重复
+    cur.execute("""
+        DELETE FROM daily_candidates
+        WHERE snapshot_date = %s AND run_mode = %s AND source = %s;
+    """, (today, RUN_MODE, SOURCE))
+    deleted = cur.rowcount
+    if deleted > 0:
+        logger.info(f"清空了 {deleted} 条今天的旧候选数据")
+    conn.commit()
+
     cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
     row = cur.fetchone()
     latest_trade_date = row['max_date'] if row else None
