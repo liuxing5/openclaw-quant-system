@@ -132,44 +132,55 @@ def fetch_akshare_news():
 
 
 def fetch_akshare_lhb():
-    """龙虎榜 -> 信号"""
+    """龙虎榜 -> 信号，多日期兜底"""
     import akshare as ak
     today_str = get_beijing_date().strftime('%Y%m%d')
     rows = []
     try:
-        df = ak.stock_lhb_detail_em(start_date=today_str, end_date=today_str)
-        if df is None:
-            logger.warning("lhb: 接口返回 None")
-            return rows
-        if not hasattr(df, 'empty') or df.empty:
-            logger.info("lhb: 今日无数据")
-            return rows
-        col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
-        col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
-        col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
-        col_net = next((c for c in ['龙虎榜净买额', '净买额', '净额'] if c in df.columns), None)
-        if not col_code:
-            logger.warning(f"lhb: 找不到代码列，可用列: {list(df.columns)}")
-            return rows
-        for _, r in df.iterrows():
+        # 尝试今天和昨天（龙虎榜可能延迟发布）
+        for date_str in [today_str, (get_beijing_date() - timedelta(days=1)).strftime('%Y%m%d')]:
             try:
-                code = str(r.get(col_code, '') or '').zfill(6)
-                if not code or code == 'nan' or len(code) < 4:
+                df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
+                if df is None:
+                    logger.debug(f"lhb {date_str}: 接口返回 None")
                     continue
-                name = r.get(col_name, '') or '' if col_name else ''
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-                net = r.get(col_net, 0) or 0 if col_net else 0
-                reason = r.get(col_reason, '') or '' if col_reason else ''
-                rows.append(make_signal(
-                    source='AKShare-龙虎榜', tier=1,
-                    title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
-                    content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net} 元",
-                ))
-            except Exception:
+                if not hasattr(df, 'empty') or df.empty:
+                    logger.debug(f"lhb {date_str}: 今日无数据")
+                    continue
+                col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
+                col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
+                col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
+                col_net = next((c for c in ['龙虎榜净买额', '净买额', '净额'] if c in df.columns), None)
+                if not col_code:
+                    logger.debug(f"lhb {date_str}: 找不到代码列，可用列: {list(df.columns)}")
+                    continue
+                for _, r in df.iterrows():
+                    try:
+                        raw_code = str(r.get(col_code, '') or '')
+                        code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                        if not code or code == 'nan' or len(code) < 4:
+                            continue
+                        name = r.get(col_name, '') or '' if col_name else ''
+                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        net = r.get(col_net, 0) or 0 if col_net else 0
+                        reason = r.get(col_reason, '') or '' if col_reason else ''
+                        rows.append(make_signal(
+                            source='AKShare-龙虎榜', tier=1,
+                            title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
+                            content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net} 元",
+                        ))
+                    except Exception as e:
+                        logger.debug(f"lhb {date_str} 行处理失败: {e}")
+                        continue
+                if rows:
+                    logger.info(f"龙虎榜 ({date_str}): {len(rows)} 条")
+                    return rows
+            except Exception as e:
+                logger.debug(f"lhb {date_str} 失败: {e}")
                 continue
-        logger.info(f"龙虎榜: {len(rows)} 条")
     except Exception as e:
         logger.warning(f"lhb 失败: {e}")
+    logger.info(f"龙虎榜: {len(rows)} 条")
     return rows
 
 
@@ -228,7 +239,7 @@ def fetch_akshare_concept_hot():
                     logger.info(f"热点概念 (board): {len(rows)} 条")
                     return rows
             else:
-                logger.warning(f"concept board: 找不到涨跌幅列，可用列: {list(df.columns)[:10]}")
+                logger.debug(f"concept board: 找不到涨跌幅列，可用列: {list(df.columns)[:10]}")
     except Exception as e:
         logger.debug(f"concept board 失败: {e}")
     
@@ -258,6 +269,40 @@ def fetch_akshare_concept_hot():
                     return rows
     except Exception as e:
         logger.debug(f"concept hist 失败: {e}")
+    
+    # 接口3: stock_board_concept_cons_em (概念成分股)
+    try:
+        # 获取热门概念的成分股
+        df_concepts = ak.stock_board_concept_name_em()
+        if df_concepts is not None and hasattr(df_concepts, 'empty') and not df_concepts.empty:
+            if '板块名称' in df_concepts.columns and '涨跌幅' in df_concepts.columns:
+                top_concepts = df_concepts.sort_values('涨跌幅', ascending=False).head(3)
+                for _, concept_row in top_concepts.iterrows():
+                    concept_name = concept_row.get('板块名称', '')
+                    try:
+                        df_cons = ak.stock_board_concept_cons_em(symbol=concept_name)
+                        if df_cons is not None and hasattr(df_cons, 'empty') and not df_cons.empty:
+                            for _, stock_row in df_cons.head(5).iterrows():
+                                col_code = next((c for c in ['代码', '股票代码'] if c in df_cons.columns), None)
+                                col_name = next((c for c in ['名称', '股票名称'] if c in df_cons.columns), None)
+                                if col_code:
+                                    raw_code = str(stock_row.get(col_code, '') or '')
+                                    code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                                    if code and code != 'nan' and len(code) >= 4:
+                                        name = stock_row.get(col_name, '') if col_name else ''
+                                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                                        rows.append(make_signal(
+                                            source='AKShare-热点概念', tier=2,
+                                            title=f"概念成分: {concept_name} {name} {ts}",
+                                            content=f"{name} 属于 {concept_name} 概念板块",
+                                        ))
+                    except Exception as e:
+                        logger.debug(f"concept {concept_name} 成分股获取失败: {e}")
+                    if rows:
+                        logger.info(f"热点概念 (cons): {len(rows)} 条")
+                        return rows
+    except Exception as e:
+        logger.debug(f"concept cons 失败: {e}")
     
     logger.info(f"热点概念: {len(rows)} 条")
     return rows

@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = 50
+MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '40'))  # 可从环境变量调整
 MAX_SELECTED = 8
 MIN_LIQUIDITY = 1e8
 
@@ -161,9 +161,9 @@ def aggregate_today():
             if pct_chg > 9.5:
                 quant_score = max(0, quant_score - 30)
 
-            consensus = min(r['source_diversity'] / 3.0, 1.0)
-            llm_n = min(r['llm_score'] / 5.0, 1.0)
-            quant_n = quant_score / 100.0
+            consensus = min(r['source_diversity'] / 2.0, 1.0)  # 降低分母，提高 consensus
+            llm_n = min(r['llm_score'] / 4.0, 1.0)  # 降低分母，提高 llm_n
+            quant_n = quant_score / 80.0  # 归一化到实际最大值
 
             if llm_n > 0 and quant_n > 0:
                 final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
