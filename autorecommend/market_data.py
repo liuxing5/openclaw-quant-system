@@ -1,5 +1,6 @@
 """行情数据每日采集 - AKShare 全市场为主，BaoStock/Tushare/yfinance 为备用"""
 import os
+import re
 import time
 from datetime import datetime, date, timedelta, timezone
 import pandas as pd
@@ -106,14 +107,20 @@ def fetch_with_akshare_full():
     code_col = '代码' if is_em else 'code'
 
     logger.info(f"解析 {len(df)} 条原始数据 (is_em={is_em}, code_col={code_col})")
-    logger.debug(f"可用列: {list(df.columns)[:10]}...")
+    logger.debug(f"可用列: {list(df.columns)}")
 
     rows = []
     today = get_beijing_date()
     skipped_prefix = 0
     skipped_price = 0
+    debug_count = 0
     for _, r in df.iterrows():
-        code = str(r.get(code_col, '')).zfill(6)
+        raw_code = str(r.get(code_col, '') or '')
+        # 清理代码：去掉 sh./sz. 前缀，只保留数字
+        code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+        if debug_count < 5:
+            logger.debug(f"代码解析: raw={raw_code!r} cleaned={code!r} valid={code.startswith(('6', '688', '000', '001', '002', '003', '300', '301'))}")
+            debug_count += 1
         if not code or not (code.startswith(('6', '688', '000', '001', '002', '003', '300', '301'))):
             skipped_prefix += 1
             continue

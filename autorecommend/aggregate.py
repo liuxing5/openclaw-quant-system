@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = 40  # 50 → 40，降低阈值避免空推荐
+MIN_SELECT_SCORE = 50
 MAX_SELECTED = 8
 MIN_LIQUIDITY = 1e8
 
@@ -71,12 +71,19 @@ def aggregate_today():
     except Exception as e:
         logger.warning(f"迁移检查失败: {e}")
 
-    # 批量加载今日行情到内存，避免逐个查询
-    logger.info(f"查询 daily_quotes WHERE trade_date={today}")
+    # 批量加载最新交易日行情到内存
+    cur.execute("SELECT MAX(trade_date) FROM daily_quotes;")
+    latest_trade_date = cur.fetchone()[0]
+    if not latest_trade_date:
+        logger.error("daily_quotes 表为空，无法获取行情数据")
+        cur.close(); conn.close()
+        return
+    logger.info(f"数据库最新交易日: {latest_trade_date}，使用此日期加载行情")
+
     cur.execute("""
         SELECT ts_code, close, pct_chg, turnover_rate, amount
         FROM daily_quotes WHERE trade_date=%s;
-    """, (today,))
+    """, (latest_trade_date,))
     quote_cache = {}
     for q in cur.fetchall():
         quote_cache[q['ts_code']] = {
@@ -85,7 +92,7 @@ def aggregate_today():
             'turnover_rate': float(q['turnover_rate']) if q['turnover_rate'] else 0,
             'amount': float(q['amount']) if q['amount'] else 0,
         }
-    logger.info(f"加载 {len(quote_cache)} 条行情到缓存")
+    logger.info(f"加载 {len(quote_cache)} 条行情到缓存 (trade_date={latest_trade_date})")
 
     cur.execute("""
         SELECT
