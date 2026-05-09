@@ -157,14 +157,14 @@ async def push_daily_candidates():
     }
     header, target = mode_labels.get(RUN_MODE, ('盘后复盘', '明日'))
     
-    # 获取数据采集统计
+    # 获取数据采集统计（只统计当天的数据）
     cur.execute("""
         SELECT source_name, COUNT(*) as cnt
         FROM raw_signals
         WHERE fetch_time >= %s
         GROUP BY source_name
         ORDER BY cnt DESC;
-    """, (today - timedelta(days=2),))
+    """, (today,))
     source_stats = cur.fetchall()
     
     # 构建数据采集统计头部
