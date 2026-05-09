@@ -55,19 +55,32 @@ def aggregate_today():
             conn.commit()
             logger.info("run_mode 列添加成功")
         
-        # 检查并添加唯一约束
+        # 删除旧的唯一约束 (只有 snapshot_date, ts_code)
+        cur.execute("""
+            SELECT conname FROM pg_constraint
+            WHERE conname = 'daily_candidates_snapshot_date_ts_code_key';
+        """)
+        if cur.fetchone():
+            logger.info("自动迁移：删除旧约束 daily_candidates_snapshot_date_ts_code_key")
+            cur.execute("""
+                ALTER TABLE daily_candidates DROP CONSTRAINT daily_candidates_snapshot_date_ts_code_key;
+            """)
+            conn.commit()
+            logger.info("旧约束删除成功")
+        
+        # 检查并添加新的唯一约束 (snapshot_date, ts_code, run_mode)
         cur.execute("""
             SELECT conname FROM pg_constraint
             WHERE conname = 'daily_candidates_unique_mode';
         """)
         if not cur.fetchone():
-            logger.info("自动迁移：添加唯一约束")
+            logger.info("自动迁移：添加唯一约束 daily_candidates_unique_mode")
             cur.execute("""
                 ALTER TABLE daily_candidates ADD CONSTRAINT daily_candidates_unique_mode
                 UNIQUE (snapshot_date, ts_code, run_mode);
             """)
             conn.commit()
-            logger.info("唯一约束添加成功")
+            logger.info("新唯一约束添加成功")
     except Exception as e:
         logger.warning(f"迁移检查失败: {e}")
 
