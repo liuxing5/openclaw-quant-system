@@ -200,35 +200,66 @@ def fetch_akshare_zt_pool():
 
 
 def fetch_akshare_concept_hot():
-    """概念板块异动 -> 信号"""
+    """概念板块异动 -> 信号，多接口兜底"""
     import akshare as ak
     rows = []
+    
+    # 接口1: stock_board_concept_name_em
     try:
         df = ak.stock_board_concept_name_em()
-        if df is None or not hasattr(df, 'empty') or df.empty:
-            logger.debug("concept: 无数据")
-            return rows
-        if '涨跌幅' not in df.columns:
-            logger.warning(f"concept: 找不到涨跌幅列，可用列: {list(df.columns)[:10]}")
-            return rows
-        df_sorted = df.sort_values('涨跌幅', ascending=False).head(10)
-        for _, r in df_sorted.iterrows():
-            concept = r.get('板块名称', '')
-            chg = r.get('涨跌幅', 0)
-            try:
-                chg = float(chg)
-            except (ValueError, TypeError):
-                continue
-            if chg < 1.5:
-                continue
-            rows.append(make_signal(
-                source='AKShare-热点概念', tier=2,
-                title=f"概念异动: {concept} 涨{chg:.2f}%",
-                content=f"{concept} 板块今日涨幅 {chg:.2f}%",
-            ))
-        logger.info(f"热点概念: {len(rows)} 条")
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            if '涨跌幅' in df.columns:
+                df_sorted = df.sort_values('涨跌幅', ascending=False).head(10)
+                for _, r in df_sorted.iterrows():
+                    concept = r.get('板块名称', '')
+                    chg = r.get('涨跌幅', 0)
+                    try:
+                        chg = float(chg)
+                    except (ValueError, TypeError):
+                        continue
+                    if chg < 1.5:
+                        continue
+                    rows.append(make_signal(
+                        source='AKShare-热点概念', tier=2,
+                        title=f"概念异动: {concept} 涨{chg:.2f}%",
+                        content=f"{concept} 板块今日涨幅 {chg:.2f}%",
+                    ))
+                if rows:
+                    logger.info(f"热点概念 (board): {len(rows)} 条")
+                    return rows
+            else:
+                logger.warning(f"concept board: 找不到涨跌幅列，可用列: {list(df.columns)[:10]}")
     except Exception as e:
-        logger.warning(f"concept 失败: {e}")
+        logger.debug(f"concept board 失败: {e}")
+    
+    # 接口2: stock_board_concept_hist_em (最近概念历史)
+    try:
+        df = ak.stock_board_concept_hist_em(symbol="近期异动")
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            col_name = next((c for c in ['板块名称', '名称'] if c in df.columns), None)
+            col_chg = next((c for c in ['涨跌幅', '涨跌幅'] if c in df.columns), None)
+            if col_name and col_chg:
+                for _, r in df.head(10).iterrows():
+                    concept = r.get(col_name, '')
+                    chg = r.get(col_chg, 0)
+                    try:
+                        chg = float(chg)
+                    except (ValueError, TypeError):
+                        continue
+                    if chg < 1.5:
+                        continue
+                    rows.append(make_signal(
+                        source='AKShare-热点概念', tier=2,
+                        title=f"概念异动: {concept} 涨{chg:.2f}%",
+                        content=f"{concept} 板块今日涨幅 {chg:.2f}%",
+                    ))
+                if rows:
+                    logger.info(f"热点概念 (hist): {len(rows)} 条")
+                    return rows
+    except Exception as e:
+        logger.debug(f"concept hist 失败: {e}")
+    
+    logger.info(f"热点概念: {len(rows)} 条")
     return rows
 
 
@@ -236,22 +267,11 @@ def fetch_akshare_research():
     """个股研报 - 多接口兜底"""
     import akshare as ak
     rows = []
-    for func_name, kwargs in [
-        ('stock_research_report_em', {'symbol': '全部'}),
-        ('stock_industry_research_em', {}),
-    ]:
-        try:
-            func = getattr(ak, func_name, None)
-            if not func:
-                logger.debug(f"research {func_name}: 函数不存在")
-                continue
-            df = func(**kwargs) if kwargs else func()
-            if df is None:
-                logger.debug(f"research {func_name}: 返回 None")
-                continue
-            if not hasattr(df, 'empty') or df.empty:
-                logger.debug(f"research {func_name}: 无数据")
-                continue
+    
+    # 接口1: stock_research_report_em
+    try:
+        df = ak.stock_research_report_em(symbol='全部')
+        if df is not None and hasattr(df, 'empty') and not df.empty:
             col_code = next((c for c in ['股票代码', '代码', 'symbol'] if c in df.columns), None)
             col_name = next((c for c in ['股票简称', '股票名称', '名称'] if c in df.columns), None)
             col_date = next((c for c in ['日期', '发布日期', 'date'] if c in df.columns), None)
@@ -259,63 +279,94 @@ def fetch_akshare_research():
             col_org = next((c for c in ['机构名称', '机构', 'org'] if c in df.columns), None)
             col_target = next((c for c in ['目标价', 'target_price'] if c in df.columns), None)
             col_title = next((c for c in ['报告名称', '标题', 'title'] if c in df.columns), None)
-            if not col_code or not col_date:
-                logger.warning(f"research {func_name}: 列不全 {list(df.columns)[:10]}")
-                continue
-            df[col_date] = pd.to_datetime(df[col_date], errors='coerce')
-            cutoff = pd.Timestamp(get_beijing_date() - timedelta(days=3))
-            df = df[df[col_date] >= cutoff]
-            for _, r in df.iterrows():
-                try:
-                    raw_code = str(r.get(col_code, '') or '')
-                    code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
-                    if not code or code == 'nan' or len(code) < 6:
+            if col_code and col_date:
+                df[col_date] = pd.to_datetime(df[col_date], errors='coerce')
+                cutoff = pd.Timestamp(get_beijing_date() - timedelta(days=3))
+                df = df[df[col_date] >= cutoff]
+                for _, r in df.iterrows():
+                    try:
+                        raw_code = str(r.get(col_code, '') or '')
+                        code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                        if not code or code == 'nan' or len(code) < 6:
+                            continue
+                        name = r.get(col_name, '') or '' if col_name else ''
+                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        rating = r.get(col_rating, '') or '' if col_rating else ''
+                        org = r.get(col_org, '') or '' if col_org else ''
+                        target_price = r.get(col_target, '') or '' if col_target else ''
+                        report_title = r.get(col_title, '') or '' if col_title else ''
+                        rows.append(make_signal(
+                            source='AKShare-个股研报', tier=1,
+                            title=f"研报: {name} {ts} {rating} - {org}",
+                            content=f"代码 {code} {name} 评级 {rating} 目标价 {target_price} "
+                                   f"报告 {report_title} 机构 {org}",
+                            pub_time=r[col_date],
+                        ))
+                    except Exception as e:
+                        logger.debug(f"research 行处理失败: {e}")
                         continue
-                    name = r.get(col_name, '') or '' if col_name else ''
-                    ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-                    rating = r.get(col_rating, '') or '' if col_rating else ''
-                    org = r.get(col_org, '') or '' if col_org else ''
-                    target_price = r.get(col_target, '') or '' if col_target else ''
-                    report_title = r.get(col_title, '') or '' if col_title else ''
-                    rows.append(make_signal(
-                        source='AKShare-个股研报', tier=1,
-                        title=f"研报: {name} {ts} {rating} - {org}",
-                        content=f"代码 {code} {name} 评级 {rating} 目标价 {target_price} "
-                               f"报告 {report_title} 机构 {org}",
-                        pub_time=r[col_date],
-                    ))
-                except Exception as e:
-                    logger.debug(f"research 行处理失败: {e}")
-                    continue
-            logger.info(f"个股研报 ({func_name}): {len(rows)} 条")
-            if rows:
-                return rows
-        except Exception as e:
-            logger.warning(f"research {func_name} 失败: {e}")
-            continue
+                if rows:
+                    logger.info(f"个股研报 (report): {len(rows)} 条")
+                    return rows
+    except Exception as e:
+        logger.debug(f"research report 失败: {e}")
+    
+    # 接口2: stock_info_global_em (全球个股研报)
+    try:
+        df = ak.stock_info_global_em()
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            col_title = next((c for c in ['标题', 'title', '报告名称'] if c in df.columns), None)
+            col_content = next((c for c in ['内容', 'content', '摘要'] if c in df.columns), None)
+            col_date = next((c for c in ['日期', 'date', '发布时间'] if c in df.columns), None)
+            if col_title:
+                for _, r in df.head(20).iterrows():
+                    try:
+                        title = str(r.get(col_title, '') or '')
+                        if not title or title == 'nan' or len(title) < 5:
+                            continue
+                        content = str(r.get(col_content, '') or '') if col_content else ''
+                        pub_time = pd.to_datetime(r.get(col_date), errors='coerce') if col_date else None
+                        rows.append(make_signal(
+                            source='AKShare-个股研报', tier=1,
+                            title=f"研报: {title}",
+                            content=content[:5000],
+                            pub_time=pub_time,
+                        ))
+                    except Exception as e:
+                        logger.debug(f"research global 行处理失败: {e}")
+                        continue
+                if rows:
+                    logger.info(f"个股研报 (global): {len(rows)} 条")
+                    return rows
+    except Exception as e:
+        logger.debug(f"research global 失败: {e}")
+    
+    logger.info(f"个股研报: {len(rows)} 条")
     return rows
 
 
 def fetch_akshare_jgdy():
-    """机构调研 - 按日期分页，只取最近 3 天"""
+    """机构调研 - 多接口兜底，按日期分页，只取最近 5 天"""
     import akshare as ak
     rows = []
     try:
-        target_dates = [(get_beijing_date() - timedelta(days=i)).strftime('%Y%m%d') for i in range(3)]
+        # 尝试多个接口
+        # 接口1: stock_jgdy_detail_em (按日期)
+        target_dates = [(get_beijing_date() - timedelta(days=i)).strftime('%Y%m%d') for i in range(5)]
         for d in target_dates:
             try:
                 df = ak.stock_jgdy_detail_em(date=d)
                 if df is None:
-                    logger.debug(f"jgdy {d}: 返回 None")
+                    logger.debug(f"jgdy detail {d}: 返回 None")
                     continue
                 if not hasattr(df, 'empty') or df.empty:
-                    logger.debug(f"jgdy {d}: 无数据")
+                    logger.debug(f"jgdy detail {d}: 无数据")
                     continue
                 col_code = next((c for c in ['股票代码', '代码'] if c in df.columns), None)
                 col_name = next((c for c in ['股票简称', '名称'] if c in df.columns), None)
                 col_count = next((c for c in ['接待机构数量', '机构数'] if c in df.columns), None)
                 if not col_code:
-                    logger.debug(f"jgdy {d}: 列不全 {list(df.columns)[:10]}")
+                    logger.debug(f"jgdy detail {d}: 列不全 {list(df.columns)[:10]}")
                     continue
                 for _, r in df.iterrows():
                     try:
@@ -332,14 +383,48 @@ def fetch_akshare_jgdy():
                             content=f"代码 {code} {name} 接待 {count} 家机构 调研日期 {d}",
                         ))
                     except Exception as e:
-                        logger.debug(f"jgdy {d} 行处理失败: {e}")
+                        logger.debug(f"jgdy detail {d} 行处理失败: {e}")
                         continue
+                if rows:
+                    logger.info(f"机构调研 (detail): {len(rows)} 条")
+                    return rows
             except Exception as e:
-                logger.debug(f"jgdy {d} 失败: {e}")
+                logger.debug(f"jgdy detail {d} 失败: {e}")
                 continue
-        logger.info(f"机构调研: {len(rows)} 条")
+        
+        # 接口2: stock_jgdy_summary_em (汇总)
+        try:
+            df = ak.stock_jgdy_summary_em()
+            if df is not None and hasattr(df, 'empty') and not df.empty:
+                col_code = next((c for c in ['股票代码', '代码'] if c in df.columns), None)
+                col_name = next((c for c in ['股票简称', '名称'] if c in df.columns), None)
+                col_count = next((c for c in ['接待机构数量', '机构数', '调研家数'] if c in df.columns), None)
+                if col_code:
+                    for _, r in df.iterrows():
+                        try:
+                            raw_code = str(r.get(col_code, '') or '')
+                            code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                            if not code or len(code) < 6:
+                                continue
+                            name = r.get(col_name, '') or '' if col_name else ''
+                            count = r.get(col_count, 0) or 0 if col_count else 0
+                            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                            rows.append(make_signal(
+                                source='AKShare-机构调研', tier=1,
+                                title=f"机构调研: {name} {ts} - {count}家",
+                                content=f"代码 {code} {name} 接待 {count} 家机构",
+                            ))
+                        except Exception as e:
+                            logger.debug(f"jgdy summary 行处理失败: {e}")
+                            continue
+                    if rows:
+                        logger.info(f"机构调研 (summary): {len(rows)} 条")
+                        return rows
+        except Exception as e:
+            logger.debug(f"jgdy summary 失败: {e}")
     except Exception as e:
         logger.warning(f"jgdy 失败: {e}")
+    logger.info(f"机构调研: {len(rows)} 条")
     return rows
 
 

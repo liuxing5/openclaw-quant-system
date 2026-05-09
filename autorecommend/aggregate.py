@@ -72,8 +72,9 @@ def aggregate_today():
         logger.warning(f"迁移检查失败: {e}")
 
     # 批量加载最新交易日行情到内存
-    cur.execute("SELECT MAX(trade_date) FROM daily_quotes;")
-    latest_trade_date = cur.fetchone()[0]
+    cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+    row = cur.fetchone()
+    latest_trade_date = row['max_date'] if row else None
     if not latest_trade_date:
         logger.error("daily_quotes 表为空，无法获取行情数据")
         cur.close(); conn.close()
