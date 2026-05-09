@@ -132,28 +132,54 @@ def fetch_akshare_news():
 
 
 def fetch_akshare_lhb():
-    """龙虎榜 -> 信号，多日期兜底"""
+    """龙虎榜 -> 信号，多接口多日期兜底，确保拿到真实数据"""
     import akshare as ak
     today_str = get_beijing_date().strftime('%Y%m%d')
     rows = []
-    try:
-        # 尝试今天和昨天（龙虎榜可能延迟发布）
-        for date_str in [today_str, (get_beijing_date() - timedelta(days=1)).strftime('%Y%m%d')]:
-            try:
-                df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
-                if df is None:
-                    logger.debug(f"lhb {date_str}: 接口返回 None")
-                    continue
-                if not hasattr(df, 'empty') or df.empty:
-                    logger.debug(f"lhb {date_str}: 今日无数据")
-                    continue
+    
+    # 接口1: stock_lhb_detail_em (龙虎榜详情)
+    for date_str in [today_str, (get_beijing_date() - timedelta(days=1)).strftime('%Y%m%d'), (get_beijing_date() - timedelta(days=2)).strftime('%Y%m%d')]:
+        try:
+            logger.debug(f"lhb 接口1: {date_str}")
+            df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
+            if df is not None and hasattr(df, 'empty') and not df.empty:
                 col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
                 col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
                 col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
                 col_net = next((c for c in ['龙虎榜净买额', '净买额', '净额'] if c in df.columns), None)
-                if not col_code:
-                    logger.debug(f"lhb {date_str}: 找不到代码列，可用列: {list(df.columns)}")
-                    continue
+                if col_code:
+                    for _, r in df.iterrows():
+                        try:
+                            raw_code = str(r.get(col_code, '') or '')
+                            code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                            if not code or code == 'nan' or len(code) < 4:
+                                continue
+                            name = r.get(col_name, '') or '' if col_name else ''
+                            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                            net = r.get(col_net, 0) or 0 if col_net else 0
+                            reason = r.get(col_reason, '') or '' if col_reason else ''
+                            rows.append(make_signal(
+                                source='AKShare-龙虎榜', tier=1,
+                                title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
+                                content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net} 元",
+                            ))
+                        except Exception:
+                            continue
+                    if rows:
+                        logger.info(f"龙虎榜 (detail {date_str}): {len(rows)} 条")
+                        return rows
+        except Exception as e:
+            logger.debug(f"lhb 接口1 {date_str} 失败: {e}")
+    
+    # 接口2: stock_lhb_ggtj_em (龙虎榜个股统计)
+    try:
+        logger.debug("lhb 接口2: stock_lhb_ggtj_em")
+        df = ak.stock_lhb_ggtj_em(start_date=today_str, end_date=today_str)
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            col_code = next((c for c in ['代码', '股票代码'] if c in df.columns), None)
+            col_name = next((c for c in ['名称', '股票名称'] if c in df.columns), None)
+            col_net = next((c for c in ['净买额', '龙虎榜净买额'] if c in df.columns), None)
+            if col_code:
                 for _, r in df.iterrows():
                     try:
                         raw_code = str(r.get(col_code, '') or '')
@@ -163,50 +189,140 @@ def fetch_akshare_lhb():
                         name = r.get(col_name, '') or '' if col_name else ''
                         ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
                         net = r.get(col_net, 0) or 0 if col_net else 0
-                        reason = r.get(col_reason, '') or '' if col_reason else ''
                         rows.append(make_signal(
                             source='AKShare-龙虎榜', tier=1,
                             title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
-                            content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net} 元",
+                            content=f"代码 {code} {name} 龙虎榜净买额 {net} 元",
                         ))
-                    except Exception as e:
-                        logger.debug(f"lhb {date_str} 行处理失败: {e}")
+                    except Exception:
                         continue
                 if rows:
-                    logger.info(f"龙虎榜 ({date_str}): {len(rows)} 条")
+                    logger.info(f"龙虎榜 (ggtj): {len(rows)} 条")
                     return rows
-            except Exception as e:
-                logger.debug(f"lhb {date_str} 失败: {e}")
-                continue
     except Exception as e:
-        logger.warning(f"lhb 失败: {e}")
+        logger.debug(f"lhb 接口2 失败: {e}")
+    
+    # 接口3: stock_lhb_jgzz_em (龙虎榜机构追踪)
+    try:
+        logger.debug("lhb 接口3: stock_lhb_jgzz_em")
+        df = ak.stock_lhb_jgzz_em(start_date=today_str, end_date=today_str)
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            col_code = next((c for c in ['代码', '股票代码'] if c in df.columns), None)
+            col_name = next((c for c in ['名称', '股票名称'] if c in df.columns), None)
+            if col_code:
+                for _, r in df.iterrows():
+                    try:
+                        raw_code = str(r.get(col_code, '') or '')
+                        code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                        if not code or code == 'nan' or len(code) < 4:
+                            continue
+                        name = r.get(col_name, '') or '' if col_name else ''
+                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        rows.append(make_signal(
+                            source='AKShare-龙虎榜', tier=1,
+                            title=f"龙虎榜: {name} {ts} 机构关注",
+                            content=f"代码 {code} {name} 龙虎榜机构关注",
+                        ))
+                    except Exception:
+                        continue
+                if rows:
+                    logger.info(f"龙虎榜 (jgzz): {len(rows)} 条")
+                    return rows
+    except Exception as e:
+        logger.debug(f"lhb 接口3 失败: {e}")
+    
     logger.info(f"龙虎榜: {len(rows)} 条")
     return rows
 
 
 def fetch_akshare_zt_pool():
-    """涨停板池 -> 信号"""
+    """涨停板池 -> 信号，多接口兜底，确保拿到真实数据"""
     import akshare as ak
     today_str = get_beijing_date().strftime('%Y%m%d')
     rows = []
+    
+    # 接口1: stock_zt_pool_em (涨停板池)
     try:
+        logger.debug("zt_pool 接口1: stock_zt_pool_em")
         df = ak.stock_zt_pool_em(date=today_str)
-        if df is None or not hasattr(df, 'empty') or df.empty:
-            logger.info("涨停板: 无数据")
-            return rows
-        for _, r in df.iterrows():
-            code = str(r.get('代码', '')).zfill(6)
-            name = r.get('名称', '')
-            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-            rows.append(make_signal(
-                source='AKShare-涨停板', tier=1,
-                title=f"涨停: {name} {ts} 连板{r.get('连板数', 1)}",
-                content=f"代码 {code} {name} 封板时间 {r.get('首次封板时间', '')} "
-                       f"涨停统计 {r.get('涨停统计', '')} 所属行业 {r.get('所属行业', '')}",
-            ))
-        logger.info(f"涨停板: {len(rows)} 条")
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            for _, r in df.iterrows():
+                code = str(r.get('代码', '')).zfill(6)
+                name = r.get('名称', '')
+                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                rows.append(make_signal(
+                    source='AKShare-涨停板', tier=1,
+                    title=f"涨停: {name} {ts} 连板{r.get('连板数', 1)}",
+                    content=f"代码 {code} {name} 封板时间 {r.get('首次封板时间', '')} "
+                           f"涨停统计 {r.get('涨停统计', '')} 所属行业 {r.get('所属行业', '')}",
+                ))
+            if rows:
+                logger.info(f"涨停板 (pool): {len(rows)} 条")
+                return rows
     except Exception as e:
-        logger.warning(f"zt_pool 失败: {e}")
+        logger.debug(f"zt_pool 接口1 失败: {e}")
+    
+    # 接口2: stock_zt_pool_previous_em (昨日涨停板)
+    try:
+        logger.debug("zt_pool 接口2: stock_zt_pool_previous_em")
+        df = ak.stock_zt_pool_previous_em(date=today_str)
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            for _, r in df.iterrows():
+                code = str(r.get('代码', '')).zfill(6)
+                name = r.get('名称', '')
+                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                rows.append(make_signal(
+                    source='AKShare-涨停板', tier=1,
+                    title=f"涨停: {name} {ts} 连板{r.get('连板数', 1)}",
+                    content=f"代码 {code} {name} 涨停统计 {r.get('涨停统计', '')} 所属行业 {r.get('所属行业', '')}",
+                ))
+            if rows:
+                logger.info(f"涨停板 (previous): {len(rows)} 条")
+                return rows
+    except Exception as e:
+        logger.debug(f"zt_pool 接口2 失败: {e}")
+    
+    # 接口3: stock_zt_pool_strong_em (强势涨停板)
+    try:
+        logger.debug("zt_pool 接口3: stock_zt_pool_strong_em")
+        df = ak.stock_zt_pool_strong_em(date=today_str)
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            for _, r in df.iterrows():
+                code = str(r.get('代码', '')).zfill(6)
+                name = r.get('名称', '')
+                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                rows.append(make_signal(
+                    source='AKShare-涨停板', tier=1,
+                    title=f"涨停: {name} {ts} 强势涨停",
+                    content=f"代码 {code} {name} 所属行业 {r.get('所属行业', '')}",
+                ))
+            if rows:
+                logger.info(f"涨停板 (strong): {len(rows)} 条")
+                return rows
+    except Exception as e:
+        logger.debug(f"zt_pool 接口3 失败: {e}")
+    
+    # 接口4: stock_zt_pool_sub_new_em (次新股涨停)
+    try:
+        logger.debug("zt_pool 接口4: stock_zt_pool_sub_new_em")
+        df = ak.stock_zt_pool_sub_new_em(date=today_str)
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            for _, r in df.iterrows():
+                code = str(r.get('代码', '')).zfill(6)
+                name = r.get('名称', '')
+                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                rows.append(make_signal(
+                    source='AKShare-涨停板', tier=1,
+                    title=f"涨停: {name} {ts} 次新涨停",
+                    content=f"代码 {code} {name} 所属行业 {r.get('所属行业', '')}",
+                ))
+            if rows:
+                logger.info(f"涨停板 (sub_new): {len(rows)} 条")
+                return rows
+    except Exception as e:
+        logger.debug(f"zt_pool 接口4 失败: {e}")
+    
+    logger.info(f"涨停板: {len(rows)} 条")
     return rows
 
 
