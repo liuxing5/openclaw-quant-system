@@ -28,6 +28,13 @@ def get_beijing_date():
     """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
     return datetime.now(BEIJING_TZ).date()
 
+
+def is_trading_day(d):
+    """判断是否为交易日（简单版：周一到周五）"""
+    if d.weekday() > 4:  # 周六(5)或周日(6)
+        return False
+    return True
+
 MIN_SELECT_SCORE = 50
 
 
@@ -111,6 +118,11 @@ async def push_daily_candidates():
     bot = Bot(BOT_TOKEN, request=request)
     today = get_beijing_date()
     logger.info(f"=== 推送开始，today={today}, RUN_MODE={RUN_MODE} ===")
+    
+    # 非交易日跳过推送
+    if not is_trading_day(today):
+        logger.warning(f"{today} 非交易日，跳过推送")
+        return
     
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
