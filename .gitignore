@@ -90,6 +90,11 @@ logs/
 *.pkl
 *.h5
 *.hdf5
+*.parquet
+
+# pre_surge cache (regenerable from akshare)
+strategies/llm_multisource/pre_surge/data/
+strategies/llm_multisource/pre_surge/results/
 
 # Temporary files
 *.tmp

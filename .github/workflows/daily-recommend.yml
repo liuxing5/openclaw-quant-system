@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
     paths:
-      - 'autorecommend/**'
+      - 'strategies/llm_multisource/**'
       - '.github/workflows/daily-recommend.yml'
   schedule:
     - cron: '30 0 * * 1-5'
@@ -72,37 +72,37 @@ jobs:
           cache: 'pip'
       
       - name: Install dependencies
-        run: pip install -r autorecommend/requirements.txt
-      
+        run: pip install -r strategies/llm_multisource/requirements.txt
+
       - name: Setup & collect
         run: |
-          python autorecommend/apply_schema.py
-          python autorecommend/seed_sources.py
-          python autorecommend/sync_stock_info.py
-      
+          python -m core.db.apply_schema
+          python strategies/llm_multisource/seed_sources.py
+          python strategies/llm_multisource/sync_stock_info.py
+
       - name: Collect market data
         run: |
-          python autorecommend/market_data.py
-          python autorecommend/collector.py --once
-      
+          python -m core.market_data.quotes
+          python strategies/llm_multisource/collector.py --once
+
       - name: Fast path extraction (structured data)
-        run: python autorecommend/structured_extraction.py
-      
+        run: python strategies/llm_multisource/structured_extraction.py
+
       - name: Extract signals with LLM (news + research only)
-        run: python autorecommend/extractor.py --once
-      
+        run: python strategies/llm_multisource/extractor.py --once
+
       - name: Aggregate & report
         env:
           RUN_MODE: ${{ steps.mode.outputs.mode }}
         run: |
-          python autorecommend/aggregate.py
-          python autorecommend/track_performance.py
-          python autorecommend/generate_report.py
-          python autorecommend/pusher.py
-      
+          python strategies/llm_multisource/aggregate.py
+          python -m core.tracker.performance
+          python strategies/llm_multisource/generate_report.py
+          python -m core.notify.pusher
+
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.GH_PAT }}
-          publish_dir: ./autorecommend/docs
+          publish_dir: ./strategies/llm_multisource/docs
           keep_files: true

@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
     paths:
-      - 'recommend/xuangu/**'
+      - 'strategies/overnight_8step/**'
       - '.github/workflows/daily-stock-pick.yml'
   schedule:
     # 北京时间 09:26 卖出决策 (UTC 01:26) - 09:25竞价结束后执行
@@ -46,12 +46,12 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install requests pandas numpy baostock python-dotenv tqdm
+        pip install requests pandas numpy baostock python-dotenv tqdm psycopg2-binary loguru
 
     - name: Check if trading day
       id: check_trading
       run: |
-        cd recommend/xuangu
+        cd strategies/overnight_8step
         python3 -c "
         from trading_calendar import is_trading_day
         from datetime import datetime, timedelta, timezone, date
@@ -141,10 +141,15 @@ jobs:
 
     - name: Run stock pick script
       id: run_script
-      working-directory: recommend/xuangu
+      working-directory: strategies/overnight_8step
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+        POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+        POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
       run: |
         echo "Running: ${{ steps.task.outputs.script }}"
         python ${{ steps.task.outputs.script }} > /tmp/output.log 2>&1
@@ -187,7 +192,7 @@ jobs:
       run: |
         python3 -c "
         import os, sys
-        sys.path.insert(0, 'recommend/xuangu')
+        sys.path.insert(0, 'strategies/overnight_8step')
         os.environ['TELEGRAM_BOT_TOKEN'] = os.environ['BOT_TOKEN']
         os.environ['TELEGRAM_CHAT_ID'] = os.environ['CHAT_ID']
         from notifyTelegram import send_message
