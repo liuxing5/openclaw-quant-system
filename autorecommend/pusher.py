@@ -165,15 +165,26 @@ async def push_daily_candidates():
         GROUP BY source_name
         ORDER BY cnt DESC;
     """, (today,))
-    source_stats = cur.fetchall()
+    source_stats = {row['source_name']: row['cnt'] for row in cur.fetchall()}
+    
+    # 固定的数据源列表，确保每个都显示
+    all_sources = [
+        'AKShare-龙虎榜',
+        'AKShare-涨停板',
+        'AKShare-个股研报',
+        'AKShare-财经新闻',
+        'AKShare-机构调研',
+        'AKShare-热点概念',
+    ]
     
     # 构建数据采集统计头部
     stats_lines = []
     stats_lines.append(f" <b>{today}</b> {header}")
     stats_lines.append(f"共 {len(cands)} 只\n")
     stats_lines.append("数据采集统计：")
-    for s in source_stats:
-        stats_lines.append(f"  {s['source_name']}: {s['cnt']} 条")
+    for src in all_sources:
+        cnt = source_stats.get(src, 0)
+        stats_lines.append(f"  {src}: {cnt} 条")
     stats_lines.append("")
     
     lines = stats_lines
