@@ -267,17 +267,32 @@ def aggregate_today():
             turnover = q['turnover_rate'] or 0
             amount = q['amount'] or 0
 
+            # 盘后模式跳过涨停股（和LLM分支保持一致）
+            is_kc_cy = ts_code.split('.')[0].startswith(('688', '300', '301'))
+            limit = 19.5 if is_kc_cy else 9.5
+            if RUN_MODE in AFTERHOURS_MODES and pct_chg >= limit:
+                continue
+
+            # 连续量化评分（和LLM分支保持一致）
             quant_score = 0
-            if -2 < pct_chg < 5:
-                quant_score += 40
-            if turnover > 5:
-                quant_score += 30
-            elif turnover > 3:
-                quant_score += 20
-            if amount > 10e8:
-                quant_score += 30
-            elif amount > 5e8:
-                quant_score += 20
+            
+            # 涨幅：-3%到7%是连续函数，涨幅2%时加分最高
+            if -3 < pct_chg < 7:
+                quant_score += 30 * (1 - abs(pct_chg - 2) / 5)
+            elif 7 <= pct_chg < limit:
+                quant_score += 10
+            
+            # 换手率：超过3%加分，连续函数，15%换手到顶
+            if turnover > 0:
+                quant_score += min(30, turnover * 2)
+            
+            # 成交额：log函数，10亿对应40分
+            if amount > 0:
+                quant_score += min(40, 10 * math.log10(amount / 1e8 + 1))
+
+            # 涨停惩罚
+            if pct_chg > limit:
+                quant_score = max(0, quant_score - 30)
 
             final = quant_score * 0.8
 
@@ -288,12 +303,14 @@ def aggregate_today():
                 'quant_score': quant_score, 'final_score': final,
                 'logic_tags': ['量化选股'], 'sources': [{'source': 'quant', 'tier': 2}],
                 'close': close_price,
+                'pct_chg': pct_chg,
+                'turnover_rate': turnover,
             })
 
     candidates.sort(key=lambda x: x['final_score'], reverse=True)
     logger.info(f"排序后候选池: {len(candidates)} 只")
     for c in candidates[:10]:
-        logger.info(f"  {c['ts_code']} {c['stock_name']} final={c['final_score']:.1f} llm={c['llm_score']:.0f} quant={c['quant_score']:.0f} consensus={c['consensus_score']:.2f}")
+        logger.info(f"  {c['ts_code']} {c['stock_name'] or '?'} final={c['final_score']:.1f} llm={c['llm_score']:.0f} quant={c['quant_score']:.0f} consensus={c['consensus_score']:.2f}")
 
     if RUN_MODE == 'intraday':
         filtered = []
