@@ -1,6 +1,6 @@
 import pandas as pd
 
-df = pd.read_csv('recommend/recommend2/results/scan_20260424.csv')
+df = pd.read_csv('strategies/llm_multisource/pre_surge/results/scan_20260424.csv')
 
 print(f'总扫描数量：{len(df)}')
 print(f'最高得分：{df["score"].max()}')

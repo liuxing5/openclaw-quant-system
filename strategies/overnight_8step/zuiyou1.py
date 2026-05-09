@@ -135,6 +135,64 @@ except ImportError:
     print("ℹ️ notifyTelegram 模块未找到,不启用 Telegram 推送")
 
 # ============================================================
+#  v1.4+: 持久化到 daily_candidates（与 llm_multisource 共享表）
+# ============================================================
+import sys as _sys
+_sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+try:
+    from core.db.connection import db_configured
+    from core.db.candidates import write_candidates
+    from core.utils.ts_code import baostock_to_standard
+    from core.utils.env import load_project_env
+    load_project_env()
+    DB_ENABLED = db_configured()
+    if not DB_ENABLED:
+        print("ℹ️ POSTGRES_* 未配置，不启用 daily_candidates 写入")
+except Exception as _e:
+    DB_ENABLED = False
+    print(f"ℹ️ core 包不可用，不启用 daily_candidates 写入: {_e}")
+
+
+def _persist_to_daily_candidates(stable_picks, upper_picks, snapshot_date) -> int:
+    """Write zuiyou1 picks to shared daily_candidates table (source='overnight_8step')."""
+    if not DB_ENABLED:
+        return 0
+    items = []
+    for picks_df, pool_label, position in [(stable_picks, 'stable', 0.15), (upper_picks, 'upper', 0.08)]:
+        for _, row in picks_df.iterrows():
+            price = float(row['price'])
+            tags_str = row.get('tags') or ''
+            logic_tags = [t.strip() for t in tags_str.replace('/', '|').split('|') if t.strip()]
+            logic_tags.append(f'pool:{pool_label}')
+            items.append({
+                'ts_code': baostock_to_standard(row['code']),
+                'stock_name': None,
+                'final_score': float(row['score']),
+                'quant_score': float(row['score']),
+                'consensus_score': 1.0,
+                'mention_count': 1,
+                'source_diversity': 1,
+                'logic_tags': logic_tags,
+                'selected': True,
+                'position_pct': position,
+                'entry_low': round(price * 0.99, 2),
+                'entry_high': round(price * 1.01, 2),
+                'stop_loss': round(price * 0.975, 2),
+                'target_1': round(price * 1.05, 2),
+                'target_2': round(price * 1.10, 2),
+                'sources': [{'source': 'zuiyou1', 'pool': pool_label, 'pct': float(row.get('pct', 0)),
+                             'vol_ratio': float(row.get('vol_ratio', 0)), 'turn': float(row.get('turn', 0)),
+                             'streak': int(row.get('streak', 0))}],
+            })
+    if not items:
+        return 0
+    try:
+        return write_candidates(items, snapshot_date, source='overnight_8step', run_mode='afternoon')
+    except Exception as e:
+        print(f"⚠️ daily_candidates 写入失败（不影响推送）: {e}")
+        return 0
+
+# ============================================================
 #  1. 全局配置
 # ============================================================
 CONFIG_STABLE = {
@@ -1287,6 +1345,9 @@ def main():
     is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
     if is_post_time:
         append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
+        n_db = _persist_to_daily_candidates(stable_picks, upper_picks, end_d)
+        if n_db:
+            print(f"✓ 写入 {n_db} 条到 daily_candidates (source=overnight_8step, snapshot_date={end_d})")
     else:
         print(f"\n当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入和推送（等待15:10后盘后定稿）")
 

@@ -1,37 +1,27 @@
 """每日候选池生成 - 盘前/盘后双跑"""
-import os
-import json
+import os, sys
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from datetime import date, timedelta, datetime, timezone
-import psycopg2
 from psycopg2.extras import RealDictCursor
 from loguru import logger
-from dotenv import load_dotenv
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+from core.db.connection import get_db
+from core.db.candidates import write_candidates
+from core.utils.env import load_project_env
+
+load_project_env()
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '40'))  # 可从环境变量调整
+MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '40'))
 MAX_SELECTED = 8
 MIN_LIQUIDITY = 1e8
+SOURCE = 'llm_multisource'
 
-# 北京时间时区
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def get_beijing_date():
-    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
     return datetime.now(BEIJING_TZ).date()
-
-
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'),
-        port=int(os.getenv('POSTGRES_PORT') or '5432'),
-        user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'),
-        dbname=os.getenv('POSTGRES_DB'),
-    )
 
 
 def aggregate_today():
@@ -41,50 +31,6 @@ def aggregate_today():
 
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    # 自动迁移：检查并添加 run_mode 列
-    try:
-        cur.execute("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_schema = 'public' AND table_name = 'daily_candidates' AND column_name = 'run_mode';
-        """)
-        if not cur.fetchone():
-            logger.info("自动迁移：添加 run_mode 列")
-            cur.execute("""
-                ALTER TABLE daily_candidates ADD COLUMN run_mode VARCHAR(20) DEFAULT 'afternoon';
-            """)
-            conn.commit()
-            logger.info("run_mode 列添加成功")
-        
-        # 删除旧的唯一约束 (只有 snapshot_date, ts_code)
-        cur.execute("""
-            SELECT conname FROM pg_constraint
-            WHERE conname = 'daily_candidates_snapshot_date_ts_code_key';
-        """)
-        if cur.fetchone():
-            logger.info("自动迁移：删除旧约束 daily_candidates_snapshot_date_ts_code_key")
-            cur.execute("""
-                ALTER TABLE daily_candidates DROP CONSTRAINT daily_candidates_snapshot_date_ts_code_key;
-            """)
-            conn.commit()
-            logger.info("旧约束删除成功")
-        
-        # 检查并添加新的唯一约束 (snapshot_date, ts_code, run_mode)
-        cur.execute("""
-            SELECT conname FROM pg_constraint
-            WHERE conname = 'daily_candidates_unique_mode';
-        """)
-        if not cur.fetchone():
-            logger.info("自动迁移：添加唯一约束 daily_candidates_unique_mode")
-            cur.execute("""
-                ALTER TABLE daily_candidates ADD CONSTRAINT daily_candidates_unique_mode
-                UNIQUE (snapshot_date, ts_code, run_mode);
-            """)
-            conn.commit()
-            logger.info("新唯一约束添加成功")
-    except Exception as e:
-        logger.warning(f"迁移检查失败: {e}")
-
-    # 批量加载最新交易日行情到内存
     cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
     row = cur.fetchone()
     latest_trade_date = row['max_date'] if row else None
@@ -174,9 +120,9 @@ def aggregate_today():
             if pct_chg > 9.5:
                 quant_score = max(0, quant_score - 30)
 
-            consensus = min(r['source_diversity'] / 2.0, 1.0)  # 降低分母，提高 consensus
-            llm_n = min(r['llm_score'] / 4.0, 1.0)  # 降低分母，提高 llm_n
-            quant_n = quant_score / 80.0  # 归一化到实际最大值
+            consensus = min(r['source_diversity'] / 2.0, 1.0)
+            llm_n = min(r['llm_score'] / 4.0, 1.0)
+            quant_n = quant_score / 80.0
 
             if llm_n > 0 and quant_n > 0:
                 final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
@@ -282,22 +228,11 @@ def aggregate_today():
         logger.warning(f"无候选股达到阈值 {MIN_SELECT_SCORE}")
         observation = candidates[:10]
         for c in observation:
-            cur.execute("""
-                INSERT INTO daily_candidates
-                (snapshot_date, ts_code, stock_name, mention_count, source_diversity,
-                 consensus_score, llm_score, quant_score, final_score, logic_tags,
-                 selected, position_pct, sources, run_mode)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,FALSE,0,%s,%s)
-                ON CONFLICT (snapshot_date, ts_code, run_mode) DO UPDATE SET
-                  final_score=EXCLUDED.final_score, selected=EXCLUDED.selected;
-            """, (today, c['ts_code'], c['stock_name'], c['mention_count'],
-                  c['source_diversity'], c['consensus_score'], c['llm_score'],
-                  c['quant_score'], c['final_score'], c['logic_tags'],
-                  json.dumps(c['sources'], default=str, ensure_ascii=False),
-                  RUN_MODE))
-        conn.commit()
-        logger.info(f"写入 {len(observation)} 条观察记录到 daily_candidates (snapshot_date={today})")
+            c['selected'] = False
+            c['position_pct'] = 0
+        n = write_candidates(observation, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
         cur.close(); conn.close()
+        logger.info(f"写入 {n} 条观察记录到 daily_candidates (snapshot_date={today})")
         return
 
     selected_list = qualified[:MAX_SELECTED]
@@ -305,7 +240,8 @@ def aggregate_today():
     for c in selected_list:
         logger.info(f"  选中: {c['ts_code']} {c['stock_name']} final={c['final_score']:.1f}")
 
-    for i, c in enumerate(qualified[:15]):
+    items = []
+    for c in qualified[:15]:
         is_selected = c in selected_list
         close = c['close']
         code = c['ts_code'].split('.')[0]
@@ -323,31 +259,18 @@ def aggregate_today():
             t1 = round(close * 1.05, 2)
             t2 = round(close * 1.10, 2)
 
-        position = 0.08 if is_selected else 0
+        c['selected'] = is_selected
+        c['position_pct'] = 0.08 if is_selected else 0
+        c['entry_low'] = entry_low
+        c['entry_high'] = entry_high
+        c['stop_loss'] = stop
+        c['target_1'] = t1
+        c['target_2'] = t2
+        items.append(c)
 
-        cur.execute("""
-            INSERT INTO daily_candidates
-            (snapshot_date, ts_code, stock_name, mention_count, source_diversity,
-             consensus_score, llm_score, quant_score, final_score, logic_tags,
-             selected, position_pct, entry_low, entry_high, stop_loss, target_1, target_2, sources, run_mode)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (snapshot_date, ts_code, run_mode) DO UPDATE SET
-              final_score=EXCLUDED.final_score, selected=EXCLUDED.selected,
-              entry_low=EXCLUDED.entry_low, entry_high=EXCLUDED.entry_high,
-              stop_loss=EXCLUDED.stop_loss, target_1=EXCLUDED.target_1,
-              target_2=EXCLUDED.target_2, position_pct=EXCLUDED.position_pct;
-        """, (
-            today, c['ts_code'], c['stock_name'], c['mention_count'],
-            c['source_diversity'], c['consensus_score'], c['llm_score'],
-            c['quant_score'], c['final_score'], c['logic_tags'],
-            is_selected, position, entry_low, entry_high, stop, t1, t2,
-            json.dumps(c['sources'], default=str, ensure_ascii=False),
-            RUN_MODE,
-        ))
-
-    conn.commit()
+    n = write_candidates(items, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
     cur.close(); conn.close()
-    logger.info(f"候选池生成完毕，snapshot_date={today}，共写入 {len(qualified[:15])} 条记录")
+    logger.info(f"候选池生成完毕，snapshot_date={today}，共写入 {n} 条记录")
 
 
 if __name__ == '__main__':
