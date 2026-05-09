@@ -5,7 +5,7 @@ on:
     branches: [master]
     paths:
       - 'strategies/llm_multisource/**'
-      - '.github/workflows/daily-recommend.yml'
+      - '.github/workflows/llm_multisource.yml'
   schedule:
     - cron: '30 0 * * 1-5'
     - cron: '30 3 * * 1-5'

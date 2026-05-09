@@ -5,7 +5,7 @@ on:
     branches: [master]
     paths:
       - 'strategies/overnight_8step/**'
-      - '.github/workflows/daily-stock-pick.yml'
+      - '.github/workflows/overnight_8step.yml'
   schedule:
     # 北京时间 09:26 卖出决策 (UTC 01:26) - 09:25竞价结束后执行
     - cron: '26 1 * * *'
