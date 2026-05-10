@@ -134,16 +134,16 @@ async def push_daily_candidates():
     
     cur.execute("""
         SELECT * FROM daily_candidates
-        WHERE snapshot_date=%s AND selected=TRUE
+        WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource'
         ORDER BY final_score DESC;
     """, (today,))
     cands = cur.fetchall()
-    logger.info(f"查询 daily_candidates WHERE snapshot_date={today} AND selected=TRUE，找到 {len(cands)} 条")
-    
+    logger.info(f"查询 daily_candidates WHERE snapshot_date={today} AND selected=TRUE AND source='llm_multisource'，找到 {len(cands)} 条")
+
     if not cands:
         cur.execute("""
             SELECT COUNT(*) as cnt FROM daily_candidates
-            WHERE snapshot_date=%s;
+            WHERE snapshot_date=%s AND source='llm_multisource';
         """, (today,))
         row = cur.fetchone()
         total = row['cnt'] if hasattr(row, 'keys') else row[0]
