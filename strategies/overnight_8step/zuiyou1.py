@@ -1,6 +1,13 @@
 """
 隔夜选股法·最优融合版 (zuiyou1 v1.5)
 ========================================
+v1.5.2 修订（2026-05-10）：
+  ✓ P0 修复 get_stock_pool 仍读全局 CONFIG —— 改为接收 pool_name 参数，双池扫描正确
+  ✓ P0 修复 append_to_summary 仍读全局 CONFIG —— mode_label 改为传参
+  ✓ P1 修复 CONFIG_UPPER MODE 不同步 —— 模块加载时同时更新双池 MODE
+  ✓ P2 preload_industries 去重 —— 第二次 scan_pool 跳过重复预热
+  ✓ P3 get_stock_industry 增加 DEBUG 日志 —— 连接异常时可追溯
+
 v1.5.1 修订（2026-05-10）：
   ✓ P0 消除全局 CONFIG 依赖 —— analyze_ultimate/scan_pool 改为传参，双池配置隔离
   ✓ P0 修复 stock_name 传 None —— 从腾讯行情/LLM缓存获取名称写入 daily_candidates
@@ -218,8 +225,12 @@ def get_stock_industry(code: str) -> str:
                 industry = row[0] if row[0] else ""
                 _industry_cache[code] = industry
                 return industry
-    except Exception:
-        pass
+        else:
+            if DEBUG:
+                print(f"  [DEBUG] 行业查询失败 {code}: {rs.error_msg}")
+    except Exception as e:
+        if DEBUG:
+            print(f"  [DEBUG] 行业查询异常 {code}: {e}")
     _industry_cache[code] = ""
     return ""
 
@@ -517,8 +528,10 @@ if DEBUG:
     print(f"  [DEBUG] 服务器时间: {datetime.now()}, 北京时间: {_now.strftime('%Y-%m-%d %H:%M:%S')}")
 if _now.hour > 15 or (_now.hour == 15 and _now.minute >= 10):
     CONFIG["MODE"] = "post"
+    CONFIG_UPPER["MODE"] = "post"
 else:
     CONFIG["MODE"] = "realtime"
+    CONFIG_UPPER["MODE"] = "realtime"
 if DEBUG:
     print(f"  [DEBUG] MODE: {CONFIG['MODE']}")
 
@@ -836,8 +849,9 @@ def get_latest_trading_day() -> str:
     return beijing_now().strftime("%Y-%m-%d")
 
 
-def get_stock_pool() -> list:
-    pool_name = CONFIG["POOL"]
+def get_stock_pool(pool_name: str = None) -> list:
+    if pool_name is None:
+        pool_name = CONFIG["POOL"]
     stocks_set = set()
 
     def _fetch_hs300():
@@ -1331,7 +1345,7 @@ def analyze_ultimate(
 # ============================================================
 #  7. 单池扫描引擎
 # ============================================================
-def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
+def scan_pool(cfg: dict, zt_count: int, mood: str, preloaded: bool = False) -> List[dict]:
     time_weight = get_time_weight(cfg["MODE"])
     pool_name = cfg["POOL"]
     mode = cfg["MODE"]
@@ -1339,8 +1353,8 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
     print(f"\n扫描池: [{pool_name}]  模式: {mode}  时间权重: {time_weight:.2f}")
     print()
 
-    stock_pool = get_stock_pool()
-    print(f"股票池: [{pool_name}] 共 {len(stock_pool)} 只")
+    stock_pool = get_stock_pool(cfg["POOL"])
+    print(f"股票池: [{cfg['POOL']}] 共 {len(stock_pool)} 只")
 
     # v1.5+: 加载LLM候选池（最近 3 天盘后产出，覆盖周末断档）
     today_str = beijing_now().strftime("%Y-%m-%d")
@@ -1355,8 +1369,9 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
             stock_pool = stock_pool + added
             print(f"  ➕ 合并 LLM 候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
 
-    # 预热行业缓存（首次或7天过期时批量查询）
-    preload_industries(stock_pool)
+    # 预热行业缓存（首次或7天过期时批量查询），preloaded=True 时跳过
+    if not preloaded:
+        preload_industries(stock_pool)
 
     # post 模式也用腾讯接口获取收盘数据（baostock 历史数据有延迟）
     real_map = get_realtime_quotes(stock_pool)
@@ -1446,6 +1461,7 @@ def append_to_summary(
     zt_count: int,
     mood: str,
     total_candidates: int,
+    mode_label: str = "盘后定稿",
 ):
     """
     v1.1: 当日记录覆盖而非跳过 —— 支持盘中→盘后二次验证回写
@@ -1460,7 +1476,7 @@ def append_to_summary(
         "选股记录汇总.txt",
     )
 
-    mode_label = "盘后定稿" if CONFIG.get("MODE") == "post" else "盘中初筛"
+    mode_label = mode_label or "盘后定稿"
     date_marker = f"📅 {end_d} "
     existing_content = ""
 
@@ -1685,7 +1701,7 @@ def _save_reject_trend(date_str: str, rejects: dict):
 #  8. 主程序
 # ============================================================
 def main():
-    print(f"隔夜选股法·最优融合版 v1.5.1")
+    print(f"隔夜选股法·最优融合版 v1.5.2")
     print(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
     print(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
     print(f"运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1715,9 +1731,9 @@ def main():
 
     end_d = beijing_now().strftime("%Y-%m-%d")
 
-    results_stable, rejects_stable, name_map_stable = scan_pool(CONFIG_STABLE, sentiment_score, mood)
+    results_stable, rejects_stable, name_map_stable = scan_pool(CONFIG_STABLE, sentiment_score, mood, preloaded=False)
 
-    results_upper, rejects_upper, name_map_upper = scan_pool(CONFIG_UPPER, sentiment_score, mood)
+    results_upper, rejects_upper, name_map_upper = scan_pool(CONFIG_UPPER, sentiment_score, mood, preloaded=True)
 
     # 合并名称映射
     all_name_map = {**name_map_stable, **name_map_upper}
@@ -1789,7 +1805,7 @@ def main():
     is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
     mode_label = "盘后定稿" if is_post_time else "盘中初筛"
 
-    append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
+    append_to_summary(final_df, end_d, zt_count, mood, total_candidates, mode_label)
     if is_post_time:
         n_db = _persist_to_daily_candidates(stable_picks, upper_picks, end_d, all_name_map)
         if n_db:
