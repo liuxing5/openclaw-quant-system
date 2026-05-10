@@ -1,6 +1,16 @@
 """
 隔夜选股法·最优融合版 (zuiyou1 v1.5)
 ========================================
+v1.5.4 修订（2026-05-10）：
+  ✓ P0 修复 zt_count 变量名混乱 —— 统一重命名为 sentiment_score，消除语义歧义
+  ✓ P0 修复 main() 中 zt_count 未定义 —— append_to_summary/Telegram 推送不再 NameError
+  ✓ P0 修复 append_to_summary mode_label 参数被覆盖 —— 改为 if not 判断
+  ✓ P1 修复 _persist_to_daily_candidates quant_score/final_score 重复 —— 分离量化评分和 LLM 加成
+  ✓ P1 修复 debug_stock 缺少 LLM 加成 —— 增加 get_llm_boost_score 和 120 分上限
+  ✓ P2 消除 CONFIG 全局冗余变量 —— 统一使用 CONFIG_STABLE/CONFIG_UPPER
+  ✓ P2 修复 _format_funnel remaining 可能为负数 —— max(0, remaining) 防护
+  ✓ P3 修复 debug_stock 行业评分重复计算 —— 复用已计算的 industry_bonus
+
 v1.5.3 修订（2026-05-10）：
   ✓ P0 修复 get_db 未导入 —— LLM 候选池从 Supabase 读取不再 NameError
   ✓ P0 修复 Telegram 推送重复调用 API —— 复用 scan_pool 返回的池大小/行情数/时间权重
@@ -304,7 +314,8 @@ def _persist_to_daily_candidates(stable_picks, upper_picks, snapshot_date, name_
                 'ts_code': baostock_to_standard(code),
                 'stock_name': stock_name,
                 'final_score': float(row['score']),
-                'quant_score': float(row['score']),
+                'quant_score': float(row.get('quant_score', row['score'])),
+                'llm_score': float(row.get('llm_final_score', 0)),
                 'consensus_score': 1.0,
                 'mention_count': 1,
                 'source_diversity': 1,
@@ -525,8 +536,6 @@ CONFIG_UPPER = {
     "position_ratio": "单票≤8%总仓位，严守止损",
 }
 
-CONFIG = CONFIG_STABLE
-
 # 北京时间工具函数（自动检测服务器时区并转换为北京时间）
 def beijing_now():
     """返回北京时间，自动处理不同服务器时区"""
@@ -548,13 +557,13 @@ _now = beijing_now()
 if DEBUG:
     print(f"  [DEBUG] 服务器时间: {datetime.now()}, 北京时间: {_now.strftime('%Y-%m-%d %H:%M:%S')}")
 if _now.hour > 15 or (_now.hour == 15 and _now.minute >= 10):
-    CONFIG["MODE"] = "post"
+    CONFIG_STABLE["MODE"] = "post"
     CONFIG_UPPER["MODE"] = "post"
 else:
-    CONFIG["MODE"] = "realtime"
+    CONFIG_STABLE["MODE"] = "realtime"
     CONFIG_UPPER["MODE"] = "realtime"
 if DEBUG:
-    print(f"  [DEBUG] MODE: {CONFIG['MODE']}")
+    print(f"  [DEBUG] MODE: {CONFIG_STABLE['MODE']}")
 
 FIELDS_HIST = "date,code,open,high,low,close,preclose,volume,amount,turn,pctChg"
 
@@ -872,7 +881,7 @@ def get_latest_trading_day() -> str:
 
 def get_stock_pool(pool_name: str = None) -> list:
     if pool_name is None:
-        pool_name = CONFIG["POOL"]
+        pool_name = CONFIG_STABLE["POOL"]
     stocks_set = set()
 
     def _fetch_hs300():
@@ -938,7 +947,7 @@ def analyze_ultimate(
     hist_df: pd.DataFrame,
     code: str,
     real_info: Optional[dict],
-    zt_count: int,
+    sentiment_score: int,
     time_weight: float,
     cfg: dict,
     reject_stats: Optional[dict] = None,
@@ -1009,7 +1018,7 @@ def analyze_ultimate(
         in_stable = cfg["stable_pct_lo"] <= curr_pct <= cfg["stable_pct_hi"]
         in_upper = cfg["upper_pct_lo"] <= curr_pct <= cfg["upper_pct_hi"]
 
-    if zt_count < cfg["sentiment_normal"] and not in_stable:
+    if sentiment_score < cfg["sentiment_normal"] and not in_stable:
         if reject_stats is not None:
             reject_stats["情绪冷淡"] += 1
         return None
@@ -1216,8 +1225,8 @@ def analyze_ultimate(
         tags.append(f"{streak}连板(高度风险)")
 
     # F. 情绪周期判断（逆向思维）- 基于多维情绪评分
-    # zt_count 现在是综合情绪分数(0-100)
-    if zt_count >= cfg["sentiment_fever"]:
+    # sentiment_score 是综合情绪分数(0-100)
+    if sentiment_score >= cfg["sentiment_fever"]:
         # 高潮期(≥85分)：风险最高，大幅扣分
         score -= 15
         tags.append("情绪高潮↓↓")
@@ -1328,6 +1337,7 @@ def analyze_ultimate(
     # --- LLM候选池加成（v1.5+）---
     is_llm_cand, llm_info = is_llm_candidate(code)
     llm_boost = 0.0
+    quant_score_before_llm = score
     if is_llm_cand:
         llm_boost = get_llm_boost_score(code)
         score += llm_boost
@@ -1356,6 +1366,7 @@ def analyze_ultimate(
         "ma5": round(ma5_yest, 3),
         "bias_ma5": round(bias_ma5 * 100, 2),
         "score": score,
+        "quant_score": quant_score_before_llm,
         "path": "稳健" if in_stable else "高位",
         "tags": " | ".join(tags),
         "is_llm": is_llm_cand,
@@ -1366,7 +1377,7 @@ def analyze_ultimate(
 # ============================================================
 #  7. 单池扫描引擎
 # ============================================================
-def scan_pool(cfg: dict, zt_count: int, mood: str, preloaded: bool = False) -> List[dict]:
+def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = False) -> List[dict]:
     time_weight = get_time_weight(cfg["MODE"])
     pool_name = cfg["POOL"]
     mode = cfg["MODE"]
@@ -1451,7 +1462,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str, preloaded: bool = False) -> L
             continue
 
         hist_df = pd.DataFrame(data_list, columns=k_rs.fields)
-        res = analyze_ultimate(hist_df, code, real_info, zt_count, time_weight, cfg, reject_stats, mood)
+        res = analyze_ultimate(hist_df, code, real_info, sentiment_score, time_weight, cfg, reject_stats, mood)
         if res:
             res["pool"] = pool_name
             results.append(res)
@@ -1479,7 +1490,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str, preloaded: bool = False) -> L
 def append_to_summary(
     final_df: pd.DataFrame,
     end_d: str,
-    zt_count: int,
+    sentiment_score: int,
     mood: str,
     total_candidates: int,
     mode_label: str = "盘后定稿",
@@ -1497,7 +1508,8 @@ def append_to_summary(
         "选股记录汇总.txt",
     )
 
-    mode_label = mode_label or "盘后定稿"
+    if not mode_label:
+        mode_label = "盘后定稿"
     date_marker = f"📅 {end_d} "
     existing_content = ""
 
@@ -1533,7 +1545,7 @@ def append_to_summary(
     lines.append("")
     lines.append("=" * 80)
     lines.append(f"📅 {end_d}  ({beijing_now().strftime('%H:%M:%S')})  [{mode_label}]")
-    lines.append(f"情绪: {mood}({zt_count}家涨停)  扫描总量: {total_candidates}只")
+    lines.append(f"情绪: {mood}({sentiment_score}分)  扫描总量: {total_candidates}只")
     lines.append("=" * 80)
 
     for path_label in ["稳健", "高位"]:
@@ -1610,7 +1622,7 @@ def _format_funnel(rejects: dict, total: int, results: list = None) -> str:
         if count > 0:
             remaining -= count
             cond_str = f"（{condition}）" if condition else ""
-            lines.append(f"  ✗ {step_name}{cond_str} 筛选剩 {remaining} 只")
+            lines.append(f"  ✗ {step_name}{cond_str} 筛选剩 {max(0, remaining)} 只")
 
     known_keys = set()
     for _, _, keys in steps:
@@ -1618,9 +1630,9 @@ def _format_funnel(rejects: dict, total: int, results: list = None) -> str:
     other_count = sum(v for k, v in rejects.items() if k not in known_keys and v > 0)
     if other_count > 0:
         remaining -= other_count
-        lines.append(f"  ✗ 其他 筛选剩 {remaining} 只")
+        lines.append(f"  ✗ 其他 筛选剩 {max(0, remaining)} 只")
 
-    lines.append(f"  ✓ 通过: {remaining} 只")
+    lines.append(f"  ✓ 通过: {max(0, remaining)} 只")
 
     if results:
         for r in results:
@@ -1696,7 +1708,7 @@ def _save_reject_trend(date_str: str, rejects: dict):
 #  8. 主程序
 # ============================================================
 def main():
-    print(f"隔夜选股法·最优融合版 v1.5.3")
+    print(f"隔夜选股法·最优融合版 v1.5.4")
     print(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
     print(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
     print(f"运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1800,7 +1812,7 @@ def main():
     is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
     mode_label = "盘后定稿" if is_post_time else "盘中初筛"
 
-    append_to_summary(final_df, end_d, zt_count, mood, total_candidates, mode_label)
+    append_to_summary(final_df, end_d, sentiment_score, mood, total_candidates, mode_label)
     if is_post_time:
         n_db = _persist_to_daily_candidates(stable_picks, upper_picks, end_d, all_name_map)
         if n_db:
@@ -1842,7 +1854,7 @@ def main():
     # ============================================================
     if TELEGRAM_ENABLED:
         title = f"zuiyou1 v1.5 [{mode_label}]"
-        mood_info = f"情绪: {mood} ({zt_count}家涨停)"
+        mood_info = f"情绪: {mood} ({sentiment_score}分)"
 
         # 使用已筛选的 stable_picks 和 upper_picks（已应用推荐数限制）
         stable_list = []
@@ -2145,13 +2157,26 @@ def debug_stock(code: str, cfg: dict = None):
     elif 8.0 < curr_turn <= 10.0:
         score += 8; tags.append("换手偏高")
 
-    # 行业评分
+    # 行业评分（复用上面已计算的 industry_bonus，不重复调用）
     if industry_bonus != 0:
         score += industry_bonus
         if industry_bonus > 0:
             tags.append(f"热门赛道(+{industry_bonus})")
         else:
             tags.append(f"{industry_tags[0]}({industry_bonus})")
+
+    # LLM候选加成（与主流程一致）
+    is_llm_cand, llm_info = is_llm_candidate(code)
+    llm_boost = 0.0
+    if is_llm_cand:
+        llm_boost = get_llm_boost_score(code)
+        score += llm_boost
+        tags.append(f"LLM候选+{llm_boost:.0f}")
+        if llm_info.get('source_diversity', 0) >= 3:
+            tags.append("共识强化")
+        tags.append("🤖LLM")
+
+    score = min(score, 120)
 
     steps.append(("评分", score >= cfg["score_threshold"],
                   f"得分:{score} 阈值:{cfg['score_threshold']} 标签:{' | '.join(tags)}"))
