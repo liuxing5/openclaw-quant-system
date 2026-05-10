@@ -647,18 +647,6 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         "Referer": "https://quote.eastmoney.com/ztb/detail"
     }
     
-    # 默认值（非交易时间或接口异常时使用）
-    default_values = {
-        'zt_count': 45,
-        'dt_count': 3,
-        'up_count': 2200,
-        'down_count': 2000,
-        'seal_rate': 0.75,
-        'max_streak': 3,
-        'explode_rate': 0.12,
-        'avg_zt_pct': 9.5
-    }
-    
     try:
         today_ymd = beijing_now().strftime('%Y%m%d')
         today_dash = beijing_now().strftime('%Y-%m-%d')
@@ -783,16 +771,16 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         return int(score), mood
         
     except Exception as e:
-        print(f"  ⚠️ 情绪接口异常: {e}，使用历史统计默认值")
-        v = default_values
-        up_down_ratio = v['up_count'] / max(v['down_count'], 1)
-        score = 50 + (v['zt_count'] / 100 * 25) + (up_down_ratio * 10) + \
-                (v['seal_rate'] * 20) + (v['max_streak'] * 3) - \
-                (v['explode_rate'] * 15) - (v['dt_count'] * 0.5)
-        score = max(0, min(100, score))
-        mood = "正常" if score < 55 else "活跃" if score < 70 else "火热"
-        print(f"  [默认] 综合情绪分: {score:.1f} | 情绪状态: {mood}")
-        return int(score), mood
+        # 情绪接口失败时，用一个明确"刚好通过情绪冷淡门槛"的中性分数（55）。
+        # 旧版用 default_values 计算会得到 ~93 分（火热）误导后续逻辑，使
+        # 实际冷淡的市场被当作火热放开高位路径。这里改成保守且可识别的分数，
+        # 并在 mood 字符串里嵌入"·接口异常"使 Telegram 能直接看出数据可疑。
+        print("=" * 60)
+        print(f"  ⚠️⚠️⚠️ 市场情绪接口异常: {e}")
+        print(f"  ⚠️ 使用保守 fallback (score=55, '正常·接口异常')")
+        print(f"  ⚠️ 注意：此时不应信任情绪驱动的过滤/排序，建议手动检查")
+        print("=" * 60)
+        return 55, "正常·接口异常"
 
 
 # ============================================================

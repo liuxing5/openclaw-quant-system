@@ -210,8 +210,9 @@ def generate_report():
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
     cur.execute("""
-        SELECT * FROM daily_candidates 
-        WHERE snapshot_date = %s ORDER BY final_score DESC;
+        SELECT * FROM daily_candidates
+        WHERE snapshot_date = %s AND source = 'llm_multisource'
+        ORDER BY final_score DESC;
     """, (today,))
     candidates = cur.fetchall()
     
@@ -232,7 +233,8 @@ def generate_report():
     articles = cur.fetchall()
     
     cur.execute("""
-        SELECT DISTINCT snapshot_date FROM daily_candidates 
+        SELECT DISTINCT snapshot_date FROM daily_candidates
+        WHERE source = 'llm_multisource'
         ORDER BY snapshot_date DESC LIMIT 10;
     """)
     history_dates = [str(r['snapshot_date']) for r in cur.fetchall()]
@@ -270,8 +272,9 @@ def generate_text_report():
     
     # 获取候选股
     cur.execute("""
-        SELECT * FROM daily_candidates 
-        WHERE snapshot_date = %s ORDER BY final_score DESC;
+        SELECT * FROM daily_candidates
+        WHERE snapshot_date = %s AND source = 'llm_multisource'
+        ORDER BY final_score DESC;
     """, (today,))
     candidates = cur.fetchall()
     

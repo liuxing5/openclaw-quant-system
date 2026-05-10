@@ -73,14 +73,17 @@ def aggregate_today():
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
 
     # 跑前清空当天同 run_mode 同 source 的旧数据，避免重复
+    # 注意：故意不在此处 commit。DELETE 与后续 write_candidates 的 INSERT 必须
+    # 在同一事务里。write_candidates 内部会在所有 INSERT 完成后统一 commit；
+    # 若中途异常或行情取数失败提前 return，连接关闭时事务自动 rollback，
+    # 已有的旧候选不会被错误清空。
     cur.execute("""
         DELETE FROM daily_candidates
         WHERE snapshot_date = %s AND run_mode = %s AND source = %s;
     """, (today, RUN_MODE, SOURCE))
     deleted = cur.rowcount
     if deleted > 0:
-        logger.info(f"清空了 {deleted} 条今天的旧候选数据")
-    conn.commit()
+        logger.info(f"将清空 {deleted} 条今天的旧候选数据（提交时机：write_candidates 成功后）")
 
     cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
     row = cur.fetchone()
