@@ -1230,15 +1230,15 @@ def analyze_ultimate(
         # 高潮期(≥85分)：风险最高，大幅扣分
         score -= 15
         tags.append("情绪高潮↓↓")
-    elif zt_count >= cfg["sentiment_hot"]:
+    elif sentiment_score >= cfg["sentiment_hot"]:
         # 活跃期(≥70分)：适当扣分
         score -= 5
         tags.append("情绪偏热↓")
-    elif zt_count >= cfg["sentiment_normal"]:
+    elif sentiment_score >= cfg["sentiment_normal"]:
         # 正常期(≥55分)：小幅加分
         score += 3
         tags.append("情绪健康+")
-    elif zt_count >= cfg["sentiment_cold"]:
+    elif sentiment_score >= cfg["sentiment_cold"]:
         # 冷淡期(≥40分)：观望态度，不加分也不扣分
         tags.append("情绪观望")
     else:
