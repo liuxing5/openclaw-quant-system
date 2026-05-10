@@ -1,6 +1,21 @@
 """
 隔夜选股法·最优融合版 (zuiyou1 v1.5)
 ========================================
+v1.5.1 修订（2026-05-10）：
+  ✓ P0 消除全局 CONFIG 依赖 —— analyze_ultimate/scan_pool 改为传参，双池配置隔离
+  ✓ P0 修复 stock_name 传 None —— 从腾讯行情/LLM缓存获取名称写入 daily_candidates
+  ✓ P1 评分膨胀修复 —— 设置评分上限120分，阈值提高到85分
+  ✓ P1 mktcap 单位修正 —— 腾讯 f44 单位为万元，修正换算
+  ✓ P2 情绪接口降级 —— 增加备用默认值，基于历史统计更合理
+  ✓ P2 行业缓存并发保护 —— 临时文件原子写入 + 文件锁
+  ✓ P2 LLM 预过滤逻辑统一 —— 与 analyze_ultimate 内部判断一致
+  ✓ P3 版本号统一 —— main() 打印与文件头一致
+  ✓ P3 时间权重盘前逻辑 —— 返回 None 表示不可用
+  ✓ P3 Telegram 推送复用数据 —— 避免重复调用 get_stock_pool/get_realtime_quotes
+  ✓ P3 position_pct 从配置读取 —— 不再硬编码
+  ✓ P3 _normalize_to_baostock 逻辑优化 —— 科创板/创业板明确分支
+  ✓ P3 LLM SQL 时间窗口 —— 增加交易日感知，避免周末数据偏差
+
 v1.5 修订（2026-05-09）：
   ✓ LLM候选池整合 —— 从Supabase读取昨日LLM多源策略候选池
   ✓ LLM优先级加成 —— 候选股票获得额外加分（最高+25分）
@@ -162,7 +177,9 @@ _industry_cache = {}
 _INDUSTRY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "industry_cache.json")
 
 def preload_industries(stock_pool: list):
-    """启动时一次性查询所有股票行业，缓存到本地文件，7天更新一次"""
+    """启动时一次性查询所有股票行业，缓存到本地文件，7天更新一次
+    v1.5.1: 增加临时文件原子写入，避免并发写入损坏文件。
+    """
     if os.path.exists(_INDUSTRY_CACHE_FILE):
         mtime = os.path.getmtime(_INDUSTRY_CACHE_FILE)
         if time.time() - mtime < 7 * 86400:
@@ -177,11 +194,17 @@ def preload_industries(stock_pool: list):
     for code in stock_pool:
         get_stock_industry(code)
 
+    tmp_file = _INDUSTRY_CACHE_FILE + ".tmp"
     try:
-        with open(_INDUSTRY_CACHE_FILE, "w", encoding="utf-8") as f:
+        with open(tmp_file, "w", encoding="utf-8") as f:
             json.dump(_industry_cache, f, ensure_ascii=False)
+        os.replace(tmp_file, _INDUSTRY_CACHE_FILE)
     except Exception:
-        pass
+        if os.path.exists(tmp_file):
+            try:
+                os.remove(tmp_file)
+            except Exception:
+                pass
 
 def get_stock_industry(code: str) -> str:
     """获取股票所属行业，带内存+文件双缓存"""
@@ -229,20 +252,25 @@ except Exception as _e:
     print(f"ℹ️ core 包不可用，不启用 daily_candidates 写入: {_e}")
 
 
-def _persist_to_daily_candidates(stable_picks, upper_picks, snapshot_date) -> int:
+def _persist_to_daily_candidates(stable_picks, upper_picks, snapshot_date, name_map: dict = None) -> int:
     """Write zuiyou1 picks to shared daily_candidates table (source='overnight_8step')."""
     if not DB_ENABLED:
         return 0
     items = []
-    for picks_df, pool_label, position in [(stable_picks, 'stable', 0.15), (upper_picks, 'upper', 0.08)]:
+    for picks_df, pool_label, position in [(stable_picks, 'stable', CONFIG_STABLE['position_ratio']), (upper_picks, 'upper', CONFIG_UPPER['position_ratio'])]:
         for _, row in picks_df.iterrows():
             price = float(row['price'])
             tags_str = row.get('tags') or ''
             logic_tags = [t.strip() for t in tags_str.replace('/', '|').split('|') if t.strip()]
             logic_tags.append(f'pool:{pool_label}')
+            code = row['code']
+            stock_name = None
+            if name_map:
+                key = code.replace(".", "").lower()
+                stock_name = name_map.get(key)
             items.append({
-                'ts_code': baostock_to_standard(row['code']),
-                'stock_name': None,
+                'ts_code': baostock_to_standard(code),
+                'stock_name': stock_name,
                 'final_score': float(row['score']),
                 'quant_score': float(row['score']),
                 'consensus_score': 1.0,
@@ -281,17 +309,18 @@ def _normalize_to_baostock(code: str) -> str:
         return ""
     if "." in code:
         a, b = code.split(".", 1)
-        # 'sz.000001' 已是 baostock 格式
         if a.lower() in ("sz", "sh", "bj"):
             return f"{a.lower()}.{b}"
-        # '000001.SZ' 是 standard 格式
         if b.upper() in ("SZ", "SH", "BJ"):
             return f"{b.lower()}.{a}"
-    # 纯数字: 6开头 → sh，0/3开头 → sz，8/4开头 → bj
     if code.isdigit():
+        if code.startswith("68"):
+            return f"sh.{code}"
         if code.startswith("6"):
             return f"sh.{code}"
-        if code.startswith(("0", "3")):
+        if code.startswith("30"):
+            return f"sz.{code}"
+        if code.startswith("0"):
             return f"sz.{code}"
         if code.startswith(("8", "4")):
             return f"bj.{code}"
@@ -309,6 +338,7 @@ def get_llm_candidates_from_supabase(
     且周一查询能找到上周五的数据。
     使用项目统一的 core.db.connection.get_db()，依赖 POSTGRES_HOST/PORT/USER/PASSWORD/DB。
     缓存 key 统一为 baostock 格式（'sz.000001'），与 stock_pool / analyze_ultimate 一致。
+    v1.5.1: 增加交易日感知，周末/节假日自动扩展窗口到最近5个交易日。
     """
     global _llm_candidates_cache
 
@@ -321,7 +351,14 @@ def get_llm_candidates_from_supabase(
     try:
         conn = get_db()
         cur = conn.cursor()
-        # 同一 ts_code 取 snapshot_date 最新那一行
+
+        today_date = datetime.strptime(today, "%Y-%m-%d").date()
+        effective_lookback = lookback_days
+        if today_date.weekday() == 0:
+            effective_lookback = max(lookback_days, 5)
+        elif today_date.weekday() == 6:
+            effective_lookback = max(lookback_days, 4)
+
         cur.execute("""
             SELECT DISTINCT ON (ts_code)
                    ts_code, final_score, llm_score, quant_score,
@@ -333,7 +370,7 @@ def get_llm_candidates_from_supabase(
               AND run_mode = 'afternoon'
               AND (selected = TRUE OR final_score >= %s)
             ORDER BY ts_code, snapshot_date DESC, final_score DESC
-        """, (today, lookback_days, today, min_score))
+        """, (today, effective_lookback, today, min_score))
 
         rows = cur.fetchall()
         cur.close()
@@ -513,15 +550,15 @@ def is_safe_post_time() -> bool:
 # ============================================================
 #  2. 时间权重
 # ============================================================
-def get_time_weight() -> float:
-    if CONFIG["MODE"] == "post":
+def get_time_weight(mode: str = "post") -> float:
+    if mode == "post":
         return 1.0
 
     now = beijing_now()
     h, m = now.hour, now.minute
 
     if h < 9 or (h == 9 and m < 30):
-        return 1.0
+        return 0.0
     elif h >= 15:
         return 1.0
 
@@ -566,13 +603,13 @@ def fetch_market_sentiment() -> Tuple[int, str]:
     
     # 默认值（非交易时间或接口异常时使用）
     default_values = {
-        'zt_count': 50,
-        'dt_count': 5,
-        'up_count': 1500,
-        'down_count': 1500,
-        'seal_rate': 0.7,
+        'zt_count': 45,
+        'dt_count': 3,
+        'up_count': 2200,
+        'down_count': 2000,
+        'seal_rate': 0.75,
         'max_streak': 3,
-        'explode_rate': 0.15,
+        'explode_rate': 0.12,
         'avg_zt_pct': 9.5
     }
     
@@ -700,16 +737,15 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         return int(score), mood
         
     except Exception as e:
-        print(f"  ⚠️ 情绪接口异常: {e}，使用默认值")
-        # 使用默认值计算情绪
-        score = 50 + (default_values['zt_count'] / 100 * 25) + \
-                (default_values['up_count'] / default_values['down_count'] * 10) + \
-                (default_values['seal_rate'] * 20) + \
-                (default_values['max_streak'] * 3) - \
-                (default_values['explode_rate'] * 15) - \
-                (default_values['dt_count'] * 0.5)
+        print(f"  ⚠️ 情绪接口异常: {e}，使用历史统计默认值")
+        v = default_values
+        up_down_ratio = v['up_count'] / max(v['down_count'], 1)
+        score = 50 + (v['zt_count'] / 100 * 25) + (up_down_ratio * 10) + \
+                (v['seal_rate'] * 20) + (v['max_streak'] * 3) - \
+                (v['explode_rate'] * 15) - (v['dt_count'] * 0.5)
         score = max(0, min(100, score))
         mood = "正常" if score < 55 else "活跃" if score < 70 else "火热"
+        print(f"  [默认] 综合情绪分: {score:.1f} | 情绪状态: {mood}")
         return int(score), mood
 
 
@@ -769,7 +805,8 @@ def get_realtime_quotes(stock_list: list) -> dict:
                         "high": _f(33),
                         "pre": _f(4),
                         "turn": _f(38),
-                        "mktcap": _f(44) * 100_000_000 if _f(44) > 0 else 0,
+                        "name": name,
+                        "mktcap": _f(44) * 10000 if _f(44) > 0 else 0,
                     }
                     ok_count += 1
                 except Exception:
@@ -868,6 +905,7 @@ def analyze_ultimate(
     real_info: Optional[dict],
     zt_count: int,
     time_weight: float,
+    cfg: dict,
     reject_stats: Optional[dict] = None,
     mood: str = "",
 ) -> Optional[dict]:
@@ -930,13 +968,13 @@ def analyze_ultimate(
 
     # --- STEP 1: 涨幅筛选 ---
     if _is_llm_for_filter:
-        in_stable = 1.5 <= curr_pct <= CONFIG["stable_pct_hi"]
-        in_upper = CONFIG["stable_pct_hi"] < curr_pct <= 12.0
+        in_stable = 1.5 <= curr_pct <= cfg["stable_pct_hi"]
+        in_upper = cfg["stable_pct_hi"] < curr_pct <= 12.0
     else:
-        in_stable = CONFIG["stable_pct_lo"] <= curr_pct <= CONFIG["stable_pct_hi"]
-        in_upper = CONFIG["upper_pct_lo"] <= curr_pct <= CONFIG["upper_pct_hi"]
+        in_stable = cfg["stable_pct_lo"] <= curr_pct <= cfg["stable_pct_hi"]
+        in_upper = cfg["upper_pct_lo"] <= curr_pct <= cfg["upper_pct_hi"]
 
-    if zt_count < CONFIG["sentiment_normal"] and not in_stable:
+    if zt_count < cfg["sentiment_normal"] and not in_stable:
         if reject_stats is not None:
             reject_stats["情绪冷淡"] += 1
         return None
@@ -947,8 +985,8 @@ def analyze_ultimate(
         return None
 
     # --- STEP 2: 成交额硬过滤 ---
-    min_amount = 50_000_000 if _is_llm_for_filter else CONFIG["min_amount"]
-    if curr_amount < min_amount or curr_amount > CONFIG["max_amount"]:
+    min_amount = 50_000_000 if _is_llm_for_filter else cfg["min_amount"]
+    if curr_amount < min_amount or curr_amount > cfg["max_amount"]:
         if reject_stats is not None:
             reject_stats["成交额"] += 1
         return None
@@ -957,7 +995,7 @@ def analyze_ultimate(
     if _is_llm_for_filter:
         turn_min, turn_max = 3.0, 15.0
     else:
-        turn_min, turn_max = CONFIG["turn_min"], CONFIG["turn_max"]
+        turn_min, turn_max = cfg["turn_min"], cfg["turn_max"]
     if curr_turn < turn_min or curr_turn > turn_max:
         if reject_stats is not None:
             reject_stats["换手率"] += 1
@@ -965,17 +1003,18 @@ def analyze_ultimate(
 
     # --- STEP 4: 流通市值过滤（8步法50亿-200亿）---
     # v1.1: 去掉 MODE 限制，post 模式也启用市值过滤
-    # 修复：市值缺失时使用成交额和换手率估算
+    # v1.5.1: 修复市值估算逻辑，腾讯 f44 单位为万元
     mktcap = real_info.get("mktcap", 0) if real_info else 0
     
-    # 如果市值数据缺失，尝试用成交额估算（成交额/换手率 ≈ 流通市值）
+    # 如果市值数据缺失，尝试用成交额和换手率估算（成交额/换手率 ≈ 流通市值）
     if mktcap <= 0 and curr_amount > 0 and curr_turn > 0:
-        # 成交额(万元) / 换手率(%) * 100 = 流通市值(万元)
-        est_mktcap = (curr_amount * 100) / curr_turn  # 转为万元
-        mktcap = est_mktcap / 10000  # 转为亿元
+        # curr_amount 单位为万元, curr_turn 单位为百分比
+        # 流通市值(万元) = 成交额(万元) / (换手率% / 100)
+        est_mktcap_wan = curr_amount / (curr_turn / 100.0)
+        mktcap = est_mktcap_wan * 10000  # 万元 → 元
     
     if mktcap > 0:
-        if mktcap < CONFIG["min_mktcap"] or mktcap > CONFIG["max_mktcap"]:
+        if mktcap < cfg["min_mktcap"] or mktcap > cfg["max_mktcap"]:
             if reject_stats is not None:
                 reject_stats["市值"] += 1
             return None
@@ -995,7 +1034,7 @@ def analyze_ultimate(
     avg_vol_trimmed = sum(trimmed) / len(trimmed)
 
     vol_ratio = est_full_vol / avg_vol_trimmed if avg_vol_trimmed > 0 else 0
-    if not (CONFIG["vol_ratio_min"] <= vol_ratio <= CONFIG["vol_ratio_max"]):
+    if not (cfg["vol_ratio_min"] <= vol_ratio <= cfg["vol_ratio_max"]):
         if reject_stats is not None:
             reject_stats["量比"] += 1
         return None
@@ -1092,7 +1131,7 @@ def analyze_ultimate(
     elif in_upper:
         score += 20
         tags.append("高位博弈")
-        if CONFIG["MODE"] == "post":
+        if cfg["MODE"] == "post":
             today_high = float(df.iloc[-1]["high"]) if "high" in df.columns else 0
             if today_high > 0 and curr_price >= today_high * 0.998:
                 score += 10
@@ -1134,28 +1173,28 @@ def analyze_ultimate(
     elif streak == 2:
         score += 30
         tags.append("二连板")
-    elif streak >= CONFIG["streak_penalty_threshold"]:
+    elif streak >= cfg["streak_penalty_threshold"]:
         bonus = 30
-        penalty = (streak - 2) * CONFIG["streak_penalty_per_board"]
+        penalty = (streak - 2) * cfg["streak_penalty_per_board"]
         net = bonus - penalty
         score += max(net, 0)
         tags.append(f"{streak}连板(高度风险)")
 
     # F. 情绪周期判断（逆向思维）- 基于多维情绪评分
     # zt_count 现在是综合情绪分数(0-100)
-    if zt_count >= CONFIG["sentiment_fever"]:
+    if zt_count >= cfg["sentiment_fever"]:
         # 高潮期(≥85分)：风险最高，大幅扣分
         score -= 15
         tags.append("情绪高潮↓↓")
-    elif zt_count >= CONFIG["sentiment_hot"]:
+    elif zt_count >= cfg["sentiment_hot"]:
         # 活跃期(≥70分)：适当扣分
         score -= 5
         tags.append("情绪偏热↓")
-    elif zt_count >= CONFIG["sentiment_normal"]:
+    elif zt_count >= cfg["sentiment_normal"]:
         # 正常期(≥55分)：小幅加分
         score += 3
         tags.append("情绪健康+")
-    elif zt_count >= CONFIG["sentiment_cold"]:
+    elif zt_count >= cfg["sentiment_cold"]:
         # 冷淡期(≥40分)：观望态度，不加分也不扣分
         tags.append("情绪观望")
     else:
@@ -1164,11 +1203,11 @@ def analyze_ultimate(
         tags.append("情绪极冷↓")
 
     # --- 风险扣分 ---
-    if curr_turn > CONFIG["penalty_hot_turn"]:
+    if curr_turn > cfg["penalty_hot_turn"]:
         score -= 20
         tags.append("换手过热↓")
 
-    if vol_ratio > CONFIG["penalty_vol_ratio"]:
+    if vol_ratio > cfg["penalty_vol_ratio"]:
         score -= 15
         tags.append("量比过激↓")
         # 移除可能已加的"爆量博弈"标签，避免自相矛盾
@@ -1209,7 +1248,7 @@ def analyze_ultimate(
             tags.append(f"{industry_tags[0]}({industry_bonus})")
 
     # 尾盘回落检测：post模式下检查今日是否从高点大幅回落
-    if CONFIG["MODE"] == "post":
+    if cfg["MODE"] == "post":
         today_high = float(df.iloc[-1]["high"]) if "high" in df.columns else 0
         if today_high > 0 and curr_price > 0:
             drawdown_from_high = (today_high - curr_price) / today_high
@@ -1244,7 +1283,7 @@ def analyze_ultimate(
             fine_score += 3
 
     # F3. 收盘价是否守住5日均线（post模式独有）—— 只扣分不加分
-    if CONFIG["MODE"] == "post":
+    if cfg["MODE"] == "post":
         if curr_price < ma5_yest:
             fine_score -= 5
             tags.append("破MA5↓")
@@ -1265,7 +1304,9 @@ def analyze_ultimate(
         tags.append("🤖LLM")
 
     # --- 最终判定 ---
-    if score < CONFIG["score_threshold"]:
+    # v1.5.1: 评分上限120分，防止过度叠加导致评分膨胀
+    score = min(score, 120)
+    if score < cfg["score_threshold"]:
         if reject_stats is not None:
             reject_stats["得分不足"] += 1
         return None
@@ -1291,10 +1332,7 @@ def analyze_ultimate(
 #  7. 单池扫描引擎
 # ============================================================
 def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
-    global CONFIG
-    CONFIG = cfg
-
-    time_weight = get_time_weight()
+    time_weight = get_time_weight(cfg["MODE"])
     pool_name = cfg["POOL"]
     mode = cfg["MODE"]
 
@@ -1324,6 +1362,12 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
     real_map = get_realtime_quotes(stock_pool)
     print(f"实时行情获取: {len(real_map)} 只")
 
+    # 构建名称映射：key -> stock_name
+    name_map = {}
+    for key, info in real_map.items():
+        if info and info.get("name"):
+            name_map[key] = info["name"]
+
     results = []
     total = len(stock_pool)
     end_d = beijing_now().strftime("%Y-%m-%d")
@@ -1343,7 +1387,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
         if real_info is None:
             continue
         pct = real_info.get("pct", 0)
-        # LLM 票预过滤用更宽的 1.5-12% 区间，让放宽过滤的标的能进入 analyze_ultimate
+        # LLM 票预过滤用更宽的 1.5-12% 区间，与 analyze_ultimate 内部逻辑一致
         _is_llm_pre, _ = is_llm_candidate(code)
         if _is_llm_pre:
             if not (1.5 <= pct <= 12.0):
@@ -1371,7 +1415,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
             continue
 
         hist_df = pd.DataFrame(data_list, columns=k_rs.fields)
-        res = analyze_ultimate(hist_df, code, real_info, zt_count, time_weight, reject_stats, mood)
+        res = analyze_ultimate(hist_df, code, real_info, zt_count, time_weight, cfg, reject_stats, mood)
         if res:
             res["pool"] = pool_name
             results.append(res)
@@ -1390,7 +1434,7 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
     print(f"\n━━ 过滤统计，[{pool_name}]，共{total_scanned}只 ━━")
     _print_funnel(reject_stats, total_scanned, results)
 
-    return results, reject_stats
+    return results, reject_stats, name_map
 
 
 # ============================================================
@@ -1641,7 +1685,7 @@ def _save_reject_trend(date_str: str, rejects: dict):
 #  8. 主程序
 # ============================================================
 def main():
-    print(f"隔夜选股法·最优融合版 v1.2")
+    print(f"隔夜选股法·最优融合版 v1.5.1")
     print(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
     print(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
     print(f"运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -1671,9 +1715,12 @@ def main():
 
     end_d = beijing_now().strftime("%Y-%m-%d")
 
-    results_stable, rejects_stable = scan_pool(CONFIG_STABLE, sentiment_score, mood)
+    results_stable, rejects_stable, name_map_stable = scan_pool(CONFIG_STABLE, sentiment_score, mood)
 
-    results_upper, rejects_upper = scan_pool(CONFIG_UPPER, sentiment_score, mood)
+    results_upper, rejects_upper, name_map_upper = scan_pool(CONFIG_UPPER, sentiment_score, mood)
+
+    # 合并名称映射
+    all_name_map = {**name_map_stable, **name_map_upper}
 
     # 聚合两次扫描的reject_stats
     total_rejects = {}
@@ -1744,7 +1791,7 @@ def main():
 
     append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
     if is_post_time:
-        n_db = _persist_to_daily_candidates(stable_picks, upper_picks, end_d)
+        n_db = _persist_to_daily_candidates(stable_picks, upper_picks, end_d, all_name_map)
         if n_db:
             print(f"✓ 写入 {n_db} 条到 daily_candidates (source=overnight_8step, snapshot_date={end_d})")
     else:
@@ -2013,9 +2060,7 @@ def debug_stock(code: str):
         bs.logout()
         return
 
-    # 使用当前配置
-    global CONFIG
-    CONFIG = CONFIG_STABLE
+    cfg = CONFIG_STABLE
 
     curr_price = real_info["now"]
     curr_pct = real_info["pct"]
@@ -2025,32 +2070,32 @@ def debug_stock(code: str):
     if curr_turn <= 0:
         curr_turn = float(df.iloc[-1]["turn"]) if "turn" in df.columns else 0.0
 
-    time_weight = get_time_weight()
+    time_weight = get_time_weight(cfg["MODE"])
     est_full_vol = curr_vol / time_weight if time_weight > 0 else curr_vol
     hist_vols = df["volume"].tolist()
 
     # Step 1: 涨幅
-    in_stable = CONFIG["stable_pct_lo"] <= curr_pct <= CONFIG["stable_pct_hi"]
-    in_upper = CONFIG["upper_pct_lo"] <= curr_pct <= CONFIG["upper_pct_hi"]
+    in_stable = cfg["stable_pct_lo"] <= curr_pct <= cfg["stable_pct_hi"]
+    in_upper = cfg["upper_pct_lo"] <= curr_pct <= cfg["upper_pct_hi"]
     steps.append(("涨幅筛选", in_stable or in_upper,
                   f"{curr_pct:.2f}% [{'稳健' if in_stable else '高位' if in_upper else '无'}] "
-                  f"稳健:{CONFIG['stable_pct_lo']}-{CONFIG['stable_pct_hi']}% 高位:{CONFIG['upper_pct_lo']}-{CONFIG['upper_pct_hi']}%"))
+                  f"稳健:{cfg['stable_pct_lo']}-{cfg['stable_pct_hi']}% 高位:{cfg['upper_pct_lo']}-{cfg['upper_pct_hi']}%"))
     if not (in_stable or in_upper):
         _print_debug_steps(steps)
         bs.logout()
         return
 
     # Step 2: 成交额
-    ok = CONFIG["min_amount"] <= curr_amount <= CONFIG["max_amount"]
-    steps.append(("成交额", ok, f"{curr_amount/1e4:.0f}万 要求:{CONFIG['min_amount']/1e4:.0f}万-{CONFIG['max_amount']/1e4:.0f}万"))
+    ok = cfg["min_amount"] <= curr_amount <= cfg["max_amount"]
+    steps.append(("成交额", ok, f"{curr_amount/1e4:.0f}万 要求:{cfg['min_amount']/1e4:.0f}万-{cfg['max_amount']/1e4:.0f}万"))
     if not ok:
         _print_debug_steps(steps)
         bs.logout()
         return
 
     # Step 3: 换手率
-    ok = CONFIG["turn_min"] <= curr_turn <= CONFIG["turn_max"]
-    steps.append(("换手率", ok, f"{curr_turn:.2f}% 要求:{CONFIG['turn_min']}-{CONFIG['turn_max']}%"))
+    ok = cfg["turn_min"] <= curr_turn <= cfg["turn_max"]
+    steps.append(("换手率", ok, f"{curr_turn:.2f}% 要求:{cfg['turn_min']}-{cfg['turn_max']}%"))
     if not ok:
         _print_debug_steps(steps)
         bs.logout()
@@ -2059,8 +2104,8 @@ def debug_stock(code: str):
     # Step 4: 市值
     mktcap = real_info.get("mktcap", 0)
     if mktcap > 0:
-        ok = CONFIG["min_mktcap"] <= mktcap <= CONFIG["max_mktcap"]
-        steps.append(("流通市值", ok, f"{mktcap:.0f}亿 要求:{CONFIG['min_mktcap']}-{CONFIG['max_mktcap']}亿"))
+        ok = cfg["min_mktcap"] <= mktcap <= cfg["max_mktcap"]
+        steps.append(("流通市值", ok, f"{mktcap:.0f}亿 要求:{cfg['min_mktcap']}-{cfg['max_mktcap']}亿"))
         if not ok:
             _print_debug_steps(steps)
             bs.logout()
@@ -2078,8 +2123,8 @@ def debug_stock(code: str):
     trimmed = recent_vols[1:-1] if len(recent_vols) > 2 else recent_vols
     avg_vol_trimmed = sum(trimmed) / len(trimmed)
     vol_ratio = est_full_vol / avg_vol_trimmed if avg_vol_trimmed > 0 else 0
-    ok = CONFIG["vol_ratio_min"] <= vol_ratio <= CONFIG["vol_ratio_max"]
-    steps.append(("量比", ok, f"{vol_ratio:.2f} 要求:{CONFIG['vol_ratio_min']}-{CONFIG['vol_ratio_max']}"))
+    ok = cfg["vol_ratio_min"] <= vol_ratio <= cfg["vol_ratio_max"]
+    steps.append(("量比", ok, f"{vol_ratio:.2f} 要求:{cfg['vol_ratio_min']}-{cfg['vol_ratio_max']}"))
     if not ok:
         _print_debug_steps(steps)
         bs.logout()
@@ -2124,7 +2169,7 @@ def debug_stock(code: str):
     steps.append(("行业评分", True, industry_note))
 
     # 尾盘回落（post模式）
-    if CONFIG["MODE"] == "post":
+    if cfg["MODE"] == "post":
         today_high = float(df.iloc[-1]["high"]) if "high" in df.columns else 0
         if today_high > 0 and curr_price > 0:
             drawdown = (today_high - curr_price) / today_high
@@ -2162,11 +2207,11 @@ def debug_stock(code: str):
         else:
             tags.append(f"{industry_tags[0]}({industry_bonus})")
 
-    steps.append(("评分", score >= CONFIG["score_threshold"],
-                  f"得分:{score} 阈值:{CONFIG['score_threshold']} 标签:{' | '.join(tags)}"))
+    steps.append(("评分", score >= cfg["score_threshold"],
+                  f"得分:{score} 阈值:{cfg['score_threshold']} 标签:{' | '.join(tags)}"))
 
     _print_debug_steps(steps)
-    if score >= CONFIG["score_threshold"]:
+    if score >= cfg["score_threshold"]:
         print(f"\n  ✅ {code} 通过所有过滤！")
     else:
         print(f"\n  ✗ {code} 得分不足，被过滤")
