@@ -1,6 +1,7 @@
 """信息采集器 - GHA 模式（AKShare only）"""
 import os
 import re
+import sys
 import time
 import hashlib
 import warnings
@@ -12,6 +13,9 @@ import psycopg2
 from psycopg2.extras import execute_values
 from loguru import logger
 from dotenv import load_dotenv
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
@@ -32,10 +36,8 @@ def get_beijing_date():
 
 
 def is_trading_day(d):
-    """判断是否为交易日（简单版：周一到周五）"""
-    if d.weekday() > 4:  # 周六(5)或周日(6)
-        return False
-    return True
+    """判断是否为交易日。委托给 core.utils.trading_calendar，含节假日识别。"""
+    return _calendar_is_trading_day(d)
 
 
 def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=2):

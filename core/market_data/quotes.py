@@ -10,6 +10,7 @@ from loguru import logger
 
 from core.db.connection import get_db
 from core.utils.env import load_project_env
+from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
 
 load_project_env()
 
@@ -23,10 +24,8 @@ def get_beijing_date():
 
 
 def is_trading_day(d):
-    """判断是否为交易日（简单版：周一到周五）"""
-    if d.weekday() > 4:  # 周六(5)或周日(6)
-        return False
-    return True
+    """判断是否为交易日。委托给 core.utils.trading_calendar，含节假日识别。"""
+    return _calendar_is_trading_day(d)
 
 
 def ensure_market_tables():
