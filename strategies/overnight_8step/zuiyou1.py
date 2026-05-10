@@ -1,6 +1,9 @@
 """
 隔夜选股法·最优融合版 (zuiyou1 v1.5)
 ========================================
+v1.5.5 修订（2026-05-10）：
+  ✓ P0 修复 情绪周期判断 elif 分支仍使用 zt_count —— 统一改为 sentiment_score，7个分支全部使用综合情绪分(0-100)
+
 v1.5.4 修订（2026-05-10）：
   ✓ P0 修复 zt_count 变量名混乱 —— 统一重命名为 sentiment_score，消除语义歧义
   ✓ P0 修复 main() 中 zt_count 未定义 —— append_to_summary/Telegram 推送不再 NameError
@@ -1708,7 +1711,7 @@ def _save_reject_trend(date_str: str, rejects: dict):
 #  8. 主程序
 # ============================================================
 def main():
-    print(f"隔夜选股法·最优融合版 v1.5.4")
+    print(f"隔夜选股法·最优融合版 v1.5.5")
     print(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
     print(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
     print(f"运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
