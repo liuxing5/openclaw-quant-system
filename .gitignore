@@ -110,6 +110,10 @@ credentials.json
 *.key
 *.pem
 
+# One-off DB inspection scripts: must read creds from env, never hardcode
+check_supabase.py
+check_daily_candidates.py
+
 # Specific exclusions for this project
 strategies/overnight_8step/industry_cache.json
 run80.pid
