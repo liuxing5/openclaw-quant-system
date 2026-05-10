@@ -271,65 +271,110 @@ def _persist_to_daily_candidates(stable_picks, upper_picks, snapshot_date) -> in
 # ============================================================
 #  LLM候选池整合（v1.5+）
 # ============================================================
+# 缓存以 baostock 格式（'sz.000001'）为 key，避免 baostock <-> standard
+# 之间反复转换。get_llm_candidates_from_supabase 在写入时统一归一化。
 _llm_candidates_cache = {}
 
-def get_llm_candidates_from_supabase(yesterday: str, min_score: float = 40.0) -> dict:
-    """从Supabase读取昨日LLM候选池，用于八步法优先级加成"""
+def _normalize_to_baostock(code: str) -> str:
+    """把任意常见格式归一到 baostock 格式 'sz.000001' / 'sh.600519'"""
+    if not code:
+        return ""
+    if "." in code:
+        a, b = code.split(".", 1)
+        # 'sz.000001' 已是 baostock 格式
+        if a.lower() in ("sz", "sh", "bj"):
+            return f"{a.lower()}.{b}"
+        # '000001.SZ' 是 standard 格式
+        if b.upper() in ("SZ", "SH", "BJ"):
+            return f"{b.lower()}.{a}"
+    # 纯数字: 6开头 → sh，0/3开头 → sz，8/4开头 → bj
+    if code.isdigit():
+        if code.startswith("6"):
+            return f"sh.{code}"
+        if code.startswith(("0", "3")):
+            return f"sz.{code}"
+        if code.startswith(("8", "4")):
+            return f"bj.{code}"
+    return code
+
+
+def get_llm_candidates_from_supabase(
+    today: str,
+    lookback_days: int = 3,
+    min_score: float = 40.0,
+) -> dict:
+    """从Supabase读取最近 lookback_days 天的 LLM 候选池，用于八步法优先级加成
+
+    时间窗口为 [today - lookback_days, today)，覆盖 T-1 盘后产出，
+    且周一查询能找到上周五的数据。
+    使用项目统一的 core.db.connection.get_db()，依赖 POSTGRES_HOST/PORT/USER/PASSWORD/DB。
+    缓存 key 统一为 baostock 格式（'sz.000001'），与 stock_pool / analyze_ultimate 一致。
+    """
     global _llm_candidates_cache
-    
+
     if _llm_candidates_cache:
         return _llm_candidates_cache
-    
+
     if not DB_ENABLED:
         return {}
-    
+
     try:
-        import psycopg2
-        import os
-        conn = psycopg2.connect(os.getenv('POSTGRES_URL') or os.getenv('DATABASE_URL'))
+        conn = get_db()
         cur = conn.cursor()
-        
+        # 同一 ts_code 取 snapshot_date 最新那一行
         cur.execute("""
-            SELECT ts_code, final_score, llm_score, quant_score, source_diversity, logic_tags, stock_name
+            SELECT DISTINCT ON (ts_code)
+                   ts_code, final_score, llm_score, quant_score,
+                   source_diversity, logic_tags, stock_name, snapshot_date
             FROM daily_candidates
-            WHERE snapshot_date = %s 
+            WHERE snapshot_date >= (%s::date - (%s || ' days')::interval)
+              AND snapshot_date < %s::date
+              AND source = 'llm_multisource'
+              AND run_mode = 'afternoon'
               AND (selected = TRUE OR final_score >= %s)
-            ORDER BY final_score DESC
-        """, (yesterday, min_score))
-        
+            ORDER BY ts_code, snapshot_date DESC, final_score DESC
+        """, (today, lookback_days, today, min_score))
+
         rows = cur.fetchall()
+        cur.close()
         conn.close()
-        
+
         for row in rows:
-            code = row[0]
-            _llm_candidates_cache[code] = {
+            ts_code = row[0]
+            bs_code = _normalize_to_baostock(ts_code)
+            if not bs_code:
+                continue
+            _llm_candidates_cache[bs_code] = {
+                'ts_code': ts_code,
                 'final_score': float(row[1]) if row[1] else 0,
                 'llm_score': float(row[2]) if row[2] else 0,
                 'quant_score': float(row[3]) if row[3] else 0,
                 'source_diversity': int(row[4]) if row[4] else 0,
                 'logic_tags': row[5] or [],
-                'stock_name': row[6] or ''
+                'stock_name': row[6] or '',
+                'snapshot_date': row[7],
             }
-        
-        print(f"✓ 从Supabase加载 {len(_llm_candidates_cache)} 只LLM候选池")
+
+        print(f"✓ 从Supabase加载 {len(_llm_candidates_cache)} 只LLM候选池 (近{lookback_days}日)")
         return _llm_candidates_cache
-        
+
     except Exception as e:
         print(f"⚠️ LLM候选池读取失败: {e}")
         return {}
 
 
-def is_llm_candidate(code: str) -> tuple[bool, dict]:
-    """检查股票是否在LLM候选池中"""
+def is_llm_candidate(code: str) -> tuple:
+    """检查股票是否在LLM候选池中
+
+    code 可以是 baostock ('sz.000001') 或 standard ('000001.SZ') 格式，
+    内部统一归一化到 baostock 后查缓存。
+    """
     global _llm_candidates_cache
-    
-    code_standard = code.replace(".", "").upper()
-    
-    for cached_code in _llm_candidates_cache:
-        cache_std = cached_code.replace(".", "").upper()
-        if cache_std == code_standard:
-            return True, _llm_candidates_cache[cached_code]
-    
+    if not _llm_candidates_cache:
+        return False, {}
+    bs_code = _normalize_to_baostock(code)
+    if bs_code in _llm_candidates_cache:
+        return True, _llm_candidates_cache[bs_code]
     return False, {}
 
 
@@ -875,9 +920,21 @@ def analyze_ultimate(
         est_full_vol = curr_vol
         hist_vols = df["volume"].tolist()[:-1]
 
+    # --- LLM 票放宽过滤标志（v1.5.1）---
+    # LLM 多源策略推荐的标的，硬过滤分别放宽：
+    #   涨幅 1.5-12% (vs 3-6%/6-9.7%)
+    #   成交额 ≥5000万 (vs 200亿/100亿下限)
+    #   换手率 3-15% (vs 5-10%)
+    # 量比/均线/压力/乖离 等核心 8步法逻辑保持不变，确保二次确认仍然有效
+    _is_llm_for_filter, _ = is_llm_candidate(code)
+
     # --- STEP 1: 涨幅筛选 ---
-    in_stable = CONFIG["stable_pct_lo"] <= curr_pct <= CONFIG["stable_pct_hi"]
-    in_upper = CONFIG["upper_pct_lo"] <= curr_pct <= CONFIG["upper_pct_hi"]
+    if _is_llm_for_filter:
+        in_stable = 1.5 <= curr_pct <= CONFIG["stable_pct_hi"]
+        in_upper = CONFIG["stable_pct_hi"] < curr_pct <= 12.0
+    else:
+        in_stable = CONFIG["stable_pct_lo"] <= curr_pct <= CONFIG["stable_pct_hi"]
+        in_upper = CONFIG["upper_pct_lo"] <= curr_pct <= CONFIG["upper_pct_hi"]
 
     if zt_count < CONFIG["sentiment_normal"] and not in_stable:
         if reject_stats is not None:
@@ -890,13 +947,18 @@ def analyze_ultimate(
         return None
 
     # --- STEP 2: 成交额硬过滤 ---
-    if curr_amount < CONFIG["min_amount"] or curr_amount > CONFIG["max_amount"]:
+    min_amount = 50_000_000 if _is_llm_for_filter else CONFIG["min_amount"]
+    if curr_amount < min_amount or curr_amount > CONFIG["max_amount"]:
         if reject_stats is not None:
             reject_stats["成交额"] += 1
         return None
 
     # --- STEP 3: 换手率硬过滤（8步法原始5%-10%）---
-    if curr_turn < CONFIG["turn_min"] or curr_turn > CONFIG["turn_max"]:
+    if _is_llm_for_filter:
+        turn_min, turn_max = 3.0, 15.0
+    else:
+        turn_min, turn_max = CONFIG["turn_min"], CONFIG["turn_max"]
+    if curr_turn < turn_min or curr_turn > turn_max:
         if reject_stats is not None:
             reject_stats["换手率"] += 1
         return None
@@ -1242,12 +1304,18 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
     stock_pool = get_stock_pool()
     print(f"股票池: [{pool_name}] 共 {len(stock_pool)} 只")
 
-    # v1.5+: 加载LLM候选池（昨日盘后产出）
-    yesterday = (beijing_now() - timedelta(days=1)).strftime("%Y-%m-%d")
-    llm_pool = get_llm_candidates_from_supabase(yesterday, min_score=40.0)
+    # v1.5+: 加载LLM候选池（最近 3 天盘后产出，覆盖周末断档）
+    today_str = beijing_now().strftime("%Y-%m-%d")
+    llm_pool = get_llm_candidates_from_supabase(today_str, lookback_days=3, min_score=40.0)
     llm_count = len(llm_pool)
     if llm_count > 0:
-        print(f"📊 LLM候选池: {llm_count} 只 (来自 {yesterday} 盘后)")
+        print(f"📊 LLM候选池: {llm_count} 只 (最近 3 日盘后 selected/分数≥40)")
+        # 把 LLM 候选码合并进 stock_pool，避免基础池外的 LLM 票被漏扫
+        existing = set(stock_pool)
+        added = [c for c in llm_pool.keys() if c not in existing]
+        if added:
+            stock_pool = stock_pool + added
+            print(f"  ➕ 合并 LLM 候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
 
     # 预热行业缓存（首次或7天过期时批量查询）
     preload_industries(stock_pool)
@@ -1275,11 +1343,17 @@ def scan_pool(cfg: dict, zt_count: int, mood: str) -> List[dict]:
         if real_info is None:
             continue
         pct = real_info.get("pct", 0)
-        if not (
-            cfg["stable_pct_lo"] <= pct <= cfg["stable_pct_hi"]
-            or cfg["upper_pct_lo"] <= pct <= cfg["upper_pct_hi"]
-        ):
-            continue
+        # LLM 票预过滤用更宽的 1.5-12% 区间，让放宽过滤的标的能进入 analyze_ultimate
+        _is_llm_pre, _ = is_llm_candidate(code)
+        if _is_llm_pre:
+            if not (1.5 <= pct <= 12.0):
+                continue
+        else:
+            if not (
+                cfg["stable_pct_lo"] <= pct <= cfg["stable_pct_hi"]
+                or cfg["upper_pct_lo"] <= pct <= cfg["upper_pct_hi"]
+            ):
+                continue
 
         k_rs = bs.query_history_k_data_plus(
             code, FIELDS_HIST,
@@ -1662,16 +1736,19 @@ def main():
     _print_reject_summary(total_rejects, total_scanned)
     _save_reject_trend(end_d, total_rejects)
 
-    # 只在15:10后写入选股记录，避免盘中数据覆盖盘后定稿
+    # 14:30 盘中初筛 与 15:10 盘后定稿都允许推送和写汇总文件，
+    # DB 写入仍只在盘后定稿，避免盘中不稳定数据污染 daily_candidates
     current_beijing = beijing_now()
     is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
+    mode_label = "盘后定稿" if is_post_time else "盘中初筛"
+
+    append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
     if is_post_time:
-        append_to_summary(final_df, end_d, zt_count, mood, total_candidates)
         n_db = _persist_to_daily_candidates(stable_picks, upper_picks, end_d)
         if n_db:
             print(f"✓ 写入 {n_db} 条到 daily_candidates (source=overnight_8step, snapshot_date={end_d})")
     else:
-        print(f"\n当前北京时间 {current_beijing.strftime('%H:%M')}，跳过文件写入和推送（等待15:10后盘后定稿）")
+        print(f"\n  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')} [{mode_label}]，跳过 daily_candidates 写入（等待 15:10 后定稿）")
 
     # 打印推荐单（盘中和盘后都显示）
     for path_label, picks in [("稳健", stable_picks), ("高位", upper_picks)]:
@@ -1701,16 +1778,12 @@ def main():
     print("Step8 14:30创新高回踩入场（需盘中人工确认）")
     print()
 
-    # 非盘后时间，跳过推送
-    if not is_post_time:
-        return
-
     # ============================================================
-    #  v1.1: Telegram 推送(如已配置)
+    #  Telegram 推送
+    #  v1.5+: 盘中初筛 / 盘后定稿 都推送，标题用 mode_label 区分
     # ============================================================
     if TELEGRAM_ENABLED:
-        mode_label = "盘后定稿"
-        title = f"zuiyou1 v1.3 {mode_label}"
+        title = f"zuiyou1 v1.5 [{mode_label}]"
         mood_info = f"情绪: {mood} ({zt_count}家涨停)"
 
         # 使用已筛选的 stable_picks 和 upper_picks（已应用推荐数限制）
