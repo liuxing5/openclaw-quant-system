@@ -111,6 +111,7 @@ credentials.json
 *.pem
 
 # Specific exclusions for this project
+strategies/overnight_8step/industry_cache.json
 run80.pid
 test.pid
 web*.pid

@@ -205,7 +205,23 @@ def analyze_industry(industry: str) -> tuple:
 _industry_cache = {}
 _industry_fail_times = {}
 _INDUSTRY_RETRY_COOLDOWN = 3600
-_INDUSTRY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "industry_cache.json")
+# 缓存文件放到 ~/.cache 而非仓库目录，让 GitHub Actions 的 actions/cache@v4
+# 能跨 workflow run 持久化；本地开发时 ~/.cache 也始终存在。
+# ZUIYOU_INDUSTRY_CACHE 环境变量可覆盖路径，便于测试。
+_INDUSTRY_CACHE_FILE = os.environ.get(
+    "ZUIYOU_INDUSTRY_CACHE",
+    os.path.expanduser("~/.cache/zuiyou_industry.json"),
+)
+os.makedirs(os.path.dirname(_INDUSTRY_CACHE_FILE), exist_ok=True)
+
+# 兼容：若仓库内还残留旧 industry_cache.json，首次运行时迁移到新位置
+_LEGACY_CACHE_FILE = os.path.join(os.path.dirname(__file__), "industry_cache.json")
+if os.path.exists(_LEGACY_CACHE_FILE) and not os.path.exists(_INDUSTRY_CACHE_FILE):
+    try:
+        import shutil as _sh
+        _sh.move(_LEGACY_CACHE_FILE, _INDUSTRY_CACHE_FILE)
+    except Exception:
+        pass
 
 def preload_industries(stock_pool: list):
     """启动时一次性查询所有股票行业，缓存到本地文件，7天更新一次
@@ -297,8 +313,19 @@ except Exception as _e:
     print(f"ℹ️ core 包不可用，不启用 daily_candidates 写入: {_e}")
 
 
-def _persist_to_daily_candidates(stable_picks, upper_picks, snapshot_date, name_map: dict = None) -> int:
-    """Write zuiyou1 picks to shared daily_candidates table (source='overnight_8step')."""
+def _persist_to_daily_candidates(
+    stable_picks,
+    upper_picks,
+    snapshot_date,
+    name_map: dict = None,
+    run_mode: str = 'afternoon',
+) -> int:
+    """Write zuiyou1 picks to shared daily_candidates table (source='overnight_8step').
+
+    run_mode:
+      - 'intraday'  : 14:30 盘中初筛快照（用于 15:10 计算 diff，selected=TRUE 但仅供内部对比）
+      - 'afternoon' : 15:10 盘后定稿（最终推送的版本）
+    """
     if not DB_ENABLED:
         return 0
     items = []
@@ -337,10 +364,76 @@ def _persist_to_daily_candidates(stable_picks, upper_picks, snapshot_date, name_
     if not items:
         return 0
     try:
-        return write_candidates(items, snapshot_date, source='overnight_8step', run_mode='afternoon')
+        return write_candidates(items, snapshot_date, source='overnight_8step', run_mode=run_mode)
     except Exception as e:
         print(f"⚠️ daily_candidates 写入失败（不影响推送）: {e}")
         return 0
+
+
+def _persist_zero_result_audit(snapshot_date, reject_stats: dict, sentiment_score: int, mood: str) -> int:
+    """零候选场景下写一行审计记录到 daily_candidates。
+
+    selected=FALSE 不会被 pusher/report/tracker 拾取（它们都过滤 selected=TRUE），
+    但在表里能直接看到"T 日 8步法跑了、扫了多少只、最大瓶颈是什么"，避免出现
+    "查表为空 → 不知道是没跑还是没结果"的运维盲区。
+    """
+    if not DB_ENABLED:
+        return 0
+    total = sum(reject_stats.values())
+    top_reject = max(reject_stats.items(), key=lambda kv: kv[1], default=("none", 0))
+    # 判断本次是 intraday 还是 afternoon（与正常持久化保持一致的语义）
+    now = beijing_now()
+    run_mode = 'afternoon' if (now.hour > 15 or (now.hour == 15 and now.minute >= 10)) else 'intraday'
+    audit_item = {
+        'ts_code': '000000.AUDIT',  # 审计专用占位 ts_code
+        'stock_name': '零候选审计',
+        'final_score': 0,
+        'quant_score': 0,
+        'llm_score': 0,
+        'consensus_score': 0,
+        'mention_count': 0,
+        'source_diversity': 0,
+        'logic_tags': [
+            f'audit:zero_result',
+            f'scanned:{total}',
+            f'top_reject:{top_reject[0]}({top_reject[1]})',
+            f'sentiment:{sentiment_score}',
+            f'mood:{mood}',
+        ],
+        'selected': False,
+        'position_pct': 0,
+        'sources': [{'source': 'zuiyou1_audit', 'reject_stats': reject_stats}],
+    }
+    try:
+        return write_candidates(
+            [audit_item], snapshot_date,
+            source='overnight_8step', run_mode=run_mode,
+        )
+    except Exception as e:
+        print(f"⚠️ 零候选审计行写入失败（不影响主流程）: {e}")
+        return 0
+
+
+def _read_intraday_picks(snapshot_date) -> set:
+    """读取当日 14:30 盘中初筛入选的 ts_code 集合，用于 15:10 计算 diff。"""
+    if not DB_ENABLED:
+        return set()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT ts_code FROM daily_candidates
+            WHERE snapshot_date = %s
+              AND source = 'overnight_8step'
+              AND run_mode = 'intraday'
+              AND selected = TRUE;
+        """, (snapshot_date,))
+        codes = {row[0] for row in cur.fetchall()}
+        cur.close(); conn.close()
+        return codes
+    except Exception as e:
+        print(f"⚠️ 读取 intraday 快照失败: {e}")
+        return set()
 
 # ============================================================
 #  LLM候选池整合（v1.5+）
@@ -647,46 +740,48 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         "Referer": "https://quote.eastmoney.com/ztb/detail"
     }
     
+    # 三个 eastmoney 接口分别 try/except，任一失败不影响其他维度
+    today_ymd = beijing_now().strftime('%Y%m%d')
+    today_dash = beijing_now().strftime('%Y-%m-%d')
+
+    zt_count = 0
+    dt_count = 0
+    streak_list = []
+    explode_count = 0
+    zt_ok = False
+    market_ok = False
+    dt_ok = False
+
+    # 1. 涨停池
     try:
-        today_ymd = beijing_now().strftime('%Y%m%d')
-        today_dash = beijing_now().strftime('%Y-%m-%d')
-        
-        # 1. 获取涨停池数据
-        zt_count = 0
-        dt_count = 0
-        streak_list = []
-        explode_count = 0
-        
         url = f"https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.ztzt&Pageindex=0&Pagesize=500&sort=fbt%3Aasc&date={today_ymd}&_={int(time.time() * 1000)}"
         r = requests.get(url, headers=headers, timeout=10)
         data = r.json()
-        
         if data.get('data') and data['data'].get('pool'):
             pool = data['data']['pool']
             zt_count = len(pool)
-            
-            # 分析涨停股票特征
             for stock in pool:
-                # 连板高度（从字段中提取）
-                streak = stock.get('zdf', 0)  # 涨停次数字段
+                streak = stock.get('zdf', 0)
                 if isinstance(streak, int) and streak > 0:
                     streak_list.append(streak)
-                # 判断是否炸板（现价是否低于涨停价）
                 if 'np' in stock and 'zdf' in stock:
                     try:
                         current_pct = float(stock.get('np', '0'))
                         limit_pct = float(stock.get('zdf', '10'))
-                        if current_pct < limit_pct * 0.9:  # 低于涨停价90%视为炸板
+                        if current_pct < limit_pct * 0.9:
                             explode_count += 1
-                    except:
+                    except (ValueError, TypeError):
                         pass
-            
             if zt_count > 0:
                 sample = pool[:3]
                 sample_names = [s.get('n', '') for s in sample]
                 print(f"  [DEBUG] 涨停池: {zt_count}家, 示例: {', '.join(sample_names)}")
-        
-        # 2. 获取涨跌家数
+        zt_ok = True
+    except Exception as e:
+        print(f"  ⚠️ 涨停池接口失败: {e}（其他维度仍可用）")
+
+    try:
+        # 2. 涨跌家数
         up_count = 1500
         down_count = 1500
         try:
@@ -696,19 +791,29 @@ def fetch_market_sentiment() -> Tuple[int, str]:
             if market_data.get('data'):
                 up_count = int(market_data['data'].get('f116', 1500))
                 down_count = int(market_data['data'].get('f117', 1500))
+            market_ok = True
         except Exception as e:
-            print(f"  ⚠️ 获取涨跌家数失败: {e}")
-        
-        # 3. 获取跌停数据
+            print(f"  ⚠️ 涨跌家数接口失败: {e}（其他维度仍可用）")
+
+        # 3. 跌停池
         try:
             dt_url = f"https://push2ex.eastmoney.com/getTopicZTPool?ut=7eea3edcaed734bea9cbfc24409ed989&dpt=wz.dtzt&Pageindex=0&Pagesize=200&sort=fbt%3Aasc&date={today_ymd}&_={int(time.time() * 1000)}"
             r = requests.get(dt_url, headers=headers, timeout=10)
             dt_data = r.json()
             if dt_data.get('data') and dt_data['data'].get('pool'):
                 dt_count = len(dt_data['data']['pool'])
+            dt_ok = True
         except Exception as e:
-            print(f"  ⚠️ 获取跌停数据失败: {e}")
-        
+            print(f"  ⚠️ 跌停池接口失败: {e}（其他维度仍可用）")
+
+        # 涨停池失败时：返回保守 55 分，避免 zt_count=0 被误判为"极冷"
+        if not zt_ok:
+            print("=" * 60)
+            print("  ⚠️ 涨停池接口失败，无法可靠计算情绪。返回保守 fallback (55, '正常·涨停池异常')")
+            print("  ⚠️ 不要相信 8步法在此次扫描里的情绪驱动过滤/排序")
+            print("=" * 60)
+            return 55, "正常·涨停池异常"
+
         # 计算派生指标
         max_streak = max(streak_list) if streak_list else 2
         seal_rate = (zt_count - explode_count) / max(zt_count, 1)  # 封板率
@@ -1768,6 +1873,8 @@ def main():
         print("\n  今日暂无符合条件的标的。")
         _print_reject_summary(total_rejects)
         _save_reject_trend(end_d, total_rejects)
+        # 零候选场景下也写一行审计，selected=FALSE 不影响下游查询，但留下"今天扫过、什么都没看上"的痕迹
+        _persist_zero_result_audit(end_d, total_rejects, sentiment_score, mood)
         return
 
     final_df = (
@@ -1804,12 +1911,37 @@ def main():
     mode_label = "盘后定稿" if is_post_time else "盘中初筛"
 
     append_to_summary(final_df, end_d, sentiment_score, mood, total_candidates, mode_label)
+
+    # 14:30 写 run_mode='intraday'（用于 15:10 计算 diff），15:10 写 run_mode='afternoon'（最终版本）
+    persist_run_mode = 'afternoon' if is_post_time else 'intraday'
+    n_db = _persist_to_daily_candidates(
+        stable_picks, upper_picks, end_d, all_name_map, run_mode=persist_run_mode,
+    )
+    if n_db:
+        print(f"✓ 写入 {n_db} 条到 daily_candidates (source=overnight_8step, run_mode={persist_run_mode}, snapshot_date={end_d})")
+
+    # 15:10 盘后定稿时计算与 14:30 的 diff
+    diff_summary = ""
     if is_post_time:
-        n_db = _persist_to_daily_candidates(stable_picks, upper_picks, end_d, all_name_map)
-        if n_db:
-            print(f"✓ 写入 {n_db} 条到 daily_candidates (source=overnight_8step, snapshot_date={end_d})")
-    else:
-        print(f"\n  ℹ️ 当前北京时间 {current_beijing.strftime('%H:%M')} [{mode_label}]，跳过 daily_candidates 写入（等待 15:10 后定稿）")
+        intraday_codes = _read_intraday_picks(end_d)
+        if intraday_codes:
+            current_codes = {baostock_to_standard(row['code']) for _, row in pd.concat([stable_picks, upper_picks]).iterrows()}
+            added = current_codes - intraday_codes
+            removed = intraday_codes - current_codes
+            kept = current_codes & intraday_codes
+            if added or removed:
+                parts = [f"📊 相比 14:30 盘中初筛 ({len(intraday_codes)} 只)"]
+                if added:
+                    parts.append(f"  ➕ 新增: {len(added)} 只 ({', '.join(sorted(added))})")
+                if removed:
+                    parts.append(f"  ➖ 剔除: {len(removed)} 只 ({', '.join(sorted(removed))})")
+                if kept:
+                    parts.append(f"  ✓ 维持: {len(kept)} 只")
+                diff_summary = "\n".join(parts)
+                print(f"\n{diff_summary}")
+            else:
+                diff_summary = f"📊 与 14:30 盘中初筛完全一致 ({len(current_codes)} 只)"
+                print(f"\n{diff_summary}")
 
     # 打印推荐单（盘中和盘后都显示）
     for path_label, picks in [("稳健", stable_picks), ("高位", upper_picks)]:
@@ -1888,6 +2020,7 @@ def main():
         mood_desc = mood_desc_map.get(mood, "情绪正常，双路径运行")
 
         header_info = (
+            f"模式: [{mode_label}]\n"
             "双池策略：稳健[hs300+zz500] + 高位[zz1000]\n"
             "完整八步：涨幅→量比→换手→市值→量能→均线→压力→评分\n"
             f"运行时间：{current_beijing.strftime('%Y-%m-%d %H:%M:%S')}\n"
@@ -1895,6 +2028,9 @@ def main():
             f"稳健路径仓位: 单票≤15%总仓位\n"
             f"高位路径仓位: 单票≤8%总仓位，严守止损"
         )
+        # 15:10 把"相比 14:30"的 diff 嵌入 header，避免完整列表重复推送的视觉冗余
+        if diff_summary:
+            header_info += "\n\n" + diff_summary
 
         operation_note = (
             "稳健: 次日09:35未维持昨收+1%即出\n"

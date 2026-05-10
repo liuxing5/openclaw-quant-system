@@ -3,6 +3,16 @@
 Both strategies (zuiyou1 / llm_multisource / pre_surge) call write_candidates()
 to deposit their picks into the same table. The `source` field distinguishes
 them downstream (pusher, tracker, UI all filter by source).
+
+snapshot_date 语义说明：
+  snapshot_date 始终是"产出当天"（T 日），不是"建议生效那天"。
+  - llm_multisource / run_mode='morning'   : 当日盘前参考，标的应在 T 日盘中观察
+  - llm_multisource / run_mode='intraday'  : 当日盘中速递，标的应在 T 日盘中观察
+  - llm_multisource / run_mode='afternoon' : 盘后复盘，标的为 T+1 日盘前参考
+  - overnight_8step / run_mode='intraday'  : T 日 14:30 盘中初筛，T+1 日盘前最终决策
+  - overnight_8step / run_mode='afternoon' : T 日 15:10 盘后定稿，T+1 日开盘介入
+  pusher/UI 在文案上分别用"今日参考""明日候选"等区分；查询不应假设 snapshot_date
+  代表交易日，请用 (snapshot_date, run_mode) 组合判断。
 """
 import json
 from typing import Iterable, Mapping, Any

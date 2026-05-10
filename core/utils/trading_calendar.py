@@ -4,7 +4,7 @@
 包含 A 股休市日期（周末 + 法定节假日）
 
 数据来源：上海证券交易所、深圳证券交易所公告
-更新规则：每年末更新下一年休市日期
+更新规则：每年末更新下一年休市日期；未硬编码的年份自动从 akshare 懒加载并缓存
 
 休市类型：
   - 周末：周六、周日（自动判断，无需配置）
@@ -12,6 +12,8 @@
   - 调休工作日：周末调休上班但股市仍休市
 """
 
+import json
+import os
 from datetime import date, timedelta
 from typing import Set
 
@@ -76,8 +78,87 @@ HOLIDAYS_2026: Set[str] = {
     "2026-10-09",  # 周五 国庆调休
 }
 
-# 合并所有休市日期
+# 合并所有硬编码休市日期（year -> set of dates）
+HARDCODED_HOLIDAYS: dict = {
+    2025: HOLIDAYS_2025,
+    2026: HOLIDAYS_2026,
+}
 ALL_HOLIDAYS: Set[str] = HOLIDAYS_2025 | HOLIDAYS_2026
+
+# 未硬编码年份的 akshare 兜底缓存
+# 仓库内不存这个文件，让 actions/cache 持久化
+_DYNAMIC_CACHE_FILE = os.environ.get(
+    "ZUIYOU_TRADING_CALENDAR_CACHE",
+    os.path.expanduser("~/.cache/zuiyou_trading_calendar.json"),
+)
+_dynamic_holidays: dict = {}  # year -> set of "YYYY-MM-DD"
+
+
+def _load_dynamic_cache() -> None:
+    global _dynamic_holidays
+    if _dynamic_holidays:
+        return
+    if os.path.exists(_DYNAMIC_CACHE_FILE):
+        try:
+            with open(_DYNAMIC_CACHE_FILE, "r", encoding="utf-8") as f:
+                raw = json.load(f)
+            _dynamic_holidays = {int(y): set(dates) for y, dates in raw.items()}
+        except Exception:
+            _dynamic_holidays = {}
+
+
+def _save_dynamic_cache() -> None:
+    try:
+        os.makedirs(os.path.dirname(_DYNAMIC_CACHE_FILE), exist_ok=True)
+        with open(_DYNAMIC_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(
+                {str(y): sorted(dates) for y, dates in _dynamic_holidays.items()},
+                f, ensure_ascii=False,
+            )
+    except Exception:
+        pass
+
+
+def _fetch_holidays_from_akshare(year: int) -> Set[str]:
+    """从 akshare 获取指定年份所有交易日，反推得到节假日集合"""
+    try:
+        import akshare as ak
+        df = ak.tool_trade_date_hist_sina()
+        # df['trade_date'] 是 datetime.date 对象
+        trading = {
+            d.strftime("%Y-%m-%d") for d in df['trade_date']
+            if hasattr(d, 'year') and d.year == year
+        }
+        if not trading:
+            return set()
+        # 反推节假日：周一到周五但不在交易日列表里 → 节假日
+        holidays = set()
+        d = date(year, 1, 1)
+        end = date(year, 12, 31)
+        while d <= end:
+            if d.weekday() < 5 and d.strftime("%Y-%m-%d") not in trading:
+                holidays.add(d.strftime("%Y-%m-%d"))
+            d += timedelta(days=1)
+        return holidays
+    except Exception as e:
+        print(f"⚠️ akshare 节假日查询失败 (year={year}): {e}")
+        return set()
+
+
+def _ensure_year_loaded(year: int) -> Set[str]:
+    """返回指定年份的节假日集合：硬编码 > 动态缓存 > akshare 拉取并缓存"""
+    if year in HARDCODED_HOLIDAYS:
+        return HARDCODED_HOLIDAYS[year]
+    _load_dynamic_cache()
+    if year in _dynamic_holidays:
+        return _dynamic_holidays[year]
+    fetched = _fetch_holidays_from_akshare(year)
+    if fetched:
+        _dynamic_holidays[year] = fetched
+        _save_dynamic_cache()
+        return fetched
+    # akshare 也失败 → 返回空集合，仅周末判定（保守做法：宁可误判为交易日不要错过推送）
+    return set()
 
 
 def is_trading_day(d: date = None) -> bool:
@@ -89,6 +170,8 @@ def is_trading_day(d: date = None) -> bool:
 
     Returns:
         True = 交易日, False = 休市日
+
+    未硬编码的年份会懒加载 akshare 并缓存到 ~/.cache/zuiyou_trading_calendar.json。
     """
     if d is None:
         d = date.today()
@@ -99,7 +182,8 @@ def is_trading_day(d: date = None) -> bool:
 
     # 法定节假日休市
     date_str = d.strftime("%Y-%m-%d")
-    if date_str in ALL_HOLIDAYS:
+    holidays = _ensure_year_loaded(d.year)
+    if date_str in holidays:
         return False
 
     return True
