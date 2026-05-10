@@ -136,3 +136,6 @@ ai_investment_system/
 .learnings/
 assets/
 scripts/
+# 上面 scripts/ 不带前导 / 的写法会误匹配 .github/scripts/，显式放回
+!.github/scripts/
+!.github/scripts/**
