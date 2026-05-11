@@ -200,6 +200,11 @@ ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS total_market_cap NUMERIC(20,2)
 ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS circulating_market_cap NUMERIC(20,2);
 ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS limit_up_price NUMERIC(10,3);
 ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS limit_down_price NUMERIC(10,3);
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS amplitude FLOAT;
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS volume_ratio FLOAT;
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS commission_ratio FLOAT;
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS large_order_net FLOAT;
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS main_force_net NUMERIC(20,2);
 
 -- Layer 1: Order book snapshots (mootdx, intraday only)
 CREATE TABLE IF NOT EXISTS order_book_snapshot (
@@ -219,6 +224,61 @@ CREATE TABLE IF NOT EXISTS order_book_snapshot (
     CONSTRAINT order_book_unique UNIQUE (ts_code, snapshot_time)
 );
 CREATE INDEX IF NOT EXISTS idx_ob_ts ON order_book_snapshot(ts_code, snapshot_time DESC);
+
+-- Layer 1: Strong stock rankings (THS 同花顺强势股)
+CREATE TABLE IF NOT EXISTS strong_stock_rank (
+    id BIGSERIAL PRIMARY KEY,
+    trade_date DATE NOT NULL,
+    ts_code VARCHAR(20) NOT NULL,
+    stock_name VARCHAR(50),
+    rank_type VARCHAR(20) NOT NULL,  -- 'lxsz'=连续上涨, 'cxg'=创新高, 'ljqd'=量价齐升
+    rank_position INT,               -- 排名位置
+    consecutive_days INT,            -- 连续上涨天数
+    stage_chg_pct FLOAT,             -- 阶段涨跌幅
+    cumulative_turnover FLOAT,       -- 累计换手率
+    industry VARCHAR(50),
+    latest_price NUMERIC(10,3),
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT strong_rank_unique UNIQUE (trade_date, ts_code, rank_type)
+);
+CREATE INDEX IF NOT EXISTS idx_strong_date ON strong_stock_rank(trade_date DESC, rank_type);
+CREATE INDEX IF NOT EXISTS idx_strong_code ON strong_stock_rank(ts_code, trade_date DESC);
+
+-- Layer 2: Earnings forecast (机构一致预期 EPS)
+CREATE TABLE IF NOT EXISTS earnings_forecast (
+    id BIGSERIAL PRIMARY KEY,
+    ts_code VARCHAR(20) NOT NULL,
+    stock_name VARCHAR(50),
+    forecast_year INT NOT NULL,      -- 预测年度
+    institution_count INT,           -- 预测机构数
+    eps_min NUMERIC(10,4),           -- 最小值
+    eps_mean NUMERIC(10,4),          -- 均值
+    eps_max NUMERIC(10,4),           -- 最大值
+    industry_avg NUMERIC(10,4),      -- 行业平均数
+    revenue_mean NUMERIC(20,2),      -- 营收预测均值
+    profit_mean NUMERIC(20,2),       -- 利润预测均值
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT forecast_unique UNIQUE (ts_code, forecast_year)
+);
+CREATE INDEX IF NOT EXISTS idx_fc_code ON earnings_forecast(ts_code, forecast_year DESC);
+CREATE INDEX IF NOT EXISTS idx_fc_year ON earnings_forecast(forecast_year DESC);
+
+-- Layer 1: Concept board quotes (概念板块行情)
+CREATE TABLE IF NOT EXISTS concept_board_quotes (
+    id BIGSERIAL PRIMARY KEY,
+    trade_date DATE NOT NULL,
+    concept_code VARCHAR(20) NOT NULL,
+    concept_name VARCHAR(100) NOT NULL,
+    pct_chg FLOAT,
+    turnover_rate FLOAT,
+    lead_stock_code VARCHAR(20),
+    lead_stock_name VARCHAR(50),
+    stock_count INT,
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT concept_quote_unique UNIQUE (trade_date, concept_code)
+);
+CREATE INDEX IF NOT EXISTS idx_concept_date ON concept_board_quotes(trade_date DESC, pct_chg DESC);
+CREATE INDEX IF NOT EXISTS idx_concept_code ON concept_board_quotes(concept_code, trade_date DESC);
 
 -- Layer 4: Stock fundamentals (mootdx quarterly data)
 CREATE TABLE IF NOT EXISTS stock_fundamentals (
