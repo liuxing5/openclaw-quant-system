@@ -140,15 +140,15 @@ jobs:
         elif (( BEIJING_HOUR >= 10 && BEIJING_HOUR < 14 )); then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=📊 盘中持仓跟踪" >> $GITHUB_OUTPUT
-        elif (( BEIJING_HOUR >= 14 && BEIJING_HOUR < 15 )); then
+        elif (( BEIJING_HOUR == 14 && BEIJING_MIN < 35 )); then
+          echo "script=sell_new.py" >> $GITHUB_OUTPUT
+          echo "title=� 盘中持仓跟踪" >> $GITHUB_OUTPUT
+        elif (( BEIJING_HOUR == 14 && BEIJING_MIN >= 35 )) || (( BEIJING_HOUR == 15 && BEIJING_MIN < 10 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
-          echo "title=🔥 14:${BEIJING_MIN} 盘中选股初筛" >> $GITHUB_OUTPUT
+          echo "title=🔥 盘中选股初筛" >> $GITHUB_OUTPUT
         elif (( BEIJING_HOUR == 15 && BEIJING_MIN >= 10 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
-          echo "title=🎯 15:10+ 盘后选股定稿" >> $GITHUB_OUTPUT
-        elif (( BEIJING_HOUR == 15 && BEIJING_MIN < 10 )); then
-          echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
-          echo "title=📊 15:0x 盘中选股初筛" >> $GITHUB_OUTPUT
+          echo "title=🎯 盘后选股定稿" >> $GITHUB_OUTPUT
         elif (( BEIJING_HOUR >= 15 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 盘后选股定稿" >> $GITHUB_OUTPUT
