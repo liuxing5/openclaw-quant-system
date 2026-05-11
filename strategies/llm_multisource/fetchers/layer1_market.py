@@ -7,6 +7,231 @@ from loguru import logger
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
+# ============================================================
+#  同花顺 THS 强势股排名 (存储到 strong_stock_rank 表)
+# ============================================================
+
+def fetch_ths_strong_stocks_structured(make_signal) -> list:
+    """同花顺强势股 -- 同时返回信号和结构化数据
+
+    Returns make_signal() tuples + attaches _strong_stock_rank data.
+    """
+    import akshare as ak
+    rows = []
+    strong_data = []
+    today = datetime.now(BEIJING_TZ).date()
+
+    fetchers = [
+        ('lxsz', lambda: ak.stock_rank_lxsz_ths()),
+        ('cxg', lambda: ak.stock_rank_cxg_ths(symbol='创月新高')),
+        ('ljqd', lambda: ak.stock_rank_ljqd_ths()),
+    ]
+
+    for rank_type, fetcher in fetchers:
+        try:
+            logger.debug(f"THS强势股结构化: {rank_type}")
+            df = fetcher()
+            if df is None or not hasattr(df, 'empty') or df.empty:
+                continue
+
+            col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
+            col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
+            col_days = next((c for c in ['连续上涨天数', '天数', 'days'] if c in df.columns), None)
+            col_chg = next((c for c in ['涨跌幅', '累计涨跌幅', 'pct_chg'] if c in df.columns), None)
+            col_turnover = next((c for c in ['换手率', 'turnover'] if c in df.columns), None)
+            col_industry = next((c for c in ['行业', 'industry'] if c in df.columns), None)
+            col_price = next((c for c in ['最新价', 'price', 'close'] if c in df.columns), None)
+
+            if not col_code:
+                continue
+
+            for pos, (_, r) in enumerate(df.head(50).iterrows(), 1):
+                try:
+                    raw_code = str(r.get(col_code, '') or '')
+                    code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                    if not code or len(code) < 6:
+                        continue
+
+                    name = str(r.get(col_name, '') or '') if col_name else ''
+                    ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                    days = int(r.get(col_days, 0) or 0) if col_days else 0
+                    chg = float(r.get(col_chg, 0) or 0) if col_chg else 0
+                    turnover = float(r.get(col_turnover, 0) or 0) if col_turnover else 0
+                    industry = str(r.get(col_industry, '') or '') if col_industry else ''
+                    price = float(r.get(col_price, 0) or 0) if col_price else 0
+
+                    strong_data.append({
+                        'trade_date': today,
+                        'ts_code': ts,
+                        'stock_name': name,
+                        'rank_type': rank_type,
+                        'rank_position': pos,
+                        'consecutive_days': days,
+                        'stage_chg_pct': chg,
+                        'cumulative_turnover': turnover,
+                        'industry': industry,
+                        'latest_price': price,
+                    })
+
+                    if pos <= 10:
+                        rows.append(make_signal(
+                            source='THS-强势股', tier=1,
+                            title=f"强势: {name} {ts} {rank_type} 第{pos}名",
+                            content=f"代码 {code} {name} {rank_type} 排名{pos} "
+                                   f"{'连续' + str(days) + '天 ' if days > 0 else ''}"
+                                   f"涨跌幅:{chg:.2f}% 换手率:{turnover:.2f}%",
+                        ))
+                except Exception:
+                    continue
+
+            time.sleep(0.3)
+        except Exception as e:
+            logger.debug(f"THS强势股 {rank_type} 失败: {e}")
+
+    rows._strong_stock_rank = strong_data
+    logger.info(f"THS强势股结构化: {len(rows)} 条信号, {len(strong_data)} 条排名数据")
+    return rows
+
+
+# ============================================================
+#  概念板块行情 (存储到 concept_board_quotes 表)
+# ============================================================
+
+def fetch_concept_board_quotes(make_signal) -> list:
+    """同花顺概念板块行情 -- stock_board_concept_name_ths
+
+    Returns make_signal() for top concepts + attaches _concept_board_quotes data.
+    """
+    import akshare as ak
+    import pandas as pd
+    rows = []
+    concept_data = []
+    today = datetime.now(BEIJING_TZ).date()
+
+    try:
+        logger.debug("概念板块行情: stock_board_concept_name_ths")
+        df = ak.stock_board_concept_name_ths()
+        if df is None or not hasattr(df, 'empty') or df.empty:
+            return rows
+
+        col_name = next((c for c in ['概念名称', '板块名称', 'name'] if c in df.columns), None)
+        col_chg = next((c for c in ['涨跌幅', '涨跌幅(%)', 'pct_chg'] if c in df.columns), None)
+        col_code = next((c for c in ['代码', '板块代码', 'code'] if c in df.columns), None)
+        col_turnover = next((c for c in ['换手率', 'turnover'] if c in df.columns), None)
+        col_stock_count = next((c for c in ['公司家数', '股票数量', 'stock_count'] if c in df.columns), None)
+        col_lead_stock = next((c for c in ['领涨股票', 'lead_stock'] if c in df.columns), None)
+        col_lead_code = next((c for c in ['领涨股票代码', 'lead_stock_code'] if c in df.columns), None)
+
+        if not col_name:
+            return rows
+
+        if col_chg:
+            df[col_chg] = pd.to_numeric(df[col_chg], errors='coerce')
+            df_sorted = df.sort_values(col_chg, ascending=False)
+        else:
+            df_sorted = df
+
+        for pos, (_, r) in enumerate(df_sorted.head(50).iterrows(), 1):
+            try:
+                concept = str(r.get(col_name, '') or '')
+                if not concept or concept == 'nan':
+                    continue
+
+                chg = float(r.get(col_chg, 0) or 0) if col_chg else 0
+                concept_code = str(r.get(col_code, '') or '') if col_code else ''
+                turnover = float(r.get(col_turnover, 0) or 0) if col_turnover else 0
+                stock_count = int(r.get(col_stock_count, 0) or 0) if col_stock_count else 0
+                lead_name = str(r.get(col_lead_stock, '') or '') if col_lead_stock else ''
+                lead_code_raw = str(r.get(col_lead_code, '') or '') if col_lead_code else ''
+                lead_code = re.sub(r'[^0-9]', '', lead_code_raw).zfill(6) if lead_code_raw else ''
+                lead_ts = f"{lead_code}.SH" if lead_code.startswith(('6', '688')) else f"{lead_code}.SZ" if lead_code else ''
+
+                concept_data.append({
+                    'trade_date': today,
+                    'concept_code': concept_code or f"CONCEPT_{pos:04d}",
+                    'concept_name': concept,
+                    'pct_chg': chg,
+                    'turnover_rate': turnover,
+                    'lead_stock_code': lead_ts,
+                    'lead_stock_name': lead_name,
+                    'stock_count': stock_count,
+                })
+
+                if pos <= 10:
+                    rows.append(make_signal(
+                        source='THS-概念板块', tier=2,
+                        title=f"概念: {concept} 涨{chg:.2f}%",
+                        content=f"概念板块 {concept} 涨跌幅:{chg:.2f}% 换手率:{turnover:.2f}% "
+                               f"领涨:{lead_name}({lead_ts}) 家数:{stock_count}",
+                    ))
+            except Exception:
+                continue
+
+    except Exception as e:
+        logger.debug(f"概念板块行情失败: {e}")
+
+    rows._concept_board_quotes = concept_data
+    logger.info(f"概念板块行情: {len(rows)} 条信号, {len(concept_data)} 条板块数据")
+    return rows
+
+
+# ============================================================
+#  机构一致预期 (存储到 earnings_forecast 表)
+# ============================================================
+
+def fetch_earnings_forecast_structured(make_signal) -> list:
+    """机构一致预期 -- stock_rank_forecast_cninfo
+
+    Returns make_signal() + attaches _earnings_forecast data.
+    """
+    import akshare as ak
+    rows = []
+    forecast_data = []
+
+    try:
+        logger.debug("机构一致预期: stock_rank_forecast_cninfo")
+        df = ak.stock_rank_forecast_cninfo()
+        if df is None or not hasattr(df, 'empty') or df.empty:
+            return rows
+
+        col_code = next((c for c in ['证券代码', '代码', 'code'] if c in df.columns), None)
+        col_name = next((c for c in ['证券简称', '名称', 'name'] if c in df.columns), None)
+        col_date = next((c for c in ['发布日期', 'date'] if c in df.columns), None)
+        col_agency = next((c for c in ['研究机构简称', 'agency'] if c in df.columns), None)
+        col_rating = next((c for c in ['投资评级', 'rating'] if c in df.columns), None)
+        col_target_low = next((c for c in ['目标价格-下限'] if c in df.columns), None)
+        col_target_high = next((c for c in ['目标价格-上限'] if c in df.columns), None)
+
+        if not col_code:
+            return rows
+
+        for _, r in df.head(200).iterrows():
+            try:
+                raw_code = str(r.get(col_code, '') or '')
+                code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                if not code or len(code) < 6:
+                    continue
+
+                name = str(r.get(col_name, '') or '') if col_name else ''
+                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                agency = str(r.get(col_agency, '') or '') if col_agency else ''
+                rating = str(r.get(col_rating, '') or '') if col_rating else ''
+
+                rows.append(make_signal(
+                    source='CNINFO-机构预测', tier=1,
+                    title=f"机构预测: {name} {ts} {agency} {rating}",
+                    content=f"代码 {code} {name} 机构:{agency} 评级:{rating}",
+                ))
+            except Exception:
+                continue
+
+    except Exception as e:
+        logger.debug(f"机构一致预期失败: {e}")
+
+    rows._earnings_forecast = forecast_data
+    logger.info(f"机构一致预期: {len(rows)} 条信号")
+    return rows
+
 
 # ============================================================
 #  Tencent 腾讯财经 补充数据 (PE/PB/市值/涨跌停价)
@@ -97,6 +322,14 @@ def fetch_tencent_supplementary(make_signal, get_db_func=None) -> list:
                     limit_up = float(p[47] or 0) if len(p) > 47 and p[47] else 0
                     limit_down = float(p[48] or 0) if len(p) > 48 and p[48] else 0
 
+                    # NEW fields: amplitude, volume_ratio, commission_ratio, large_order_net, main_force_net
+                    # p[43]=振幅, p[49]=量比, p[50]=委比, p[51]=大单净量, p[52]=主力净流入
+                    amplitude = float(p[43] or 0) if len(p) > 43 and p[43] else 0
+                    volume_ratio = float(p[49] or 0) if len(p) > 49 and p[49] else 0
+                    commission_ratio = float(p[50] or 0) if len(p) > 50 and p[50] else 0
+                    large_order_net = float(p[51] or 0) if len(p) > 51 and p[51] else 0
+                    main_force_net = float(p[52] or 0) if len(p) > 52 and p[52] else 0
+
                     ts_code = f"{code6}.SH" if code6.startswith(('6', '688')) else f"{code6}.SZ"
 
                     tencent_data.append({
@@ -107,6 +340,11 @@ def fetch_tencent_supplementary(make_signal, get_db_func=None) -> list:
                         'circulating_market_cap': circ_mcap * 1e8,
                         'limit_up_price': limit_up,
                         'limit_down_price': limit_down,
+                        'amplitude': amplitude,
+                        'volume_ratio': volume_ratio,
+                        'commission_ratio': commission_ratio,
+                        'large_order_net': large_order_net,
+                        'main_force_net': main_force_net,
                     })
 
                     # Generate signals for notable value stocks

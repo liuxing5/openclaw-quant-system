@@ -153,7 +153,9 @@ def update_tencent_quotes(tencent_data: list) -> int:
     Args:
         tencent_data: list of dicts with ts_code, pe_ratio, pb_ratio,
                       total_market_cap, circulating_market_cap,
-                      limit_up_price, limit_down_price.
+                      limit_up_price, limit_down_price,
+                      amplitude, volume_ratio, commission_ratio,
+                      large_order_net, main_force_net.
     Returns:
         Number of rows updated.
     """
@@ -174,7 +176,12 @@ def update_tencent_quotes(tencent_data: list) -> int:
                     total_market_cap = %(total_market_cap)s,
                     circulating_market_cap = %(circulating_market_cap)s,
                     limit_up_price = %(limit_up_price)s,
-                    limit_down_price = %(limit_down_price)s
+                    limit_down_price = %(limit_down_price)s,
+                    amplitude = %(amplitude)s,
+                    volume_ratio = %(volume_ratio)s,
+                    commission_ratio = %(commission_ratio)s,
+                    large_order_net = %(large_order_net)s,
+                    main_force_net = %(main_force_net)s
                 WHERE ts_code = %(ts_code)s
                   AND trade_date = (
                       SELECT MAX(trade_date) FROM daily_quotes
@@ -192,6 +199,155 @@ def update_tencent_quotes(tencent_data: list) -> int:
     cur.close(); conn.close()
     logger.info(f"daily_quotes Tencent enrichment: updated {updated}/{len(tencent_data)}")
     return updated
+
+
+def store_strong_stock_rank(data: list) -> int:
+    """Bulk upsert into strong_stock_rank.
+
+    Args:
+        data: list of dicts with trade_date, ts_code, stock_name, rank_type,
+              rank_position, consecutive_days, stage_chg_pct, cumulative_turnover,
+              industry, latest_price.
+    Returns:
+        Number of rows upserted.
+    """
+    if not data:
+        return 0
+
+    conn = get_db()
+    cur = conn.cursor()
+    upserted = 0
+
+    for item in data:
+        try:
+            cur.execute("""
+                INSERT INTO strong_stock_rank
+                    (trade_date, ts_code, stock_name, rank_type, rank_position,
+                     consecutive_days, stage_chg_pct, cumulative_turnover,
+                     industry, latest_price, fetched_at)
+                VALUES (%(trade_date)s, %(ts_code)s, %(stock_name)s, %(rank_type)s,
+                        %(rank_position)s, %(consecutive_days)s, %(stage_chg_pct)s,
+                        %(cumulative_turnover)s, %(industry)s, %(latest_price)s, NOW())
+                ON CONFLICT (trade_date, ts_code, rank_type) DO UPDATE SET
+                    rank_position = EXCLUDED.rank_position,
+                    consecutive_days = EXCLUDED.consecutive_days,
+                    stage_chg_pct = EXCLUDED.stage_chg_pct,
+                    cumulative_turnover = EXCLUDED.cumulative_turnover,
+                    industry = EXCLUDED.industry,
+                    latest_price = EXCLUDED.latest_price,
+                    fetched_at = NOW();
+            """, item)
+            if cur.rowcount > 0:
+                upserted += 1
+        except Exception as e:
+            logger.debug(f"strong_stock_rank upsert {item.get('ts_code')}: {e}")
+            conn.rollback()
+            continue
+
+    conn.commit()
+    cur.close(); conn.close()
+    logger.info(f"strong_stock_rank: upserted {upserted}/{len(data)}")
+    return upserted
+
+
+def store_earnings_forecast(data: list) -> int:
+    """Bulk upsert into earnings_forecast.
+
+    Args:
+        data: list of dicts with ts_code, stock_name, forecast_year,
+              institution_count, eps_min, eps_mean, eps_max, industry_avg,
+              revenue_mean, profit_mean.
+    Returns:
+        Number of rows upserted.
+    """
+    if not data:
+        return 0
+
+    conn = get_db()
+    cur = conn.cursor()
+    upserted = 0
+
+    for item in data:
+        try:
+            cur.execute("""
+                INSERT INTO earnings_forecast
+                    (ts_code, stock_name, forecast_year, institution_count,
+                     eps_min, eps_mean, eps_max, industry_avg,
+                     revenue_mean, profit_mean, fetched_at)
+                VALUES (%(ts_code)s, %(stock_name)s, %(forecast_year)s,
+                        %(institution_count)s, %(eps_min)s, %(eps_mean)s,
+                        %(eps_max)s, %(industry_avg)s, %(revenue_mean)s,
+                        %(profit_mean)s, NOW())
+                ON CONFLICT (ts_code, forecast_year) DO UPDATE SET
+                    stock_name = EXCLUDED.stock_name,
+                    institution_count = EXCLUDED.institution_count,
+                    eps_min = EXCLUDED.eps_min,
+                    eps_mean = EXCLUDED.eps_mean,
+                    eps_max = EXCLUDED.eps_max,
+                    industry_avg = EXCLUDED.industry_avg,
+                    revenue_mean = EXCLUDED.revenue_mean,
+                    profit_mean = EXCLUDED.profit_mean,
+                    fetched_at = NOW();
+            """, item)
+            if cur.rowcount > 0:
+                upserted += 1
+        except Exception as e:
+            logger.debug(f"earnings_forecast upsert {item.get('ts_code')}: {e}")
+            conn.rollback()
+            continue
+
+    conn.commit()
+    cur.close(); conn.close()
+    logger.info(f"earnings_forecast: upserted {upserted}/{len(data)}")
+    return upserted
+
+
+def store_concept_board_quotes(data: list) -> int:
+    """Bulk upsert into concept_board_quotes.
+
+    Args:
+        data: list of dicts with trade_date, concept_code, concept_name,
+              pct_chg, turnover_rate, lead_stock_code, lead_stock_name, stock_count.
+    Returns:
+        Number of rows upserted.
+    """
+    if not data:
+        return 0
+
+    conn = get_db()
+    cur = conn.cursor()
+    upserted = 0
+
+    for item in data:
+        try:
+            cur.execute("""
+                INSERT INTO concept_board_quotes
+                    (trade_date, concept_code, concept_name, pct_chg,
+                     turnover_rate, lead_stock_code, lead_stock_name,
+                     stock_count, fetched_at)
+                VALUES (%(trade_date)s, %(concept_code)s, %(concept_name)s,
+                        %(pct_chg)s, %(turnover_rate)s, %(lead_stock_code)s,
+                        %(lead_stock_name)s, %(stock_count)s, NOW())
+                ON CONFLICT (trade_date, concept_code) DO UPDATE SET
+                    concept_name = EXCLUDED.concept_name,
+                    pct_chg = EXCLUDED.pct_chg,
+                    turnover_rate = EXCLUDED.turnover_rate,
+                    lead_stock_code = EXCLUDED.lead_stock_code,
+                    lead_stock_name = EXCLUDED.lead_stock_name,
+                    stock_count = EXCLUDED.stock_count,
+                    fetched_at = NOW();
+            """, item)
+            if cur.rowcount > 0:
+                upserted += 1
+        except Exception as e:
+            logger.debug(f"concept_board_quotes upsert {item.get('concept_code')}: {e}")
+            conn.rollback()
+            continue
+
+    conn.commit()
+    cur.close(); conn.close()
+    logger.info(f"concept_board_quotes: upserted {upserted}/{len(data)}")
+    return upserted
 
 
 if __name__ == '__main__':

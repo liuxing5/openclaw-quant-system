@@ -38,63 +38,141 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 股票推荐 - {{ date }}</title>
     <style>
+        :root {
+            --bg: #f5f5f5;
+            --card-bg: #ffffff;
+            --text: #1a1a1a;
+            --text-secondary: #666666;
+            --border: #e0e0e0;
+            --metric-bg: #f5f5f5;
+            --entry-bg: #fafafa;
+            --header-border: #4CAF50;
+            --score-color: #4CAF50;
+            --link-color: #4CAF50;
+            --tag-bg: #e3f2fd;
+            --tag-text: #1976D2;
+            --logic-bg: #fff3e0;
+            --logic-text: #F57C00;
+            --badge-llm-bg: #2196F3;
+            --badge-8step-bg: #9C27B0;
+            --table-header-bg: #f5f5f5;
+            --hover-shadow: rgba(0,0,0,0.15);
+            --selected-border: #4CAF50;
+            --selected-bg: #f8fff8;
+            --btn-bg: #4CAF50;
+            --btn-text: #ffffff;
+        }
+        [data-theme="dark"] {
+            --bg: #0d1117;
+            --card-bg: #161b22;
+            --text: #c9d1d9;
+            --text-secondary: #8b949e;
+            --border: #30363d;
+            --metric-bg: #21262d;
+            --entry-bg: #1c2128;
+            --header-border: #238636;
+            --score-color: #3fb950;
+            --link-color: #58a6ff;
+            --tag-bg: #1f6feb33;
+            --tag-text: #58a6ff;
+            --logic-bg: #d2992233;
+            --logic-text: #e3b341;
+            --badge-llm-bg: #58a6ff;
+            --badge-8step-bg: #a371f7;
+            --table-header-bg: #21262d;
+            --hover-shadow: rgba(0,0,0,0.5);
+            --selected-border: #238636;
+            --selected-bg: #0d2818;
+            --btn-bg: #238636;
+            --btn-text: #ffffff;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 20px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 16px; transition: background 0.3s, color 0.3s; }
         .container { max-width: 1200px; margin: 0 auto; }
-        h1 { color: #1a1a1a; margin-bottom: 10px; }
-        .subtitle { color: #666; margin-bottom: 30px; }
-        .card { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-        .card h2 { color: #333; margin-bottom: 16px; border-bottom: 2px solid #4CAF50; padding-bottom: 8px; }
-        .stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
-        .stock-card { border: 1px solid #e0e0e0; border-radius: 8px; padding: 16px; transition: transform 0.2s; }
-        .stock-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        .stock-card.selected { border-color: #4CAF50; background: #f8fff8; }
-        .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
-        .stock-code { font-size: 18px; font-weight: bold; color: #333; }
-        .stock-name { color: #666; margin-left: 8px; }
-        .score { font-size: 24px; font-weight: bold; color: #4CAF50; }
-        .score-label { font-size: 12px; color: #999; }
-        .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
-        .metric { text-align: center; padding: 8px; background: #f5f5f5; border-radius: 4px; }
-        .metric-value { font-size: 16px; font-weight: bold; color: #333; }
-        .metric-label { font-size: 11px; color: #999; }
-        .entry-info { margin: 12px 0; padding: 12px; background: #fafafa; border-radius: 4px; }
-        .entry-row { display: flex; justify-content: space-between; margin: 4px 0; }
-        .entry-label { color: #666; }
-        .entry-value { font-weight: bold; }
-        .sources { margin-top: 12px; }
-        .source-tag { display: inline-block; padding: 4px 8px; background: #e3f2fd; color: #1976D2; border-radius: 4px; margin: 2px; font-size: 12px; }
-        .logic-tag { display: inline-block; padding: 4px 8px; background: #fff3e0; color: #F57C00; border-radius: 4px; margin: 2px; font-size: 12px; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; }
+        .header-row { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+        h1 { color: var(--text); margin-bottom: 0; font-size: 1.5rem; }
+        .subtitle { color: var(--text-secondary); margin-bottom: 20px; font-size: 0.9rem; }
+        .theme-toggle { background: var(--btn-bg); color: var(--btn-text); border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: opacity 0.2s; }
+        .theme-toggle:hover { opacity: 0.85; }
+        .card { background: var(--card-bg); border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid var(--border); transition: background 0.3s, border-color 0.3s; }
+        .card h2 { color: var(--text); margin-bottom: 14px; border-bottom: 2px solid var(--header-border); padding-bottom: 8px; font-size: 1.1rem; }
+        .stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+        .stock-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; transition: transform 0.2s, box-shadow 0.2s; background: var(--card-bg); }
+        .stock-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--hover-shadow); }
+        .stock-card.selected { border-color: var(--selected-border); background: var(--selected-bg); }
+        .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px; }
+        .stock-code { font-size: 16px; font-weight: bold; color: var(--text); }
+        .stock-name { color: var(--text-secondary); margin-left: 6px; font-size: 0.9rem; }
+        .score { font-size: 22px; font-weight: bold; color: var(--score-color); }
+        .score-label { font-size: 11px; color: var(--text-secondary); }
+        .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+        .metric { text-align: center; padding: 6px; background: var(--metric-bg); border-radius: 4px; }
+        .metric-value { font-size: 15px; font-weight: bold; color: var(--text); }
+        .metric-label { font-size: 10px; color: var(--text-secondary); }
+        .entry-info { margin: 10px 0; padding: 10px; background: var(--entry-bg); border-radius: 4px; }
+        .entry-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 0.9rem; }
+        .entry-label { color: var(--text-secondary); }
+        .entry-value { font-weight: bold; color: var(--text); }
+        .sources { margin-top: 10px; }
+        .source-tag { display: inline-block; padding: 3px 7px; background: var(--tag-bg); color: var(--tag-text); border-radius: 4px; margin: 2px; font-size: 11px; }
+        .logic-tag { display: inline-block; padding: 3px 7px; background: var(--logic-bg); color: var(--logic-text); border-radius: 4px; margin: 2px; font-size: 11px; }
+        .badge { display: inline-block; padding: 2px 7px; border-radius: 12px; font-size: 11px; font-weight: bold; }
         .badge-buy { background: #4CAF50; color: white; }
         .badge-watch { background: #FF9800; color: white; }
         .badge-strong { background: #2196F3; color: white; }
-        .badge-llm { background: #2196F3; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
-        .badge-8step { background: #9C27B0; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
-        th { background: #f5f5f5; font-weight: 600; }
-        .footer { text-align: center; color: #999; margin-top: 40px; padding: 20px; }
-        .history-link { display: inline-block; margin: 10px 5px; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; }
-        .history-link:hover { background: #45a049; }
-        .history-nav { background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 12px; }
-        .history-nav label { font-weight: 600; color: #333; white-space: nowrap; }
-        .history-nav select { padding: 8px 16px; border: 2px solid #4CAF50; border-radius: 6px; font-size: 14px; color: #333; background: white; cursor: pointer; outline: none; }
-        .history-nav select:hover { border-color: #45a049; }
-        .history-nav select:focus { border-color: #2196F3; box-shadow: 0 0 0 3px rgba(33,150,243,0.2); }
+        .badge-llm { background: var(--badge-llm-bg); color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+        .badge-8step { background: var(--badge-8step-bg); color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border); color: var(--text); }
+        th { background: var(--table-header-bg); font-weight: 600; }
+        .footer { text-align: center; color: var(--text-secondary); margin-top: 30px; padding: 16px; font-size: 0.85rem; }
+        .history-link { display: inline-block; margin: 6px 3px; padding: 6px 12px; background: var(--btn-bg); color: var(--btn-text); text-decoration: none; border-radius: 4px; font-size: 0.85rem; }
+        .history-link:hover { opacity: 0.85; }
+        .history-nav { background: var(--card-bg); border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--border); }
+        .history-nav label { font-weight: 600; color: var(--text); white-space: nowrap; font-size: 0.9rem; }
+        .history-nav select { padding: 7px 14px; border: 2px solid var(--header-border); border-radius: 6px; font-size: 14px; color: var(--text); background: var(--card-bg); cursor: pointer; outline: none; }
+        .history-nav select:hover { border-color: var(--score-color); }
+        .history-nav select:focus { border-color: var(--badge-llm-bg); box-shadow: 0 0 0 3px rgba(33,150,243,0.2); }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            h1 { font-size: 1.2rem; }
+            .stock-grid { grid-template-columns: 1fr; }
+            .stock-header { flex-direction: column; align-items: flex-start; }
+            .metrics { grid-template-columns: repeat(3, 1fr); }
+            .history-nav { flex-direction: column; align-items: stretch; }
+            .history-nav select { width: 100%; }
+            table { font-size: 0.8rem; }
+            th, td { padding: 8px 6px; }
+            .card { padding: 14px; }
+            .header-row { flex-direction: column; align-items: flex-start; }
+        }
+        @media (max-width: 480px) {
+            .stock-grid { grid-template-columns: 1fr; }
+            .metric-value { font-size: 13px; }
+            .score { font-size: 18px; }
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1> AI 股票推荐系统</h1>
-        <p class="subtitle">
-            {% if run_mode == 'morning' %}
-             盘前参考 | 报告日期: {{ date }} | 生成时间: {{ generated_at }}
-            {% else %}
-             盘后复盘 | 报告日期: {{ date }} | 生成时间: {{ generated_at }}
-            {% endif %}
-        </p>
-        
+        <div class="header-row">
+            <div>
+                <h1>🤖 AI 股票推荐系统</h1>
+                <p class="subtitle">
+                    {% if run_mode == 'morning' %}
+                    🌅 盘前参考 | 报告日期: {{ date }} | 生成时间: {{ generated_at }}
+                    {% else %}
+                    🌙 盘后复盘 | 报告日期: {{ date }} | 生成时间: {{ generated_at }}
+                    {% endif %}
+                </p>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">
+                <span id="themeIcon">🌙</span> <span id="themeText">深色</span>
+            </button>
+        </div>
+
         <div class="history-nav">
             <label>📅 历史报告:</label>
             <select onchange="if(this.value) window.location.href=this.value;">
@@ -282,13 +360,41 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         
         <div class="footer">
             <p>AI Stock Recommendation System | LLM多源 + 八步法 | 每日 15:30 自动更新</p>
-            <p>历史报告: 
+            <p>历史报告:
                 {% for d in history_dates %}
                 <a href="{{ d }}/index.html" class="history-link">{{ d }}</a>
                 {% endfor %}
             </p>
         </div>
     </div>
+    <script>
+        (function() {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const isDark = saved === 'dark' || (!saved && prefersDark);
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.getElementById('themeIcon').textContent = '☀️';
+                document.getElementById('themeText').textContent = '浅色';
+            }
+        })();
+        function toggleTheme() {
+            const html = document.documentElement;
+            const icon = document.getElementById('themeIcon');
+            const text = document.getElementById('themeText');
+            if (html.getAttribute('data-theme') === 'dark') {
+                html.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+                icon.textContent = '🌙';
+                text.textContent = '深色';
+            } else {
+                html.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+                icon.textContent = '☀️';
+                text.textContent = '浅色';
+            }
+        }
+    </script>
 </body>
 </html>"""
 

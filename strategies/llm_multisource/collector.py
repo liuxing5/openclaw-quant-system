@@ -23,6 +23,8 @@ from strategies.llm_multisource.fetchers.layer2_research import fetch_em_profit_
 from strategies.llm_multisource.fetchers.layer5_announcements import fetch_cninfo_announcements, fetch_mootdx_announcements
 from strategies.llm_multisource.fetchers.layer1_market import (
     fetch_tencent_supplementary, fetch_ths_strong_stocks, fetch_ths_concept_tags,
+    fetch_ths_strong_stocks_structured, fetch_concept_board_quotes,
+    fetch_earnings_forecast_structured,
     fetch_mootdx_realtime, fetch_mootdx_orderbook, fetch_mootdx_kline,
 )
 from strategies.llm_multisource.fetchers.layer4_fundamentals import fetch_mootdx_fundamentals
@@ -825,10 +827,10 @@ def main():
             (fetch_akshare_lhb, '龙虎榜', FETCH_TIMEOUT),
             (fetch_akshare_zt_pool, '涨停板', FETCH_TIMEOUT),
             (fetch_akshare_concept_hot, '热点概念', CONCEPT_TIMEOUT),
-            # NEW: Tencent + THS
+            # NEW: Tencent + THS (structured)
             (lambda: fetch_tencent_supplementary(make_signal), 'Tencent补充', FETCH_TIMEOUT),
-            (lambda: fetch_ths_strong_stocks(make_signal), 'THS强势股', FETCH_TIMEOUT),
-            (lambda: fetch_ths_concept_tags(make_signal), 'THS概念', CONCEPT_TIMEOUT),
+            (lambda: fetch_ths_strong_stocks_structured(make_signal), 'THS强势股', FETCH_TIMEOUT),
+            (lambda: fetch_concept_board_quotes(make_signal), 'THS概念板块', CONCEPT_TIMEOUT),
         ])
         # mootdx (graceful if not installed or connection fails)
         fetchers.extend([
@@ -846,6 +848,7 @@ def main():
         (fetch_akshare_jgdy, '机构调研', FETCH_TIMEOUT),
         (lambda: fetch_em_profit_forecast(make_signal), '东财盈利预测', FETCH_TIMEOUT),
         (lambda: fetch_ths_profit_forecast(make_signal), 'THS盈利预测', FETCH_TIMEOUT),
+        (lambda: fetch_earnings_forecast_structured(make_signal), '机构一致预期', FETCH_TIMEOUT),
     ])
 
     # ---- Layer 4: Fundamentals (daily, lightweight) ----
@@ -862,6 +865,9 @@ def main():
     all_rows = []
     tencent_data = []
     fundamentals_data = []
+    strong_stock_data = []
+    concept_board_data = []
+    earnings_forecast_data = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
         future_map = {}
@@ -879,6 +885,12 @@ def main():
                     tencent_data.extend(rows._tencent_data)
                 if hasattr(rows, '_fundamentals'):
                     fundamentals_data.extend(rows._fundamentals)
+                if hasattr(rows, '_strong_stock_rank'):
+                    strong_stock_data.extend(rows._strong_stock_rank)
+                if hasattr(rows, '_concept_board_quotes'):
+                    concept_board_data.extend(rows._concept_board_quotes)
+                if hasattr(rows, '_earnings_forecast'):
+                    earnings_forecast_data.extend(rows._earnings_forecast)
                 logger.info(f"{name}: {len(rows)} 条")
             except Exception as e:
                 logger.error(f"{name} 完全失败: {e}")
@@ -889,12 +901,20 @@ def main():
     # Store structured data (non-raw_signals tables)
     try:
         from strategies.llm_multisource.store_structured import (
-            update_tencent_quotes, store_fundamentals
+            update_tencent_quotes, store_fundamentals,
+            store_strong_stock_rank, store_concept_board_quotes,
+            store_earnings_forecast,
         )
         if tencent_data:
             update_tencent_quotes(tencent_data)
         if fundamentals_data:
             store_fundamentals(fundamentals_data)
+        if strong_stock_data:
+            store_strong_stock_rank(strong_stock_data)
+        if concept_board_data:
+            store_concept_board_quotes(concept_board_data)
+        if earnings_forecast_data:
+            store_earnings_forecast(earnings_forecast_data)
     except Exception as e:
         logger.warning(f"结构化数据存储失败（不影响主流程）: {e}")
 

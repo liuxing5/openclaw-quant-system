@@ -23,16 +23,19 @@ def fetch_cninfo_announcements(make_signal) -> list:
         try:
             logger.debug(f"巨潮公告: {date_str}")
             df = ak.stock_zh_a_disclosure_report_cninfo(
-                symbol='全部', date=date_str, market='沪深京'
+                symbol='000001',
+                market='沪深京',
+                start_date=date_str,
+                end_date=date_str,
             )
             if df is None or not hasattr(df, 'empty') or df.empty:
                 continue
 
-            col_title = next((c for c in ['标题', '公告标题', 'title'] if c in df.columns), None)
-            col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
-            col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
-            col_time = next((c for c in ['发布时间', '公告时间', 'pub_date'] if c in df.columns), None)
-            col_url = next((c for c in ['url', '链接', '公告链接'] if c in df.columns), None)
+            col_title = next((c for c in ['公告标题', '标题', 'title'] if c in df.columns), None)
+            col_code = next((c for c in ['代码', '证券代码', '股票代码', 'code'] if c in df.columns), None)
+            col_name = next((c for c in ['简称', '证券简称', '名称', '股票名称', 'name'] if c in df.columns), None)
+            col_time = next((c for c in ['公告时间', '发布时间', 'pub_date'] if c in df.columns), None)
+            col_url = next((c for c in ['公告链接', '链接', 'url'] if c in df.columns), None)
 
             if not col_title:
                 logger.warning(f"巨潮公告列不全: {list(df.columns)[:10]}")
