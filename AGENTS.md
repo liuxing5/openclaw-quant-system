@@ -210,3 +210,17 @@ The goal: Be helpful without being annoying. Check in a few times a day, do usef
 ## Make It Yours
 
 This is a starting point. Add your own conventions, style, and rules as you figure out what works.
+
+## Project GitHub Publish Workflow
+
+For this repository, use the main checkout at `D:/pythonProject/openclaw-quant-system` for future code changes.
+
+- After each conversation round that changes project files, commit the relevant changes once and push directly to `origin/master`.
+- Do not ask again before committing and pushing routine project changes.
+- Before committing, run `git status --short --branch` and inspect the relevant diff so unrelated user changes are not included.
+- Stage only the files changed for the current task. Leave unrelated pre-existing files alone.
+- Run the smallest relevant verification before committing; for quant/data/trading/risk changes, prefer the corresponding unit or integration tests.
+- Use short Conventional Commit style messages, for example `fix: update data cache handling`.
+- If verification cannot run because of missing dependencies, external data, or network issues, mention that in the final response.
+- The GitHub repository is `liuxing5/openclaw-quant-system`, default branch `master`, and the remote is `git@github.com:liuxing5/openclaw-quant-system.git`.
+- The Codex worktree under `.codex/worktrees` may be detached; do not use detached HEAD for direct `master` publishing.
