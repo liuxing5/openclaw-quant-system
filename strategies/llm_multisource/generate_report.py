@@ -305,13 +305,15 @@ def _get_report_snapshot_date(cur):
 
 def _get_latest_source_date(cur, source, lookback_days=7):
     cur.execute("""
-        SELECT MAX(snapshot_date)
+        SELECT MAX(snapshot_date) AS max_date
         FROM daily_candidates
         WHERE source = %s
           AND snapshot_date >= CURRENT_DATE - %s;
     """, (source, lookback_days))
     row = cur.fetchone()
-    return row[0] if row and row[0] else None
+    if row and row['max_date']:
+        return row['max_date']
+    return None
 
 
 def generate_report():
