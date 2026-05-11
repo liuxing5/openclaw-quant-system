@@ -1,5 +1,5 @@
 """结构化数据直接转推荐（不走 LLM，省钱省时）
-龙虎榜/涨停板/机构调研 -> extracted_recommendations
+龙虎榜/涨停板/机构调研/THS强势股/盈利预测/公告 -> extracted_recommendations
 """
 import os
 from datetime import date, timedelta, datetime, timezone
@@ -248,6 +248,218 @@ def jgdy_to_extraction():
     logger.info(f"机构调研 fast path: {stored} 条")
 
 
+def strong_stocks_to_extraction():
+    """THS强势股 -> extracted_recommendations
+
+    连续上涨 >= 3天: strength=3, type=watch
+    创历史新高: strength=4, type=watch
+    """
+    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    today = get_beijing_date()
+    cutoff = today - timedelta(days=2)
+
+    cur.execute("""
+        SELECT r.id AS raw_id, r.source_name, r.pub_time, r.title, r.content
+        FROM raw_signals r
+        WHERE r.source_name = 'THS-强势股'
+          AND r.fetch_time >= %s
+          AND NOT EXISTS (
+              SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id = r.id
+          );
+    """, (cutoff,))
+    rows = cur.fetchall()
+
+    stored = 0
+    for r in rows:
+        title = r['title'] or ''
+        content = r['content'] or ''
+        import re
+        ts_code = None
+        stock_name = ''
+        days = 0
+        try:
+            m = re.search(r'([0-9]{6})', title)
+            if m:
+                code = m.group(1)
+                ts_code = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+            m = re.search(r'强势:\s*(\S+)', title)
+            if m:
+                stock_name = m.group(1)
+            m = re.search(r'(\d+)天', title)
+            if m:
+                days = int(m.group(1))
+        except Exception:
+            pass
+
+        if not ts_code:
+            continue
+
+        is_new_high = '创' in title and '新高' in title
+        strength = 4 if is_new_high else (3 if days >= 3 else 2)
+
+        cur.execute("""
+            INSERT INTO extracted_recommendations
+            (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
+             strength, logic_category, logic_summary, confidence, pub_time)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """, (
+            r['raw_id'], r['source_name'], ts_code, stock_name,
+            'watch', strength,
+            '强势股',
+            f'连续上涨{days}天' if days > 0 else title[:100],
+            0.4,
+            r['pub_time'],
+        ))
+        stored += 1
+
+    conn.commit()
+    cur.close(); conn.close()
+    logger.info(f"THS强势股 fast path: {stored} 条")
+
+
+def profit_forecast_to_extraction():
+    """东财/THS盈利预测 -> extracted_recommendations
+
+    Consensus EPS with high buy rating: strength=3, type=watch
+    """
+    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    today = get_beijing_date()
+    cutoff = today - timedelta(days=2)
+
+    cur.execute("""
+        SELECT r.id AS raw_id, r.source_name, r.pub_time, r.title, r.content
+        FROM raw_signals r
+        WHERE r.source_name IN ('东财-盈利预测', 'THS-盈利预测')
+          AND r.fetch_time >= %s
+          AND NOT EXISTS (
+              SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id = r.id
+          );
+    """, (cutoff,))
+    rows = cur.fetchall()
+
+    stored = 0
+    for r in rows:
+        title = r['title'] or ''
+        content = r['content'] or ''
+        import re
+        ts_code = None
+        stock_name = ''
+        try:
+            m = re.search(r'([0-9]{6})', title)
+            if m:
+                code = m.group(1)
+                ts_code = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+            m = re.search(r'(?:盈利预测|THS预测)[：:]\s*(\S+)', title)
+            if m:
+                stock_name = m.group(1)
+        except Exception:
+            pass
+
+        if not ts_code:
+            continue
+
+        # Parse buy count from content for strength
+        buy_count = 0
+        m = re.search(r'买入[：:]?\s*(\d+)', content)
+        if m:
+            buy_count = int(m.group(1))
+        report_count = 0
+        m = re.search(r'(?:研报数|机构数)[：:]?\s*(\d+)', content)
+        if m:
+            report_count = int(m.group(1))
+
+        strength = 4 if buy_count >= 20 else (3 if report_count >= 10 else 2)
+
+        cur.execute("""
+            INSERT INTO extracted_recommendations
+            (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
+             strength, logic_category, logic_summary, confidence, pub_time)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """, (
+            r['raw_id'], r['source_name'], ts_code, stock_name,
+            'watch', strength,
+            '盈利预测',
+            content[:200] if content else title[:100],
+            0.5,
+            r['pub_time'],
+        ))
+        stored += 1
+
+    conn.commit()
+    cur.close(); conn.close()
+    logger.info(f"盈利预测 fast path: {stored} 条")
+
+
+def announcements_to_extraction():
+    """巨潮/MootDX公告 -> extracted_recommendations
+
+    业绩预告 (profit warning/upgrade): strength=3-4
+    股权激励/增持/回购: strength=3, type=watch
+    """
+    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    today = get_beijing_date()
+    cutoff = today - timedelta(days=2)
+
+    KEYWORDS_HIGH = ['业绩预增', '业绩大幅增长', '扭亏为盈', '增持', '回购']
+    KEYWORDS_MED = ['股权激励', '员工持股', '中标', '签约', '战略合作']
+
+    cur.execute("""
+        SELECT r.id AS raw_id, r.source_name, r.pub_time, r.title, r.content
+        FROM raw_signals r
+        WHERE r.source_name IN ('巨潮-公告', 'MootDX-公告')
+          AND r.fetch_time >= %s
+          AND NOT EXISTS (
+              SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id = r.id
+          );
+    """, (cutoff,))
+    rows = cur.fetchall()
+
+    stored = 0
+    for r in rows:
+        title = r['title'] or ''
+        content = r['content'] or ''
+        import re
+        ts_code = None
+        stock_name = ''
+        try:
+            m = re.search(r'([0-9]{6})', content or title)
+            if m:
+                code = m.group(1)
+                ts_code = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+        except Exception:
+            pass
+
+        if not ts_code:
+            continue
+
+        matched_high = any(kw in title for kw in KEYWORDS_HIGH)
+        matched_med = any(kw in title for kw in KEYWORDS_MED)
+        if not matched_high and not matched_med:
+            continue
+
+        strength = 4 if matched_high else 3
+        rec_type = 'buy' if '增持' in title or '回购' in title else 'watch'
+
+        cur.execute("""
+            INSERT INTO extracted_recommendations
+            (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
+             strength, logic_category, logic_summary, confidence, pub_time)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """, (
+            r['raw_id'], r['source_name'], ts_code, stock_name,
+            rec_type, strength,
+            '公告事件',
+            title[:200],
+            0.4,
+            r['pub_time'],
+        ))
+        stored += 1
+
+    conn.commit()
+    cur.close(); conn.close()
+    logger.info(f"公告 fast path: {stored} 条")
+
+
 def main():
     log_file = os.path.join(BASE_DIR, 'logs', 'structured_extraction.log')
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
@@ -257,9 +469,14 @@ def main():
     logger.info("结构化数据 fast path 提取")
     logger.info("=" * 50)
 
+    # Original 3
     lhb_to_extraction()
     zt_pool_to_extraction()
     jgdy_to_extraction()
+    # New: Layer 1-5 fast paths
+    strong_stocks_to_extraction()
+    profit_forecast_to_extraction()
+    announcements_to_extraction()
 
     logger.info("fast path 完成")
 

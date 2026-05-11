@@ -192,3 +192,76 @@ CREATE TABLE IF NOT EXISTS stock_basic_info (
 
 CREATE INDEX IF NOT EXISTS idx_stock_name ON stock_basic_info(stock_name);
 CREATE INDEX IF NOT EXISTS idx_stock_active ON stock_basic_info(is_active);
+
+-- Layer 1: Extend daily_quotes with Tencent supplementary fields
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS pe_ratio FLOAT;
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS pb_ratio FLOAT;
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS total_market_cap NUMERIC(20,2);
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS circulating_market_cap NUMERIC(20,2);
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS limit_up_price NUMERIC(10,3);
+ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS limit_down_price NUMERIC(10,3);
+
+-- Layer 1: Order book snapshots (mootdx, intraday only)
+CREATE TABLE IF NOT EXISTS order_book_snapshot (
+    id BIGSERIAL PRIMARY KEY,
+    ts_code VARCHAR(20) NOT NULL,
+    snapshot_time TIMESTAMPTZ NOT NULL,
+    bid1_price NUMERIC(10,3), bid1_vol INT,
+    bid2_price NUMERIC(10,3), bid2_vol INT,
+    bid3_price NUMERIC(10,3), bid3_vol INT,
+    bid4_price NUMERIC(10,3), bid4_vol INT,
+    bid5_price NUMERIC(10,3), bid5_vol INT,
+    ask1_price NUMERIC(10,3), ask1_vol INT,
+    ask2_price NUMERIC(10,3), ask2_vol INT,
+    ask3_price NUMERIC(10,3), ask3_vol INT,
+    ask4_price NUMERIC(10,3), ask4_vol INT,
+    ask5_price NUMERIC(10,3), ask5_vol INT,
+    CONSTRAINT order_book_unique UNIQUE (ts_code, snapshot_time)
+);
+CREATE INDEX IF NOT EXISTS idx_ob_ts ON order_book_snapshot(ts_code, snapshot_time DESC);
+
+-- Layer 4: Stock fundamentals (mootdx quarterly data)
+CREATE TABLE IF NOT EXISTS stock_fundamentals (
+    ts_code VARCHAR(20) NOT NULL,
+    report_date DATE NOT NULL,
+    revenue NUMERIC(20,2),
+    net_profit NUMERIC(20,2),
+    net_profit_deducted NUMERIC(20,2),
+    gross_margin FLOAT,
+    net_margin FLOAT,
+    total_assets NUMERIC(20,2),
+    total_liabilities NUMERIC(20,2),
+    equity NUMERIC(20,2),
+    debt_ratio FLOAT,
+    operating_cashflow NUMERIC(20,2),
+    eps NUMERIC(10,4),
+    bps NUMERIC(10,4),
+    pe_ratio FLOAT,
+    pb_ratio FLOAT,
+    total_market_cap NUMERIC(20,2),
+    circulating_market_cap NUMERIC(20,2),
+    revenue_yoy FLOAT,
+    profit_yoy FLOAT,
+    industry VARCHAR(50),
+    listing_date DATE,
+    shareholder_count INT,
+    top10_holder_pct FLOAT,
+    fetched_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (ts_code, report_date)
+);
+CREATE INDEX IF NOT EXISTS idx_fund_ts ON stock_fundamentals(ts_code, report_date DESC);
+
+-- Layer 5: Announcements (巨潮 cninfo + mootdx)
+CREATE TABLE IF NOT EXISTS stock_announcements (
+    id BIGSERIAL PRIMARY KEY,
+    ts_code VARCHAR(20),
+    stock_name VARCHAR(50),
+    title TEXT NOT NULL,
+    category VARCHAR(50),
+    publish_date DATE,
+    url TEXT,
+    content_hash VARCHAR(64) UNIQUE,
+    source VARCHAR(50),
+    fetched_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_ann_ts ON stock_announcements(ts_code, publish_date DESC);

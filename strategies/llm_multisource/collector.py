@@ -1,4 +1,4 @@
-"""信息采集器 - GHA 模式（AKShare only）"""
+"""信息采集器 - 多层数据源 (AKShare + 财联社 + 东财 + THS + mootdx + 腾讯 + 巨潮)"""
 import os
 import re
 import sys
@@ -16,6 +16,16 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
+
+# Multi-layer fetchers
+from strategies.llm_multisource.fetchers.layer3_news import fetch_cls_telegraph
+from strategies.llm_multisource.fetchers.layer2_research import fetch_em_profit_forecast, fetch_ths_profit_forecast
+from strategies.llm_multisource.fetchers.layer5_announcements import fetch_cninfo_announcements, fetch_mootdx_announcements
+from strategies.llm_multisource.fetchers.layer1_market import (
+    fetch_tencent_supplementary, fetch_ths_strong_stocks, fetch_ths_concept_tags,
+    fetch_mootdx_realtime, fetch_mootdx_orderbook, fetch_mootdx_kline,
+)
+from strategies.llm_multisource.fetchers.layer4_fundamentals import fetch_mootdx_fundamentals
 
 warnings.filterwarnings('ignore', category=FutureWarning)
 warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
@@ -795,34 +805,65 @@ def main():
 
     today = get_beijing_date()
     is_trading = is_trading_day(today)
-    
+    beijing_hour = datetime.now(BEIJING_TZ).hour
+
     logger.info("=" * 60)
-    logger.info("AKShare 信息采集启动（并行模式）")
+    logger.info("多层数据采集启动（并行模式）")
     logger.info(f"日期: {today}, 交易日: {is_trading}")
     logger.info("=" * 60)
 
-    # 非交易日跳过需要行情的数据源
+    # ---- Layer 3: News (always run) ----
     fetchers = [
         (fetch_akshare_news, '财经新闻', FETCH_TIMEOUT),
+        (lambda: fetch_cls_telegraph(make_signal), '财联社电报', FETCH_TIMEOUT),
     ]
-    
+
     if is_trading:
-        # 只有交易日才采集行情相关数据
+        # ---- Layer 1: Market Data (trading day only) ----
         fetchers.extend([
+            # Existing
             (fetch_akshare_lhb, '龙虎榜', FETCH_TIMEOUT),
             (fetch_akshare_zt_pool, '涨停板', FETCH_TIMEOUT),
             (fetch_akshare_concept_hot, '热点概念', CONCEPT_TIMEOUT),
+            # NEW: Tencent + THS
+            (lambda: fetch_tencent_supplementary(make_signal), 'Tencent补充', FETCH_TIMEOUT),
+            (lambda: fetch_ths_strong_stocks(make_signal), 'THS强势股', FETCH_TIMEOUT),
+            (lambda: fetch_ths_concept_tags(make_signal), 'THS概念', CONCEPT_TIMEOUT),
         ])
-    
-    # 研报和机构调研每天都采集（非交易日也可能有更新）
+        # mootdx (graceful if not installed or connection fails)
+        fetchers.extend([
+            (lambda: fetch_mootdx_realtime(make_signal), 'MootDX行情', FETCH_TIMEOUT),
+        ])
+        # Intraday-only: order book
+        if 9 <= beijing_hour <= 15:
+            fetchers.append(
+                (lambda: fetch_mootdx_orderbook(make_signal), 'MootDX盘口', FETCH_TIMEOUT),
+            )
+
+    # ---- Layer 2: Research (always run) ----
     fetchers.extend([
         (fetch_akshare_research, '个股研报', FETCH_TIMEOUT),
         (fetch_akshare_jgdy, '机构调研', FETCH_TIMEOUT),
+        (lambda: fetch_em_profit_forecast(make_signal), '东财盈利预测', FETCH_TIMEOUT),
+        (lambda: fetch_ths_profit_forecast(make_signal), 'THS盈利预测', FETCH_TIMEOUT),
+    ])
+
+    # ---- Layer 4: Fundamentals (daily, lightweight) ----
+    fetchers.extend([
+        (lambda: fetch_mootdx_fundamentals(make_signal), 'MootDX财务', FETCH_TIMEOUT * 2),
+    ])
+
+    # ---- Layer 5: Announcements (always run) ----
+    fetchers.extend([
+        (lambda: fetch_cninfo_announcements(make_signal), '巨潮公告', FETCH_TIMEOUT),
+        (lambda: fetch_mootdx_announcements(make_signal), 'MootDX公告', FETCH_TIMEOUT),
     ])
 
     all_rows = []
+    tencent_data = []
+    fundamentals_data = []
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
         future_map = {}
         for fetcher, name, timeout_override in fetchers:
             future = executor.submit(fetch_with_timeout, fetcher, timeout_override)
@@ -833,12 +874,29 @@ def main():
             try:
                 rows = future.result()
                 all_rows.extend(rows)
+                # Capture structured data attached to fetcher results
+                if hasattr(rows, '_tencent_data'):
+                    tencent_data.extend(rows._tencent_data)
+                if hasattr(rows, '_fundamentals'):
+                    fundamentals_data.extend(rows._fundamentals)
                 logger.info(f"{name}: {len(rows)} 条")
             except Exception as e:
                 logger.error(f"{name} 完全失败: {e}")
 
     inserted = store_signals(all_rows)
     logger.info(f"采集总计 {len(all_rows)} 条，新入库 {inserted} 条")
+
+    # Store structured data (non-raw_signals tables)
+    try:
+        from strategies.llm_multisource.store_structured import (
+            update_tencent_quotes, store_fundamentals
+        )
+        if tencent_data:
+            update_tencent_quotes(tencent_data)
+        if fundamentals_data:
+            store_fundamentals(fundamentals_data)
+    except Exception as e:
+        logger.warning(f"结构化数据存储失败（不影响主流程）: {e}")
 
     # 更新 feed_sources 状态
     update_source_status(inserted)

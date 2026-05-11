@@ -116,12 +116,16 @@ def aggregate_today():
         SELECT
           e.ts_code, MAX(e.stock_name) AS stock_name,
           COUNT(*) AS mention_count,
-          COUNT(DISTINCT 
-            CASE 
+          COUNT(DISTINCT
+            CASE
                 WHEN e.source_name IN ('AKShare-龙虎榜', 'AKShare-涨停板') THEN 'capital'
-                WHEN e.source_name = 'AKShare-个股研报' THEN 'research'
-                WHEN e.source_name = 'AKShare-机构调研' THEN 'institution'
-                WHEN e.source_name IN ('AKShare-财经新闻', 'AKShare-热点概念') THEN 'news'
+                WHEN e.source_name IN ('AKShare-个股研报', 'AKShare-机构调研',
+                                        '东财-盈利预测', 'THS-盈利预测') THEN 'research'
+                WHEN e.source_name IN ('AKShare-财经新闻', 'AKShare-热点概念',
+                                        '财联社-电报') THEN 'news'
+                WHEN e.source_name IN ('THS-强势股', 'THS-概念标签',
+                                        'MootDX-实时行情', 'Tencent-行情补充') THEN 'market'
+                WHEN e.source_name IN ('巨潮-公告', 'MootDX-公告') THEN 'announcement'
                 ELSE 'other'
             END
           ) AS source_diversity,

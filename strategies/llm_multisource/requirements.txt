@@ -28,4 +28,8 @@ baostock
 # yfinance   # uncomment if needed
 # pyarrow    # uncomment if needed
 # feedparser # uncomment if needed
-# beautifulsoup4 # uncomment if needed
+
+# Layer 1-4: Multi-source data collection
+mootdx>=0.8.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
