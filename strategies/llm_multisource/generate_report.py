@@ -108,11 +108,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         {% if candidates %}
         <div class="card">
             <h2>
-                {% if run_mode == 'morning' %}
                  LLM 多源策略候选 ({{ candidates|length }} 只)
-                {% else %}
-                 LLM 多源策略候选 ({{ candidates|length }} 只)
-                {% endif %}
+                {% if llm_date %}<span style="font-size:13px;color:#888;margin-left:8px;">{{ llm_date }}</span>{% endif %}
             </h2>
             <div class="stock-grid">
                 {% for c in candidates %}
@@ -185,7 +182,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         
         {% if eight_step_picks %}
         <div class="card">
-            <h2>🔮 八步法候选 ({{ eight_step_picks|length }} 只)</h2>
+            <h2>🔮 八步法候选 ({{ eight_step_picks|length }} 只){% if step_date %}<span style="font-size:13px;color:#888;margin-left:8px;">{{ step_date }}</span>{% endif %}</h2>
             <div class="stock-grid">
                 {% for c in eight_step_picks %}
                 <div class="stock-card selected">
@@ -293,7 +290,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 
 def _get_report_snapshot_date(cur):
-    today = get_beijing_date()
     cur.execute("""
         SELECT snapshot_date
         FROM daily_candidates
@@ -304,26 +300,46 @@ def _get_report_snapshot_date(cur):
     row = cur.fetchone()
     if row:
         return row['snapshot_date']
-    return today
+    return get_beijing_date()
+
+
+def _get_latest_source_date(cur, source, lookback_days=7):
+    cur.execute("""
+        SELECT MAX(snapshot_date)
+        FROM daily_candidates
+        WHERE source = %s
+          AND snapshot_date >= CURRENT_DATE - %s;
+    """, (source, lookback_days))
+    row = cur.fetchone()
+    return row[0] if row and row[0] else None
 
 
 def generate_report():
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     snapshot_date = _get_report_snapshot_date(cur)
     
-    cur.execute("""
-        SELECT * FROM daily_candidates
-        WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
-        ORDER BY final_score DESC;
-    """, (snapshot_date, RUN_MODE))
-    candidates = cur.fetchall()
+    llm_date = _get_latest_source_date(cur, 'llm_multisource')
+    step_date = _get_latest_source_date(cur, 'overnight_8step')
     
-    cur.execute("""
-        SELECT * FROM daily_candidates
-        WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
-        ORDER BY final_score DESC;
-    """, (snapshot_date,))
-    eight_step_picks = cur.fetchall()
+    if llm_date:
+        cur.execute("""
+            SELECT * FROM daily_candidates
+            WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
+            ORDER BY final_score DESC;
+        """, (llm_date, RUN_MODE))
+        candidates = cur.fetchall()
+    else:
+        candidates = []
+    
+    if step_date:
+        cur.execute("""
+            SELECT * FROM daily_candidates
+            WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
+            ORDER BY final_score DESC;
+        """, (step_date,))
+        eight_step_picks = cur.fetchall()
+    else:
+        eight_step_picks = []
     
     cur.execute("""
         SELECT source_name, COUNT(*) as signal_count, source_tier
@@ -351,9 +367,13 @@ def generate_report():
     
     cur.close(); conn.close()
     
+    display_date = str(llm_date or step_date or snapshot_date)
+    llm_date_str = str(llm_date) if llm_date else None
+    step_date_str = str(step_date) if step_date else None
+    
     template = Template(HTML_TEMPLATE)
     html = template.render(
-        date=str(snapshot_date),
+        date=display_date,
         generated_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         candidates=[dict(c) for c in candidates],
         eight_step_picks=[dict(c) for c in eight_step_picks],
@@ -361,9 +381,11 @@ def generate_report():
         articles=[dict(a) for a in articles],
         history_dates=history_dates,
         run_mode=RUN_MODE,
+        llm_date=llm_date_str,
+        step_date=step_date_str,
     )
     
-    output_dir = os.path.join(BASE_DIR, 'docs', str(snapshot_date))
+    output_dir = os.path.join(BASE_DIR, 'docs', display_date)
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, 'index.html'), 'w', encoding='utf-8') as f:
         f.write(html)
@@ -374,26 +396,36 @@ def generate_report():
         f.write(html)
     
     print(f"Report generated: {output_dir}/index.html")
+    print(f"  LLM候选: {len(candidates)} 只 (snapshot_date={llm_date})")
+    print(f"  八步法候选: {len(eight_step_picks)} 只 (snapshot_date={step_date})")
 
 
 def generate_text_report():
-    """生成文本格式的报告"""
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     snapshot_date = _get_report_snapshot_date(cur)
     
-    cur.execute("""
-        SELECT * FROM daily_candidates
-        WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
-        ORDER BY final_score DESC;
-    """, (snapshot_date, RUN_MODE))
-    candidates = cur.fetchall()
+    llm_date = _get_latest_source_date(cur, 'llm_multisource')
+    step_date = _get_latest_source_date(cur, 'overnight_8step')
     
-    cur.execute("""
-        SELECT * FROM daily_candidates
-        WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
-        ORDER BY final_score DESC;
-    """, (snapshot_date,))
-    eight_step_picks = cur.fetchall()
+    if llm_date:
+        cur.execute("""
+            SELECT * FROM daily_candidates
+            WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
+            ORDER BY final_score DESC;
+        """, (llm_date, RUN_MODE))
+        candidates = cur.fetchall()
+    else:
+        candidates = []
+    
+    if step_date:
+        cur.execute("""
+            SELECT * FROM daily_candidates
+            WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
+            ORDER BY final_score DESC;
+        """, (step_date,))
+        eight_step_picks = cur.fetchall()
+    else:
+        eight_step_picks = []
     
     cur.execute("""
         SELECT source_name, COUNT(*) as signal_count
@@ -407,8 +439,9 @@ def generate_text_report():
     cur.close(); conn.close()
     
     mode_text = "盘后复盘" if RUN_MODE == 'afternoon' else "盘前参考"
+    display_date = str(llm_date or step_date or snapshot_date)
     lines = []
-    lines.append(f"{snapshot_date} {mode_text}")
+    lines.append(f"{display_date} {mode_text}")
     lines.append("")
     lines.append("数据采集开始：")
     
@@ -416,9 +449,10 @@ def generate_text_report():
         lines.append(f"  {s['source_name']}: {s['signal_count']} 条")
     
     lines.append("")
-    lines.append(f"共 {len(candidates)} 只 LLM 候选")
+    if candidates:
+        lines.append(f"共 {len(candidates)} 只 LLM 候选 ({llm_date})")
     if eight_step_picks:
-        lines.append(f"共 {len(eight_step_picks)} 只八步法候选")
+        lines.append(f"共 {len(eight_step_picks)} 只八步法候选 ({step_date})")
     lines.append("")
     
     if candidates:
