@@ -13,7 +13,7 @@ from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_d
 load_project_env()
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '50'))
+MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '25'))
 MAX_SELECTED = 5
 MIN_LIQUIDITY = 1e8
 SOURCE = 'llm_multisource'

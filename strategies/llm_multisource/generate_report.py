@@ -75,6 +75,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .footer { text-align: center; color: #999; margin-top: 40px; padding: 20px; }
         .history-link { display: inline-block; margin: 10px 5px; padding: 8px 16px; background: #4CAF50; color: white; text-decoration: none; border-radius: 4px; }
         .history-link:hover { background: #45a049; }
+        .history-nav { background: white; border-radius: 12px; padding: 16px 24px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); display: flex; align-items: center; gap: 12px; }
+        .history-nav label { font-weight: 600; color: #333; white-space: nowrap; }
+        .history-nav select { padding: 8px 16px; border: 2px solid #4CAF50; border-radius: 6px; font-size: 14px; color: #333; background: white; cursor: pointer; outline: none; }
+        .history-nav select:hover { border-color: #45a049; }
+        .history-nav select:focus { border-color: #2196F3; box-shadow: 0 0 0 3px rgba(33,150,243,0.2); }
     </style>
 </head>
 <body>
@@ -87,6 +92,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
              盘后复盘 | 报告日期: {{ date }} | 生成时间: {{ generated_at }}
             {% endif %}
         </p>
+        
+        <div class="history-nav">
+            <label>📅 历史报告:</label>
+            <select onchange="if(this.value) window.location.href=this.value;">
+                <option value="">选择日期跳转</option>
+                {% for d in history_dates %}
+                <option value="{{ d }}/index.html" {% if d == date %}selected{% endif %}>{{ d }}</option>
+                {% endfor %}
+            </select>
+        </div>
         
         <div class="card">
             <h2>
@@ -181,12 +196,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="card">
             <h2>📰 最新资讯</h2>
             <table>
-                <tr><th>标题</th><th>来源</th><th>时间</th></tr>
+                <tr><th>标题</th><th>来源</th><th>时间</th><th>链接</th></tr>
                 {% for a in articles %}
                 <tr>
-                    <td>{% if a.url %}<a href="{{ a.url }}" target="_blank">{{ a.title or '无标题' }}</a>{% else %}{{ a.title or '无标题' }}{% endif %}</td>
+                    <td>{{ a.title or '无标题' }}</td>
                     <td>{{ a.source_name }}</td>
                     <td>{{ a.pub_time }}</td>
+                    <td>{% if a.url %}<a href="{{ a.url }}" target="_blank" style="color: #4CAF50;">查看原文</a>{% else %}—{% endif %}</td>
                 </tr>
                 {% endfor %}
             </table>
@@ -228,7 +244,8 @@ def generate_report():
     cur.execute("""
         SELECT title, url, pub_time, source_name
         FROM raw_signals
-        ORDER BY fetch_time DESC LIMIT 20;
+        WHERE pub_time IS NOT NULL
+        ORDER BY pub_time DESC LIMIT 20;
     """)
     articles = cur.fetchall()
     
