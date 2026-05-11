@@ -129,8 +129,8 @@ def aggregate_today():
           AVG(e.strength * COALESCE(e.confidence,0.5)) AS llm_score,
           ARRAY_AGG(DISTINCT e.logic_category) AS logic_tags,
           JSON_AGG(JSON_BUILD_OBJECT(
-            'source', e.source_name, 'tier', COALESCE(fs.tier, 2), 'strength', e.strength,
-            'logic', e.logic_summary, 'pub_time', e.pub_time
+            'source', e.source_name, 'tier', COALESCE(fs.tier, 2), 'category', COALESCE(fs.category, 'other'),
+            'strength', e.strength, 'logic', e.logic_summary, 'pub_time', e.pub_time
           )) AS sources
         FROM extracted_recommendations e
         LEFT JOIN feed_sources fs ON fs.name = e.source_name
@@ -213,20 +213,34 @@ def aggregate_today():
             if pct_chg > limit_threshold:
                 quant_score = max(0, quant_score - 30)
 
-            # 共识度：单源 0.85，2 源 1.0
-            consensus_mult = 0.7 + 0.15 * min(r['source_diversity'], 2)
+            # ===== A+C 方案：Sigmoid 校准 + Tier 加权共识 + 偏科 Gate =====
 
-            # LLM 归一化按实际分布校准：均值 1.75 对应 ~0.58
-            llm_n = min(r['llm_score'] / 3.0, 1.0)
-            mention_bonus = min(0.2, r['mention_count'] * 0.03)
-            llm_n = min(1.0, llm_n + mention_bonus)
-            quant_n = quant_score / 100.0
+            # Tier 加权共识：按 category 聚合，同类取最高 tier
+            TIER_WEIGHT = {1: 1.0, 2: 0.7, 3: 0.45}
+            cat_weights = {}
+            for s in (r['sources'] or []):
+                cat = s.get('category') or s.get('source') or 'other'
+                w = TIER_WEIGHT.get(s.get('tier'), 0.45)
+                cat_weights[cat] = max(cat_weights.get(cat, 0), w)
+            weighted_div = sum(cat_weights.values())
+            consensus = 1.0 - math.exp(-weighted_div / 1.2)
 
-            # 加权算术平均代替几何平均（减少中等分被压缩）
+            # LLM 子分 sigmoid，中位 1.5 处斜率最大
+            llm_n = 1.0 / (1.0 + math.exp(-(r['llm_score'] - 1.5) / 0.6))
+            llm_n = min(1.0, llm_n + min(0.15, r['mention_count'] * 0.03))
+
+            # Quant 子分 sigmoid，中位 50
+            quant_n = 1.0 / (1.0 + math.exp(-(quant_score - 50) / 12))
+
+            # 加权算术平均
             if llm_n > 0 and quant_n > 0:
-                final = (0.45 * llm_n + 0.55 * quant_n) * consensus_mult * 100
+                final = (0.4 * llm_n + 0.6 * quant_n) * (0.6 + 0.4 * consensus) * 100
             else:
                 final = 0
+
+            # Gate：任一项太弱大幅降权
+            if llm_n < 0.25 or quant_n < 0.20:
+                final *= 0.6
 
             has_lhb = any('龙虎榜' in (s.get('source') or '') for s in (r['sources'] or []))
             has_zt = any('涨停' in (s.get('source') or '') for s in (r['sources'] or []))
@@ -241,7 +255,7 @@ def aggregate_today():
             candidates.append({
                 'ts_code': r['ts_code'], 'stock_name': name_cache.get(r['ts_code']) or r['stock_name'],
                 'mention_count': r['mention_count'], 'source_diversity': r['source_diversity'],
-                'consensus_score': consensus_mult, 'llm_score': llm_n * 100,
+                'consensus_score': consensus, 'llm_score': llm_n * 100,
                 'quant_score': quant_score, 'final_score': final,
                 'logic_tags': r['logic_tags'], 'sources': r['sources'],
                 'close': close_price,
