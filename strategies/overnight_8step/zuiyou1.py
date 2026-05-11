@@ -579,7 +579,7 @@ def get_llm_boost_score(code: str) -> float:
 CONFIG_STABLE = {
     "MODE": "post",
     "POOL": "hs300+zz500",
-    "min_amount": 200_000_000,
+    "min_amount": 50_000_000,
     "max_amount": 5_000_000_000,
     "min_mktcap": 10_000_000_000,
     "max_mktcap": 200_000_000_000,
@@ -607,7 +607,7 @@ CONFIG_STABLE = {
 CONFIG_UPPER = {
     "MODE": "post",
     "POOL": "zz1000",
-    "min_amount": 100_000_000,
+    "min_amount": 30_000_000,
     "max_amount": 3_000_000_000,
     "min_mktcap": 3_000_000_000,
     "max_mktcap": 30_000_000_000,
