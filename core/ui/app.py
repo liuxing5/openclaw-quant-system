@@ -83,6 +83,7 @@ if page == "📈 今日候选":
         display_df = df.copy()
         display_df["来源"] = display_df["source"].map(source_labels).fillna(display_df["source"])
         display_df["模式"] = display_df["run_mode"].map(mode_labels).fillna(display_df["run_mode"])
+        display_df["position_pct"] = display_df["position_pct"].fillna(0) * 100
 
         st.dataframe(
             display_df.style.apply(highlight_selected, axis=1),
