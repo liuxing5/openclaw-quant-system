@@ -34,7 +34,7 @@ v1.5.1 修订（2026-05-10）：
   ✓ P0 消除全局 CONFIG 依赖 —— analyze_ultimate/scan_pool 改为传参，双池配置隔离
   ✓ P0 修复 stock_name 传 None —— 从腾讯行情/LLM缓存获取名称写入 daily_candidates
   ✓ P1 评分膨胀修复 —— 设置评分上限120分，阈值提高到85分
-  ✓ P1 mktcap 单位修正 —— 腾讯 f44 单位为万元，修正换算
+  ✓ P1 mktcap 单位修正 —— 腾讯 f44 单位为亿元，乘以1e8转元
   ✓ P2 情绪接口降级 —— 增加备用默认值，基于历史统计更合理
   ✓ P2 行业缓存并发保护 —— 临时文件原子写入 + 文件锁
   ✓ P2 LLM 预过滤逻辑统一 —— 与 analyze_ultimate 内部判断一致
@@ -954,7 +954,7 @@ def get_realtime_quotes(stock_list: list) -> dict:
                         "pre": _f(4),
                         "turn": _f(38),
                         "name": name,
-                        "mktcap": _f(44) * 10000 if _f(44) > 0 else 0,
+                        "mktcap": _f(44) * 1e8 if _f(44) > 0 else 0,
                     }
                     ok_count += 1
                 except Exception:
@@ -1152,15 +1152,14 @@ def analyze_ultimate(
 
     # --- STEP 4: 流通市值过滤（8步法50亿-200亿）---
     # v1.1: 去掉 MODE 限制，post 模式也启用市值过滤
-    # v1.5.1: 修复市值估算逻辑，腾讯 f44 单位为万元
+    # v1.5.1: 修复市值估算逻辑，腾讯 f44 单位为亿元
     mktcap = real_info.get("mktcap", 0) if real_info else 0
     
     # 如果市值数据缺失，尝试用成交额和换手率估算（成交额/换手率 ≈ 流通市值）
     if mktcap <= 0 and curr_amount > 0 and curr_turn > 0:
-        # curr_amount 单位为万元, curr_turn 单位为百分比
-        # 流通市值(万元) = 成交额(万元) / (换手率% / 100)
-        est_mktcap_wan = curr_amount / (curr_turn / 100.0)
-        mktcap = est_mktcap_wan * 10000  # 万元 → 元
+        # curr_amount 单位为元, curr_turn 单位为百分比
+        # 流通市值(元) = 成交额(元) / (换手率% / 100)
+        mktcap = curr_amount / (curr_turn / 100.0)
     
     if mktcap > 0:
         if mktcap < cfg["min_mktcap"] or mktcap > cfg["max_mktcap"]:
@@ -1724,10 +1723,10 @@ def _format_funnel(rejects: dict, total: int, results: list = None, cfg: dict = 
     
     steps = [
         ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
-        ("量比", ">=1", ["量比"]),
+        ("成交额", f"{min_amount_stable}-{max_amount_stable}亿/{min_amount_upper}-{max_amount_upper}亿", ["成交额"]),
         ("换手率", ">=5%,<=10%", ["换手率"]),
         ("市值过滤", "50-500亿/30-200亿", ["市值"]),
-        ("成交额", f"{min_amount_stable}-{max_amount_stable}亿/{min_amount_upper}-{max_amount_upper}亿", ["成交额"]),
+        ("量比", ">=1", ["量比"]),
         ("均线+压力检测", "", ["均线", "压力"]),
         ("乖离严重", "超阈值5%+", ["乖离严重"]),
         ("得分不足", "低于阈值", ["得分不足"]),
