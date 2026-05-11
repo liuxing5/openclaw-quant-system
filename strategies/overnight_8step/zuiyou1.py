@@ -1906,8 +1906,11 @@ def main():
 
     # 14:30 盘中初筛 与 15:10 盘后定稿都允许推送和写汇总文件，
     # DB 写入仍只在盘后定稿，避免盘中不稳定数据污染 daily_candidates
+    # 阈值：BJT >= 15:00 即视为盘后。原来的 15:10 阈值有问题——A 股 14:57
+    # 集合竞价后行情已封死，15:00-15:10 区间手动 dispatch 跑会按 intraday
+    # 写入但拿到的是已收盘价，污染 15:10 实际跑时的 diff 计算
     current_beijing = beijing_now()
-    is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
+    is_post_time = current_beijing.hour >= 15
     mode_label = "盘后定稿" if is_post_time else "盘中初筛"
 
     append_to_summary(final_df, end_d, sentiment_score, mood, total_candidates, mode_label)
