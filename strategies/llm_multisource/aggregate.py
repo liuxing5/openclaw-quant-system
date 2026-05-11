@@ -309,8 +309,18 @@ def aggregate_today():
                 'turnover_rate': turnover,
             })
 
-    candidates.sort(key=lambda x: x['final_score'], reverse=True)
-    logger.info(f"排序后候选池: {len(candidates)} 只")
+    # 按 ts_code 去重，保留分数最高的版本
+    seen = {}
+    unique_candidates = []
+    for c in candidates:
+        ts = c['ts_code']
+        if ts not in seen or c['final_score'] > seen[ts]['final_score']:
+            seen[ts] = c
+    unique_candidates = list(seen.values())
+    
+    unique_candidates.sort(key=lambda x: x['final_score'], reverse=True)
+    candidates = unique_candidates
+    logger.info(f"去重排序后候选池: {len(candidates)} 只")
     for c in candidates[:10]:
         logger.info(f"  {c['ts_code']} {c['stock_name'] or '?'} final={c['final_score']:.1f} llm={c['llm_score']:.0f} quant={c['quant_score']:.0f} consensus={c['consensus_score']:.2f}")
 
