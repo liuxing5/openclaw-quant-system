@@ -1,0 +1,98 @@
+/* Basic dark-mode adjustments for mkdocs-material
+   File: docs/css/custom.css
+   Purpose: Improve contrast for text, code blocks, tables, and navigation in dark (slate) palette.
+   You can tweak colors below if you want different contrast levels.
+*/
+
+/* Page background and primary text */
+.md-main__inner, .md-content__inner, body {
+  background-color: #07101a !important;
+  color: #e6eef8 !important;
+}
+
+/* Header / topbar / nav background */
+.md-header, .md-header__inner, .md-nav__title, .md-nav__link {
+  background-color: transparent !important;
+}
+
+/* Sidebar / navigation */
+.md-nav {
+  background-color: #08121a !important;
+}
+.md-nav__link, .md-nav__title {
+  color: #cfe7ff !important;
+}
+.md-nav__link--active {
+  background-color: rgba(120, 150, 255, 0.08) !important;
+  color: #ffffff !important;
+}
+
+/* Content text and headings */
+.md-typeset h1, .md-typeset h2, .md-typeset h3, .md-typeset h4 {
+  color: #f1f7ff !important;
+}
+.md-typeset p, .md-typeset li {
+  color: #d6e7ff !important;
+}
+
+/* Links */
+.md-typeset a {
+  color: #80b3ff !important;
+}
+.md-typeset a:hover {
+  color: #bcd9ff !important;
+}
+
+/* Code blocks and inline code */
+.md-typeset pre, .md-typeset code {
+  background-color: #001222 !important;
+  color: #e6eef8 !important;
+  border-radius: 6px !important;
+}
+.md-typeset pre code {
+  padding: 1rem !important;
+}
+
+/* Tables */
+.md-typeset table {
+  background-color: rgba(255,255,255,0.02) !important;
+  color: #d6e7ff !important;
+}
+.md-typeset thead {
+  color: #eaf4ff !important;
+}
+
+/* Admonitions / callouts */
+.admonition, .md-typeset .admonition {
+  background-color: rgba(120,150,255,0.04) !important;
+  border-left: 4px solid rgba(120,150,255,0.16) !important;
+}
+
+/* Buttons and chips */
+.md-button, .md-chip {
+  background-color: rgba(255,255,255,0.03) !important;
+  color: #e6eef8 !important;
+}
+
+/* Footer */
+.md-footer {
+  background-color: transparent !important;
+  color: #9fbbe6 !important;
+}
+
+/* Improve contrast for search results and inputs */
+.md-search__input, .md-text-field__input {
+  background-color: rgba(255,255,255,0.02) !important;
+  color: #e6eef8 !important;
+}
+
+/* Make anchors/perm-links more visible */
+.md-typeset .headerlink {
+  color: rgba(230,238,248,0.6) !important;
+}
+
+/* Misc: ensure images with white bg get subtle border */
+.md-typeset img {
+  border: 1px solid rgba(255,255,255,0.03) !important;
+  border-radius: 3px !important;
+}
