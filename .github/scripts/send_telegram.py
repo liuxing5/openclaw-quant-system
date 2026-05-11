@@ -17,7 +17,7 @@ import sys
 import time
 
 # 添加项目路径到 sys.path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'recommend', 'xuangu'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'strategies', 'overnight_8step'))
 
 try:
     from notifyTelegram import send_message, send_long_message
