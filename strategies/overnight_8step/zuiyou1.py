@@ -1712,15 +1712,15 @@ def _format_funnel(rejects: dict, total: int, results: list = None, cfg: dict = 
     
     # 从配置中读取阈值（如果没有传入 cfg，使用默认值）
     if cfg:
-        min_amount_stable = cfg.get("min_amount", 50_000_000) / 1_000_000
-        max_amount_stable = cfg.get("max_amount", 5_000_000_000) / 1_000_000
-        min_amount_upper = CONFIG_UPPER.get("min_amount", 30_000_000) / 1_000_000
-        max_amount_upper = CONFIG_UPPER.get("max_amount", 3_000_000_000) / 1_000_000
+        min_amount_stable = cfg.get("min_amount", 50_000_000) / 100_000_000
+        max_amount_stable = cfg.get("max_amount", 5_000_000_000) / 100_000_000
+        min_amount_upper = CONFIG_UPPER.get("min_amount", 30_000_000) / 100_000_000
+        max_amount_upper = CONFIG_UPPER.get("max_amount", 3_000_000_000) / 100_000_000
     else:
-        min_amount_stable = 50
-        max_amount_stable = 5000
-        min_amount_upper = 30
-        max_amount_upper = 3000
+        min_amount_stable = 0.5
+        max_amount_stable = 50
+        min_amount_upper = 0.3
+        max_amount_upper = 30
     
     steps = [
         ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
