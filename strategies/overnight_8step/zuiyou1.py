@@ -1584,7 +1584,7 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
     total_scanned = sum(reject_stats.values()) + passed_count
 
     print(f"\n━━ 过滤统计，[{pool_name}]，共{total_scanned}只 ━━")
-    _print_funnel(reject_stats, total_scanned, results)
+    _print_funnel(reject_stats, total_scanned, results, cfg)
 
     return results, reject_stats, name_map, len(stock_pool), len(real_map), time_weight
 
@@ -1705,17 +1705,29 @@ def append_to_summary(
 # ============================================================
 _REJECT_TREND_FILE = os.path.join(os.path.dirname(__file__), "reject_trend.json")
 
-def _format_funnel(rejects: dict, total: int, results: list = None) -> str:
+def _format_funnel(rejects: dict, total: int, results: list = None, cfg: dict = None) -> str:
     """按8步法顺序格式化漏斗式过滤统计，返回字符串"""
     if total == 0:
         total = sum(rejects.values())
-
+    
+    # 从配置中读取阈值（如果没有传入 cfg，使用默认值）
+    if cfg:
+        min_amount_stable = cfg.get("min_amount", 50_000_000) / 1_000_000
+        max_amount_stable = cfg.get("max_amount", 5_000_000_000) / 1_000_000
+        min_amount_upper = CONFIG_UPPER.get("min_amount", 30_000_000) / 1_000_000
+        max_amount_upper = CONFIG_UPPER.get("max_amount", 3_000_000_000) / 1_000_000
+    else:
+        min_amount_stable = 50
+        max_amount_stable = 5000
+        min_amount_upper = 30
+        max_amount_upper = 3000
+    
     steps = [
         ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
         ("量比", ">=1", ["量比"]),
         ("换手率", ">=5%,<=10%", ["换手率"]),
         ("市值过滤", "50-500亿/30-200亿", ["市值"]),
-        ("成交额", ">=200亿/100亿", ["成交额"]),
+        ("成交额", f"{min_amount_stable}-{max_amount_stable}亿/{min_amount_upper}-{max_amount_upper}亿", ["成交额"]),
         ("均线+压力检测", "", ["均线", "压力"]),
         ("乖离严重", "超阈值5%+", ["乖离严重"]),
         ("得分不足", "低于阈值", ["得分不足"]),
@@ -1753,14 +1765,14 @@ def _format_funnel(rejects: dict, total: int, results: list = None) -> str:
     return "\n".join(lines)
 
 
-def _print_funnel(rejects: dict, total: int, results: list = None):
+def _print_funnel(rejects: dict, total: int, results: list = None, cfg: dict = None):
     """按8步法顺序打印漏斗式过滤统计"""
-    print(_format_funnel(rejects, total, results))
+    print(_format_funnel(rejects, total, results, cfg))
 
 
-def _print_reject_summary(rejects: dict, total: int = 0):
+def _print_reject_summary(rejects: dict, total: int = 0, cfg: dict = None):
     """按8步法顺序打印漏斗式过滤统计（汇总用）"""
-    print(_format_funnel(rejects, total))
+    print(_format_funnel(rejects, total, cfg=cfg))
 
 def _save_reject_trend(date_str: str, rejects: dict):
     """保存当日过滤瓶颈到文件，展示5日趋势"""
@@ -1883,7 +1895,7 @@ def main():
 
     if not all_results:
         print("\n  今日暂无符合条件的标的。")
-        _print_reject_summary(total_rejects)
+        _print_reject_summary(total_rejects, cfg=CONFIG_STABLE)
         _save_reject_trend(end_d, total_rejects)
         # 零候选场景下也写一行审计，selected=FALSE 不影响下游查询，但留下"今天扫过、什么都没看上"的痕迹
         _persist_zero_result_audit(end_d, total_rejects, sentiment_score, mood)
@@ -1913,7 +1925,7 @@ def main():
     # 打印汇总过滤统计
     print(f"\n今日扫描汇总: {total_scanned} 只")
     print(f"━━ 过滤统计，共{total_scanned}只 ━━")
-    _print_reject_summary(total_rejects, total_scanned)
+    _print_reject_summary(total_rejects, total_scanned, cfg=CONFIG_STABLE)
     _save_reject_trend(end_d, total_rejects)
 
     # 14:30 盘中初筛 与 15:10 盘后定稿都允许推送和写汇总文件，
@@ -2060,10 +2072,10 @@ def main():
         stable_total = sum(rejects_stable.values()) + len(results_stable)
         upper_total = sum(rejects_upper.values()) + len(results_upper)
 
-        stable_reject_summary = _format_funnel(rejects_stable, stable_total, results_stable)
-        upper_reject_summary = _format_funnel(rejects_upper, upper_total, results_upper)
+        stable_reject_summary = _format_funnel(rejects_stable, stable_total, results_stable, CONFIG_STABLE)
+        upper_reject_summary = _format_funnel(rejects_upper, upper_total, results_upper, CONFIG_UPPER)
 
-        reject_summary = _format_funnel(total_rejects, total_scanned)
+        reject_summary = _format_funnel(total_rejects, total_scanned, cfg=CONFIG_STABLE)
 
         # 构建各池扫描信息（复用 scan_pool 已获取数据，避免重复调用 API）
         pool_summary = (
