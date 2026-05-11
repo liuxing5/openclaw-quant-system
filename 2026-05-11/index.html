@@ -36,6 +36,8 @@
         .badge-buy { background: #4CAF50; color: white; }
         .badge-watch { background: #FF9800; color: white; }
         .badge-strong { background: #2196F3; color: white; }
+        .badge-llm { background: #2196F3; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+        .badge-8step { background: #9C27B0; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
         th { background: #f5f5f5; font-weight: 600; }
@@ -54,7 +56,7 @@
         <h1> AI 股票推荐系统</h1>
         <p class="subtitle">
             
-             盘后复盘 | 报告日期: 2026-05-11 | 生成时间: 2026-05-11 15:07:10
+             盘后复盘 | 报告日期: 2026-05-11 | 生成时间: 2026-05-11 17:46:29
             
         </p>
         
@@ -70,10 +72,11 @@
             </select>
         </div>
         
+        
         <div class="card">
             <h2>
                 
-                🎯 明日候选池 (9 只)
+                 LLM 多源策略候选 (10 只)
                 
             </h2>
             <div class="stock-grid">
@@ -81,8 +84,72 @@
                 <div class="stock-card selected">
                     <div class="stock-header">
                         <div>
+                            <span class="stock-code">002046.SZ</span>
+                            <span class="stock-name">国机精工</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">35.9</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">30</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">40</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">1.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">57.920 - 59.100</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">56.750</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">61.440 / 64.360</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">8%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">机构调研</span>
+                        
+                        <span class="logic-tag">题材</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 2 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
                             <span class="stock-code">688599.SH</span>
                             <span class="stock-name">天合光能</span>
+                            <span class="badge-llm">🤖 LLM</span>
                             <span class="badge badge-strong">✓ 选中</span>
                         </div>
                         <div style="text-align: right;">
@@ -141,8 +208,70 @@
                 <div class="stock-card selected">
                     <div class="stock-header">
                         <div>
+                            <span class="stock-code">002361.SZ</span>
+                            <span class="stock-name">神剑股份</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">30.0</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">33</div>
+                            <div class="metric-label">LLM 分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">45</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">0.50</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">22.030 - 22.470</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">21.580</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">23.360 / 24.480</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">8%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">龙虎榜</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源:  个 | 提及: 1 次
+                        </div>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
                             <span class="stock-code">300217.SZ</span>
                             <span class="stock-name">东方电热</span>
+                            <span class="badge-llm">🤖 LLM</span>
                             <span class="badge badge-strong">✓ 选中</span>
                         </div>
                         <div style="text-align: right;">
@@ -203,6 +332,7 @@
                         <div>
                             <span class="stock-code">002600.SZ</span>
                             <span class="stock-name">领益智造</span>
+                            <span class="badge-llm">🤖 LLM</span>
                             <span class="badge badge-strong">✓ 选中</span>
                         </div>
                         <div style="text-align: right;">
@@ -258,12 +388,13 @@
                     </div>
                 </div>
                 
-                <div class="stock-card selected">
+                <div class="stock-card ">
                     <div class="stock-header">
                         <div>
                             <span class="stock-code">600196.SH</span>
                             <span class="stock-name">复星医药</span>
-                            <span class="badge badge-strong">✓ 选中</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
                         </div>
                         <div style="text-align: right;">
                             <div class="score">27.8</div>
@@ -300,71 +431,6 @@
                             <span class="entry-value" style="color: #4CAF50;">26.660 / 27.930</span>
                         </div>
                         
-                        <div class="entry-row">
-                            <span class="entry-label">建议仓位</span>
-                            <span class="entry-value">8%</span>
-                        </div>
-                        
-                    </div>
-                    
-                    <div class="sources">
-                        
-                        <span class="logic-tag">题材</span>
-                        
-                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
-                            来源:  个 | 提及: 1 次
-                        </div>
-                        
-                    </div>
-                </div>
-                
-                <div class="stock-card selected">
-                    <div class="stock-header">
-                        <div>
-                            <span class="stock-code">002046.SZ</span>
-                            <span class="stock-name">国机精工</span>
-                            <span class="badge badge-strong">✓ 选中</span>
-                        </div>
-                        <div style="text-align: right;">
-                            <div class="score">27.3</div>
-                            <div class="score-label">综合分</div>
-                        </div>
-                    </div>
-                    
-                    <div class="metrics">
-                        <div class="metric">
-                            <div class="metric-value">31</div>
-                            <div class="metric-label">LLM 分</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-value">40</div>
-                            <div class="metric-label">量化分</div>
-                        </div>
-                        <div class="metric">
-                            <div class="metric-value">0.50</div>
-                            <div class="metric-label">共识度</div>
-                        </div>
-                    </div>
-                    
-                    <div class="entry-info">
-                        <div class="entry-row">
-                            <span class="entry-label">入场区间</span>
-                            <span class="entry-value">57.920 - 59.100</span>
-                        </div>
-                        <div class="entry-row">
-                            <span class="entry-label">止损</span>
-                            <span class="entry-value" style="color: #f44336;">56.750</span>
-                        </div>
-                        <div class="entry-row">
-                            <span class="entry-label">目标</span>
-                            <span class="entry-value" style="color: #4CAF50;">61.440 / 64.360</span>
-                        </div>
-                        
-                        <div class="entry-row">
-                            <span class="entry-label">建议仓位</span>
-                            <span class="entry-value">8%</span>
-                        </div>
-                        
                     </div>
                     
                     <div class="sources">
@@ -383,6 +449,7 @@
                         <div>
                             <span class="stock-code">300676.SZ</span>
                             <span class="stock-name">华大基因</span>
+                            <span class="badge-llm">🤖 LLM</span>
                             
                         </div>
                         <div style="text-align: right;">
@@ -438,6 +505,7 @@
                         <div>
                             <span class="stock-code">300438.SZ</span>
                             <span class="stock-name">鹏辉能源</span>
+                            <span class="badge-llm">🤖 LLM</span>
                             
                         </div>
                         <div style="text-align: right;">
@@ -493,6 +561,7 @@
                         <div>
                             <span class="stock-code">600789.SH</span>
                             <span class="stock-name">鲁抗医药</span>
+                            <span class="badge-llm">🤖 LLM</span>
                             
                         </div>
                         <div style="text-align: right;">
@@ -548,6 +617,7 @@
                         <div>
                             <span class="stock-code">300900.SZ</span>
                             <span class="stock-name">广联航空</span>
+                            <span class="badge-llm">🤖 LLM</span>
                             
                         </div>
                         <div style="text-align: right;">
@@ -601,6 +671,9 @@
             </div>
         </div>
         
+        
+        
+        
         <div class="card">
             <h2>📡 数据源统计</h2>
             <table>
@@ -608,7 +681,7 @@
                 
                 <tr>
                     <td></td>
-                    <td>309</td>
+                    <td>329</td>
                     <td>0.00</td>
                     <td>0.0</td>
                 </tr>
@@ -622,7 +695,14 @@
                 
                 <tr>
                     <td></td>
-                    <td>24</td>
+                    <td>92</td>
+                    <td>0.00</td>
+                    <td>0.0</td>
+                </tr>
+                
+                <tr>
+                    <td></td>
+                    <td>36</td>
                     <td>0.00</td>
                     <td>0.0</td>
                 </tr>
@@ -643,142 +723,142 @@
                 <tr><th>标题</th><th>来源</th><th>时间</th><th>链接</th></tr>
                 
                 <tr>
-                    <td>涨停: 金海高科 603311.SH 连板1</td>
-                    <td>AKShare-涨停板</td>
-                    <td>2026-05-11 15:05:02.025481+00:00</td>
+                    <td>龙虎榜: 海达尔 920699.SZ 净买入0.05亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.513023+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 摩根大通策略师：下半年继续做多新兴市场股票</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 15:01:04+00:00</td>
+                    <td>龙虎榜: 振宏股份 920200.SZ 净买入-0.10亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512974+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 国内商品期货收盘 主力合约涨多跌少</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 15:00:27+00:00</td>
+                    <td>龙虎榜: 中科仪 920186.SZ 净买入1.35亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512924+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 沪指突破4200点  创业板指大涨3.5% 成交额超3.5万亿</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 15:00:00+00:00</td>
+                    <td>龙虎榜: 赛英电子 920181.SZ 净买入-0.21亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512872+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 沪深两市成交额突破3.5万亿 较上一日此时放量超4700亿</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:58:24+00:00</td>
+                    <td>龙虎榜: 鸿仕达 920125.SZ 净买入0.17亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512816+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 正泰新能入围中国电建2026年度光伏组件集采</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:57:32+00:00</td>
+                    <td>龙虎榜: 族兴新材 920078.SZ 净买入-0.06亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512766+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>涨停: 信捷电气 603416.SH 连板1</td>
-                    <td>AKShare-涨停板</td>
-                    <td>2026-05-11 14:55:52.840068+00:00</td>
+                    <td>龙虎榜: 觅睿科技 920036.SZ 净买入0.24亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512716+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>涨停: 光迅科技 002281.SZ 连板2</td>
-                    <td>AKShare-涨停板</td>
-                    <td>2026-05-11 14:55:52.839973+00:00</td>
+                    <td>龙虎榜: 创达新材 920012.SZ 净买入-0.05亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512668+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>涨停: 联科科技 001207.SZ 连板1</td>
-                    <td>AKShare-涨停板</td>
-                    <td>2026-05-11 14:55:52.839799+00:00</td>
+                    <td>龙虎榜: 盛合晶微 688820.SH 净买入-3.73亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512621+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>涨停: 鸿仕达 920125.SZ 连板1</td>
-                    <td>AKShare-涨停板</td>
-                    <td>2026-05-11 14:55:52.839745+00:00</td>
+                    <td>龙虎榜: 盛合晶微 688820.SH 净买入-1.75亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512572+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 国际足联“愿做出重大让步”！提出将世界杯转播权降价50%</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:55:00+00:00</td>
+                    <td>龙虎榜: 有研复材 688811.SH 净买入0.35亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512524+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 中科星图发布生态合伙人战略</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:54:21+00:00</td>
+                    <td>龙虎榜: 普冉股份 688766.SH 净买入4.27亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512474+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 汇川技术在包头成立新公司 含矿山机械制造业务</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:54:04+00:00</td>
+                    <td>龙虎榜: 锴威特 688693.SH 净买入0.03亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512425+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 黑石集团同意收购希腊在线交易平台Skroutz的部分股权</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:52:02+00:00</td>
+                    <td>龙虎榜: 科威尔 688551.SH 净买入-0.04亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512374+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 交通运输部：上周全国高速公路货车通行5165.8万辆 环比增长7.48%</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:52:00+00:00</td>
+                    <td>龙虎榜: 兴福电子 688545.SH 净买入-2.39亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512316+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 摩根大通股票评级首次覆盖通用汽车</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:50:58+00:00</td>
+                    <td>龙虎榜: 兴福电子 688545.SH 净买入-0.52亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512244+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 软银2025财年第四季度营业利润1584.3亿日元 市场预计1651.1亿日元</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:46:27+00:00</td>
+                    <td>龙虎榜: 昀冢科技 688260.SH 净买入0.30亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512195+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>研报: 奇瑞进军日本市场？回应来了</td>
-                    <td>AKShare-个股研报</td>
-                    <td>2026-05-11 14:45:32+00:00</td>
+                    <td>龙虎榜: 南新制药 688189.SH 净买入0.71亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512144+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>涨停: 可立克 002782.SZ 连板1</td>
-                    <td>AKShare-涨停板</td>
-                    <td>2026-05-11 14:45:17.729385+00:00</td>
+                    <td>龙虎榜: 炬光科技 688167.SH 净买入-3.53亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512089+00:00</td>
                     <td>—</td>
                 </tr>
                 
                 <tr>
-                    <td>涨停: 跨境通 002640.SZ 连板1</td>
-                    <td>AKShare-涨停板</td>
-                    <td>2026-05-11 14:45:17.729352+00:00</td>
+                    <td>龙虎榜: 中船特气 688146.SH 净买入1.19亿</td>
+                    <td>AKShare-龙虎榜</td>
+                    <td>2026-05-11 17:44:10.512034+00:00</td>
                     <td>—</td>
                 </tr>
                 
@@ -786,7 +866,7 @@
         </div>
         
         <div class="footer">
-            <p>AI Stock Recommendation System | 每日 15:30 自动更新</p>
+            <p>AI Stock Recommendation System | LLM多源 + 八步法 | 每日 15:30 自动更新</p>
             <p>历史报告: 
                 
                 <a href="2026-05-11/index.html" class="history-link">2026-05-11</a>
