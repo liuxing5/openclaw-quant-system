@@ -133,9 +133,9 @@ async def push_daily_candidates():
     
     cur.execute("""
         SELECT * FROM daily_candidates
-        WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource'
+        WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource' AND run_mode=%s
         ORDER BY final_score DESC;
-    """, (today,))
+    """, (today, RUN_MODE))
     cands = cur.fetchall()
     logger.info(f"查询 daily_candidates WHERE snapshot_date={today} AND selected=TRUE AND source='llm_multisource'，找到 {len(cands)} 条")
 
