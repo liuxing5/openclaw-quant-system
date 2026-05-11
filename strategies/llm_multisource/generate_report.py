@@ -69,6 +69,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .badge-buy { background: #4CAF50; color: white; }
         .badge-watch { background: #FF9800; color: white; }
         .badge-strong { background: #2196F3; color: white; }
+        .badge-llm { background: #2196F3; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+        .badge-8step { background: #9C27B0; color: white; font-size: 11px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 12px; text-align: left; border-bottom: 1px solid #e0e0e0; }
         th { background: #f5f5f5; font-weight: 600; }
@@ -103,12 +105,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             </select>
         </div>
         
+        {% if candidates %}
         <div class="card">
             <h2>
                 {% if run_mode == 'morning' %}
-                🎯 今日候选池 ({{ candidates|length }} 只)
+                 LLM 多源策略候选 ({{ candidates|length }} 只)
                 {% else %}
-                🎯 明日候选池 ({{ candidates|length }} 只)
+                 LLM 多源策略候选 ({{ candidates|length }} 只)
                 {% endif %}
             </h2>
             <div class="stock-grid">
@@ -118,6 +121,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         <div>
                             <span class="stock-code">{{ c.ts_code }}</span>
                             <span class="stock-name">{{ c.stock_name }}</span>
+                            <span class="badge-llm">🤖 LLM</span>
                             {% if c.selected %}<span class="badge badge-strong">✓ 选中</span>{% endif %}
                         </div>
                         <div style="text-align: right;">
@@ -177,6 +181,73 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
+        
+        {% if eight_step_picks %}
+        <div class="card">
+            <h2>🔮 八步法候选 ({{ eight_step_picks|length }} 只)</h2>
+            <div class="stock-grid">
+                {% for c in eight_step_picks %}
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">{{ c.ts_code }}</span>
+                            <span class="stock-name">{{ c.stock_name }}</span>
+                            <span class="badge-8step">🔮 八步法</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">{{ "%.1f"|format(c.final_score) }}</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">{{ "%.0f"|format(c.llm_score) }}</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">{{ "%.0f"|format(c.quant_score) }}</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">{{ "%.2f"|format(c.consensus_score) }}</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">{{ c.entry_low or '—' }} - {{ c.entry_high or '—' }}</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">{{ c.stop_loss or '—' }}</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">{{ c.target_1 or '—' }} / {{ c.target_2 or '—' }}</span>
+                        </div>
+                        {% if c.position_pct %}
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">{{ "%.0f"|format(c.position_pct * 100) }}%</span>
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="sources">
+                        {% for tag in c.logic_tags %}
+                        <span class="logic-tag">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
         
         <div class="card">
             <h2>📡 数据源统计</h2>
@@ -209,7 +280,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         
         <div class="footer">
-            <p>AI Stock Recommendation System | 每日 15:30 自动更新</p>
+            <p>AI Stock Recommendation System | LLM多源 + 八步法 | 每日 15:30 自动更新</p>
             <p>历史报告: 
                 {% for d in history_dates %}
                 <a href="{{ d }}/index.html" class="history-link">{{ d }}</a>
@@ -233,6 +304,13 @@ def generate_report():
     candidates = cur.fetchall()
     
     cur.execute("""
+        SELECT * FROM daily_candidates
+        WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
+        ORDER BY final_score DESC;
+    """, (today,))
+    eight_step_picks = cur.fetchall()
+    
+    cur.execute("""
         SELECT source_name, COUNT(*) as signal_count, source_tier
         FROM raw_signals
         WHERE fetch_time >= %s
@@ -251,7 +329,7 @@ def generate_report():
     
     cur.execute("""
         SELECT DISTINCT snapshot_date FROM daily_candidates
-        WHERE source = 'llm_multisource'
+        WHERE source IN ('llm_multisource', 'overnight_8step')
         ORDER BY snapshot_date DESC LIMIT 10;
     """)
     history_dates = [str(r['snapshot_date']) for r in cur.fetchall()]
@@ -263,6 +341,7 @@ def generate_report():
         date=str(today),
         generated_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         candidates=[dict(c) for c in candidates],
+        eight_step_picks=[dict(c) for c in eight_step_picks],
         source_stats=[dict(s) for s in source_stats],
         articles=[dict(a) for a in articles],
         history_dates=history_dates,
@@ -287,7 +366,6 @@ def generate_text_report():
     today = get_beijing_date()
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
-    # 获取候选股
     cur.execute("""
         SELECT * FROM daily_candidates
         WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
@@ -295,7 +373,13 @@ def generate_text_report():
     """, (today, RUN_MODE))
     candidates = cur.fetchall()
     
-    # 获取数据源统计
+    cur.execute("""
+        SELECT * FROM daily_candidates
+        WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
+        ORDER BY final_score DESC;
+    """, (today,))
+    eight_step_picks = cur.fetchall()
+    
     cur.execute("""
         SELECT source_name, COUNT(*) as signal_count
         FROM raw_signals
@@ -313,31 +397,43 @@ def generate_text_report():
     lines.append("")
     lines.append("数据采集开始：")
     
-    # 数据源统计
     for s in source_stats:
         lines.append(f"  {s['source_name']}: {s['signal_count']} 条")
     
     lines.append("")
-    lines.append(f"共 {len(candidates)} 只候选股")
+    lines.append(f"共 {len(candidates)} 只 LLM 候选")
+    if eight_step_picks:
+        lines.append(f"共 {len(eight_step_picks)} 只八步法候选")
     lines.append("")
     
-    # 股票详情
-    for i, c in enumerate(candidates):
-        prefix = "🎯 " if c.get('selected') else "  "
-        lines.append(f"{prefix}{c['stock_name']} {c['ts_code']}")
-        lines.append(f"  综合分: {c['final_score']:.1f} | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
-        
-        if c.get('entry_low') and c.get('entry_high'):
-            lines.append(f"  入场: {c['entry_low']:.3f}-{c['entry_high']:.3f}  止损: {c['stop_loss']:.3f}")
-        
-        if c.get('target_1') and c.get('target_2'):
-            lines.append(f"  目标: {c['target_1']:.3f}/{c['target_2']:.3f}  仓位: {c['position_pct']*100:.0f}%")
-        
-        if c.get('logic_tags'):
-            tags = c['logic_tags'] if isinstance(c['logic_tags'], list) else []
-            lines.append(f"  逻辑: {', '.join(tags)}")
-        
-        lines.append("")
+    if candidates:
+        lines.append("🤖 LLM 多源策略:")
+        for c in candidates:
+            prefix = "🎯 " if c.get('selected') else "  "
+            lines.append(f"{prefix}{c['stock_name']} {c['ts_code']}")
+            lines.append(f"  综合分: {c['final_score']:.1f} | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+            if c.get('entry_low') and c.get('entry_high'):
+                lines.append(f"  入场: {c['entry_low']:.3f}-{c['entry_high']:.3f}  止损: {c['stop_loss']:.3f}")
+            if c.get('target_1') and c.get('target_2'):
+                lines.append(f"  目标: {c['target_1']:.3f}/{c['target_2']:.3f}  仓位: {c['position_pct']*100:.0f}%")
+            if c.get('logic_tags'):
+                tags = c['logic_tags'] if isinstance(c['logic_tags'], list) else []
+                lines.append(f"  逻辑: {', '.join(tags)}")
+            lines.append("")
+    
+    if eight_step_picks:
+        lines.append("🔮 八步法候选:")
+        for c in eight_step_picks:
+            lines.append(f"🎯 {c['stock_name']} {c['ts_code']}")
+            lines.append(f"  综合分: {c['final_score']:.1f} | LLM加成:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+            if c.get('entry_low') and c.get('entry_high'):
+                lines.append(f"  入场: {c['entry_low']:.3f}-{c['entry_high']:.3f}  止损: {c['stop_loss']:.3f}")
+            if c.get('target_1') and c.get('target_2'):
+                lines.append(f"  目标: {c['target_1']:.3f}/{c['target_2']:.3f}  仓位: {c['position_pct']*100:.0f}%")
+            if c.get('logic_tags'):
+                tags = c['logic_tags'] if isinstance(c['logic_tags'], list) else []
+                lines.append(f"  逻辑: {', '.join(tags)}")
+            lines.append("")
     
     return "\n".join(lines)
 

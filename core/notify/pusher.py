@@ -136,19 +136,27 @@ async def push_daily_candidates():
         WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource' AND run_mode=%s
         ORDER BY final_score DESC;
     """, (today, RUN_MODE))
-    cands = cur.fetchall()
-    logger.info(f"查询 daily_candidates WHERE snapshot_date={today} AND selected=TRUE AND source='llm_multisource'，找到 {len(cands)} 条")
+    llm_cands = cur.fetchall()
+    logger.info(f"LLM候选: snapshot_date={today}, selected=TRUE, source='llm_multisource', run_mode={RUN_MODE} → {len(llm_cands)} 条")
 
-    if not cands:
+    cur.execute("""
+        SELECT * FROM daily_candidates
+        WHERE snapshot_date=%s AND selected=TRUE AND source='overnight_8step'
+        ORDER BY final_score DESC;
+    """, (today,))
+    step_cands = cur.fetchall()
+    logger.info(f"八步法候选: snapshot_date={today}, selected=TRUE, source='overnight_8step' → {len(step_cands)} 条")
+
+    if not llm_cands and not step_cands:
         cur.execute("""
             SELECT COUNT(*) as cnt FROM daily_candidates
-            WHERE snapshot_date=%s AND source='llm_multisource';
+            WHERE snapshot_date=%s;
         """, (today,))
         row = cur.fetchone()
         total = row['cnt'] if hasattr(row, 'keys') else row[0]
         msg = (f"📊 <b>{today}</b> {'盘前参考' if RUN_MODE == 'morning' else '盘后复盘'}\n\n"
                f"{'今日' if RUN_MODE == 'morning' else '明日'}无符合条件的推荐\n"
-               f"（共分析 {total} 只候选股，均未达到阈值 {MIN_SELECT_SCORE} 分）\n\n"
+               f"（共分析 {total} 只候选股，均未达到阈值）\n\n"
                f"建议: 空仓观望 或 持有现有仓位")
         await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
         cur.close(); conn.close()
@@ -161,7 +169,6 @@ async def push_daily_candidates():
     }
     header, target = mode_labels.get(RUN_MODE, ('盘后复盘', '明日'))
     
-    # 获取数据采集统计（只统计当天的数据）
     cur.execute("""
         SELECT source_name, COUNT(*) as cnt
         FROM raw_signals
@@ -171,7 +178,6 @@ async def push_daily_candidates():
     """, (today,))
     source_stats = {row['source_name']: row['cnt'] for row in cur.fetchall()}
     
-    # 固定的数据源列表，确保每个都显示
     all_sources = [
         'AKShare-龙虎榜',
         'AKShare-涨停板',
@@ -181,10 +187,10 @@ async def push_daily_candidates():
         'AKShare-热点概念',
     ]
     
-    # 构建数据采集统计头部
+    total_cands = len(llm_cands) + len(step_cands)
     stats_lines = []
     stats_lines.append(f" <b>{today}</b> {header}")
-    stats_lines.append(f"共 {len(cands)} 只\n")
+    stats_lines.append(f"共 {total_cands} 只\n")
     stats_lines.append("数据采集统计：")
     for src in all_sources:
         cnt = source_stats.get(src, 0)
@@ -192,28 +198,35 @@ async def push_daily_candidates():
     stats_lines.append("")
     
     lines = stats_lines
-    
-    for c in cands:
-        c = dict(c)
-        sources = c.get('sources') or []
-        if isinstance(sources, str):
-            sources = json.loads(sources)
-        src_names = ', '.join(set(s.get('source','') for s in sources[:5]))
-        
-        entry_low = c['entry_low'] if c['entry_low'] else '—'
-        entry_high = c['entry_high'] if c['entry_high'] else '—'
-        stop_loss = c['stop_loss'] if c['stop_loss'] else '—'
-        target_1 = c['target_1'] if c['target_1'] else '—'
-        target_2 = c['target_2'] if c['target_2'] else '—'
-        position_pct = (c['position_pct'] or 0) * 100
-        logic_tags = ', '.join(c.get('logic_tags') or [])
-        
-        lines.append(f"🎯 <b>{fmt_html(c['stock_name'] or '')}</b> <code>{fmt_html(c['ts_code'])}</code>")
-        lines.append(f"综合分: <b>{c['final_score']:.1f}</b> | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
-        lines.append(f"入场: {fmt_html(str(entry_low))}-{fmt_html(str(entry_high))}  止损: {fmt_html(str(stop_loss))}")
-        lines.append(f"目标: {fmt_html(str(target_1))}/{fmt_html(str(target_2))}  仓位: {fmt_html(f'{position_pct:.0f}')}%")
-        lines.append(f"逻辑: {fmt_html(logic_tags)} | 源: {fmt_html(src_names)}")
-        lines.append("")
+
+    def _append_candidates(cands, emoji, label):
+        if not cands:
+            return
+        lines.append(f"{emoji} <b>{label}</b> ({len(cands)} 只)")
+        for c in cands:
+            c = dict(c)
+            sources = c.get('sources') or []
+            if isinstance(sources, str):
+                sources = json.loads(sources)
+            src_names = ', '.join(set(s.get('source','') for s in sources[:5]))
+            
+            entry_low = c['entry_low'] if c['entry_low'] else '—'
+            entry_high = c['entry_high'] if c['entry_high'] else '—'
+            stop_loss = c['stop_loss'] if c['stop_loss'] else '—'
+            target_1 = c['target_1'] if c['target_1'] else '—'
+            target_2 = c['target_2'] if c['target_2'] else '—'
+            position_pct = (c['position_pct'] or 0) * 100
+            logic_tags = ', '.join(c.get('logic_tags') or [])
+            
+            lines.append(f"🎯 <b>{fmt_html(c['stock_name'] or '')}</b> <code>{fmt_html(c['ts_code'])}</code>")
+            lines.append(f"综合分: <b>{c['final_score']:.1f}</b> | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+            lines.append(f"入场: {fmt_html(str(entry_low))}-{fmt_html(str(entry_high))}  止损: {fmt_html(str(stop_loss))}")
+            lines.append(f"目标: {fmt_html(str(target_1))}/{fmt_html(str(target_2))}  仓位: {fmt_html(f'{position_pct:.0f}')}%")
+            lines.append(f"逻辑: {fmt_html(logic_tags)} | 源: {fmt_html(src_names)}")
+            lines.append("")
+
+    _append_candidates(llm_cands, "🤖", "LLM 多源策略")
+    _append_candidates(step_cands, "🔮", "八步法")
     
     msg = '\n'.join(lines)
     

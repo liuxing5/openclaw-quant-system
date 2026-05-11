@@ -2017,6 +2017,7 @@ def main():
                 "bias_ma5": row.get("bias_ma5", 0),
                 "score": row["score"],
                 "tags": row["tags"],
+                "is_llm": row.get("is_llm", False),
             })
         for _, row in upper_picks.iterrows():
             upper_list.append({
@@ -2030,6 +2031,7 @@ def main():
                 "bias_ma5": row.get("bias_ma5", 0),
                 "score": row["score"],
                 "tags": row["tags"],
+                "is_llm": row.get("is_llm", False),
             })
 
         mood_desc_map = {

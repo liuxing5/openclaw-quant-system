@@ -47,19 +47,17 @@ def update_tracking():
     except Exception as e:
         logger.warning(f"约束迁移失败: {e}")
     
-    # 仅跟踪 LLM 多源策略产出的候选；overnight_8step 有自己的 record_trade_log
-    # 链路，跨源混跟踪会让回测/复盘指标失真
     cur.execute("""
-        SELECT c.id, c.ts_code, c.snapshot_date,
+        SELECT c.id, c.ts_code, c.snapshot_date, c.source,
                (c.entry_low + c.entry_high) / 2 AS avg_entry,
                c.target_1, c.stop_loss
         FROM daily_candidates c
         WHERE c.selected=TRUE
-          AND c.source='llm_multisource'
+          AND c.source IN ('llm_multisource', 'overnight_8step')
           AND c.snapshot_date >= %s;
     """, (date.today() - timedelta(days=30),))
     
-    for cand_id, ts, snap_date, avg_entry, t1, sl in cur.fetchall():
+    for cand_id, ts, snap_date, _source, avg_entry, t1, sl in cur.fetchall():
         if not avg_entry:
             continue
         for offset, col in [(1, 't1'), (5, 't5'), (20, 't20')]:
