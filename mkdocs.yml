@@ -1,0 +1,23 @@
+site_name: OpenClaw Quant System
+site_description: Professional quant trading system with dual data sources (Baostock+AKShare), walk-forward backtesting, multi-factor regression, and self-evolution capability
+
+# Theme configuration: default to dark (slate) but keep a light/dark toggle
+theme:
+  name: material
+  palette:
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: 切换到亮色模式
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: 切换到暗色模式
+
+# Include custom CSS to fine-tune dark mode appearance
+extra_css:
+  - css/custom.css
