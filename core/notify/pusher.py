@@ -39,14 +39,6 @@ MIN_SELECT_SCORE = 50
 
 
 
-def fmt_md_v2(text: str) -> str:
-    """Markdown V2 转义"""
-    if not text: return ''
-    for ch in r'_*[]()~`>#+-=|{}.!':
-        text = text.replace(ch, f'\\{ch}')
-    return text
-
-
 def fmt_html(text: str) -> str:
     """HTML 转义"""
     if not text: return ''
@@ -131,19 +123,22 @@ async def push_daily_candidates():
         cur.close(); conn.close()
         return
     
+    # P0：必须按 run_mode 过滤。同一天 morning/intraday/afternoon 三个 run_mode
+    # 可能各写一批 selected=TRUE，不过滤会一次性推送 10-15 只重复票。
     cur.execute("""
         SELECT * FROM daily_candidates
-        WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource'
+        WHERE snapshot_date=%s AND selected=TRUE
+          AND source='llm_multisource' AND run_mode=%s
         ORDER BY final_score DESC;
-    """, (today,))
+    """, (today, RUN_MODE))
     cands = cur.fetchall()
-    logger.info(f"查询 daily_candidates WHERE snapshot_date={today} AND selected=TRUE AND source='llm_multisource'，找到 {len(cands)} 条")
+    logger.info(f"查询 daily_candidates WHERE snapshot_date={today} AND selected=TRUE AND source='llm_multisource' AND run_mode='{RUN_MODE}'，找到 {len(cands)} 条")
 
     if not cands:
         cur.execute("""
             SELECT COUNT(*) as cnt FROM daily_candidates
-            WHERE snapshot_date=%s AND source='llm_multisource';
-        """, (today,))
+            WHERE snapshot_date=%s AND source='llm_multisource' AND run_mode=%s;
+        """, (today, RUN_MODE))
         row = cur.fetchone()
         total = row['cnt'] if hasattr(row, 'keys') else row[0]
         msg = (f"📊 <b>{today}</b> {'盘前参考' if RUN_MODE == 'morning' else '盘后复盘'}\n\n"
@@ -161,14 +156,17 @@ async def push_daily_candidates():
     }
     header, target = mode_labels.get(RUN_MODE, ('盘后复盘', '明日'))
     
-    # 获取数据采集统计（只统计当天的数据）
+    # 数据采集统计：raw_signals.fetch_time 是 timestamptz，pg server 默认 UTC
+    # 解析 date 直接比较会把 BJT 0:00 当成 UTC 0:00 (= BJT 8:00)，漏掉前 8 小时
+    # 改成显式北京时区的范围比较
+    today_start_bj = datetime.combine(today, datetime.min.time(), tzinfo=BEIJING_TZ)
     cur.execute("""
         SELECT source_name, COUNT(*) as cnt
         FROM raw_signals
         WHERE fetch_time >= %s
         GROUP BY source_name
         ORDER BY cnt DESC;
-    """, (today,))
+    """, (today_start_bj,))
     source_stats = {row['source_name']: row['cnt'] for row in cur.fetchall()}
     
     # 固定的数据源列表，确保每个都显示
