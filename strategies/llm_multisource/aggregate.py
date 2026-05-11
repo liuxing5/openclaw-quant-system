@@ -18,6 +18,18 @@ MAX_SELECTED = 5
 MIN_LIQUIDITY = 1e8
 SOURCE = 'llm_multisource'
 
+# 信号源 → 类目映射，与 SQL 中的 source_diversity CASE 保持一致
+SOURCE_CATEGORY_MAP = {
+    'AKShare-龙虎榜': 'capital',
+    'AKShare-涨停板': 'capital',
+    'AKShare-个股研报': 'research',
+    'AKShare-机构调研': 'institution',
+    'AKShare-财经新闻': 'news',
+    'AKShare-热点概念': 'news',
+}
+# tier 权重：1 高质量（资金/官方），2 中等（机构/研报），3 低（新闻/其他）
+TIER_WEIGHT = {1: 1.0, 2: 0.7, 3: 0.45}
+
 # 用集合判断，兼容多种命名
 AFTERHOURS_MODES = {'afterhours', 'afternoon', 'evening'}
 
@@ -213,17 +225,28 @@ def aggregate_today():
             if pct_chg > limit_threshold:
                 quant_score = max(0, quant_score - 30)
 
-            consensus = min(r['source_diversity'] / 2.0, 1.0)
-            llm_n = min(r['llm_score'] / 5.0, 1.0)
-            # 提及次数加成
-            mention_bonus = min(0.2, r['mention_count'] * 0.03)
-            llm_n = min(1.0, llm_n + mention_bonus)
-            quant_n = quant_score / 100.0  # 满分改为100
+            # tier 加权共识：按 category 聚合，同类取最高 tier
+            cat_weights = {}
+            for s in (r['sources'] or []):
+                cat = SOURCE_CATEGORY_MAP.get(s.get('source') or '', 'other')
+                w = TIER_WEIGHT.get(s.get('tier'), 0.45)
+                if w > cat_weights.get(cat, 0):
+                    cat_weights[cat] = w
+            weighted_div = sum(cat_weights.values())
+            consensus = 1.0 - math.exp(-weighted_div / 1.2)
 
-            if llm_n > 0 and quant_n > 0:
-                final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
-            else:
-                final = 0
+            # LLM sigmoid：中位 1.5，斜率 0.6；提及次数 bonus 上限 0.15
+            llm_n = 1.0 / (1.0 + math.exp(-(float(r['llm_score']) - 1.5) / 0.6))
+            mention_bonus = min(0.15, r['mention_count'] * 0.03)
+            llm_n = min(1.0, llm_n + mention_bonus)
+
+            # Quant sigmoid：中位 50，斜率 12
+            quant_n = 1.0 / (1.0 + math.exp(-(quant_score - 50) / 12))
+
+            # 加权平均 + 共识乘子；偏科 gate 降权
+            final = (0.4 * llm_n + 0.6 * quant_n) * (0.6 + 0.4 * consensus) * 100
+            if llm_n < 0.25 or quant_n < 0.20:
+                final *= 0.6
 
             has_lhb = any('龙虎榜' in (s.get('source') or '') for s in (r['sources'] or []))
             has_zt = any('涨停' in (s.get('source') or '') for s in (r['sources'] or []))
