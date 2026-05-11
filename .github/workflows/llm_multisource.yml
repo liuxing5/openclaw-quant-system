@@ -54,15 +54,16 @@ jobs:
         id: mode
         run: |
           HOUR=$(date -u +%H)
-          if [ "$HOUR" -lt 2 ]; then
+          HOUR_NUM=$((10#$HOUR))
+          if [ "$HOUR_NUM" -lt 2 ]; then
             echo "mode=morning" >> $GITHUB_OUTPUT
             echo "盘前模式 (UTC ${HOUR}:30 = 北京时间 08:30)"
-          elif [ "$HOUR" -lt 7 ]; then
+          elif [ "$HOUR_NUM" -lt 7 ]; then
             echo "mode=intraday" >> $GITHUB_OUTPUT
-            echo "盘中模式 (UTC ${HOUR}:30 = 北京时间 $((HOUR+8)):30)"
+            echo "盘中模式 (UTC ${HOUR}:30 = 北京时间 $((HOUR_NUM+8)):30)"
           else
             echo "mode=afternoon" >> $GITHUB_OUTPUT
-            echo "盘后模式 (UTC ${HOUR}:30 = 北京时间 $((HOUR+8)):30)"
+            echo "盘后模式 (UTC ${HOUR}:30 = 北京时间 $((HOUR_NUM+8)):30)"
           fi
       
       - name: Setup Python
