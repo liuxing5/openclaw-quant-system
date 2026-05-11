@@ -11,10 +11,9 @@ strategies/                  策略层（互相独立）
 core/                        共享基础设施（两边复用，不用 platform/ 因与 stdlib 同名）
 ├── db/
 │   ├── connection.py        get_db() / db_configured()
-│   ├── candidates.py        write_candidates() 统一 UPSERT 入口（含 source 字段迁移）
+│   ├── candidates.py        write_candidates() 统一 UPSERT 入口
 │   ├── schema.sql           主 schema（含 daily_candidates.source 列）
-│   ├── apply_schema.py      执行 schema.sql
-│   └── cleanup_duplicates.py
+│   └── apply_schema.py      执行 schema.sql（一次性发送，psycopg2 自动切分）
 ├── notify/
 │   └── pusher.py            Telegram 推送（每日候选池 + 异动告警）
 ├── tracker/
@@ -31,7 +30,10 @@ frameworks/quant_system/     量化框架库（保留，未来再用）
 
 archive/                     历史代码（只读归档）
 ├── recommend_legacy/        recommend/ 顶层旧脚本
-└── xuangu_experiments/      xuangu/ 下实验性脚本
+├── xuangu_experiments/      xuangu/ 下实验性脚本
+└── broken_scripts/          API 不兼容已坏的脚本
+
+tools/oneoff/                一次性维护脚本（修历史数据、清理重复等，不进 cron）
 ```
 
 ## 候选池统一表（合并核心）
