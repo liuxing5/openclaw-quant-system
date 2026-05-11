@@ -227,9 +227,9 @@ def generate_report():
     
     cur.execute("""
         SELECT * FROM daily_candidates
-        WHERE snapshot_date = %s AND source = 'llm_multisource'
+        WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
         ORDER BY final_score DESC;
-    """, (today,))
+    """, (today, RUN_MODE))
     candidates = cur.fetchall()
     
     cur.execute("""
@@ -290,9 +290,9 @@ def generate_text_report():
     # 获取候选股
     cur.execute("""
         SELECT * FROM daily_candidates
-        WHERE snapshot_date = %s AND source = 'llm_multisource'
+        WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
         ORDER BY final_score DESC;
-    """, (today,))
+    """, (today, RUN_MODE))
     candidates = cur.fetchall()
     
     # 获取数据源统计
