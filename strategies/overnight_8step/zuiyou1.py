@@ -789,9 +789,18 @@ def fetch_market_sentiment() -> Tuple[int, str]:
             r = requests.get(market_url, headers=headers, timeout=10)
             market_data = r.json()
             if market_data.get('data'):
-                up_count = int(market_data['data'].get('f116', 1500))
-                down_count = int(market_data['data'].get('f117', 1500))
-            market_ok = True
+                raw_up = market_data['data'].get('f116', 1500)
+                raw_down = market_data['data'].get('f117', 1500)
+                # 数据验证：涨跌家数应该在合理范围内（100-6000）
+                if isinstance(raw_up, (int, float)) and 100 <= raw_up <= 6000:
+                    up_count = int(raw_up)
+                else:
+                    print(f"  ⚠️ 涨跌家数数据异常: f116={raw_up}，使用默认值1500")
+                if isinstance(raw_down, (int, float)) and 100 <= raw_down <= 6000:
+                    down_count = int(raw_down)
+                else:
+                    print(f"  ⚠️ 涨跌家数数据异常: f117={raw_down}，使用默认值1500")
+                market_ok = True
         except Exception as e:
             print(f"  ⚠️ 涨跌家数接口失败: {e}（其他维度仍可用）")
 
