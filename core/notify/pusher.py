@@ -34,7 +34,7 @@ def is_trading_day(d):
     """判断是否为交易日。委托给 core.utils.trading_calendar，含节假日识别。"""
     return _calendar_is_trading_day(d)
 
-MIN_SELECT_SCORE = 50
+MIN_SELECT_SCORE = 45
 
 
 

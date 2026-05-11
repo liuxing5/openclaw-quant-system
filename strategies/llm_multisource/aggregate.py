@@ -13,7 +13,7 @@ from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_d
 load_project_env()
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '25'))
+MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '45'))
 MAX_SELECTED = 5
 MIN_LIQUIDITY = 1e8
 SOURCE = 'llm_multisource'
@@ -213,15 +213,18 @@ def aggregate_today():
             if pct_chg > limit_threshold:
                 quant_score = max(0, quant_score - 30)
 
-            consensus = min(r['source_diversity'] / 2.0, 1.0)
-            llm_n = min(r['llm_score'] / 5.0, 1.0)
-            # 提及次数加成
+            # 共识度：单源 0.85，2 源 1.0
+            consensus_mult = 0.7 + 0.15 * min(r['source_diversity'], 2)
+
+            # LLM 归一化按实际分布校准：均值 1.75 对应 ~0.58
+            llm_n = min(r['llm_score'] / 3.0, 1.0)
             mention_bonus = min(0.2, r['mention_count'] * 0.03)
             llm_n = min(1.0, llm_n + mention_bonus)
-            quant_n = quant_score / 100.0  # 满分改为100
+            quant_n = quant_score / 100.0
 
+            # 加权算术平均代替几何平均（减少中等分被压缩）
             if llm_n > 0 and quant_n > 0:
-                final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
+                final = (0.45 * llm_n + 0.55 * quant_n) * consensus_mult * 100
             else:
                 final = 0
 
@@ -238,7 +241,7 @@ def aggregate_today():
             candidates.append({
                 'ts_code': r['ts_code'], 'stock_name': name_cache.get(r['ts_code']) or r['stock_name'],
                 'mention_count': r['mention_count'], 'source_diversity': r['source_diversity'],
-                'consensus_score': consensus, 'llm_score': llm_n * 100,
+                'consensus_score': consensus_mult, 'llm_score': llm_n * 100,
                 'quant_score': quant_score, 'final_score': final,
                 'logic_tags': r['logic_tags'], 'sources': r['sources'],
                 'close': close_price,
