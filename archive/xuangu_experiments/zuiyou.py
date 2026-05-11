@@ -832,7 +832,7 @@ def main():
     print("  ✅ Step4 市值50-200亿 ✅ Step5 量能递增   ✅ Step6 均线多头+压力检测")
     print("  ⚠️ Step7 分时均价线上方（需盘中人工确认）")
     print("  ⚠️ Step8 14:30创新高回踩入场（需盘中人工确认）")
-    print("─" * 70 + "\n")
+    print("─" * 45 + "\n")
 
 
 if __name__ == "__main__":

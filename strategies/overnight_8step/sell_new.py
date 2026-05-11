@@ -92,7 +92,7 @@ try:
         POSITIONS = [
             # {"code": "002439", "cost": 15.30, "path": "稳健", "entry_date": "2026-04-28"},
             # {"code": "601933", "cost": 4.10},
-            # {"code": "002510", "cost": 7.80},
+            {"code": "002472", "cost": 42.40},
             {"code": "603319", "cost": 40.04},
         ]
 except ImportError:
@@ -722,10 +722,10 @@ def auction_advice(code: str, cost: float, path: str, market_data: dict) -> Opti
 # ============================================================
 def run():
     now = get_beijing_time()
-    print("=" * 70)
+    print("=" * 45)
     print("  自动卖出系统 v2.2（含封板强度评估 + 跟踪止盈 + 状态持久化）")
     print(f"  运行时间: {now.strftime('%Y-%m-%d %H:%M:%S')}")
-    print("=" * 70)
+    print("=" * 45)
 
     if not POSITIONS:
         print("\n⚠️ 持仓列表为空，请编辑POSITIONS配置")
@@ -748,9 +748,9 @@ def run():
     # 09:20-09:25 集合竞价时段：给出挂单建议
     hhmm = now.hour * 100 + now.minute
     if 920 <= hhmm < 925:
-        print("─" * 70)
+        print("─" * 45)
         print("📢 集合竞价挂单建议（09:20-09:25）")
-        print("─" * 70)
+        print("─" * 45)
         for p in POSITIONS:
             advice = auction_advice(p["code"], p["cost"], p.get("path", "稳健"), market_data)
             if advice:
@@ -786,12 +786,12 @@ def run():
     results_sorted = sorted(results, key=lambda x: (-x["priority"], -x["profit_pct"]))
 
     print("📊 卖出建议：")
-    print("─" * 130)
+    print("─" * 45)
     print(
         f"{'代码':<10}{'名称':<10}{'路径':<6}{'现价':>7}{'成本':>7}"
         f"{'盈亏%':>8}{'峰值%':>8}{'回撤%':>8}{'竞价%':>8}  {'动作':<18}{'优先':>4}  理由"
     )
-    print("─" * 130)
+    print("─" * 45)
 
     for row in results_sorted:
         print(
@@ -883,7 +883,7 @@ def run():
     print("    极弱(1-5%)→竞价清 | 无承接(<1%)→平开即出")
     print("    (按流通市值动态调整: 小盘×1.5 / 中盘×1.0 / 大盘×0.5)")
     print(f"  状态文件：{CONFIG['state_file']}（每次运行自动更新最高盈利点）")
-    print("=" * 70)
+    print("=" * 45)
 
 
 if __name__ == "__main__":

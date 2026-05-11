@@ -378,9 +378,9 @@ def run():
     # 集合竞价时段
     hhmm = now.hour * 100 + now.minute
     if 920 <= hhmm < 925:
-        print("─" * 70)
+        print("─" * 45)
         print("📢 集合竞价挂单建议（09:20-09:25）")
-        print("─" * 70)
+        print("─" * 45)
         for p in positions:
             advice = auction_advice(p["code"], p["cost"], market_data)
             if advice:
@@ -403,12 +403,12 @@ def run():
     results_sorted = sorted(results, key=lambda x: (-x["priority"], -x["profit_pct"]))
 
     print("📊 卖出建议：")
-    print("─" * 120)
+    print("─" * 45)
     print(
         f"{'代码':<10}{'名称':<10}{'现价':>7}{'成本':>7}"
         f"{'盈亏%':>8}{'峰值%':>8}{'回撤%':>8}{'竞价%':>8}  {'动作':<16}{'优先':>4}  理由"
     )
-    print("─" * 120)
+    print("─" * 45)
 
     for row in results_sorted:
         print(

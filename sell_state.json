@@ -1,0 +1,14 @@
+{
+  "603319": {
+    "cost": 40.04,
+    "high_water": 1.0239760239760332,
+    "high_water_price": 40.45,
+    "take1_done": false,
+    "take2_done": false,
+    "limit_up_hit": false,
+    "limit_strength_evaluated": false,
+    "limit_strength_level": 0,
+    "limit_strength_ratio": 0.0,
+    "first_seen": "2026-05-11 09:33:21"
+  }
+}
