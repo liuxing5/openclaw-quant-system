@@ -180,9 +180,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         {% endif %}
         
-        {% if eight_step_picks %}
+        {% if step_date %}
         <div class="card">
-            <h2>🔮 八步法候选 ({{ eight_step_picks|length }} 只){% if step_date %}<span style="font-size:13px;color:#888;margin-left:8px;">{{ step_date }}</span>{% endif %}</h2>
+            <h2>🔮 八步法候选{% if eight_step_picks %} ({{ eight_step_picks|length }} 只){% endif %}<span style="font-size:13px;color:#888;margin-left:8px;">{{ step_date }}</span></h2>
+            {% if eight_step_picks %}
             <div class="stock-grid">
                 {% for c in eight_step_picks %}
                 <div class="stock-card selected">
@@ -243,6 +244,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 </div>
                 {% endfor %}
             </div>
+            {% else %}
+            <p style="color: #888; text-align: center; padding: 20px;">今日八步法扫描无候选标的</p>
+            {% endif %}
         </div>
         {% endif %}
         
