@@ -749,43 +749,50 @@ def fetch_akshare_jgdy():
 
 
 def store_signals(rows):
-    """批量入库（去重靠 content_hash，自动关联 source_id）"""
+    """批量入库（去重靠 content_hash，自动关联 source_id）。
+
+    历史问题：之前是逐条 cur.execute + 单条失败 conn.rollback()。
+    psycopg2 的 rollback 是事务级的——单条失败会撤销之前所有已成功的
+    INSERT，下一批又冲突 content_hash 反复 noop，最坏整天的信号入不了库。
+
+    现在改用 execute_values 单次批量 + ON CONFLICT DO NOTHING。整批是一个
+    原子事务：要么全成功（含已存在的跳过），要么全回滚（极少数 schema 错
+    误）。返回值用 RETURNING id 真实统计入库数。
+    """
     if not rows:
         return 0
     conn = get_db(); cur = conn.cursor()
+    try:
+        cur.execute("SELECT id, name FROM feed_sources;")
+        source_map = {r[1]: r[0] for r in cur.fetchall()}
+        logger.info(f"加载 {len(source_map)} 个数据源映射: {list(source_map.keys())}")
 
-    # 预加载 feed_sources 映射
-    cur.execute("SELECT id, name FROM feed_sources;")
-    source_map = {row[1]: row[0] for row in cur.fetchall()}
-    logger.info(f"加载 {len(source_map)} 个数据源映射: {list(source_map.keys())}")
+        # row 结构: (placeholder, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
+        prepared = [(source_map.get(r[1]),) + r[1:] for r in rows]
 
-    inserted = 0
-    for row in rows:
-        try:
-            # row 结构: (source_id_placeholder, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
-            source_name = row[1]
-            source_id = source_map.get(source_name)
-            if source_id is None:
-                logger.debug(f"数据源 '{source_name}' 未在 feed_sources 中注册，source_id 设为 NULL")
-
-            # 替换 row 中的 source_id 占位符
-            row_with_id = (source_id,) + row[1:]
-
-            cur.execute("""
-                INSERT INTO raw_signals
-                (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (content_hash) DO NOTHING;
-            """, row_with_id)
-            if cur.rowcount > 0:
-                inserted += 1
-        except Exception as e:
-            logger.debug(f"insert err: {e}")
-            conn.rollback()
-            continue
-    conn.commit()
-    cur.close(); conn.close()
-    return inserted
+        result = execute_values(
+            cur,
+            """
+            INSERT INTO raw_signals
+            (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
+            VALUES %s
+            ON CONFLICT (content_hash) DO NOTHING
+            RETURNING id;
+            """,
+            prepared,
+            page_size=500,
+            fetch=True,
+        )
+        inserted = len(result) if result else 0
+        conn.commit()
+        return inserted
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"store_signals 批量入库失败，整批回滚: {e}")
+        return 0
+    finally:
+        cur.close()
+        conn.close()
 
 
 def main():
