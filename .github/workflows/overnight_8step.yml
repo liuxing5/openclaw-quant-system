@@ -216,13 +216,12 @@ jobs:
         os.environ['TELEGRAM_BOT_TOKEN'] = os.environ['BOT_TOKEN']
         os.environ['TELEGRAM_CHAT_ID'] = os.environ['CHAT_ID']
         from notifyTelegram import send_message
-        msg = f\"📊 {os.environ['TITLE']}\\n\"
-        msg += f\" {os.environ['RUN_TIME']}\\n\"
-        msg += f\"{'='*40}\\n\\n\"
-        msg += '⚠️ 脚本运行成功但无输出内容\\n'
-        msg += '可能原因：\\n'
-        msg += '• 当前无符合条件的标的\\n'
-        msg += '• 市场整体低迷，暂无推荐\\n'
+        msg = f"📊 {os.environ['TITLE']}\n"
+        msg += f" {os.environ['RUN_TIME']}\n\n"
+        msg += '⚠️ 脚本运行成功但无输出内容\n'
+        msg += '可能原因：\n'
+        msg += '• 当前无符合条件的标的\n'
+        msg += '• 市场整体低迷，暂无推荐\n'
         msg += '• 空仓也是仓位，保持观望'
         send_message(msg)
         "

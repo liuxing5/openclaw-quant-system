@@ -15,6 +15,8 @@ GitHub Actions Telegram 推送脚本
 import os
 import sys
 import time
+import re
+from datetime import datetime
 
 # 添加项目路径到 sys.path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'strategies', 'overnight_8step'))
@@ -24,6 +26,34 @@ try:
 except ImportError:
     print("⚠️ 无法导入 notifyTelegram 模块")
     sys.exit(1)
+
+
+def format_run_time(run_time: str) -> str:
+    """格式化运行时间为北京时间"""
+    if not run_time:
+        return ""
+    try:
+        dt = datetime.fromisoformat(run_time.replace('Z', '+00:00'))
+        from datetime import timedelta
+        beijing_dt = dt + timedelta(hours=8)
+        return beijing_dt.strftime("%Y-%m-%d %H:%M")
+    except Exception:
+        return run_time
+
+
+def clean_separators(text: str) -> str:
+    """去除所有 ===、--- 和 ━━ 分隔线，替换为空行"""
+    lines = text.split('\n')
+    cleaned = []
+    for line in lines:
+        stripped = line.strip()
+        if re.match(r'^[=\-━]{3,}$', stripped):
+            cleaned.append('')
+        else:
+            cleaned.append(line)
+    result = '\n'.join(cleaned)
+    result = re.sub(r'\n{3,}', '\n\n', result)
+    return result
 
 
 def main():
@@ -69,10 +99,10 @@ def main():
             sys.exit(0)
 
         # 构建推送消息
+        beijing_time = format_run_time(run_time)
         msg = f"📊 {title}\n"
-        msg += f"⏰ {run_time}\n"
-        msg += f"{'='*40}\n\n"
-        msg += content
+        msg += f" {beijing_time}\n\n"
+        msg += clean_separators(content)
 
         print(f"发送输出内容 ({len(content)} 字符)")
         
