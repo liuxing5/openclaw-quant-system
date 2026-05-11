@@ -1706,9 +1706,10 @@ def _format_funnel(rejects: dict, total: int, results: list = None) -> str:
         ("量比", ">=1", ["量比"]),
         ("换手率", ">=5%,<=10%", ["换手率"]),
         ("市值过滤", "50-500亿/30-200亿", ["市值"]),
-        ("量能递增", "", []),
+        ("成交额", ">=200亿/100亿", ["成交额"]),
         ("均线+压力检测", "", ["均线", "压力"]),
         ("乖离严重", "超阈值5%+", ["乖离严重"]),
+        ("得分不足", "低于阈值", ["得分不足"]),
     ]
 
     lines = []
@@ -1725,8 +1726,10 @@ def _format_funnel(rejects: dict, total: int, results: list = None) -> str:
         known_keys.update(keys)
     other_count = sum(v for k, v in rejects.items() if k not in known_keys and v > 0)
     if other_count > 0:
+        # 列出"其他"中的具体原因
+        other_reasons = [f"{k}: {v}只" for k, v in rejects.items() if k not in known_keys and v > 0]
         remaining -= other_count
-        lines.append(f"  ✗ 其他 筛选剩 {max(0, remaining)} 只")
+        lines.append(f"  ✗ 其他 [{', '.join(other_reasons)}] 筛选剩 {max(0, remaining)} 只")
 
     lines.append(f"  ✓ 通过: {max(0, remaining)} 只")
 
