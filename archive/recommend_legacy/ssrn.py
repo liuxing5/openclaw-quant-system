@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import numpy as np
 from sqlalchemy import create_engine
@@ -8,11 +9,11 @@ warnings.filterwarnings('ignore')
 
 # ================= 1. 系统配置 =================
 DB_CONFIG = {
-    "host": "49.233.189.132",
-    "port": "5432",
-    "database": "quant_system",
-    "user": "quant",
-    "password": "d1cf4fce072f6fc6aeb79dae"
+    "host": os.getenv('POSTGRES_HOST', '49.233.189.132'),
+    "port": os.getenv('POSTGRES_PORT', '5432'),
+    "database": os.getenv('POSTGRES_DB', 'quant_system'),
+    "user": os.getenv('POSTGRES_USER', 'quant'),
+    "password": os.getenv('POSTGRES_PASSWORD', '')
 }
 
 STRATEGY_PARAMS = {

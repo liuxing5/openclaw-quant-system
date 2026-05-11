@@ -15,6 +15,7 @@ def get_db(use_dict_cursor: bool = False):
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),
+        sslmode=os.getenv('POSTGRES_SSLMODE', 'require'),
     )
     if use_dict_cursor:
         conn.cursor_factory = RealDictCursor

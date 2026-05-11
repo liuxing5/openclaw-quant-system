@@ -1,9 +1,8 @@
+import os
 import psycopg2
-import json
+from core.db.connection import get_db
 
-conn = psycopg2.connect(
-    'postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres'
-)
+conn = get_db()
 cur = conn.cursor()
 
 # 查看 daily_candidates 最新数据
