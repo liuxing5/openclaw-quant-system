@@ -139,23 +139,18 @@ async def push_daily_candidates():
     llm_cands = cur.fetchall()
     logger.info(f"LLM候选: snapshot_date={today}, selected=TRUE, source='llm_multisource', run_mode={RUN_MODE} → {len(llm_cands)} 条")
 
-    cur.execute("""
-        SELECT * FROM daily_candidates
-        WHERE snapshot_date=%s AND selected=TRUE AND source='overnight_8step'
-        ORDER BY final_score DESC;
-    """, (today,))
-    step_cands = cur.fetchall()
-    logger.info(f"八步法候选: snapshot_date={today}, selected=TRUE, source='overnight_8step' → {len(step_cands)} 条")
+    # 八步法候选由 zuiyou1.py 在 15:10 独立推送（notifyTelegram.py），
+    # core pusher 只负责 LLM 多源策略，避免 Telegram 重复推送。
 
-    if not llm_cands and not step_cands:
+    if not llm_cands:
         cur.execute("""
             SELECT COUNT(*) as cnt FROM daily_candidates
             WHERE snapshot_date=%s;
         """, (today,))
         row = cur.fetchone()
         total = row['cnt'] if hasattr(row, 'keys') else row[0]
-        msg = (f"📊 <b>{today}</b> {'盘前参考' if RUN_MODE == 'morning' else '盘后复盘'}\n\n"
-               f"{'今日' if RUN_MODE == 'morning' else '明日'}无符合条件的推荐\n"
+        msg = (f"🤖 <b>{today}</b> LLM 多源策略 {'盘前参考' if RUN_MODE == 'morning' else '盘后复盘'}\n\n"
+               f"{'今日' if RUN_MODE == 'morning' else '明日'}无符合条件的 LLM 推荐\n"
                f"（共分析 {total} 只候选股，均未达到阈值）\n\n"
                f"建议: 空仓观望 或 持有现有仓位")
         await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
@@ -187,9 +182,9 @@ async def push_daily_candidates():
         'AKShare-热点概念',
     ]
     
-    total_cands = len(llm_cands) + len(step_cands)
+    total_cands = len(llm_cands)
     stats_lines = []
-    stats_lines.append(f" <b>{today}</b> {header}")
+    stats_lines.append(f"🤖 <b>{today}</b> LLM 多源策略 {header}")
     stats_lines.append(f"共 {total_cands} 只\n")
     stats_lines.append("数据采集统计：")
     for src in all_sources:
@@ -226,7 +221,6 @@ async def push_daily_candidates():
             lines.append("")
 
     _append_candidates(llm_cands, "🤖", "LLM 多源策略")
-    _append_candidates(step_cands, "🔮", "八步法")
     
     msg = '\n'.join(lines)
     

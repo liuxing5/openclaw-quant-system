@@ -32,16 +32,43 @@ if page == "📈 今日候选":
     st.header("今日候选股")
     
     selected_date = st.date_input("选择日期", value=date.today())
-    
+
+    col_filter1, col_filter2 = st.columns(2)
+    with col_filter1:
+        source_options = {
+            "🤖 LLM 多源策略": "llm_multisource",
+            "🔮 八步法": "overnight_8step",
+        }
+        selected_sources = st.multiselect(
+            "策略来源",
+            list(source_options.keys()),
+            default=list(source_options.keys()),
+        )
+        source_values = [source_options[s] for s in selected_sources]
+    with col_filter2:
+        run_mode_options = {"盘前(morning)": "morning", "盘中(intraday)": "intraday", "盘后(afternoon)": "afternoon"}
+        selected_modes = st.multiselect(
+            "运行模式",
+            list(run_mode_options.keys()),
+            default=list(run_mode_options.keys()),
+        )
+        mode_values = [run_mode_options[m] for m in selected_modes]
+
+    if not source_values or not mode_values:
+        st.warning("请至少选择一个策略来源和运行模式")
+        st.stop()
+
     df = query_df("""
-        SELECT ts_code, stock_name, final_score, llm_score, quant_score, 
+        SELECT ts_code, stock_name, final_score, llm_score, quant_score,
                consensus_score, mention_count, source_diversity,
-               selected, position_pct, entry_low, entry_high, stop_loss, 
-               target_1, target_2, logic_tags
-        FROM daily_candidates 
-        WHERE snapshot_date = %s 
+               selected, position_pct, entry_low, entry_high, stop_loss,
+               target_1, target_2, logic_tags, source, run_mode
+        FROM daily_candidates
+        WHERE snapshot_date = %s
+          AND source = ANY(%s)
+          AND run_mode = ANY(%s)
         ORDER BY final_score DESC;
-    """, (selected_date,))
+    """, (selected_date, source_values, mode_values))
     
     if df.empty:
         st.info(f"{selected_date} 暂无候选数据")
@@ -51,8 +78,14 @@ if page == "📈 今日候选":
                 return ['background-color: #d4edda'] * len(row)
             return [''] * len(row)
         
+        source_labels = {"llm_multisource": "🤖 LLM", "overnight_8step": "🔮 八步法"}
+        mode_labels = {"morning": "盘前", "intraday": "盘中", "afternoon": "盘后"}
+        display_df = df.copy()
+        display_df["来源"] = display_df["source"].map(source_labels).fillna(display_df["source"])
+        display_df["模式"] = display_df["run_mode"].map(mode_labels).fillna(display_df["run_mode"])
+
         st.dataframe(
-            df.style.apply(highlight_selected, axis=1),
+            display_df.style.apply(highlight_selected, axis=1),
             use_container_width=True,
             height=600,
             column_config={
@@ -63,6 +96,10 @@ if page == "📈 今日候选":
                 "quant_score": st.column_config.NumberColumn("量化分", format="%.1f"),
                 "selected": "已选中",
                 "position_pct": st.column_config.NumberColumn("仓位%", format="%.0f%%"),
+                "来源": "策略来源",
+                "模式": "运行模式",
+                "source": None,
+                "run_mode": None,
             }
         )
         
