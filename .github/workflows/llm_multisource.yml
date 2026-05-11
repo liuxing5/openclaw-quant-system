@@ -53,6 +53,12 @@ jobs:
       - name: Determine run mode
         id: mode
         run: |
+          # workflow_dispatch 时优先用手动选的 mode（避免 13:30 BJT 误判 afternoon）
+          if [ -n "${{ inputs.run_mode }}" ]; then
+            echo "mode=${{ inputs.run_mode }}" >> $GITHUB_OUTPUT
+            echo "手动触发: ${{ inputs.run_mode }}"
+            exit 0
+          fi
           HOUR=$(date -u +%H)
           if [ "$HOUR" -lt 2 ]; then
             echo "mode=morning" >> $GITHUB_OUTPUT
@@ -64,34 +70,58 @@ jobs:
             echo "mode=afternoon" >> $GITHUB_OUTPUT
             echo "盘后模式 (UTC ${HOUR}:30 = 北京时间 15:30)"
           fi
-      
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-      
+
       - name: Install dependencies
         run: pip install -r strategies/llm_multisource/requirements.txt
 
+      # 节假日提前退出，否则 collector / extractor / LLM 全套白跑，浪费 LLM API 配额
+      - name: Check if trading day
+        id: check_trading
+        run: |
+          python3 -c "
+          from core.utils.trading_calendar import is_trading_day
+          from datetime import datetime, timedelta, timezone
+          beijing_date = (datetime.now(timezone.utc) + timedelta(hours=8)).date()
+          is_trading = is_trading_day(beijing_date)
+          print(f'北京时间: {beijing_date} ({\"交易日\" if is_trading else \"休市日\"})')
+          import os
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f'is_trading={\"true\" if is_trading else \"false\"}\n')
+          "
+
+      - name: Skip on non-trading day
+        if: steps.check_trading.outputs.is_trading == 'false'
+        run: echo "⏭️ 非 A 股交易日，跳过 LLM 多源策略全流程"
+
       - name: Setup & collect
+        if: steps.check_trading.outputs.is_trading == 'true'
         run: |
           python -m core.db.apply_schema
           python strategies/llm_multisource/seed_sources.py
           python strategies/llm_multisource/sync_stock_info.py
 
       - name: Collect market data
+        if: steps.check_trading.outputs.is_trading == 'true'
         run: |
           python -m core.market_data.quotes
           python strategies/llm_multisource/collector.py --once
 
       - name: Fast path extraction (structured data)
+        if: steps.check_trading.outputs.is_trading == 'true'
         run: python strategies/llm_multisource/structured_extraction.py
 
       - name: Extract signals with LLM (news + research only)
+        if: steps.check_trading.outputs.is_trading == 'true'
         run: python strategies/llm_multisource/extractor.py --once
 
       - name: Aggregate & report
+        if: steps.check_trading.outputs.is_trading == 'true'
         env:
           RUN_MODE: ${{ steps.mode.outputs.mode }}
         run: |
@@ -101,6 +131,7 @@ jobs:
           python -m core.notify.pusher
 
       - name: Deploy to GitHub Pages
+        if: steps.check_trading.outputs.is_trading == 'true'
         uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.GH_PAT }}

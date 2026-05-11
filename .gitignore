@@ -110,6 +110,10 @@ credentials.json
 *.key
 *.pem
 
+# One-off DB inspection scripts: must read creds from env, never hardcode
+check_supabase.py
+check_daily_candidates.py
+
 # Specific exclusions for this project
 strategies/overnight_8step/industry_cache.json
 run80.pid
@@ -132,3 +136,6 @@ ai_investment_system/
 .learnings/
 assets/
 scripts/
+# 上面 scripts/ 不带前导 / 的写法会误匹配 .github/scripts/，显式放回
+!.github/scripts/
+!.github/scripts/**

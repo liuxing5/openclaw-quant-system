@@ -47,43 +47,15 @@ ON CONFLICT (snapshot_date, ts_code, run_mode, source) DO UPDATE SET
 """
 
 
-def ensure_source_column(conn) -> None:
-    """One-shot migration: add `source` column + new unique constraint.
-
-    Idempotent. Safe to call from any caller before its INSERT.
-    """
-    cur = conn.cursor()
-    try:
-        cur.execute("""
-            SELECT column_name FROM information_schema.columns
-            WHERE table_schema = 'public'
-              AND table_name = 'daily_candidates'
-              AND column_name = 'source';
-        """)
-        if not cur.fetchone():
-            cur.execute("""
-                ALTER TABLE daily_candidates
-                ADD COLUMN source VARCHAR(30) NOT NULL DEFAULT 'llm_multisource';
-            """)
-            conn.commit()
-
-        cur.execute("""
-            SELECT conname FROM pg_constraint
-            WHERE conname = 'daily_candidates_unique_source';
-        """)
-        if not cur.fetchone():
-            cur.execute("""
-                ALTER TABLE daily_candidates
-                DROP CONSTRAINT IF EXISTS daily_candidates_unique_mode;
-            """)
-            cur.execute("""
-                ALTER TABLE daily_candidates
-                ADD CONSTRAINT daily_candidates_unique_source
-                UNIQUE (snapshot_date, ts_code, run_mode, source);
-            """)
-            conn.commit()
-    finally:
-        cur.close()
+# 历史上 write_candidates 每次都会调一个 ensure_source_column 函数动态
+# 探测 + ALTER TABLE。问题：
+#   1) Supabase pgbouncer 模式下 DDL 拿表锁，与并发 workflow 撞锁可能阻塞
+#      5-10 秒，14:30/15:10 zuiyou1 配的 15min timeout 容易撞顶
+#   2) 函数内部 conn.commit() 会强制提交调用方未提交的 DML，破坏
+#      aggregate.py "DELETE+INSERT 同事务" 的原子性承诺
+# schema.sql 已经有 source 列和 daily_candidates_unique_source 约束，
+# core.db.apply_schema 在 workflow 启动时跑过，热路径不再做 DDL 探测。
+# 历史迁移函数完全删除——如有新迁移需求，应该加到 schema.sql 走 apply_schema。
 
 
 def _normalize(item: Mapping[str, Any], snapshot_date, source: str, run_mode: str) -> dict:
@@ -141,7 +113,6 @@ def write_candidates(
     if own_conn:
         conn = get_db()
     try:
-        ensure_source_column(conn)
         cur = conn.cursor()
         for it in items:
             cur.execute(_INSERT_SQL, _normalize(it, snapshot_date, source, run_mode))

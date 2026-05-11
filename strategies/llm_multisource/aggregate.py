@@ -348,6 +348,11 @@ def aggregate_today():
             if levels:
                 c.update(levels)
         n = write_candidates(observation, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
+        # 兜底：当 observation 也为空时，write_candidates 内部 early return
+        # 不会触发 commit，前面 DELETE 会随连接关闭回滚 → 旧候选保留，
+        # pusher 会拿到上次的 selected=TRUE 推过期建议。显式 commit 一次。
+        if n == 0:
+            conn.commit()
         cur.close(); conn.close()
         logger.info(f"写入 {n} 条观察记录到 daily_candidates (snapshot_date={today})")
         return

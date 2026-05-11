@@ -15,55 +15,26 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def apply_schema():
+    """Apply schema.sql in one shot.
+
+    psycopg2 的 cursor.execute() 原生支持单次执行多条以分号分隔的语句，
+    比手写 split(';') 切分更鲁棒：不会被 DO $$ ... $$ 块、字符串内分号、
+    -- 注释里的分号搞坏。
+    schema.sql 里所有 DDL 都用了 IF NOT EXISTS，重复跑安全；不再用
+    "已存在就吞错"的兜底——遇到真错误必须 fail-fast，不然会出现"表/列
+    没建成功但 apply 显示绿"的假阳性。
+    """
     conn = get_db()
     conn.autocommit = True
     cur = conn.cursor()
-    
-    with open(os.path.join(BASE_DIR, 'schema.sql'), 'r', encoding='utf-8') as f:
-        content = f.read()
-    
-    # Split by semicolon but keep comments and empty lines separate
-    statements = []
-    current_stmt = []
-    
-    for line in content.split('\n'):
-        # Skip empty lines and comments
-        if not line.strip() or line.strip().startswith('--'):
-            continue
-        
-        current_stmt.append(line)
-        
-        if ';' in line:
-            # Remove the semicolon and add to statements
-            stmt = '\n'.join(current_stmt).replace(';', '').strip()
-            if stmt:
-                statements.append(stmt)
-            current_stmt = []
-    
-    # Add any remaining statement
-    if current_stmt:
-        stmt = '\n'.join(current_stmt).strip()
-        if stmt:
-            statements.append(stmt)
-    
-    # Execute each statement
-    for i, stmt in enumerate(statements):
-        try:
-            cur.execute(stmt)
-            print(f"✓ Executed statement {i+1}")
-        except Exception as e:
-            # Handle common errors gracefully
-            error_msg = str(e).lower()
-            if 'already exists' in error_msg or 'duplicate' in error_msg:
-                print(f"⚠️ Statement {i+1} skipped (already exists)")
-            elif 'column "source" does not exist' in error_msg:
-                print(f"⚠️ Statement {i+1} skipped (column already handled)")
-            else:
-                print(f"❌ Statement {i+1} failed: {e}")
-    
-    cur.close()
-    conn.close()
-    print("\nSchema applied successfully")
+    try:
+        with open(os.path.join(BASE_DIR, 'schema.sql'), 'r', encoding='utf-8') as f:
+            schema_sql = f.read()
+        cur.execute(schema_sql)
+        print("✓ schema.sql applied")
+    finally:
+        cur.close()
+        conn.close()
 
 
 if __name__ == '__main__':

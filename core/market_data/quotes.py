@@ -296,7 +296,7 @@ def fetch_with_yfinance():
             pct_chg = ((latest['Close'] - prev['Close']) / prev['Close'] * 100) if prev['Close'] != 0 else 0
 
             rows.append((
-                code.replace('.SS', '.SH').replace('.SZ', '.SZ'),
+                code.replace('.SS', '.SH'),
                 today,
                 float(latest['Open']), float(latest['High']),
                 float(latest['Low']), float(latest['Close']),
