@@ -236,3 +236,24 @@ jobs:
         RUN_TIME: ${{ github.run_started_at }}
         ACTION: error
       run: python3 .github/scripts/send_telegram.py
+
+    - name: Generate report (8step only)
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      env:
+        RUN_MODE: afternoon
+        POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+        POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+        POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      run: |
+        pip install jinja2 psycopg2-binary
+        python strategies/llm_multisource/generate_report.py
+
+    - name: Deploy to GitHub Pages (8step)
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        personal_token: ${{ secrets.GH_PAT }}
+        publish_dir: ./strategies/llm_multisource/docs
+        keep_files: true

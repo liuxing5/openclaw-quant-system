@@ -292,22 +292,37 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>"""
 
 
-def generate_report():
+def _get_report_snapshot_date(cur):
     today = get_beijing_date()
+    cur.execute("""
+        SELECT snapshot_date
+        FROM daily_candidates
+        WHERE source IN ('llm_multisource', 'overnight_8step')
+        ORDER BY snapshot_date DESC
+        LIMIT 1;
+    """)
+    row = cur.fetchone()
+    if row:
+        return row['snapshot_date']
+    return today
+
+
+def generate_report():
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    snapshot_date = _get_report_snapshot_date(cur)
     
     cur.execute("""
         SELECT * FROM daily_candidates
         WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
         ORDER BY final_score DESC;
-    """, (today, RUN_MODE))
+    """, (snapshot_date, RUN_MODE))
     candidates = cur.fetchall()
     
     cur.execute("""
         SELECT * FROM daily_candidates
         WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
         ORDER BY final_score DESC;
-    """, (today,))
+    """, (snapshot_date,))
     eight_step_picks = cur.fetchall()
     
     cur.execute("""
@@ -316,7 +331,7 @@ def generate_report():
         WHERE fetch_time >= %s
         GROUP BY source_name, source_tier
         ORDER BY signal_count DESC;
-    """, (today - timedelta(days=2),))
+    """, (snapshot_date - timedelta(days=2),))
     source_stats = cur.fetchall()
     
     cur.execute("""
@@ -338,7 +353,7 @@ def generate_report():
     
     template = Template(HTML_TEMPLATE)
     html = template.render(
-        date=str(today),
+        date=str(snapshot_date),
         generated_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
         candidates=[dict(c) for c in candidates],
         eight_step_picks=[dict(c) for c in eight_step_picks],
@@ -348,7 +363,7 @@ def generate_report():
         run_mode=RUN_MODE,
     )
     
-    output_dir = os.path.join(BASE_DIR, 'docs', str(today))
+    output_dir = os.path.join(BASE_DIR, 'docs', str(snapshot_date))
     os.makedirs(output_dir, exist_ok=True)
     with open(os.path.join(output_dir, 'index.html'), 'w', encoding='utf-8') as f:
         f.write(html)
@@ -363,21 +378,21 @@ def generate_report():
 
 def generate_text_report():
     """生成文本格式的报告"""
-    today = get_beijing_date()
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    snapshot_date = _get_report_snapshot_date(cur)
     
     cur.execute("""
         SELECT * FROM daily_candidates
         WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
         ORDER BY final_score DESC;
-    """, (today, RUN_MODE))
+    """, (snapshot_date, RUN_MODE))
     candidates = cur.fetchall()
     
     cur.execute("""
         SELECT * FROM daily_candidates
         WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
         ORDER BY final_score DESC;
-    """, (today,))
+    """, (snapshot_date,))
     eight_step_picks = cur.fetchall()
     
     cur.execute("""
@@ -386,14 +401,14 @@ def generate_text_report():
         WHERE fetch_time >= %s
         GROUP BY source_name
         ORDER BY signal_count DESC;
-    """, (today - timedelta(days=2),))
+    """, (snapshot_date - timedelta(days=2),))
     source_stats = cur.fetchall()
     
     cur.close(); conn.close()
     
     mode_text = "盘后复盘" if RUN_MODE == 'afternoon' else "盘前参考"
     lines = []
-    lines.append(f"{today} {mode_text}")
+    lines.append(f"{snapshot_date} {mode_text}")
     lines.append("")
     lines.append("数据采集开始：")
     
