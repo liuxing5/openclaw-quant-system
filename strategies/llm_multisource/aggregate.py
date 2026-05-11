@@ -13,7 +13,7 @@ from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_d
 load_project_env()
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
-MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '45'))
+MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '25'))
 MAX_SELECTED = 5
 MIN_LIQUIDITY = 1e8
 SOURCE = 'llm_multisource'
@@ -127,13 +127,11 @@ def aggregate_today():
           ) AS source_diversity,
           COUNT(DISTINCT e.source_name) AS source_count_raw,
           AVG(e.strength * COALESCE(e.confidence,0.5)) AS llm_score,
-          STDDEV_POP(e.confidence) AS conf_dispersion,
           ARRAY_AGG(DISTINCT e.logic_category) AS logic_tags,
           JSON_AGG(JSON_BUILD_OBJECT(
-            'source', e.source_name, 'tier', COALESCE(fs.tier, 2), 'category', COALESCE(fs.category, 'other'),
-            'strength', e.strength, 'logic', e.logic_summary, 'pub_time', e.pub_time
-          )) AS sources,
-          ARRAY_AGG(e.pub_time) AS pub_times
+            'source', e.source_name, 'tier', COALESCE(fs.tier, 2), 'strength', e.strength,
+            'logic', e.logic_summary, 'pub_time', e.pub_time
+          )) AS sources
         FROM extracted_recommendations e
         LEFT JOIN feed_sources fs ON fs.name = e.source_name
         WHERE e.pub_time >= %s
@@ -215,55 +213,17 @@ def aggregate_today():
             if pct_chg > limit_threshold:
                 quant_score = max(0, quant_score - 30)
 
-            # ===== A+C+D+E：Sigmoid + Tier 加权共识 + 偏科 Gate + 时间衰减 + Logic Diversity + Confidence Dispersion =====
+            consensus = min(r['source_diversity'] / 2.0, 1.0)
+            llm_n = min(r['llm_score'] / 5.0, 1.0)
+            # 提及次数加成
+            mention_bonus = min(0.2, r['mention_count'] * 0.03)
+            llm_n = min(1.0, llm_n + mention_bonus)
+            quant_n = quant_score / 100.0  # 满分改为100
 
-            now_ts = datetime.now(BEIJING_TZ).timestamp()
-
-            # D. 时间衰减：每条 source 按 pub_time 算半衰期 36h
-            TIER_WEIGHT = {1: 1.0, 2: 0.7, 3: 0.45}
-            cat_weights = {}
-            for s in (r['sources'] or []):
-                cat = s.get('category') or s.get('source') or 'other'
-                base_w = TIER_WEIGHT.get(s.get('tier'), 0.45)
-                # 时效衰减
-                pub_ts = s.get('pub_time')
-                if pub_ts:
-                    if isinstance(pub_ts, datetime):
-                        age_h = max(0, (now_ts - pub_ts.timestamp()) / 3600)
-                    else:
-                        age_h = 0
-                else:
-                    age_h = 0
-                decay = 0.5 ** (age_h / 36)  # 36h 半衰期
-                w = base_w * decay
-                cat_weights[cat] = max(cat_weights.get(cat, 0), w)
-            weighted_div = sum(cat_weights.values())
-            consensus = 1.0 - math.exp(-weighted_div / 1.2)
-
-            # D. Logic diversity：logic_tags 的不同类目数
-            logic_div = len(set(r['logic_tags'] or []))
-            logic_mult = 1 + 0.05 * min(logic_div, 4)  # 4 类逻辑 +20%
-
-            # LLM 子分 sigmoid，中位 1.5 处斜率最大
-            llm_n = 1.0 / (1.0 + math.exp(-(r['llm_score'] - 1.5) / 0.6))
-            llm_n = min(1.0, llm_n + min(0.15, r['mention_count'] * 0.03))
-
-            # E. Confidence dispersion：LLM 自己都打架时打折
-            conf_disp = float(r.get('conf_dispersion') or 0)
-            llm_n *= 1 - 0.3 * min(conf_disp / 0.3, 1)  # 最高扣 30%
-
-            # Quant 子分 sigmoid，中位 50
-            quant_n = 1.0 / (1.0 + math.exp(-(quant_score - 50) / 12))
-
-            # 加权算术平均
             if llm_n > 0 and quant_n > 0:
-                final = (0.4 * llm_n + 0.6 * quant_n) * (0.6 + 0.4 * consensus) * logic_mult * 100
+                final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
             else:
                 final = 0
-
-            # Gate：任一项太弱大幅降权
-            if llm_n < 0.25 or quant_n < 0.20:
-                final *= 0.6
 
             has_lhb = any('龙虎榜' in (s.get('source') or '') for s in (r['sources'] or []))
             has_zt = any('涨停' in (s.get('source') or '') for s in (r['sources'] or []))
