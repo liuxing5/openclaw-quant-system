@@ -11,14 +11,14 @@
   - 后续由 core/market_data/quotes.py 每日增量采集
 
 参数：
-  --days  回填天数（默认 300）
+  --days  回填天数（默认 350）
   --batch 每批写入条数（默认 500）
   --sleep 每只股票间休眠秒（默认 0.08s）
   --limit 限制股票数（调试用，默认无限制）
 
 用法：
-  # 全量回填 300 天
-  python strategies/funnel_strategy/backfill_klines.py --days 300
+  # 全量回填 350 天
+  python strategies/funnel_strategy/backfill_klines.py --days 350
 
   # 测试：只回填 10 只股票 30 天
   python strategies/funnel_strategy/backfill_klines.py --days 30 --limit 10
@@ -159,7 +159,7 @@ def _insert_batch(ts_code: str, rows: list) -> int:
 
 
 def run_backfill(
-    days: int = 300,
+    days: int = 350,
     batch_size: int = 500,
     sleep_sec: float = 0.08,
     limit: int = 0,
@@ -258,8 +258,8 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='全量历史K线回填')
-    parser.add_argument('--days', type=int, default=300,
-                        help='回填天数 (default: 300)')
+    parser.add_argument('--days', type=int, default=350,
+                        help='回填天数 (default: 350)')
     parser.add_argument('--batch', type=int, default=500,
                         help='每批写入股票数 (default: 500)')
     parser.add_argument('--sleep', type=float, default=0.08,

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       days:
-        description: '回填天数（默认 300）'
+        description: '回填天数（默认 350）'
         required: false
-        default: '300'
+        default: '350'
       limit:
         description: '限制股票数（0=全量，调试用）'
         required: false
