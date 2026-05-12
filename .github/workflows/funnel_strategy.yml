@@ -1,0 +1,66 @@
+name: funnel_strategy
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'strategies/funnel_strategy/**'
+      - 'core/**'
+      - '.github/workflows/funnel_strategy.yml'
+  schedule:
+    - cron: '10 7 * * 1-5'  # UTC 7:10 = 北京时间 15:10
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '交易日期 (YYYY-MM-DD)，留空=最新'
+        required: false
+      skip_layers:
+        description: '跳过的层级 (逗号分隔, 例如: 0,3)'
+        required: false
+
+jobs:
+  funnel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+      POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+      POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_SSLMODE: require
+      TZ: Asia/Shanghai
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run funnel strategy
+        run: |
+          CMD="python -m strategies.funnel_strategy.run_funnel --output ./results"
+          if [ -n "${{ inputs.date }}" ]; then
+            CMD="$CMD --date ${{ inputs.date }}"
+          fi
+          if [ -n "${{ inputs.skip_layers }}" ]; then
+            for layer in $(echo "${{ inputs.skip_layers }}" | tr ',' ' '); do
+              CMD="$CMD --disable $layer"
+            done
+          fi
+          echo "Running: $CMD"
+          $CMD
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: funnel-results
+          path: results/funnel_*.csv
