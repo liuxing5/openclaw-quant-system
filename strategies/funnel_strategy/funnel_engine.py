@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import sys
 import os
 import time
@@ -327,10 +328,19 @@ class FunnelEngine:
                         self._stats['layer0_max_position'],
                     ])
 
-        print(f"\n  ⏱️  总耗时: {time.perf_counter() - t_total_start:.1f}s")
+        elapsed = time.perf_counter() - t_total_start
+        print(f"\n  ⏱️  总耗时: {elapsed:.1f}s")
 
         # 打印漏斗摘要
         self._print_funnel_summary()
+
+        # 保存结果到数据库
+        self._save_to_db(
+            trade_date=trade_date,
+            market_env=market_env,
+            candidates=l6_result,
+            elapsed_seconds=elapsed,
+        )
 
         # 打印最终推荐
         if l6_result:
@@ -379,6 +389,75 @@ class FunnelEngine:
                 'L6_pass_count': len(l6_result),
             },
         }
+
+    def _save_to_db(
+        self,
+        trade_date: date,
+        market_env: dict,
+        candidates: list,
+        elapsed_seconds: float,
+    ):
+        """将漏斗结果保存到数据库"""
+        try:
+            conn = get_db()
+            cur = conn.cursor()
+
+            s = self._stats
+            candidates_json = json.dumps(candidates, ensure_ascii=False, default=str) if candidates else '[]'
+
+            cur.execute("""
+                INSERT INTO funnel_results (
+                    trade_date, total_stocks, layer0_pass, layer0_max_position,
+                    layer1_pass, layer2_pass, layer3_pass, layer4_pass,
+                    layer5_pass, layer6_pass,
+                    market_advancers, market_decliners,
+                    market_index_close, market_index_ema,
+                    elapsed_seconds, candidates
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s, %s
+                )
+                ON CONFLICT (trade_date) DO UPDATE SET
+                    total_stocks = EXCLUDED.total_stocks,
+                    layer0_pass = EXCLUDED.layer0_pass,
+                    layer0_max_position = EXCLUDED.layer0_max_position,
+                    layer1_pass = EXCLUDED.layer1_pass,
+                    layer2_pass = EXCLUDED.layer2_pass,
+                    layer3_pass = EXCLUDED.layer3_pass,
+                    layer4_pass = EXCLUDED.layer4_pass,
+                    layer5_pass = EXCLUDED.layer5_pass,
+                    layer6_pass = EXCLUDED.layer6_pass,
+                    market_advancers = EXCLUDED.market_advancers,
+                    market_decliners = EXCLUDED.market_decliners,
+                    market_index_close = EXCLUDED.market_index_close,
+                    market_index_ema = EXCLUDED.market_index_ema,
+                    elapsed_seconds = EXCLUDED.elapsed_seconds,
+                    candidates = EXCLUDED.candidates,
+                    created_at = NOW()
+            """, (
+                trade_date,
+                s['input_count'],
+                s['layer0_pass'],
+                s['layer0_max_position'],
+                s['layer1_pass'],
+                s['layer2_pass'],
+                s['layer3_pass'],
+                s['layer4_pass'],
+                s['layer5_pass'],
+                s['layer6_pass'],
+                market_env.get('advancers', 0),
+                market_env.get('decliners', 0),
+                market_env.get('index_close'),
+                market_env.get('index_ema'),
+                elapsed_seconds,
+                candidates_json,
+            ))
+            conn.commit()
+            cur.close()
+            conn.close()
+            print(f"  ✓ 结果已保存到数据库 (funnel_results)")
+        except Exception as e:
+            print(f"  ⚠️ 保存数据库失败: {e}")
 
     def _print_funnel_summary(self):
         """打印漏斗统计"""

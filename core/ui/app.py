@@ -24,7 +24,7 @@ def query_df(sql, params=None):
 
 st.sidebar.title("📊 AI 股票推荐")
 st.sidebar.markdown("---")
-page = st.sidebar.radio("导航", ["📈 今日候选", "🔍 信号提取", "📡 数据源", "📰 原始资讯"])
+page = st.sidebar.radio("导航", [" 今日候选", "🎯 漏斗策略", "🔍 信号提取", " 数据源", "📰 原始资讯"])
 
 st.title("AI 股票推荐系统")
 
@@ -131,6 +131,119 @@ if page == "📈 今日候选":
                 if not sources.empty:
                     st.write("**来源详情**:")
                     st.dataframe(sources, use_container_width=True)
+
+elif page == "🎯 漏斗策略":
+    st.header("七步漏斗选股策略")
+    
+    selected_date = st.date_input("选择日期", value=date.today())
+    
+    df = query_df("""
+        SELECT * FROM funnel_results
+        WHERE trade_date = %s
+        ORDER BY trade_date DESC
+        LIMIT 1;
+    """, (selected_date,))
+    
+    if df.empty:
+        st.info(f"{selected_date} 暂无漏斗策略数据")
+    else:
+        row = df.iloc[0]
+        
+        st.subheader("📊 漏斗统计")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("全市场初筛", f"{row['total_stocks']} 只")
+        col2.metric("耗时", f"{row['elapsed_seconds']:.1f}s")
+        col3.metric("最终推荐", f"{row['layer6_pass']} 只")
+        col4.metric("仓位上限", f"{int(row['layer0_max_position']*100)}%")
+        
+        st.markdown("---")
+        
+        col_env1, col_env2, col_env3, col_env4 = st.columns(4)
+        col_env1.metric("上涨家数", f"{row['market_advancers']}")
+        col_env2.metric("下跌家数", f"{row['market_decliners']}")
+        col_env3.metric("指数收盘", f"{row['market_index_close']}")
+        col_env4.metric("指数EMA", f"{row['market_index_ema']}")
+        
+        st.markdown("---")
+        
+        st.subheader("🔄 漏斗过滤过程")
+        
+        funnel_data = [
+            {"层级": "全市场", "通过": row['total_stocks'], "淘汰": 0, "颜色": "#e3f2fd"},
+            {"层级": "L0 大盘风控", "通过": row['total_stocks'] if row['layer0_pass'] else 0, 
+             "淘汰": 0 if row['layer0_pass'] else row['total_stocks'], "颜色": "#fff3e0"},
+            {"层级": "L1 硬性防雷", "通过": row['layer1_pass'], 
+             "淘汰": row['total_stocks'] - row['layer1_pass'], "颜色": "#fce4ec"},
+            {"层级": "L2 流动性", "通过": row['layer2_pass'], 
+             "淘汰": row['layer1_pass'] - row['layer2_pass'], "颜色": "#f3e5f5"},
+            {"层级": "L3 趋势结构", "通过": row['layer3_pass'], 
+             "淘汰": row['layer2_pass'] - row['layer3_pass'], "颜色": "#e8eaf6"},
+            {"层级": "L4 动能信号", "通过": row['layer4_pass'], 
+             "淘汰": row['layer3_pass'] - row['layer4_pass'], "颜色": "#e0f2f1"},
+            {"层级": "L5 人气精选", "通过": row['layer5_pass'], 
+             "淘汰": row['layer4_pass'] - row['layer5_pass'], "颜色": "#fff8e1"},
+            {"层级": "L6 刚性风控", "通过": row['layer6_pass'], 
+             "淘汰": row['layer5_pass'] - row['layer6_pass'], "颜色": "#e8f5e9"},
+        ]
+        
+        funnel_df = pd.DataFrame(funnel_data)
+        
+        def color_funnel(val):
+            if isinstance(val, (int, float)) and val > 0:
+                return 'color: #1976d2; font-weight: bold'
+            return ''
+        
+        st.dataframe(
+            funnel_df.style.applymap(color_funnel, subset=['通过', '淘汰']),
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "层级": st.column_config.TextColumn("过滤层级"),
+                "通过": st.column_config.NumberColumn("通过数量"),
+                "淘汰": st.column_config.NumberColumn("淘汰数量"),
+            }
+        )
+        
+        st.markdown("---")
+        
+        if row['layer6_pass'] > 0:
+            st.subheader(" 最终推荐")
+            
+            candidates = row['candidates']
+            if isinstance(candidates, str):
+                candidates = json.loads(candidates)
+            
+            if candidates:
+                cand_df = pd.DataFrame(candidates)
+                
+                display_cols = ['ts_code', 'score', 'entry_price', 'stop_loss', 
+                               'target_price', 'profit_loss_ratio', 'signal_type']
+                available_cols = [c for c in display_cols if c in cand_df.columns]
+                
+                if 'tags' in cand_df.columns:
+                    cand_df['tags'] = cand_df['tags'].apply(lambda x: ', '.join(x[:3]) if isinstance(x, list) else str(x))
+                
+                column_labels = {
+                    'ts_code': '代码',
+                    'score': '评分',
+                    'entry_price': '入场价',
+                    'stop_loss': '止损',
+                    'target_price': '目标价',
+                    'profit_loss_ratio': '盈亏比',
+                    'signal_type': '信号类型',
+                    'tags': '标签',
+                }
+                
+                st.dataframe(
+                    cand_df[available_cols].rename(columns=column_labels),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+            else:
+                st.info("无候选数据")
+        else:
+            st.info("当日无标的通过全部七层漏斗")
 
 elif page == "🔍 信号提取":
     st.header("LLM 信号提取结果")
