@@ -96,24 +96,52 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
         candidates = json.loads(candidates)
     candidates = clean_nan(candidates)
 
+    # 信号翻译
+    SIGNAL_MAP = {
+        'demand_absorption': '需求吸收（EMA12附近锤子/刺透+放量）',
+        'strong_relay': '强势接力（昨日首板，今日回踩VWAP翘头）',
+        'none': '无信号',
+    }
+
+    def translate_signal(sig):
+        return SIGNAL_MAP.get(sig, sig)
+
+    # 各层筛选规则
+    LAYER_RULES = {
+        'L0': '上涨家数≥2500 且 全A指数>20EMA → 满仓；否则半仓或休战',
+        'L1': '剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%',
+        'L2': '20日均成交额>1亿；流通市值>20亿；换手率3~15%',
+        'L3': '周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12；上升平台/回踩支撑',
+        'L4': '量比1.5~3.0；乖离率<6%；需求吸收K线 或 强势接力形态',
+        'L5': '综合评分≥80；涨幅3~5%；贴MA5；分时平稳；人气榜加分',
+        'L6': '14:30后买入；止损=入场价-1ATR；目标价=入场价+2ATR；盈亏比≥2:1',
+    }
+
     # 构建漏斗数据
     total = row['total_stocks']
     funnel_steps = [
-        {"name": "全市场初筛", "pass_count": total, "eliminated": 0, "icon": "📊", "color": "#e3f2fd"},
-        {"name": "L0 大盘风控", "pass_count": total if row['layer0_pass'] else 0, 
-         "eliminated": 0 if row['layer0_pass'] else total, "icon": "🛡️", "color": "#fff3e0"},
+        {"name": "全市场初筛", "pass_count": total, "eliminated": 0, "icon": "📊", "color": "#e3f2fd", "rule": "A股全市场"},
+        {"name": "L0 大盘风控", "pass_count": total, 
+         "eliminated": 0, "note": "✅满仓" if row['layer0_pass'] else "️半仓", "icon": "️", "color": "#fff3e0",
+         "rule": LAYER_RULES['L0']},
         {"name": "L1 硬性防雷", "pass_count": row['layer1_pass'], 
-         "eliminated": total - row['layer1_pass'], "icon": "⚡", "color": "#fce4ec"},
+         "eliminated": total - row['layer1_pass'], "icon": "⚡", "color": "#fce4ec",
+         "rule": LAYER_RULES['L1']},
         {"name": "L2 流动性", "pass_count": row['layer2_pass'], 
-         "eliminated": row['layer1_pass'] - row['layer2_pass'], "icon": "💧", "color": "#f3e5f5"},
+         "eliminated": row['layer1_pass'] - row['layer2_pass'], "icon": "💧", "color": "#f3e5f5",
+         "rule": LAYER_RULES['L2']},
         {"name": "L3 趋势结构", "pass_count": row['layer3_pass'], 
-         "eliminated": row['layer2_pass'] - row['layer3_pass'], "icon": "📈", "color": "#e8eaf6"},
+         "eliminated": row['layer2_pass'] - row['layer3_pass'], "icon": "📈", "color": "#e8eaf6",
+         "rule": LAYER_RULES['L3']},
         {"name": "L4 动能信号", "pass_count": row['layer4_pass'], 
-         "eliminated": row['layer3_pass'] - row['layer4_pass'], "icon": "🚀", "color": "#e0f2f1"},
+         "eliminated": row['layer3_pass'] - row['layer4_pass'], "icon": "🚀", "color": "#e0f2f1",
+         "rule": LAYER_RULES['L4']},
         {"name": "L5 人气精选", "pass_count": row['layer5_pass'], 
-         "eliminated": row['layer4_pass'] - row['layer5_pass'], "icon": "🔥", "color": "#fff8e1"},
+         "eliminated": row['layer4_pass'] - row['layer5_pass'], "icon": "🔥", "color": "#fff8e1",
+         "rule": LAYER_RULES['L5']},
         {"name": "L6 刚性风控", "pass_count": row['layer6_pass'], 
-         "eliminated": row['layer5_pass'] - row['layer6_pass'], "icon": "🎯", "color": "#e8f5e9"},
+         "eliminated": row['layer5_pass'] - row['layer6_pass'], "icon": "🎯", "color": "#e8f5e9",
+         "rule": LAYER_RULES['L6']},
     ]
 
     # 仓位状态
@@ -141,6 +169,7 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
                 tags_str = str(tags)
 
             signal = c.get('signal_type', c.get('signal', ''))
+            signal_text = translate_signal(signal)
             score = c.get('score', 0)
             entry = c.get('entry_price', 0)
             stop = c.get('stop_loss', 0)
@@ -177,7 +206,7 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
                     </div>
                     <div class="detail-row">
                         <span class="label">信号</span>
-                        <span class="value signal">{signal}</span>
+                        <span class="value signal">{signal_text}</span>
                     </div>
                 </div>
                 {f'<div class="stock-tags">{tags_str}</div>' if tags_str else ''}
@@ -189,6 +218,9 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
     # 生成漏斗步骤 HTML
     funnel_html = ""
     for step in funnel_steps:
+        note_html = f'<span class="note-badge">{step["note"]}</span>' if step.get('note') else ''
+        eliminated_html = f'<span class="eliminated-count">✗ 淘汰 {step["eliminated"]} 只</span>' if step.get('eliminated', 0) > 0 else ''
+        rule_html = f'<div class="step-rule">{step.get("rule", "")}</div>' if step.get('rule') else ''
         funnel_html += f"""
         <div class="funnel-step" style="background: {step['color']}">
             <div class="step-icon">{step['icon']}</div>
@@ -196,8 +228,10 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
                 <div class="step-name">{step['name']}</div>
                 <div class="step-counts">
                     <span class="pass-count">✓ {step['pass_count']} 只</span>
-                    {f'<span class="eliminated-count">✗ 淘汰 {step["eliminated"]} 只</span>' if step['eliminated'] > 0 else ''}
+                    {note_html}
+                    {eliminated_html}
                 </div>
+                {rule_html}
             </div>
         </div>
         """
@@ -303,6 +337,15 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
         }}
         .pass-count {{ color: #4caf50; margin-right: 10px; }}
         .eliminated-count {{ color: #f44336; }}
+        .step-rule {{
+            font-size: 11px;
+            color: #555;
+            margin-top: 6px;
+            padding: 4px 8px;
+            background: rgba(255,255,255,0.6);
+            border-radius: 4px;
+            line-height: 1.4;
+        }}
         .candidates-grid {{
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
