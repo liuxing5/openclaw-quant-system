@@ -18,8 +18,10 @@ Telegram Bot 交互处理器
 import os
 import sys
 import logging
+import asyncio
 from datetime import datetime
 from dotenv import load_dotenv
+from aiohttp import web
 
 # 加载 .env 文件
 load_dotenv()
@@ -272,7 +274,7 @@ def create_position_keyboard(positions: list) -> InlineKeyboardMarkup:
 # ============================================================
 # 主程序
 # ============================================================
-def main():
+async def main():
     if not BOT_TOKEN:
         print("❌ 请设置 TELEGRAM_BOT_TOKEN 环境变量")
         sys.exit(1)
@@ -303,11 +305,37 @@ def main():
     # 注册消息处理器
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # 使用 polling 模式（更稳定，适合 Render 免费计划）
-    print("✅ Bot 已启动，等待消息...")
-    print("按 Ctrl+C 停止")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # Render 需要监听端口才能保持服务运行
+    # 使用 polling + 简单的 HTTP 健康检查端点
+    port = int(os.environ.get("PORT", 0))
+    
+    if port:
+        # 在 Render 上：polling + 健康检查端点
+        print(f"✅ Bot 已启动 (polling 模式)")
+        print(f"🔌 健康检查端口: {port}")
+        
+        # 创建简单的 HTTP 服务器保持端口开放
+        async def health_handler(request):
+            return web.Response(text="OK")
+        
+        app = web.Application()
+        app.router.add_get("/", health_handler)
+        app.router.add_get("/health", health_handler)
+        
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        print(f" 健康检查: http://0.0.0.0:{port}/health")
+        
+        # 运行 polling
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+    else:
+        # 本地开发：直接 polling
+        print("✅ Bot 已启动，等待消息...")
+        print("按 Ctrl+C 停止")
+        await application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
