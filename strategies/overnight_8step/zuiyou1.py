@@ -1,6 +1,12 @@
 """
 隔夜选股法·最优融合版 (zuiyou1 v1.6)
 ========================================
+v1.6.2 修订（2026-05-12）：
+  ✓ 修复腾讯API字段索引错误 —— p[45]-p[52]映射修正(量比/委比/大单净量/主力净流入/涨跌停价)
+  ✓ 修复流通市值缺失 —— 新增circ_mcap字段，优先使用流通市值而非总市值
+  ✓ 修复主力净流入单位 —— p[52]单位为万，统一乘以10000转为元
+  ✓ 修复机构预期数据未填充 —— earnings_forecast结构化数据现在正确提取并存储
+
 v1.6.1 修订（2026-05-12）：
   ✓ 修复 8:25 运行显示"盘中初筛" —— 增加 pre_market 模式，盘前显示"盘前预览"
   ✓ 修复 MODE 判断 —— 14:00-15:10 为 realtime，其余为 pre_market，15:10 后为 post
@@ -1302,13 +1308,14 @@ def get_realtime_quotes(stock_list: list) -> dict:
                         "turn": _f(38),
                         "name": name,
                         "mktcap": _f(44) * 1e8 if _f(44) > 0 else 0,
+                        "circ_mcap": _f(45) * 1e8 if _f(45) > 0 else 0,
                         "amplitude": _f(43),
-                        "volume_ratio": _f(45),
-                        "commission_ratio": _f(46),
-                        "large_order_net": _f(47),
-                        "main_force_net": _f(48) * 10000 if _f(48) > 0 else 0,
-                        "limit_up_price": _f(49),
-                        "limit_down_price": _f(50),
+                        "volume_ratio": _f(49),
+                        "commission_ratio": _f(50),
+                        "large_order_net": _f(51),
+                        "main_force_net": _f(52) * 10000 if _f(52) > 0 else 0,
+                        "limit_up_price": _f(47),
+                        "limit_down_price": _f(48),
                     }
                     ok_count += 1
                 except Exception:
@@ -1506,11 +1513,15 @@ def analyze_ultimate(
 
     # --- STEP 4: 流通市值过滤（8步法50亿-200亿）---
     # v1.1: 去掉 MODE 限制，post 模式也启用市值过滤
-    # v1.5.1: 修复市值估算逻辑，腾讯 f44 单位为亿元
+    # v1.5.1: 修复市值估算逻辑，腾讯 f44/f45 单位为亿元
+    # v1.6.2: 优先使用流通市值(circ_mcap)，其次总市值(mktcap)
+    circ_mcap = real_info.get("circ_mcap", 0) if real_info else 0
     mktcap = real_info.get("mktcap", 0) if real_info else 0
     
-    # 如果市值数据缺失，尝试用成交额和换手率估算（成交额/换手率 ≈ 流通市值）
-    if mktcap <= 0 and curr_amount > 0 and curr_turn > 0:
+    # 优先使用流通市值，如果缺失则用总市值，最后用估算
+    if circ_mcap > 0:
+        mktcap = circ_mcap
+    elif mktcap <= 0 and curr_amount > 0 and curr_turn > 0:
         # curr_amount 单位为元, curr_turn 单位为百分比
         # 流通市值(元) = 成交额(元) / (换手率% / 100)
         mktcap = curr_amount / (curr_turn / 100.0)

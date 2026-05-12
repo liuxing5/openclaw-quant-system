@@ -185,8 +185,10 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
     Returns make_signal() + attaches _earnings_forecast data.
     """
     import akshare as ak
+    import pandas as pd
     rows = []
     forecast_data = []
+    current_year = datetime.now(BEIJING_TZ).year
 
     try:
         logger.debug("机构一致预期: stock_rank_forecast_cninfo")
@@ -198,14 +200,20 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
         col_name = next((c for c in ['证券简称', '名称', 'name'] if c in df.columns), None)
         col_date = next((c for c in ['发布日期', 'date'] if c in df.columns), None)
         col_agency = next((c for c in ['研究机构简称', 'agency'] if c in df.columns), None)
-        col_rating = next((c for c in ['投资评级', 'rating'] if c in df.columns), None)
-        col_target_low = next((c for c in ['目标价格-下限'] if c in df.columns), None)
-        col_target_high = next((c for c in ['目标价格-上限'] if c in df.columns), None)
+        col_rating = next((c for c in ['投资评级', '评级', 'rating'] if c in df.columns), None)
+        col_eps_current = next((c for c in [f'{current_year}EPS', 'EPS'] if c in df.columns), None)
+        col_eps_next = next((c for c in [f'{current_year+1}EPS'] if c in df.columns), None)
+        col_inst_count = next((c for c in ['机构数量', '家数', 'inst_count'] if c in df.columns), None)
+        col_target_low = next((c for c in ['目标价-下限', '目标价格-下限'] if c in df.columns), None)
+        col_target_high = next((c for c in ['目标价-上限', '目标价格-上限'] if c in df.columns), None)
+        col_industry = next((c for c in ['行业', 'industry'] if c in df.columns), None)
+        col_revenue = next((c for c in [f'{current_year}营业收入', '营业收入'] if c in df.columns), None)
+        col_profit = next((c for c in [f'{current_year}净利润', '净利润'] if c in df.columns), None)
 
         if not col_code:
             return rows
 
-        for _, r in df.head(200).iterrows():
+        for _, r in df.head(500).iterrows():
             try:
                 raw_code = str(r.get(col_code, '') or '')
                 code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
@@ -222,6 +230,30 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
                     title=f"机构预测: {name} {ts} {agency} {rating}",
                     content=f"代码 {code} {name} 机构:{agency} 评级:{rating}",
                 ))
+
+                # 提取结构化数据
+                eps_mean = float(r.get(col_eps_current, 0) or 0) if col_eps_current else None
+                eps_next = float(r.get(col_eps_next, 0) or 0) if col_eps_next else None
+                inst_count = int(r.get(col_inst_count, 0) or 0) if col_inst_count else None
+                target_low = float(r.get(col_target_low, 0) or 0) if col_target_low else None
+                target_high = float(r.get(col_target_high, 0) or 0) if col_target_high else None
+                industry = str(r.get(col_industry, '') or '') if col_industry else ''
+                revenue = float(r.get(col_revenue, 0) or 0) if col_revenue else None
+                profit = float(r.get(col_profit, 0) or 0) if col_profit else None
+
+                forecast_data.append({
+                    'ts_code': ts,
+                    'stock_name': name,
+                    'forecast_year': current_year,
+                    'institution_count': inst_count,
+                    'eps_mean': eps_mean,
+                    'eps_min': target_low,
+                    'eps_max': target_high,
+                    'industry_avg': None,
+                    'revenue_mean': revenue,
+                    'profit_mean': profit,
+                })
+
             except Exception:
                 continue
 
@@ -229,7 +261,7 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
         logger.debug(f"机构一致预期失败: {e}")
 
     rows._earnings_forecast = forecast_data
-    logger.info(f"机构一致预期: {len(rows)} 条信号")
+    logger.info(f"机构一致预期: {len(rows)} 条信号, {len(forecast_data)} 条预测数据")
     return rows
 
 
@@ -323,12 +355,12 @@ def fetch_tencent_supplementary(make_signal, get_db_func=None) -> list:
                     limit_down = float(p[48] or 0) if len(p) > 48 and p[48] else 0
 
                     # NEW fields: amplitude, volume_ratio, commission_ratio, large_order_net, main_force_net
-                    # p[43]=振幅, p[49]=量比, p[50]=委比, p[51]=大单净量, p[52]=主力净流入
+                    # p[43]=振幅, p[49]=量比, p[50]=委比, p[51]=大单净量, p[52]=主力净流入(万)
                     amplitude = float(p[43] or 0) if len(p) > 43 and p[43] else 0
                     volume_ratio = float(p[49] or 0) if len(p) > 49 and p[49] else 0
                     commission_ratio = float(p[50] or 0) if len(p) > 50 and p[50] else 0
                     large_order_net = float(p[51] or 0) if len(p) > 51 and p[51] else 0
-                    main_force_net = float(p[52] or 0) if len(p) > 52 and p[52] else 0
+                    main_force_net = float(p[52] or 0) * 10000 if len(p) > 52 and p[52] else 0  # 万 -> 元
 
                     ts_code = f"{code6}.SH" if code6.startswith(('6', '688')) else f"{code6}.SZ"
 
