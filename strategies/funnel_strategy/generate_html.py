@@ -43,6 +43,33 @@ def query_dicts(sql, params=None):
     return rows
 
 
+def ensure_strategy_scans_table():
+    """兜底建表：strategy_scans 不存在时自动创建"""
+    try:
+        conn = get_db_fresh()
+        conn.autocommit = True
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS strategy_scans (
+                id BIGSERIAL PRIMARY KEY,
+                snapshot_date DATE NOT NULL,
+                strategy VARCHAR(30) NOT NULL,
+                total_scanned INT DEFAULT 0,
+                total_passed INT DEFAULT 0,
+                filter_stats JSONB,
+                sentiment_score INT,
+                mood VARCHAR(30),
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                CONSTRAINT strategy_scans_unique UNIQUE (snapshot_date, strategy)
+            );
+            CREATE INDEX IF NOT EXISTS idx_strategy_scans_date ON strategy_scans(snapshot_date DESC);
+        """)
+        cur.close()
+        conn.close()
+    except Exception:
+        pass
+
+
 def query_one(sql, params=None):
     rows = query_dicts(sql, params)
     return rows[0] if rows else None
@@ -148,18 +175,21 @@ def load_candidates(source, run_mode=None):
 
 
 def load_scan_stats(strategy, snapshot_date=None):
-    if snapshot_date:
-        row = query_one("""
-            SELECT * FROM strategy_scans
-            WHERE strategy = %s AND snapshot_date = %s
-            ORDER BY snapshot_date DESC LIMIT 1;
-        """, (strategy, snapshot_date))
-    else:
-        row = query_one("""
-            SELECT * FROM strategy_scans
-            WHERE strategy = %s
-            ORDER BY snapshot_date DESC LIMIT 1;
-        """, (strategy,))
+    try:
+        if snapshot_date:
+            row = query_one("""
+                SELECT * FROM strategy_scans
+                WHERE strategy = %s AND snapshot_date = %s
+                ORDER BY snapshot_date DESC LIMIT 1;
+            """, (strategy, snapshot_date))
+        else:
+            row = query_one("""
+                SELECT * FROM strategy_scans
+                WHERE strategy = %s
+                ORDER BY snapshot_date DESC LIMIT 1;
+            """, (strategy,))
+    except Exception:
+        return None
     if not row:
         return None
     stats = row.get('filter_stats')
@@ -175,6 +205,9 @@ def generate_unified_html(output_dir=None):
     else:
         output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 兜底建表
+    ensure_strategy_scans_table()
 
     # ── 加载三策略数据 ──
     funnel = load_funnel_data()
