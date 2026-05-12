@@ -31,6 +31,8 @@ jobs:
       POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
       POSTGRES_SSLMODE: require
       TZ: Asia/Shanghai
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
 
     steps:
       - uses: actions/checkout@v4
@@ -56,11 +58,18 @@ jobs:
             done
           fi
           echo "Running: $CMD"
-          $CMD
+          $CMD 2>&1 | tee /tmp/funnel_output.log
+          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
 
       - name: Generate HTML report
         run: |
           python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs
+
+      - name: Send Telegram notification
+        if: always() && env.EXIT_CODE == '0'
+        run: |
+          pip install psycopg2-binary python-dotenv
+          python .github/scripts/funnel_telegram.py
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
