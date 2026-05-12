@@ -120,7 +120,7 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
     # 构建漏斗数据
     total = row['total_stocks']
     funnel_steps = [
-        {"name": "全市场初筛", "pass_count": total, "eliminated": 0, "icon": "📊", "color": "#e3f2fd", "rule": "A股全市场"},
+        {"name": "全市场初筛", "pass_count": total, "eliminated": 0, "icon": "📊", "color": "#e3f2fd", "rule": "A股全市场，不做任何过滤"},
         {"name": "L0 大盘风控", "pass_count": total, 
          "eliminated": 0, "note": "✅满仓" if row['layer0_pass'] else "️半仓", "icon": "️", "color": "#fff3e0",
          "rule": LAYER_RULES['L0']},
@@ -220,12 +220,18 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
     for step in funnel_steps:
         note_html = f'<span class="note-badge">{step["note"]}</span>' if step.get('note') else ''
         eliminated_html = f'<span class="eliminated-count">✗ 淘汰 {step["eliminated"]} 只</span>' if step.get('eliminated', 0) > 0 else ''
-        rule_html = f'<div class="step-rule">{step.get("rule", "")}</div>' if step.get('rule') else ''
+        is_first = step['name'] == '全市场初筛'
+        if is_first and step.get('rule'):
+            name_html = f'<span class="step-name">{step["name"]}</span><span class="step-rule-inline">{step["rule"]}</span>'
+            rule_html = ''
+        else:
+            name_html = f'<div class="step-name">{step["name"]}</div>'
+            rule_html = f'<div class="step-rule">{step.get("rule", "")}</div>' if step.get('rule') else ''
         funnel_html += f"""
         <div class="funnel-step" style="background: {step['color']}">
             <div class="step-icon">{step['icon']}</div>
             <div class="step-info">
-                <div class="step-name">{step['name']}</div>
+                {name_html}
                 <div class="step-counts">
                     <span class="pass-count">✓ {step['pass_count']} 只</span>
                     {note_html}
@@ -251,7 +257,7 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
             line-height: 1.6;
         }}
         .container {{
-            max-width: 900px;
+            max-width: 1200px;
             margin: 0 auto;
             padding: 20px;
         }}
@@ -330,6 +336,11 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
         .step-name {{
             font-weight: bold;
             font-size: 14px;
+        }}
+        .step-rule-inline {{
+            font-size: 11px;
+            color: #888;
+            margin-left: 8px;
         }}
         .step-counts {{
             font-size: 12px;
