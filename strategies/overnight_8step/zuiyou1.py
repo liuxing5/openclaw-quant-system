@@ -574,6 +574,176 @@ def get_llm_boost_score(code: str) -> float:
 
 
 # ============================================================
+#  新增指标缓存（强势股排名、机构预期、概念板块）
+# ============================================================
+_strong_rank_cache = {}
+_earnings_cache = {}
+_concept_cache = {}
+_stock_concept_map = {}
+
+def load_new_indicators(trade_date: str = None):
+    """从数据库加载新增指标到缓存"""
+    global _strong_rank_cache, _earnings_cache, _concept_cache, _stock_concept_map
+    
+    if not DB_ENABLED:
+        return
+    
+    if trade_date is None:
+        trade_date = beijing_now().strftime("%Y-%m-%d")
+    
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        
+        # 加载强势股排名
+        cur.execute("""
+            SELECT ts_code, rank_type, rank_position, consecutive_days,
+                   stage_chg_pct, cumulative_turnover, industry
+            FROM strong_stock_rank WHERE trade_date=%s;
+        """, (trade_date,))
+        for r in cur.fetchall():
+            ts = r[0]
+            if ts not in _strong_rank_cache:
+                _strong_rank_cache[ts] = []
+            _strong_rank_cache[ts].append({
+                'rank_type': r[1],
+                'rank_position': r[2],
+                'consecutive_days': r[3],
+                'stage_chg_pct': r[4],
+                'cumulative_turnover': r[5],
+                'industry': r[6],
+            })
+        
+        # 加载机构预期
+        cur.execute("""
+            SELECT ts_code, forecast_year, institution_count, eps_mean,
+                   eps_min, eps_max, industry_avg
+            FROM earnings_forecast WHERE forecast_year = EXTRACT(YEAR FROM CURRENT_DATE);
+        """)
+        for r in cur.fetchall():
+            _earnings_cache[r[0]] = {
+                'forecast_year': r[1],
+                'institution_count': r[2],
+                'eps_mean': float(r[3]) if r[3] else None,
+                'eps_min': float(r[4]) if r[4] else None,
+                'eps_max': float(r[5]) if r[5] else None,
+                'industry_avg': float(r[6]) if r[6] else None,
+            }
+        
+        # 加载概念板块
+        cur.execute("""
+            SELECT concept_code, concept_name, pct_chg, turnover_rate,
+                   lead_stock_code, lead_stock_name, stock_count
+            FROM concept_board_quotes WHERE trade_date=%s;
+        """, (trade_date,))
+        for r in cur.fetchall():
+            _concept_cache[r[0]] = {
+                'concept_name': r[1],
+                'pct_chg': r[2],
+                'turnover_rate': r[3],
+                'lead_stock_code': r[4],
+                'lead_stock_name': r[5],
+                'stock_count': r[6],
+            }
+        
+        # 加载概念成分股映射
+        cur.execute("""
+            SELECT ts_code, concept_code, concept_name
+            FROM concept_membership;
+        """)
+        for r in cur.fetchall():
+            ts = r[0]
+            if ts not in _stock_concept_map:
+                _stock_concept_map[ts] = []
+            _stock_concept_map[ts].append({
+                'concept_code': r[1],
+                'concept_name': r[2],
+            })
+        
+        cur.close()
+        conn.close()
+        print(f"✓ 加载新增指标: 强势股{len(_strong_rank_cache)}只, 机构预期{len(_earnings_cache)}只, 概念板块{len(_concept_cache)}个")
+    except Exception as e:
+        print(f"⚠️ 新增指标加载失败: {e}")
+
+
+def get_strong_rank_bonus(ts_code: str) -> float:
+    """获取强势股排名加分"""
+    if ts_code not in _strong_rank_cache:
+        return 0.0
+    
+    strong_ranks = _strong_rank_cache[ts_code]
+    best_rank_bonus = 0.0
+    
+    for sr in strong_ranks:
+        pos = sr['rank_position'] or 999
+        if pos <= 10:
+            bonus = 20
+        elif pos <= 30:
+            bonus = 10
+        elif pos <= 50:
+            bonus = 5
+        else:
+            bonus = 0
+        best_rank_bonus = max(best_rank_bonus, bonus)
+    
+    consecutive_days = max((sr['consecutive_days'] or 0) for sr in strong_ranks)
+    if consecutive_days >= 5:
+        best_rank_bonus += 10
+    elif consecutive_days >= 3:
+        best_rank_bonus += 5
+    
+    return best_rank_bonus
+
+
+def get_earnings_bonus(ts_code: str) -> float:
+    """获取机构预期加分"""
+    if ts_code not in _earnings_cache:
+        return 0.0
+    
+    fc = _earnings_cache[ts_code]
+    bonus = 0.0
+    
+    inst_count = fc['institution_count'] or 0
+    if inst_count >= 10:
+        bonus += 15
+    elif inst_count >= 5:
+        bonus += 8
+    
+    if fc['eps_mean'] and fc['industry_avg'] and fc['industry_avg'] > 0:
+        eps_premium = (fc['eps_mean'] - fc['industry_avg']) / fc['industry_avg']
+        if eps_premium > 0.1:
+            bonus += 10
+        elif eps_premium > 0.05:
+            bonus += 5
+    
+    return bonus
+
+
+def get_concept_bonus(ts_code: str) -> float:
+    """获取概念板块加分"""
+    if ts_code not in _stock_concept_map:
+        return 0.0
+    
+    concepts = _stock_concept_map[ts_code]
+    best_concept_bonus = 0.0
+    
+    for c in concepts:
+        concept_data = _concept_cache.get(c['concept_code'])
+        if concept_data:
+            concept_pct = concept_data['pct_chg'] or 0
+            if concept_pct > 3:
+                bonus = 10
+            elif concept_pct > 1:
+                bonus = 5
+            else:
+                bonus = 0
+            best_concept_bonus = max(best_concept_bonus, bonus)
+    
+    return best_concept_bonus
+
+
+# ============================================================
 #  1. 全局配置
 # ============================================================
 CONFIG_STABLE = {
@@ -955,6 +1125,13 @@ def get_realtime_quotes(stock_list: list) -> dict:
                         "turn": _f(38),
                         "name": name,
                         "mktcap": _f(44) * 1e8 if _f(44) > 0 else 0,
+                        "amplitude": _f(43),
+                        "volume_ratio": _f(45),
+                        "commission_ratio": _f(46),
+                        "large_order_net": _f(47),
+                        "main_force_net": _f(48) * 10000 if _f(48) > 0 else 0,
+                        "limit_up_price": _f(49),
+                        "limit_down_price": _f(50),
                     }
                     ok_count += 1
                 except Exception:
@@ -1452,6 +1629,71 @@ def analyze_ultimate(
         tags.extend(llm_tags)
         tags.append("🤖LLM")
 
+    # --- 新增指标加成（v1.6+）---
+    # 振幅评分：3%-8%为活跃区间，加分
+    amplitude = real_info.get('amplitude', 0) if real_info else 0
+    if 3 <= amplitude <= 8:
+        score += 10 * (1 - abs(amplitude - 5.5) / 2.5)
+        tags.append("振幅活跃")
+    elif amplitude > 8:
+        score += 5
+        tags.append("振幅偏大")
+
+    # 量比评分：量比>1.5表示放量，加分（与B部分量比评分互补）
+    volume_ratio = real_info.get('volume_ratio', 0) if real_info else 0
+    if volume_ratio > 1.5:
+        score += min(15, (volume_ratio - 1.5) * 10)
+        tags.append("放量确认")
+    elif volume_ratio < 0.8:
+        score -= 5
+        tags.append("缩量↓")
+
+    # 委比评分：委比>0表示买盘强，加分
+    commission_ratio = real_info.get('commission_ratio', 0) if real_info else 0
+    if commission_ratio > 0:
+        score += min(10, commission_ratio / 10)
+        tags.append("买盘强劲")
+    elif commission_ratio < -20:
+        score -= 5
+        tags.append("卖压大↓")
+
+    # 大单净量评分：大单净量>0表示主力买入
+    large_order_net = real_info.get('large_order_net', 0) if real_info else 0
+    if large_order_net > 0:
+        score += min(15, large_order_net * 5)
+        tags.append("大单净流入")
+    elif large_order_net < -5:
+        score -= 10
+        tags.append("大单净流出↓")
+
+    # 主力资金净流入评分
+    main_force_net = real_info.get('main_force_net', 0) if real_info else 0
+    if main_force_net > 0:
+        score += min(10, main_force_net / 1e6 * 2)
+        tags.append("主力流入")
+    elif main_force_net < -1e7:
+        score -= 5
+        tags.append("主力流出↓")
+
+    # 强势股加分
+    ts_code = baostock_to_standard(code) if 'baostock_to_standard' in globals() else code
+    strong_bonus = get_strong_rank_bonus(ts_code)
+    if strong_bonus > 0:
+        score += strong_bonus
+        tags.append(f"强势股+{strong_bonus:.0f}")
+
+    # 机构预期加分
+    earnings_bonus = get_earnings_bonus(ts_code)
+    if earnings_bonus > 0:
+        score += earnings_bonus
+        tags.append(f"机构预期+{earnings_bonus:.0f}")
+
+    # 概念板块加分
+    concept_bonus = get_concept_bonus(ts_code)
+    if concept_bonus > 0:
+        score += concept_bonus
+        tags.append(f"热门概念+{concept_bonus:.0f}")
+
     # --- 最终判定 ---
     # v1.5.1: 评分上限120分，防止过度叠加导致评分膨胀
     score = min(score, 120)
@@ -1504,6 +1746,9 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
         if added:
             stock_pool = stock_pool + added
             print(f"  ➕ 合并 LLM 候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
+
+    # v1.6+: 加载新增指标（强势股排名、机构预期、概念板块）
+    load_new_indicators(today_str)
 
     # 预热行业缓存（首次或7天过期时批量查询），preloaded=True 时跳过
     if not preloaded:

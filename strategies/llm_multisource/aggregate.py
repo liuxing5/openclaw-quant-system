@@ -94,7 +94,8 @@ def aggregate_today():
     logger.info(f"数据库最新交易日: {latest_trade_date}，使用此日期加载行情")
 
     cur.execute("""
-        SELECT ts_code, close, pct_chg, turnover_rate, amount
+        SELECT ts_code, close, pct_chg, turnover_rate, amount,
+               amplitude, volume_ratio, commission_ratio, large_order_net, main_force_net
         FROM daily_quotes WHERE trade_date=%s;
     """, (latest_trade_date,))
     quote_cache = {}
@@ -104,6 +105,11 @@ def aggregate_today():
             'pct_chg': float(q['pct_chg']) if q['pct_chg'] else 0,
             'turnover_rate': float(q['turnover_rate']) if q['turnover_rate'] else 0,
             'amount': float(q['amount']) if q['amount'] else 0,
+            'amplitude': float(q['amplitude']) if q['amplitude'] else 0,
+            'volume_ratio': float(q['volume_ratio']) if q['volume_ratio'] else 0,
+            'commission_ratio': float(q['commission_ratio']) if q['commission_ratio'] else 0,
+            'large_order_net': float(q['large_order_net']) if q['large_order_net'] else 0,
+            'main_force_net': float(q['main_force_net']) if q['main_force_net'] else 0,
         }
     logger.info(f"加载 {len(quote_cache)} 条行情到缓存 (trade_date={latest_trade_date})")
     
@@ -111,6 +117,79 @@ def aggregate_today():
     cur.execute("SELECT ts_code, stock_name FROM stock_basic_info;")
     name_cache = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
     logger.info(f"加载 {len(name_cache)} 条股票名称到缓存")
+
+    # 加载强势股排名数据
+    cur.execute("""
+        SELECT ts_code, rank_type, rank_position, consecutive_days,
+               stage_chg_pct, cumulative_turnover, industry
+        FROM strong_stock_rank WHERE trade_date=%s;
+    """, (latest_trade_date,))
+    strong_rank_cache = {}
+    for r in cur.fetchall():
+        ts = r['ts_code']
+        if ts not in strong_rank_cache:
+            strong_rank_cache[ts] = []
+        strong_rank_cache[ts].append({
+            'rank_type': r['rank_type'],
+            'rank_position': r['rank_position'],
+            'consecutive_days': r['consecutive_days'],
+            'stage_chg_pct': r['stage_chg_pct'],
+            'cumulative_turnover': r['cumulative_turnover'],
+            'industry': r['industry'],
+        })
+    logger.info(f"加载 {len(strong_rank_cache)} 条强势股排名数据")
+
+    # 加载机构预期数据
+    cur.execute("""
+        SELECT ts_code, forecast_year, institution_count, eps_mean,
+               eps_min, eps_max, industry_avg
+        FROM earnings_forecast WHERE forecast_year = EXTRACT(YEAR FROM CURRENT_DATE);
+    """)
+    earnings_cache = {}
+    for r in cur.fetchall():
+        earnings_cache[r['ts_code']] = {
+            'forecast_year': r['forecast_year'],
+            'institution_count': r['institution_count'],
+            'eps_mean': float(r['eps_mean']) if r['eps_mean'] else None,
+            'eps_min': float(r['eps_min']) if r['eps_min'] else None,
+            'eps_max': float(r['eps_max']) if r['eps_max'] else None,
+            'industry_avg': float(r['industry_avg']) if r['industry_avg'] else None,
+        }
+    logger.info(f"加载 {len(earnings_cache)} 条机构预期数据")
+
+    # 加载概念板块数据
+    cur.execute("""
+        SELECT concept_code, concept_name, pct_chg, turnover_rate,
+               lead_stock_code, lead_stock_name, stock_count
+        FROM concept_board_quotes WHERE trade_date=%s;
+    """, (latest_trade_date,))
+    concept_cache = {}
+    for r in cur.fetchall():
+        concept_cache[r['concept_code']] = {
+            'concept_name': r['concept_name'],
+            'pct_chg': r['pct_chg'],
+            'turnover_rate': r['turnover_rate'],
+            'lead_stock_code': r['lead_stock_code'],
+            'lead_stock_name': r['lead_stock_name'],
+            'stock_count': r['stock_count'],
+        }
+    logger.info(f"加载 {len(concept_cache)} 条概念板块数据")
+
+    # 加载概念成分股映射（反向查找股票所属概念）
+    cur.execute("""
+        SELECT ts_code, concept_code, concept_name
+        FROM concept_membership;
+    """)
+    stock_concept_map = {}
+    for r in cur.fetchall():
+        ts = r['ts_code']
+        if ts not in stock_concept_map:
+            stock_concept_map[ts] = []
+        stock_concept_map[ts].append({
+            'concept_code': r['concept_code'],
+            'concept_name': r['concept_name'],
+        })
+    logger.info(f"加载 {len(stock_concept_map)} 条概念成分股映射")
 
     cur.execute("""
         SELECT
@@ -170,6 +249,11 @@ def aggregate_today():
             amount = float(q.get('amount') or 0)
             pct_chg = q.get('pct_chg') or 0
             turnover = q.get('turnover_rate') or 0
+            amplitude = q.get('amplitude') or 0
+            volume_ratio = q.get('volume_ratio') or 0
+            commission_ratio = q.get('commission_ratio') or 0
+            large_order_net = q.get('large_order_net') or 0
+            main_force_net = q.get('main_force_net') or 0
 
             ts = r['ts_code']
             is_kc_cy = ts.split('.')[0].startswith(('688', '300', '301'))
@@ -217,6 +301,96 @@ def aggregate_today():
             if pct_chg > limit_threshold:
                 quant_score = max(0, quant_score - 30)
 
+            # 振幅评分：3%-8%为活跃区间，加分
+            if 3 <= amplitude <= 8:
+                quant_score += 10 * (1 - abs(amplitude - 5.5) / 2.5)
+            elif amplitude > 8:
+                quant_score += 5  # 振幅过大，适度加分但低于最佳区间
+
+            # 量比评分：量比>1.5表示放量，加分
+            if volume_ratio > 1.5:
+                quant_score += min(15, (volume_ratio - 1.5) * 10)
+            elif volume_ratio < 0.8:
+                quant_score -= 5  # 缩量，减分
+
+            # 委比评分：委比>0表示买盘强，加分
+            if commission_ratio > 0:
+                quant_score += min(10, commission_ratio / 10)
+            elif commission_ratio < -20:
+                quant_score -= 5  # 卖盘压力大
+
+            # 大单净量评分：大单净量>0表示主力买入
+            if large_order_net > 0:
+                quant_score += min(15, large_order_net * 5)
+            elif large_order_net < -5:
+                quant_score -= 10  # 大单卖出，减分
+
+            # 主力资金净流入评分
+            if main_force_net > 0:
+                quant_score += min(10, main_force_net / 1e6 * 2)  # 每百万加2分，最多10分
+            elif main_force_net < -1e7:
+                quant_score -= 5  # 主力大幅流出
+
+            # 强势股加分
+            if ts in strong_rank_cache:
+                strong_ranks = strong_rank_cache[ts]
+                # 取最高排名加分
+                best_rank_bonus = 0
+                for sr in strong_ranks:
+                    pos = sr['rank_position'] or 999
+                    if pos <= 10:
+                        bonus = 20
+                    elif pos <= 30:
+                        bonus = 10
+                    elif pos <= 50:
+                        bonus = 5
+                    else:
+                        bonus = 0
+                    best_rank_bonus = max(best_rank_bonus, bonus)
+                
+                # 连续上涨天数加分
+                consecutive_days = max((sr['consecutive_days'] or 0) for sr in strong_ranks)
+                if consecutive_days >= 5:
+                    best_rank_bonus += 10
+                elif consecutive_days >= 3:
+                    best_rank_bonus += 5
+                
+                quant_score += best_rank_bonus
+
+            # 机构预期加分
+            if ts in earnings_cache:
+                fc = earnings_cache[ts]
+                inst_count = fc['institution_count'] or 0
+                if inst_count >= 10:
+                    quant_score += 15  # 多家机构覆盖
+                elif inst_count >= 5:
+                    quant_score += 8
+                
+                # EPS高于行业平均加分
+                if fc['eps_mean'] and fc['industry_avg'] and fc['industry_avg'] > 0:
+                    eps_premium = (fc['eps_mean'] - fc['industry_avg']) / fc['industry_avg']
+                    if eps_premium > 0.1:  # 高于行业10%
+                        quant_score += 10
+                    elif eps_premium > 0.05:
+                        quant_score += 5
+
+            # 概念板块加分
+            if ts in stock_concept_map:
+                concepts = stock_concept_map[ts]
+                best_concept_bonus = 0
+                for c in concepts:
+                    concept_data = concept_cache.get(c['concept_code'])
+                    if concept_data:
+                        concept_pct = concept_data['pct_chg'] or 0
+                        if concept_pct > 3:
+                            bonus = 10  # 热门概念
+                        elif concept_pct > 1:
+                            bonus = 5
+                        else:
+                            bonus = 0
+                        best_concept_bonus = max(best_concept_bonus, bonus)
+                quant_score += best_concept_bonus
+
             consensus = min(r['source_diversity'] / 2.0, 1.0)
             llm_n = min(r['llm_score'] / 5.0, 1.0)
             # 提及次数加成
@@ -252,7 +426,8 @@ def aggregate_today():
     else:
         logger.info("无 LLM 推荐数据，使用纯量化选股")
         cur.execute("""
-            SELECT ts_code, close, pct_chg, turnover_rate, amount, volume
+            SELECT ts_code, close, pct_chg, turnover_rate, amount, volume,
+                   amplitude, volume_ratio, commission_ratio, large_order_net, main_force_net
             FROM daily_quotes
             WHERE trade_date = %s
               AND amount > 1e8
@@ -272,6 +447,11 @@ def aggregate_today():
             pct_chg = q['pct_chg'] or 0
             turnover = q['turnover_rate'] or 0
             amount = q['amount'] or 0
+            amplitude = q['amplitude'] or 0
+            volume_ratio = q['volume_ratio'] or 0
+            commission_ratio = q['commission_ratio'] or 0
+            large_order_net = q['large_order_net'] or 0
+            main_force_net = q['main_force_net'] or 0
 
             # 盘后模式跳过涨停股（和LLM分支保持一致）
             is_kc_cy = ts_code.split('.')[0].startswith(('688', '300', '301'))
@@ -299,6 +479,93 @@ def aggregate_today():
             # 涨停惩罚
             if pct_chg > limit:
                 quant_score = max(0, quant_score - 30)
+
+            # 振幅评分：3%-8%为活跃区间，加分
+            if 3 <= amplitude <= 8:
+                quant_score += 10 * (1 - abs(amplitude - 5.5) / 2.5)
+            elif amplitude > 8:
+                quant_score += 5
+
+            # 量比评分：量比>1.5表示放量，加分
+            if volume_ratio > 1.5:
+                quant_score += min(15, (volume_ratio - 1.5) * 10)
+            elif volume_ratio < 0.8:
+                quant_score -= 5
+
+            # 委比评分：委比>0表示买盘强，加分
+            if commission_ratio > 0:
+                quant_score += min(10, commission_ratio / 10)
+            elif commission_ratio < -20:
+                quant_score -= 5
+
+            # 大单净量评分：大单净量>0表示主力买入
+            if large_order_net > 0:
+                quant_score += min(15, large_order_net * 5)
+            elif large_order_net < -5:
+                quant_score -= 10
+
+            # 主力资金净流入评分
+            if main_force_net > 0:
+                quant_score += min(10, main_force_net / 1e6 * 2)
+            elif main_force_net < -1e7:
+                quant_score -= 5
+
+            # 强势股加分
+            if ts_code in strong_rank_cache:
+                strong_ranks = strong_rank_cache[ts_code]
+                best_rank_bonus = 0
+                for sr in strong_ranks:
+                    pos = sr['rank_position'] or 999
+                    if pos <= 10:
+                        bonus = 20
+                    elif pos <= 30:
+                        bonus = 10
+                    elif pos <= 50:
+                        bonus = 5
+                    else:
+                        bonus = 0
+                    best_rank_bonus = max(best_rank_bonus, bonus)
+                
+                consecutive_days = max((sr['consecutive_days'] or 0) for sr in strong_ranks)
+                if consecutive_days >= 5:
+                    best_rank_bonus += 10
+                elif consecutive_days >= 3:
+                    best_rank_bonus += 5
+                
+                quant_score += best_rank_bonus
+
+            # 机构预期加分
+            if ts_code in earnings_cache:
+                fc = earnings_cache[ts_code]
+                inst_count = fc['institution_count'] or 0
+                if inst_count >= 10:
+                    quant_score += 15
+                elif inst_count >= 5:
+                    quant_score += 8
+                
+                if fc['eps_mean'] and fc['industry_avg'] and fc['industry_avg'] > 0:
+                    eps_premium = (fc['eps_mean'] - fc['industry_avg']) / fc['industry_avg']
+                    if eps_premium > 0.1:
+                        quant_score += 10
+                    elif eps_premium > 0.05:
+                        quant_score += 5
+
+            # 概念板块加分
+            if ts_code in stock_concept_map:
+                concepts = stock_concept_map[ts_code]
+                best_concept_bonus = 0
+                for c in concepts:
+                    concept_data = concept_cache.get(c['concept_code'])
+                    if concept_data:
+                        concept_pct = concept_data['pct_chg'] or 0
+                        if concept_pct > 3:
+                            bonus = 10
+                        elif concept_pct > 1:
+                            bonus = 5
+                        else:
+                            bonus = 0
+                        best_concept_bonus = max(best_concept_bonus, bonus)
+                quant_score += best_concept_bonus
 
             final = quant_score * 0.8
 
