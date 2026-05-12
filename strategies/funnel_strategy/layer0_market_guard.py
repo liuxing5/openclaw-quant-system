@@ -117,18 +117,29 @@ def check_market_environment(
         print(f"  [Layer 0] 上涨: {advancers}  下跌: {decliners}  "
               f"要求上涨≥{min_advancers}")
 
-    # 2. 获取全A指数（全市场等权均价）并计算EMA
+    # 2. 获取指数行情并计算EMA
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
-        SELECT trade_date, AVG(close) as market_close
+        SELECT trade_date, close as market_close
         FROM daily_quotes
-        WHERE trade_date >= %s AND trade_date <= %s
+        WHERE ts_code = %s AND trade_date >= %s AND trade_date <= %s
           AND close > 0
-        GROUP BY trade_date
         ORDER BY trade_date ASC;
-    """, (trade_date - timedelta(days=50), trade_date))
+    """, (index_code, trade_date - timedelta(days=50), trade_date))
     rows = cur.fetchall()
+
+    # 指数数据不可用时，降级为全市场均价
+    if not rows:
+        cur.execute("""
+            SELECT trade_date, AVG(close) as market_close
+            FROM daily_quotes
+            WHERE trade_date >= %s AND trade_date <= %s
+              AND close > 0
+            GROUP BY trade_date
+            ORDER BY trade_date ASC;
+        """, (trade_date - timedelta(days=50), trade_date))
+        rows = cur.fetchall()
     cur.close()
     conn.close()
 

@@ -125,17 +125,19 @@ def _batch_load_and_precompute(
             avg_vol = volume_arr[-6:-1].mean() if n >= 6 else volume_arr[:-1].mean()
             vol_ratio = today_vol / avg_vol if avg_vol > 0 else 0.0
 
-        # 布林上轨（仅数据充足时计算）
+        # 布林上轨 + 20日均量（仅数据充足时计算）
         boll_upper = float('nan')
-        boll_blowout = False
+        avg_vol_20 = 0.0
         if n >= 20:
             boll_upper = _fast_boll_upper(close_arr, 20)
+            avg_vol_20 = float(volume_arr[-21:-1].mean()) if n >= 21 else float(volume_arr[:-1].mean())
 
         precomputed[ts_code] = {
             'ema12': ema12,
             'bias_pct': bias_pct,
             'vol_ratio': vol_ratio,
             'boll_upper': boll_upper,
+            'avg_vol_20': avg_vol_20,
             'close': today_close,
             'volume': today_vol,
         }
@@ -223,18 +225,16 @@ def _check_single(
         result['reject_reason'] = f'乖离率={bias_pct:.1f}%>{cfg.layer4_max_bias_pct}%'
         return result
 
-    # 3. 天量上轨禁止（从预计算读取）
+    # 3. 天量上轨禁止（从预计算读取 avg_vol_20，避免 ohlcv_cache 截断导致死代码）
     if cfg.layer4_require_no_upper_boll_blowout:
         boll_upper = pre['boll_upper']
-        if not np.isnan(boll_upper):
+        avg_vol_20 = pre.get('avg_vol_20', 0.0)
+        if not np.isnan(boll_upper) and avg_vol_20 > 0:
             close = pre['close']
             vol = pre['volume']
-            n = len(rows)
-            if n >= 20:
-                avg_vol_20 = sum(r['volume'] for r in rows[-21:-1]) / 20.0
-                if close > boll_upper and vol > avg_vol_20 * cfg.layer4_boll_blowout_vol_mult:
-                    result['reject_reason'] = '天量上轨禁止'
-                    return result
+            if close > boll_upper and vol > avg_vol_20 * cfg.layer4_boll_blowout_vol_mult:
+                result['reject_reason'] = '天量上轨禁止'
+                return result
 
     # 4. K线形态信号识别
     limit_pct = _get_limit_pct(ts_code)

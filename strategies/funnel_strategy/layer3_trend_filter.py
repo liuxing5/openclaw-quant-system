@@ -79,7 +79,7 @@ def _detect_trend_structure(df: pd.DataFrame, cfg) -> dict:
     close = df['close']
     ema12 = _calc_ema(close, 12)
 
-    # 回踩支撑：近3日最低价一度贴近EMA12（±2%），然后收回
+    # 回踩支撑：近5日最低价一度贴近EMA12（±3%），然后收回
     if len(df) >= 5:
         recent_low_5 = df['low'].iloc[-5:].min()
         ema12_latest = ema12.iloc[-1]

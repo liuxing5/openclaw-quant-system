@@ -206,7 +206,10 @@ def _score_single(
 
     # C. 分时平稳（振幅倒数，越小越平稳）
     amplitude = today.get('amplitude', 0) or 0
-    if 2.0 <= amplitude <= 5.0:
+    if amplitude < 2.0:
+        result['stability_score'] = 10
+        result['tags'].append('分时平稳')
+    elif 2.0 <= amplitude <= 5.0:
         result['stability_score'] = 10
         result['tags'].append('分时平稳')
     elif amplitude < 8.0:
