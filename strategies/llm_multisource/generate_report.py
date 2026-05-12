@@ -437,12 +437,19 @@ def _get_report_snapshot_date(cur):
 
 
 def _get_latest_source_date(cur, source, lookback_days=7):
+    """获取某 source 的最新 snapshot_date，使用北京时间避免 UTC 时区偏差。
+    
+    PostgreSQL 的 CURRENT_DATE 在 Supabase 上是 UTC，
+    而 zuiyou1.py/persist 写入的 snapshot_date 是北京时间，
+    用 CURRENT_DATE 可能导致隔天数据被 UTC 时区过滤掉。
+    """
+    ref_date = get_beijing_date()
     cur.execute("""
         SELECT MAX(snapshot_date) AS max_date
         FROM daily_candidates
         WHERE source = %s
-          AND snapshot_date >= CURRENT_DATE - %s;
-    """, (source, lookback_days))
+          AND snapshot_date >= %s::date - %s;
+    """, (source, ref_date, lookback_days))
     row = cur.fetchone()
     if row and row['max_date']:
         return row['max_date']
