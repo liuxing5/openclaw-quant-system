@@ -2441,6 +2441,13 @@ def main():
     print(f"━━ 过滤统计，共{total_scanned}只 ━━")
     _print_reject_summary(total_rejects, total_scanned, cfg=CONFIG_STABLE)
     _save_reject_trend(end_d, total_rejects)
+
+    # 14:30 盘中初筛 与 15:10 盘后定稿都允许推送和写汇总文件，
+    # DB 写入仍只在盘后定稿，避免盘中不稳定数据污染 daily_candidates
+    current_beijing = beijing_now()
+    is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
+    is_pre_market = current_beijing.hour < 14 and not (current_beijing.hour == 9 and current_beijing.minute >= 30)
+
     _persist_scan_stats(
         end_d, total_rejects,
         total_scanned=total_scanned,
@@ -2449,12 +2456,6 @@ def main():
         mood=mood,
         run_mode='afternoon' if is_post_time else 'intraday',
     )
-
-    # 14:30 盘中初筛 与 15:10 盘后定稿都允许推送和写汇总文件，
-    # DB 写入仍只在盘后定稿，避免盘中不稳定数据污染 daily_candidates
-    current_beijing = beijing_now()
-    is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
-    is_pre_market = current_beijing.hour < 14 and not (current_beijing.hour == 9 and current_beijing.minute >= 30)
     
     if is_post_time:
         mode_label = "盘后定稿"
