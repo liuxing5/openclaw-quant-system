@@ -186,12 +186,13 @@ def generate_unified_html(output_dir=None):
         llm_candidates, llm_date = load_candidates('llm_multisource')
 
     eight_candidates, eight_date = load_candidates('overnight_8step')
-    # 如果没查到且漏斗也没数据，可能是并行 workflow 还没写完，重试 2 次
+    # 并行 workflow 竞争：overnight_8step 和 funnel 同时 15:10 触发，
+    # zuiyou1.py 可能还在写入，最多重试 5 次（每次 15s，共 75s）
     if not eight_candidates or not eight_date:
         import time as _time
-        for _retry in range(2):
-            _time.sleep(10)
-            print(f"  ⏳ overnight_8step 数据为空，10s后重试 ({_retry+1}/2)...")
+        for _retry in range(5):
+            _time.sleep(15)
+            print(f"  ⏳ overnight_8step 数据为空，15s后重试 ({_retry+1}/5)...")
             eight_candidates, eight_date = load_candidates('overnight_8step')
             if eight_candidates:
                 break
