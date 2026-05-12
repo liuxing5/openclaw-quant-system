@@ -15,9 +15,18 @@ snapshot_date 语义说明：
   代表交易日，请用 (snapshot_date, run_mode) 组合判断。
 """
 import json
+import math
 from typing import Iterable, Mapping, Any
 
 from .connection import get_db
+
+
+def _clean_num(val):
+    if val is None:
+        return None
+    if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+        return None
+    return val
 
 
 _INSERT_SQL = """
@@ -96,18 +105,18 @@ def _normalize(item: Mapping[str, Any], snapshot_date, source: str, run_mode: st
         'stock_name': item.get('stock_name'),
         'mention_count': item.get('mention_count', 1),
         'source_diversity': item.get('source_diversity', 1),
-        'consensus_score': item.get('consensus_score'),
-        'llm_score': item.get('llm_score'),
-        'quant_score': item.get('quant_score'),
-        'final_score': item.get('final_score'),
+        'consensus_score': _clean_num(item.get('consensus_score')),
+        'llm_score': _clean_num(item.get('llm_score')),
+        'quant_score': _clean_num(item.get('quant_score')),
+        'final_score': _clean_num(item.get('final_score')),
         'logic_tags': item.get('logic_tags') or [],
         'selected': item.get('selected', True),
-        'position_pct': item.get('position_pct', 0),
-        'entry_low': item.get('entry_low'),
-        'entry_high': item.get('entry_high'),
-        'stop_loss': item.get('stop_loss'),
-        'target_1': item.get('target_1'),
-        'target_2': item.get('target_2'),
+        'position_pct': _clean_num(item.get('position_pct', 0)),
+        'entry_low': _clean_num(item.get('entry_low')),
+        'entry_high': _clean_num(item.get('entry_high')),
+        'stop_loss': _clean_num(item.get('stop_loss')),
+        'target_1': _clean_num(item.get('target_1')),
+        'target_2': _clean_num(item.get('target_2')),
         'sources': sources,
         'run_mode': run_mode,
         'source': source,

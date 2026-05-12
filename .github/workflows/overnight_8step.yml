@@ -186,7 +186,14 @@ jobs:
         else
           echo "has_result=true" >> $GITHUB_OUTPUT
           echo "script_failed=false" >> $GITHUB_OUTPUT
+          echo "=== OUTPUT (first 20 lines) ==="
           head -20 /tmp/output.log
+          echo ""
+          echo "=== KEY MESSAGES (errors/warnings/DB writes) ==="
+          grep -E '(写入|daily_candidates|失败|❌|⚠|Error|error|Exception)' /tmp/output.log || echo "(none)"
+          echo ""
+          echo "=== OUTPUT (last 10 lines) ==="
+          tail -10 /tmp/output.log
         fi
 
     - name: Send Telegram notification

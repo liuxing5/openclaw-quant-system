@@ -382,7 +382,12 @@ def _persist_to_daily_candidates(
     try:
         return write_candidates(items, snapshot_date, source='overnight_8step', run_mode=run_mode)
     except Exception as e:
-        print(f"⚠️ daily_candidates 写入失败（不影响推送）: {e}")
+        import sys
+        import traceback
+        msg = f"⚠️ daily_candidates 写入失败（不影响推送）: {e}"
+        print(msg)
+        print(msg, file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return 0
 
 
@@ -2414,6 +2419,11 @@ def main():
     )
     if n_db:
         print(f"✓ 写入 {n_db} 条到 daily_candidates (source=overnight_8step, run_mode={persist_run_mode}, snapshot_date={end_d})")
+    elif len(stable_picks) + len(upper_picks) > 0:
+        import sys
+        msg = f"❌ 数据库写入异常: 有 {len(stable_picks) + len(upper_picks)} 只候选但写入了 0 条!"
+        print(msg)
+        print(msg, file=sys.stderr)
 
     # 15:10 盘后定稿时计算与 14:30 的 diff
     diff_summary = ""
