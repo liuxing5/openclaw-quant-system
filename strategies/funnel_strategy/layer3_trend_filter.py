@@ -110,63 +110,92 @@ def _check_single(
     }
 
     df = ohlcv_cache.get(ts_code)
-    if df is None or len(df) < 50:
-        result['reject_reason'] = '历史数据不足'
+    if df is None or len(df) < 5:
+        result['reject_reason'] = '历史数据不足(<5天)'
         return result
 
     close = df['close'].dropna()
-    if len(close) < 50:
-        result['reject_reason'] = '有效数据不足'
+    if len(close) < 5:
+        result['reject_reason'] = '有效数据不足(<5天)'
         return result
 
+    close_now = close.iloc[-1]
+    data_days = len(close)
+
     # 1. 周线CLOSE > 20周MA（≈100日线）
+    # 数据不足100天时降级：用可用数据均线代替
     weekly_ma_period = cfg.layer3_weekly_ma_period * 5
-    if len(close) >= weekly_ma_period:
+    if data_days >= weekly_ma_period:
         ma_weekly = close.rolling(window=weekly_ma_period, min_periods=weekly_ma_period).mean()
-        close_now = close.iloc[-1]
         ma_weekly_now = ma_weekly.iloc[-1]
         result['details']['weekly_ma'] = round(ma_weekly_now, 2)
         result['details']['weekly_above'] = close_now > ma_weekly_now
-
         if close_now <= ma_weekly_now:
             result['reject_reason'] = '周线CLOSE≤20MA'
             return result
+    elif data_days >= 10:
+        # 降级：用全量数据均值近似
+        ma_weekly_now = float(close.mean())
+        result['details']['weekly_ma'] = round(ma_weekly_now, 2)
+        result['details']['weekly_above'] = close_now > ma_weekly_now
+        result['details']['weekly_ma_degraded'] = True
+        if close_now <= ma_weekly_now:
+            result['reject_reason'] = '收盘≤全量均价(数据不足100天)'
+            return result
     else:
-        result['reject_reason'] = '数据不足以计算周线MA'
-        return result
+        # 数据极少，跳过周线检查
+        result['details']['weekly_ma'] = 0
+        result['details']['weekly_ma_degraded'] = True
+        result['details']['weekly_ma_skipped'] = True
 
-    # 2. EMA12 > EMA26 > EMA50
-    ema12 = _calc_ema(close, cfg.layer3_ema_fast)
-    ema26 = _calc_ema(close, cfg.layer3_ema_mid)
-    ema50 = _calc_ema(close, cfg.layer3_ema_slow)
+    # 2. EMA对齐检查（数据量自适应）
+    fast = cfg.layer3_ema_fast
+    mid = cfg.layer3_ema_mid
+    slow = cfg.layer3_ema_slow
 
+    ema12 = _calc_ema(close, fast)
     ema12_now = ema12.iloc[-1]
-    ema26_now = ema26.iloc[-1]
-    ema50_now = ema50.iloc[-1]
-
     result['details']['ema12'] = round(ema12_now, 2)
-    result['details']['ema26'] = round(ema26_now, 2)
-    result['details']['ema50'] = round(ema50_now, 2)
-    result['details']['ema_alignment'] = 'bullish' if ema12_now > ema26_now > ema50_now else 'mixed'
 
-    if not (ema12_now > ema26_now > ema50_now):
-        result['reject_reason'] = 'EMA未多头排列(12>26>50)'
-        return result
+    if data_days >= slow:
+        # 数据充足：完整 EMA12 > EMA26 > EMA50
+        ema26 = _calc_ema(close, mid)
+        ema50 = _calc_ema(close, slow)
+        ema26_now = ema26.iloc[-1]
+        ema50_now = ema50.iloc[-1]
+        result['details']['ema26'] = round(ema26_now, 2)
+        result['details']['ema50'] = round(ema50_now, 2)
+        alignment_ok = ema12_now > ema26_now > ema50_now
+        result['details']['ema_alignment'] = 'bullish' if alignment_ok else 'mixed'
+        if not alignment_ok:
+            result['reject_reason'] = 'EMA未多头排列(12>26>50)'
+            return result
+    elif data_days >= 5:
+        # 数据不足：仅检查 EMA12 趋势方向（至少需当前>3天前）
+        if data_days >= 4:
+            ema12_3d_ago = ema12.iloc[-4] if len(ema12) > 3 else ema12.iloc[0]
+            trending_up = ema12_now > ema12_3d_ago
+        else:
+            trending_up = close.iloc[-1] > close.iloc[0]
+        result['details']['ema_alignment'] = 'bullish_short' if trending_up else 'mixed_short'
+        result['details']['ema26'] = 0
+        result['details']['ema50'] = 0
+        if not trending_up:
+            result['reject_reason'] = 'EMA12未呈上行趋势(数据不足)'
+            return result
 
     # 3. 股价在EMA12上方
     if cfg.layer3_require_above_ema12:
-        close_now = close.iloc[-1]
         result['details']['close'] = round(close_now, 2)
         result['details']['above_ema12'] = close_now > ema12_now
         if close_now <= ema12_now:
             result['reject_reason'] = '股价≤EMA12'
             return result
 
-    # 4. 年线加分（股价>200EMA即可，不强制）
+    # 4. 年线加分（只有数据充足时才启用）
     annual_period = cfg.layer3_annual_ma_period
-    if len(close) >= annual_period:
+    if data_days >= annual_period:
         ma_annual = close.rolling(window=annual_period, min_periods=annual_period).mean()
-        close_now = close.iloc[-1]
         ma_annual_now = ma_annual.iloc[-1]
         result['details']['annual_ma'] = round(ma_annual_now, 2)
         result['details']['above_annual'] = close_now > ma_annual_now

@@ -31,9 +31,10 @@ def _calc_ema(values: pd.Series, period: int) -> pd.Series:
 
 
 def _calc_atr(df: pd.DataFrame, period: int = 20) -> float:
-    """计算ATR（平均真实波幅）"""
-    if len(df) < period + 1:
+    """计算ATR（平均真实波幅），数据不足时自适应"""
+    if len(df) < 3:
         return 0.0
+    actual_period = min(period, max(2, len(df) - 1))
 
     high = df['high']
     low = df['low']
@@ -44,7 +45,7 @@ def _calc_atr(df: pd.DataFrame, period: int = 20) -> float:
     tr3 = abs(low - close.shift(1))
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    atr = tr.rolling(window=period, min_periods=period).mean().iloc[-1]
+    atr = tr.rolling(window=actual_period, min_periods=actual_period).mean().iloc[-1]
     return float(atr) if not pd.isna(atr) else 0.0
 
 
@@ -106,25 +107,58 @@ def check_time_window(cfg) -> dict:
     }
 
 
+def _batch_load_history(
+    stock_list: List[str], trade_date: date, db_conn, days: int = 60, verbose: bool = False
+) -> Dict[str, pd.DataFrame]:
+    """批量加载OHLCV历史数据"""
+    if not stock_list:
+        return {}
+    start_date = trade_date - timedelta(days=days)
+    result = {}
+    try:
+        cur = db_conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT ts_code, trade_date, open, high, low, close, volume
+            FROM daily_quotes
+            WHERE ts_code = ANY(%s) AND trade_date >= %s AND trade_date <= %s
+            ORDER BY ts_code, trade_date ASC;
+        """, (stock_list, start_date, trade_date))
+        rows = cur.fetchall()
+        cur.close()
+        if not rows:
+            return result
+        df_all = pd.DataFrame(rows)
+        df_all['trade_date'] = pd.to_datetime(df_all['trade_date']).dt.date
+        for ts_code, group in df_all.groupby('ts_code'):
+            group = group.set_index('trade_date').sort_index()
+            for col in ['open', 'high', 'low', 'close', 'volume']:
+                group[col] = pd.to_numeric(group[col], errors='coerce')
+            result[ts_code] = group
+    except Exception as e:
+        if verbose:
+            print(f"  ⚠️ L6 批量数据加载失败: {e}")
+    return result
+
+
 def compute_risk_params(
     ts_code: str,
-    trade_date: date,
     entry_price: float,
     cfg,
+    ohlcv_cache: Dict[str, pd.DataFrame],
 ) -> dict:
     """
-    计算单只股票的ATR风控参数。
+    计算单只股票的ATR风控参数（从内存缓存读取）。
     
     返回:
       {
         'atr': float,
-        'atr_pct': float,          # ATR占价格百分比
-        'stop_loss': float,         # 初始止损价
-        'stop_loss_pct': float,     # 止损幅度%
-        'trailing_ref': float,      # 移动止盈参考价(EMA12)
-        'target_price': float,      # 目标价(入场+2ATR)
-        'profit_loss_ratio': float, # 盈亏比
-        'passed': bool,             # 盈亏比是否通过
+        'atr_pct': float,
+        'stop_loss': float,
+        'stop_loss_pct': float,
+        'trailing_ref': float,
+        'target_price': float,
+        'profit_loss_ratio': float,
+        'passed': bool,
       }
     """
     result = {
@@ -138,7 +172,7 @@ def compute_risk_params(
         'passed': False,
     }
 
-    df = _load_history(ts_code, trade_date, days=60)
+    df = ohlcv_cache.get(ts_code)
     if df is None or len(df) < 5:
         return result
 
@@ -215,30 +249,27 @@ def run_layer6_risk_control(
     passed = []
     reject_stats = {'盈亏比不足': 0, 'ATR异常': 0}
 
+    # 批量加载历史数据 + 收盘价
+    stock_codes = [item['ts_code'] for item in stock_items]
+    db_conn = get_db()
+    try:
+        ohlcv_cache = _batch_load_history(stock_codes, trade_date, db_conn, days=60, verbose=verbose)
+    finally:
+        db_conn.close()
+
     for item in stock_items:
         ts_code = item['ts_code']
+        df = ohlcv_cache.get(ts_code)
 
-        # 从历史数据取收盘价作为模拟入场价
+        # 从缓存获取收盘价
         close_price = 0.0
-        try:
-            conn = get_db()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("""
-                SELECT close FROM daily_quotes
-                WHERE ts_code = %s AND trade_date = %s;
-            """, (ts_code, trade_date))
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
-            if row:
-                close_price = float(row['close'])
-        except Exception:
-            pass
+        if df is not None and len(df) > 0:
+            close_price = float(df['close'].iloc[-1])
 
         if close_price <= 0:
             continue
 
-        risk = compute_risk_params(ts_code, trade_date, close_price, cfg)
+        risk = compute_risk_params(ts_code, close_price, cfg, ohlcv_cache)
         item['atr'] = risk['atr']
         item['atr_pct'] = risk['atr_pct']
         item['stop_loss'] = risk['stop_loss']
