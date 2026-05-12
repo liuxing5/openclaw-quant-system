@@ -56,7 +56,9 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 .section-subtitle { font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; }
 
 /* Three column layout */
-.three-col { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+.three-col { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:start; }
+.three-col .section { margin-bottom:0; height:100%; display:flex; flex-direction:column; }
+.three-col .cards-grid { flex:1; }
 @media (max-width:1024px) { .three-col { grid-template-columns:1fr; } .stats-row { grid-template-columns:1fr; } }
 
 /* Funnel steps */
@@ -115,7 +117,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 三策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-05-12 | 生成: 2026-05-12 23:38:18
+        报告日期: 2026-05-12 | 生成: 2026-05-12 23:45:26
         <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           <option value="2026-05-12" selected>2026-05-12</option>
