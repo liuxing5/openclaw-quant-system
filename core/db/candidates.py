@@ -16,9 +16,19 @@ snapshot_date 语义说明：
 """
 import json
 import math
+import time
+import sys
 from typing import Iterable, Mapping, Any
 
-from .connection import get_db
+from .connection import get_db_fresh
+
+
+def _clean_num(val):
+    if val is None:
+        return None
+    if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+        return None
+    return val
 
 
 def _clean_num(val):
@@ -123,6 +133,33 @@ def _normalize(item: Mapping[str, Any], snapshot_date, source: str, run_mode: st
     }
 
 
+def _write_candidates_once(
+    items: list, snapshot_date, source: str, run_mode: str, conn=None,
+):
+    own_conn = conn is None
+    if own_conn:
+        conn = get_db_fresh()
+    try:
+        ensure_source_column(conn)
+        cur = conn.cursor()
+        for it in items:
+            cur.execute(_INSERT_SQL, _normalize(it, snapshot_date, source, run_mode))
+        conn.commit()
+        cur.close()
+        return len(items)
+    except Exception:
+        if own_conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            try:
+                conn.close()
+            except Exception:
+                pass
+        raise
+
+
 def write_candidates(
     items: Iterable[Mapping[str, Any]],
     snapshot_date,
@@ -132,31 +169,35 @@ def write_candidates(
 ) -> int:
     """Upsert a batch of candidates. Returns count written.
 
-    `items` keys (all optional except ts_code):
-      ts_code, stock_name, final_score, quant_score, llm_score,
-      consensus_score, mention_count, source_diversity,
-      logic_tags (list[str]), selected (bool), position_pct,
-      entry_low, entry_high, stop_loss, target_1, target_2,
-      sources (list[dict] | str — JSONB)
+    Uses a fresh DB connection per call (not session-cached) to avoid
+    stale-connection failures in long-running CI jobs.
 
-    `source` distinguishes strategy: 'overnight_8step' | 'llm_multisource' | 'pre_surge'.
-    `run_mode`: 'morning' | 'intraday' | 'afternoon'.
+    Retries up to 2 times on transient errors (connection loss, SSL reset).
     """
     items = list(items)
     if not items:
         return 0
 
-    own_conn = conn is None
-    if own_conn:
-        conn = get_db()
-    try:
-        ensure_source_column(conn)
-        cur = conn.cursor()
-        for it in items:
-            cur.execute(_INSERT_SQL, _normalize(it, snapshot_date, source, run_mode))
-        conn.commit()
-        cur.close()
-        return len(items)
-    finally:
-        if own_conn:
-            conn.close()
+    if conn is not None:
+        return _write_candidates_once(items, snapshot_date, source, run_mode, conn=conn)
+
+    last_err = None
+    for attempt in range(3):
+        try:
+            return _write_candidates_once(items, snapshot_date, source, run_mode)
+        except Exception as e:
+            last_err = e
+            if attempt < 2:
+                delay = 2 ** attempt
+                msg = (
+                    f"⚠️ daily_candidates 写入第{attempt + 1}次失败: {e}，"
+                    f"{delay}s 后重试..."
+                )
+                print(msg)
+                print(msg, file=sys.stderr)
+                time.sleep(delay)
+            else:
+                msg = f"❌ daily_candidates 写入3次均失败: {e}"
+                print(msg)
+                print(msg, file=sys.stderr)
+                raise

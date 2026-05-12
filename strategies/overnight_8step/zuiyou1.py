@@ -439,8 +439,10 @@ def _read_intraday_picks(snapshot_date) -> set:
     """读取当日 14:30 盘中初筛入选的 ts_code 集合，用于 15:10 计算 diff。"""
     if not DB_ENABLED:
         return set()
+    conn = None
     try:
-        conn = get_db()
+        from core.db.connection import get_db_fresh
+        conn = get_db_fresh()
         cur = conn.cursor()
         cur.execute("""
             SELECT ts_code FROM daily_candidates
@@ -450,11 +452,17 @@ def _read_intraday_picks(snapshot_date) -> set:
               AND selected = TRUE;
         """, (snapshot_date,))
         codes = {row[0] for row in cur.fetchall()}
-        cur.close(); conn.close()
+        cur.close()
         return codes
     except Exception as e:
         print(f"⚠️ 读取 intraday 快照失败: {e}")
         return set()
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
 # ============================================================
 #  LLM候选池整合（v1.5+）
