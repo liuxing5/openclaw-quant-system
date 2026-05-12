@@ -58,6 +58,18 @@ jobs:
           echo "Running: $CMD"
           $CMD
 
+      - name: Generate HTML report
+        run: |
+          python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.GH_PAT }}
+          publish_dir: ./strategies/funnel_strategy/docs
+          destination_dir: funnel
+          keep_files: true
+
       - name: Upload results
         uses: actions/upload-artifact@v4
         if: always()
