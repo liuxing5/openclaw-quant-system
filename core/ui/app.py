@@ -237,7 +237,7 @@ elif page == "🎯 漏斗策略":
                 
                 st.dataframe(
                     cand_df[available_cols].rename(columns=column_labels),
-                    use_container_width=True,
+                    width='stretch',
                     hide_index=True,
                 )
             else:

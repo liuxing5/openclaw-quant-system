@@ -485,14 +485,14 @@ class FunnelEngine:
         print(f"  Layer 0 大盘: {'✅通过' if s['layer0_pass'] else '⚠️限仓'}  "
               f"(仓位≤{int(s['layer0_max_position']*100)}%)")
         print(f"  Layer 1 防雷: {s['layer1_pass']:>6} 只 (淘汰{s['input_count']-s['layer1_pass']})")
-        prev = s['input_count']
-        for i, key in enumerate([('layer1_pass', 'L1防雷'), ('layer2_pass', 'L2流动'),
+        prev = s['layer1_pass']
+        for i, key in enumerate([('layer2_pass', 'L2流动'),
                                   ('layer3_pass', 'L3趋势'), ('layer4_pass', 'L4动能'),
                                   ('layer5_pass', 'L5人气'), ('layer6_pass', 'L6风控')], 2):
             curr = s[key[0]]
             if curr == 0 and prev == 0:
                 continue
-            print(f"  Layer {i} {key[1]}: {curr:>6} 只 (淘汰{prev-curr})" if i > 1 else "")
+            print(f"  Layer {i} {key[1]}: {curr:>6} 只 (淘汰{prev-curr})")
             prev = curr
 
 
