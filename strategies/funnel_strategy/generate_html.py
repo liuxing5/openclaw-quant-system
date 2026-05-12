@@ -449,8 +449,8 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .theme-btn:hover {{ background:rgba(255,255,255,.3); }}
 
 /* Summary stats */
-.stats-row {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }}
-.stat-card {{ background:var(--section-bg); border-radius:10px; padding:16px; text-align:center; box-shadow:var(--shadow); border:1px solid var(--border); }}
+.stats-row {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; align-items:stretch; }}
+.stat-card {{ background:var(--section-bg); border-radius:10px; padding:16px; text-align:center; box-shadow:var(--shadow); border:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:80px; }}
 .stat-card .sv {{ font-size:1.6rem; font-weight:bold; color:var(--score-color); }}
 .stat-card .sl {{ font-size:.75rem; color:var(--text2); margin-top:4px; }}
 .stat-card.funnel .sv {{ color:var(--funnel-badge-text); }}
