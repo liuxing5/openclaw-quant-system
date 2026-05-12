@@ -44,13 +44,10 @@ def build_message() -> str:
     # 仓位状态
     if row['layer0_pass']:
         position_emoji = "✅"
-        position_text = "满仓"
-    elif row['layer0_can_trade']:
-        position_emoji = "⚠️"
-        position_text = f"半仓({int(row['layer0_max_position'] * 100)}%)"
+        position_text = f"满仓({int(row.get('layer0_max_position', 1) * 100)}%)"
     else:
-        position_emoji = "🚫"
-        position_text = "休战"
+        position_emoji = "⚠️"
+        position_text = f"半仓({int(row.get('layer0_max_position', 0.5) * 100)}%)"
 
     msg = f"🎯 七步漏斗选股 — {date_str}\n\n"
 
