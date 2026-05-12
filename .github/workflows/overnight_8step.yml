@@ -171,19 +171,15 @@ jobs:
         POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
         POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
       run: |
+        set +e  # Don't exit on error
         echo "Running: ${{ steps.task.outputs.script }}"
         python ${{ steps.task.outputs.script }} > /tmp/output.log 2>&1
         EXIT_CODE=$?
         
-        # Always show the log for debugging
-        echo "=== FULL OUTPUT (first 50 lines) ==="
-        head -50 /tmp/output.log
+        echo "=== FULL OUTPUT ==="
+        cat /tmp/output.log 2>/dev/null || echo "(log file not found)"
         echo ""
-        echo "=== KEY MESSAGES (errors/warnings/DB writes) ==="
-        grep -E '(写入|daily_candidates|DB_ENABLED|失败|❌|⚠|Error|error|Exception|Traceback)' /tmp/output.log || echo "(none)"
-        echo ""
-        echo "=== OUTPUT (last 20 lines) ==="
-        tail -20 /tmp/output.log
+        echo "=== SCRIPT EXIT CODE: $EXIT_CODE ==="
         
         if [ $EXIT_CODE -ne 0 ]; then
           echo "❌ Script failed with exit code: $EXIT_CODE"
