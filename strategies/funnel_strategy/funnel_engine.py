@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import sys
 import os
+import time
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
@@ -113,6 +114,7 @@ class FunnelEngine:
             cur.close()
             conn.close()
 
+        t_total_start = time.perf_counter()
         timestamp = datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
         print("\n" + "=" * 70)
@@ -126,6 +128,7 @@ class FunnelEngine:
         # ════════════════════════════════════════════════════════
         # Layer 0: 大盘风控
         # ════════════════════════════════════════════════════════
+        t0 = time.perf_counter()
         if cfg.layer0_enabled:
             market_env = check_market_environment(
                 trade_date=trade_date,
@@ -137,6 +140,7 @@ class FunnelEngine:
             )
             self._stats['layer0_pass'] = market_env['passed']
             self._stats['layer0_max_position'] = market_env['max_position_pct']
+            print(f"  ⏱️  Layer 0 耗时: {time.perf_counter() - t0:.1f}s")
 
             if not market_env['can_trade']:
                 print(f"\n{'='*70}")
@@ -160,7 +164,9 @@ class FunnelEngine:
         if custom_universe:
             stock_list = custom_universe
         else:
+            t_uni = time.perf_counter()
             stock_list = load_universe(trade_date, min_amount=1e8)
+            print(f"  ⏱️  全市场加载耗时: {time.perf_counter() - t_uni:.1f}s")
 
         self._stats['input_count'] = len(stock_list)
 
@@ -180,10 +186,12 @@ class FunnelEngine:
         # ════════════════════════════════════════════════════════
         # Layer 1: 硬性防雷
         # ════════════════════════════════════════════════════════
+        t1 = time.perf_counter()
         l1_result = run_layer1_fundamental_filter(
             stock_list, trade_date, cfg, verbose=cfg.verbose
         )
         self._stats['layer1_pass'] = len(l1_result)
+        print(f"  ⏱️  Layer 1 耗时: {time.perf_counter() - t1:.1f}s")
 
         if not l1_result:
             print("\n❌ Layer 1 无标的通过防雷筛选")
@@ -196,10 +204,12 @@ class FunnelEngine:
         # ════════════════════════════════════════════════════════
         # Layer 2: 流动性筛选
         # ════════════════════════════════════════════════════════
+        t2 = time.perf_counter()
         l2_result = run_layer2_liquidity_filter(
             l1_result, trade_date, cfg, verbose=cfg.verbose
         )
         self._stats['layer2_pass'] = len(l2_result)
+        print(f"  ⏱️  Layer 2 耗时: {time.perf_counter() - t2:.1f}s")
 
         if not l2_result:
             print("\n❌ Layer 2 无标的通过流动性筛选")
@@ -213,10 +223,12 @@ class FunnelEngine:
         # ════════════════════════════════════════════════════════
         # Layer 3: 趋势结构过滤
         # ════════════════════════════════════════════════════════
+        t3 = time.perf_counter()
         l3_result = run_layer3_trend_filter(
             l2_result, trade_date, cfg, verbose=cfg.verbose
         )
         self._stats['layer3_pass'] = len(l3_result)
+        print(f"  ⏱️  Layer 3 耗时: {time.perf_counter() - t3:.1f}s")
 
         if not l3_result:
             print("\n❌ Layer 3 无标的通过趋势过滤")
@@ -231,10 +243,12 @@ class FunnelEngine:
         # Layer 4: 动能与买入信号
         # ════════════════════════════════════════════════════════
         l4_stock_list = [item['ts_code'] for item in l3_result]
+        t4 = time.perf_counter()
         l4_result = run_layer4_momentum_filter(
             l4_stock_list, trade_date, cfg, verbose=cfg.verbose
         )
         self._stats['layer4_pass'] = len(l4_result)
+        print(f"  ⏱️  Layer 4 耗时: {time.perf_counter() - t4:.1f}s")
 
         if not l4_result:
             print("\n❌ Layer 4 无标的出现买入信号")
@@ -254,10 +268,12 @@ class FunnelEngine:
         # ════════════════════════════════════════════════════════
         # Layer 5: 人气精选
         # ════════════════════════════════════════════════════════
+        t5 = time.perf_counter()
         l5_result = run_layer5_popularity_filter(
             l4_result, trade_date, cfg, verbose=cfg.verbose
         )
         self._stats['layer5_pass'] = len(l5_result)
+        print(f"  ⏱️  Layer 5 耗时: {time.perf_counter() - t5:.1f}s")
 
         if not l5_result:
             print("\n❌ Layer 5 无标的通过人气评分")
@@ -272,10 +288,12 @@ class FunnelEngine:
         # ════════════════════════════════════════════════════════
         # Layer 6: 刚性风控
         # ════════════════════════════════════════════════════════
+        t6 = time.perf_counter()
         l6_result = run_layer6_risk_control(
             l5_result, trade_date, cfg, verbose=cfg.verbose
         )
         self._stats['layer6_pass'] = len(l6_result)
+        print(f"  ⏱️  Layer 6 耗时: {time.perf_counter() - t6:.1f}s")
 
         # ════════════════════════════════════════════════════════
         # 输出最终结果
@@ -308,6 +326,8 @@ class FunnelEngine:
                         item.get('time_window_ok', False),
                         self._stats['layer0_max_position'],
                     ])
+
+        print(f"\n  ⏱️  总耗时: {time.perf_counter() - t_total_start:.1f}s")
 
         # 打印漏斗摘要
         self._print_funnel_summary()
