@@ -114,14 +114,15 @@ def load_funnel_data(trade_date=None):
     return row
 
 
-def load_candidates(source, run_mode=None):
+def load_candidates(source, run_mode=None, retry_empty=False):
     conn = get_db_fresh(use_dict_cursor=True)
     cur = conn.cursor()
     ref_date = get_beijing_date()
     cur.execute("""
         SELECT MAX(snapshot_date) AS max_date
         FROM daily_candidates
-        WHERE source = %s AND snapshot_date >= %s::date - 7;
+        WHERE source = %s AND snapshot_date >= %s::date - 7
+          AND ts_code NOT LIKE '%%.AUDIT';
     """, (source, ref_date))
     row = cur.fetchone()
     if not row or not row['max_date']:
@@ -185,6 +186,15 @@ def generate_unified_html(output_dir=None):
         llm_candidates, llm_date = load_candidates('llm_multisource')
 
     eight_candidates, eight_date = load_candidates('overnight_8step')
+    # 如果没查到且漏斗也没数据，可能是并行 workflow 还没写完，重试 2 次
+    if not eight_candidates or not eight_date:
+        import time as _time
+        for _retry in range(2):
+            _time.sleep(10)
+            print(f"  ⏳ overnight_8step 数据为空，10s后重试 ({_retry+1}/2)...")
+            eight_candidates, eight_date = load_candidates('overnight_8step')
+            if eight_candidates:
+                break
     eight_date_str = str(eight_date) if eight_date else None
 
     llm_scan = load_scan_stats('llm_multisource', llm_date)
