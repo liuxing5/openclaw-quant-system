@@ -1008,7 +1008,8 @@ CONFIG_STABLE = {
     "penalty_hot_turn": 12.0,
     "penalty_vol_ratio": 7.0,
     "penalty_ma_bias": 0.08,
-    "position_ratio": "单票≤15%总仓位",
+    "position_ratio": 0.15,
+    "position_label": "单票≤15%总仓位",
 }
 
 CONFIG_UPPER = {
@@ -1036,7 +1037,8 @@ CONFIG_UPPER = {
     "penalty_hot_turn": 12.0,
     "penalty_vol_ratio": 7.0,
     "penalty_ma_bias": 0.08,
-    "position_ratio": "单票≤8%总仓位，严守止损",
+    "position_ratio": 0.08,
+    "position_label": "单票≤8%总仓位，严守止损",
 }
 
 # 北京时间工具函数（自动检测服务器时区并转换为北京时间）
@@ -2173,7 +2175,7 @@ def append_to_summary(
             continue
 
         path_pool = "hs300+zz500" if path_label == "稳健" else "zz1000"
-        pos_hint = CONFIG_STABLE["position_ratio"] if path_label == "稳健" else CONFIG_UPPER["position_ratio"]
+        pos_hint = CONFIG_STABLE["position_label"] if path_label == "稳健" else CONFIG_UPPER["position_label"]
         lines.append("")
         lines.append(f"── zuiyou1最优版·{path_label}路径 ({len(sub)} 只)  💰 {pos_hint}")
         lines.append(
@@ -2367,8 +2369,8 @@ def main():
     else:
         print("情绪正常，双路径运行")
 
-    print(f"稳健路径仓位: {CONFIG_STABLE['position_ratio']}")
-    print(f"高位路径仓位: {CONFIG_UPPER['position_ratio']}")
+    print(f"稳健路径仓位: {CONFIG_STABLE['position_label']}")
+    print(f"高位路径仓位: {CONFIG_UPPER['position_label']}")
 
     end_d = beijing_now().strftime("%Y-%m-%d")
 
@@ -2507,7 +2509,7 @@ def main():
         if picks.empty:
             continue
 
-        pos_hint = CONFIG_UPPER["position_ratio"] if path_label == "高位" else CONFIG_STABLE["position_ratio"]
+        pos_hint = CONFIG_UPPER["position_label"] if path_label == "高位" else CONFIG_STABLE["position_label"]
         print(f"\n{path_label}路径 ({len(picks)} 只)  {pos_hint}")
         print(f"{'代码':<14} {'价格':>7} {'涨幅%':>7} {'量比':>6} "
               f"{'换手%':>7} {'连板':>5} {'乖离%':>7} {'得分':>5}  特征")
