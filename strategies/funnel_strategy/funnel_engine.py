@@ -20,6 +20,12 @@ from typing import List, Dict, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+from dotenv import load_dotenv
+for _env_path in [Path('.env'), Path('strategies/llm_multisource/.env')]:
+    if _env_path.exists():
+        load_dotenv(_env_path)
+        break
+
 from .funnel_config import FunnelConfig, DEFAULT_FUNNEL_CONFIG
 from .layer0_market_guard import check_market_environment
 from .layer1_fundamental_filter import run_layer1_fundamental_filter

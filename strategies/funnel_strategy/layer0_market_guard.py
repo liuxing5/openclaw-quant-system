@@ -8,19 +8,17 @@ Layer 0: 大盘风控（盘前）
 吸收策略：③看大盘控仓位
 
 数据来源：
-  - 上涨家数/下跌家数: eastmoney push2 API
+  - 上涨家数/下跌家数: daily_quotes 表直接 SQL 统计
   - 全A指数: 上证综指(000001.SH) daily_quotes 表
 """
 from __future__ import annotations
 
 import math
-import time
 import sys
 import os
 from datetime import date, timedelta
-from typing import Tuple, Optional
+from typing import Tuple
 
-import requests
 import pandas as pd
 from psycopg2.extras import RealDictCursor
 
@@ -28,25 +26,31 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 from core.db.connection import get_db
 
 
-def _fetch_market_breadth() -> Tuple[int, int]:
+def _fetch_market_breadth(trade_date=None) -> Tuple[int, int]:
     """
-    从东财接口获取两市涨跌家数。
+    从 daily_quotes 数据库统计两市上涨/下跌家数。
     返回 (上涨家数, 下跌家数)。
-    接口失败时返回(0, 0)，由上层决定是否降级。
+    数据库不可用时返回(0, 0)，由上层决定是否降级。
     """
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": "https://quote.eastmoney.com/",
-    }
     try:
-        url = ("https://push2.eastmoney.com/api/qt/stock/get?"
-               "secid=0.000001&fields=f57,f58,f116,f117,f118,f119,f120,f121")
-        r = requests.get(url, headers=headers, timeout=10)
-        data = r.json()
-        if data.get('data'):
-            up = int(data['data'].get('f116', 0) or 0)
-            down = int(data['data'].get('f117', 0) or 0)
-            return up, down
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        if trade_date is None:
+            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else date.today()
+        cur.execute("""
+            SELECT
+                COUNT(*) FILTER (WHERE pct_chg > 0) as advancers,
+                COUNT(*) FILTER (WHERE pct_chg < 0) as decliners
+            FROM daily_quotes
+            WHERE trade_date = %s;
+        """, (trade_date,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return int(row['advancers'] or 0), int(row['decliners'] or 0)
     except Exception:
         pass
     return 0, 0
@@ -92,18 +96,7 @@ def check_market_environment(
         'reason': '',
     }
 
-    # 1. 获取上涨家数
-    advancers, decliners = _fetch_market_breadth()
-    result['advancers'] = advancers
-    result['decliners'] = decliners
-
-    breadth_ok = advancers >= min_advancers
-
-    if verbose:
-        print(f"  [Layer 0] 上涨: {advancers}  下跌: {decliners}  "
-              f"要求上涨≥{min_advancers}")
-
-    # 2. 获取全A指数并计算EMA
+    # 0. 解析交易日期
     if trade_date is None:
         conn = get_db()
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -113,16 +106,28 @@ def check_market_environment(
         cur.close()
         conn.close()
 
+    # 1. 获取上涨家数（从数据库直接统计）
+    advancers, decliners = _fetch_market_breadth(trade_date)
+    result['advancers'] = advancers
+    result['decliners'] = decliners
+
+    breadth_ok = advancers >= min_advancers
+
+    if verbose:
+        print(f"  [Layer 0] 上涨: {advancers}  下跌: {decliners}  "
+              f"要求上涨≥{min_advancers}")
+
+    # 2. 获取全A指数（全市场等权均价）并计算EMA
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
-        SELECT trade_date, close
+        SELECT trade_date, AVG(close) as market_close
         FROM daily_quotes
-        WHERE ts_code = %s
-          AND trade_date >= %s
-          AND trade_date <= %s
+        WHERE trade_date >= %s AND trade_date <= %s
+          AND close > 0
+        GROUP BY trade_date
         ORDER BY trade_date ASC;
-    """, (index_code, trade_date - timedelta(days=50), trade_date))
+    """, (trade_date - timedelta(days=50), trade_date))
     rows = cur.fetchall()
     cur.close()
     conn.close()
@@ -131,20 +136,27 @@ def check_market_environment(
     index_close = 0.0
     index_ema = 0.0
 
-    if rows and len(rows) >= ema_period:
+    if rows:
         df = pd.DataFrame(rows)
         df.set_index('trade_date', inplace=True)
-        df['close'] = pd.to_numeric(df['close'], errors='coerce')
+        df['close'] = pd.to_numeric(df['market_close'], errors='coerce')
         df = df.dropna(subset=['close'])
 
+        index_close = float(df['close'].iloc[-1])
         if len(df) >= ema_period:
-            index_close = float(df['close'].iloc[-1])
             ema_series = _calc_ema(df['close'], ema_period)
             index_ema = float(ema_series.iloc[-1])
             index_above_ema = index_close > index_ema
-            result['index_close'] = round(index_close, 2)
-            result['index_ema'] = round(index_ema, 2)
-            result['index_above_ema'] = index_above_ema
+        elif len(df) >= 3:
+            index_ema = float(df['close'].mean())
+            index_above_ema = index_close > index_ema
+        else:
+            # 仅1-2天数据，保守假定不满足指数条件
+            index_ema = index_close
+            index_above_ema = False
+        result['index_close'] = round(index_close, 2)
+        result['index_ema'] = round(index_ema, 2)
+        result['index_above_ema'] = index_above_ema
 
     result['index_close'] = round(index_close, 2)
     result['index_ema'] = round(index_ema, 2)

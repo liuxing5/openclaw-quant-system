@@ -139,11 +139,13 @@ def compute_risk_params(
     }
 
     df = _load_history(ts_code, trade_date, days=60)
-    if df is None or len(df) < 20:
+    if df is None or len(df) < 5:
         return result
 
-    # ATR计算
-    atr = _calc_atr(df, cfg.layer6_atr_period)
+    # ATR计算（自适应周期：数据不足时用可用数据）
+    atr_period = min(cfg.layer6_atr_period, len(df) - 1)
+    atr_period = max(atr_period, 5)  # 最少5天
+    atr = _calc_atr(df, atr_period)
     if atr <= 0 or entry_price <= 0:
         return result
 

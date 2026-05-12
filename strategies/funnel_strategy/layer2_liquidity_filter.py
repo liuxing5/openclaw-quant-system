@@ -80,7 +80,7 @@ def _load_20d_avg_amount(stock_list: List[str], trade_date: date) -> Dict[str, f
         df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
         for ts_code, group in df.groupby('ts_code'):
             amounts = group['amount'].dropna().head(20)
-            if len(amounts) >= 10:
+            if len(amounts) >= 1:
                 cache[ts_code] = float(amounts.mean())
     except Exception as e:
         print(f"  ⚠️ Layer2 均量计算失败: {e}")
@@ -124,6 +124,11 @@ def run_layer2_liquidity_filter(
     liq_cache = _load_liquidity_data(stock_list, trade_date)
     avg_amount_cache = _load_20d_avg_amount(stock_list, trade_date)
 
+    # 数据完整性检测：turnover_rate 全部为0说明数据管道未填充此字段
+    has_turnover = any(v.get('turnover_rate', 0) > 0 for v in liq_cache.values())
+    if not has_turnover and verbose:
+        print(f"  ⚠️ turnover_rate 数据缺失，跳过换手率和市值过滤")
+
     passed = []
     reject_stats = {'成交额不足': 0, '市值不足': 0, '换手不符': 0}
 
@@ -131,22 +136,28 @@ def run_layer2_liquidity_filter(
         liq = liq_cache.get(ts_code, {})
         avg_amount = avg_amount_cache.get(ts_code, 0)
 
-        # 20日均成交额
+        # 20日均成交额（始终检查）
         if avg_amount < cfg.layer2_min_avg_amount_20d:
             reject_stats['成交额不足'] += 1
             continue
 
-        # 流通市值
-        circ_mcap = liq.get('circulating_market_cap', 0) or liq.get('total_market_cap', 0)
-        if circ_mcap < cfg.layer2_min_circulating_mcap:
-            reject_stats['市值不足'] += 1
-            continue
+        if has_turnover:
+            # 流通市值（从表读取，缺失时用成交额/换手率估算）
+            circ_mcap = liq.get('circulating_market_cap', 0) or liq.get('total_market_cap', 0)
+            if circ_mcap <= 0:
+                amount = liq.get('amount', 0)
+                turn = liq.get('turnover_rate', 0)
+                if amount > 0 and turn > 0:
+                    circ_mcap = amount / (turn / 100.0)
+            if circ_mcap < cfg.layer2_min_circulating_mcap:
+                reject_stats['市值不足'] += 1
+                continue
 
-        # 换手率
-        turn = liq.get('turnover_rate', 0)
-        if turn < cfg.layer2_turn_rate_min or turn > cfg.layer2_turn_rate_max:
-            reject_stats['换手不符'] += 1
-            continue
+            # 换手率
+            turn = liq.get('turnover_rate', 0)
+            if turn < cfg.layer2_turn_rate_min or turn > cfg.layer2_turn_rate_max:
+                reject_stats['换手不符'] += 1
+                continue
 
         passed.append(ts_code)
 

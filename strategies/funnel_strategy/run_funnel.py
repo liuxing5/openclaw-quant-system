@@ -23,8 +23,15 @@ import sys
 import os
 import argparse
 from datetime import date, datetime, timezone, timedelta
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+from dotenv import load_dotenv
+for _env_path in [Path('.env'), Path('strategies/llm_multisource/.env')]:
+    if _env_path.exists():
+        load_dotenv(_env_path)
+        break
 
 from strategies.funnel_strategy.funnel_config import DEFAULT_FUNNEL_CONFIG
 from strategies.funnel_strategy.funnel_engine import FunnelEngine, run_funnel_strategy
