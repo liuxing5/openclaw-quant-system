@@ -99,6 +99,15 @@
         }
         .pass-count { color: #4caf50; margin-right: 10px; }
         .eliminated-count { color: #f44336; }
+        .step-rule {
+            font-size: 11px;
+            color: #555;
+            margin-top: 6px;
+            padding: 4px 8px;
+            background: rgba(255,255,255,0.6);
+            border-radius: 4px;
+            line-height: 1.4;
+        }
         .candidates-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -196,7 +205,7 @@
     <div class="container">
         <header>
             <h1>🎯 七步漏斗选股策略</h1>
-            <div class="date-info">报告日期: 2026-05-12 | 生成时间: 2026-05-12 13:49:34</div>
+            <div class="date-info">报告日期: 2026-05-12 | 生成时间: 2026-05-12 14:05:43</div>
             <div class="date-selector">
                 <select onchange="location.href='?date=' + this.value">
                     <option value="2026-05-12" selected>2026-05-12</option>
@@ -218,7 +227,7 @@
                 <div class="stat-label">仓位上限 50%</div>
             </div>
             <div class="stat-card">
-                <div class="stat-value">13.8s</div>
+                <div class="stat-value">12.7s</div>
                 <div class="stat-label">总耗时</div>
             </div>
         </div>
@@ -255,18 +264,22 @@
                 <div class="step-counts">
                     <span class="pass-count">✓ 2890 只</span>
                     
+                    
                 </div>
+                <div class="step-rule">A股全市场</div>
             </div>
         </div>
         
         <div class="funnel-step" style="background: #fff3e0">
-            <div class="step-icon">🛡️</div>
+            <div class="step-icon">️</div>
             <div class="step-info">
                 <div class="step-name">L0 大盘风控</div>
                 <div class="step-counts">
-                    <span class="pass-count">✓ 0 只</span>
-                    <span class="eliminated-count">✗ 淘汰 2890 只</span>
+                    <span class="pass-count">✓ 2890 只</span>
+                    <span class="note-badge">️半仓</span>
+                    
                 </div>
+                <div class="step-rule">上涨家数≥2500 且 全A指数>20EMA → 满仓；否则半仓或休战</div>
             </div>
         </div>
         
@@ -276,8 +289,10 @@
                 <div class="step-name">L1 硬性防雷</div>
                 <div class="step-counts">
                     <span class="pass-count">✓ 2831 只</span>
+                    
                     <span class="eliminated-count">✗ 淘汰 59 只</span>
                 </div>
+                <div class="step-rule">剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%</div>
             </div>
         </div>
         
@@ -287,8 +302,10 @@
                 <div class="step-name">L2 流动性</div>
                 <div class="step-counts">
                     <span class="pass-count">✓ 2781 只</span>
+                    
                     <span class="eliminated-count">✗ 淘汰 50 只</span>
                 </div>
+                <div class="step-rule">20日均成交额>1亿；流通市值>20亿；换手率3~15%</div>
             </div>
         </div>
         
@@ -298,8 +315,10 @@
                 <div class="step-name">L3 趋势结构</div>
                 <div class="step-counts">
                     <span class="pass-count">✓ 1310 只</span>
+                    
                     <span class="eliminated-count">✗ 淘汰 1471 只</span>
                 </div>
+                <div class="step-rule">周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12；上升平台/回踩支撑</div>
             </div>
         </div>
         
@@ -309,8 +328,10 @@
                 <div class="step-name">L4 动能信号</div>
                 <div class="step-counts">
                     <span class="pass-count">✓ 88 只</span>
+                    
                     <span class="eliminated-count">✗ 淘汰 1222 只</span>
                 </div>
+                <div class="step-rule">量比1.5~3.0；乖离率<6%；需求吸收K线 或 强势接力形态</div>
             </div>
         </div>
         
@@ -320,8 +341,10 @@
                 <div class="step-name">L5 人气精选</div>
                 <div class="step-counts">
                     <span class="pass-count">✓ 2 只</span>
+                    
                     <span class="eliminated-count">✗ 淘汰 86 只</span>
                 </div>
+                <div class="step-rule">综合评分≥80；涨幅3~5%；贴MA5；分时平稳；人气榜加分</div>
             </div>
         </div>
         
@@ -332,7 +355,9 @@
                 <div class="step-counts">
                     <span class="pass-count">✓ 2 只</span>
                     
+                    
                 </div>
+                <div class="step-rule">14:30后买入；止损=入场价-1ATR；目标价=入场价+2ATR；盈亏比≥2:1</div>
             </div>
         </div>
         
@@ -370,7 +395,7 @@
                     </div>
                     <div class="detail-row">
                         <span class="label">信号</span>
-                        <span class="value signal">demand_absorption</span>
+                        <span class="value signal">需求吸收（EMA12附近锤子/刺透+放量）</span>
                     </div>
                 </div>
                 <div class="stock-tags">黄金涨幅</div>
@@ -404,7 +429,7 @@
                     </div>
                     <div class="detail-row">
                         <span class="label">信号</span>
-                        <span class="value signal">demand_absorption</span>
+                        <span class="value signal">需求吸收（EMA12附近锤子/刺透+放量）</span>
                     </div>
                 </div>
                 <div class="stock-tags">黄金涨幅</div>
