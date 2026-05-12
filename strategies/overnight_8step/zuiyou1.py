@@ -1,6 +1,12 @@
 """
-隔夜选股法·最优融合版 (zuiyou1 v1.5)
+隔夜选股法·最优融合版 (zuiyou1 v1.6)
 ========================================
+v1.6 修订（2026-05-12）：
+  ✓ 新增 PE/PB估值评分 —— 低估值加分，高估值扣分
+  ✓ 新增 财务质量评分 —— 利润率/毛利率/负债率/现金流质量
+  ✓ 新增 次新股过滤 —— 上市<60天直接跳过
+  ✓ 禁用 五档盘口采集 —— 数据衰减快，对隔夜策略价值低
+
 v1.5.5 修订（2026-05-10）：
   ✓ P0 修复 情绪周期判断 elif 分支仍使用 zt_count —— 统一改为 sentiment_score，7个分支全部使用综合情绪分(0-100)
 
@@ -580,10 +586,14 @@ _strong_rank_cache = {}
 _earnings_cache = {}
 _concept_cache = {}
 _stock_concept_map = {}
+_valuation_cache = {}
+_fundamentals_cache = {}
+_list_date_cache = {}
 
 def load_new_indicators(trade_date: str = None):
     """从数据库加载新增指标到缓存"""
     global _strong_rank_cache, _earnings_cache, _concept_cache, _stock_concept_map
+    global _valuation_cache, _fundamentals_cache, _list_date_cache
     
     if not DB_ENABLED:
         return
@@ -660,9 +670,48 @@ def load_new_indicators(trade_date: str = None):
                 'concept_name': r[2],
             })
         
+        # 加载PE/PB估值数据
+        cur.execute("""
+            SELECT ts_code, pe_ratio, pb_ratio
+            FROM daily_quotes WHERE trade_date=%s
+              AND pe_ratio IS NOT NULL;
+        """, (trade_date,))
+        for r in cur.fetchall():
+            _valuation_cache[r[0]] = {
+                'pe_ratio': float(r[1]) if r[1] else None,
+                'pb_ratio': float(r[2]) if r[2] else None,
+            }
+        
+        # 加载财务质量数据（最新季报）
+        cur.execute("""
+            SELECT DISTINCT ON (ts_code)
+                   ts_code, net_margin, gross_margin, debt_ratio,
+                   revenue, net_profit, operating_cashflow
+            FROM stock_fundamentals
+            ORDER BY ts_code, report_date DESC;
+        """)
+        for r in cur.fetchall():
+            _fundamentals_cache[r[0]] = {
+                'net_margin': float(r[1]) if r[1] else None,
+                'gross_margin': float(r[2]) if r[2] else None,
+                'debt_ratio': float(r[3]) if r[3] else None,
+                'revenue': float(r[4]) if r[4] else None,
+                'net_profit': float(r[5]) if r[5] else None,
+                'operating_cashflow': float(r[6]) if r[6] else None,
+            }
+        
+        # 加载上市时间
+        cur.execute("""
+            SELECT ts_code, list_date
+            FROM stock_basic_info
+            WHERE list_date IS NOT NULL;
+        """)
+        for r in cur.fetchall():
+            _list_date_cache[r[0]] = r[1]
+        
         cur.close()
         conn.close()
-        print(f"✓ 加载新增指标: 强势股{len(_strong_rank_cache)}只, 机构预期{len(_earnings_cache)}只, 概念板块{len(_concept_cache)}个")
+        print(f"✓ 加载新增指标: 强势股{len(_strong_rank_cache)}只, 机构预期{len(_earnings_cache)}只, 概念{len(_concept_cache)}个, 估值{len(_valuation_cache)}只, 财务{len(_fundamentals_cache)}只, 上市时间{len(_list_date_cache)}只")
     except Exception as e:
         print(f"⚠️ 新增指标加载失败: {e}")
 
@@ -741,6 +790,125 @@ def get_concept_bonus(ts_code: str) -> float:
             best_concept_bonus = max(best_concept_bonus, bonus)
     
     return best_concept_bonus
+
+
+def get_valuation_bonus(ts_code: str) -> tuple:
+    """获取PE/PB估值加分/扣分，返回(分数, 标签列表)"""
+    if ts_code not in _valuation_cache:
+        return 0.0, []
+    
+    val = _valuation_cache[ts_code]
+    bonus = 0.0
+    tags = []
+    
+    pe = val['pe_ratio']
+    pb = val['pb_ratio']
+    
+    if pe is not None and pe > 0:
+        if pe < 15:
+            bonus += 15
+            tags.append("低PE")
+        elif pe < 30:
+            bonus += 5
+            tags.append("合理PE")
+        elif pe < 60:
+            pass
+        elif pe < 100:
+            bonus -= 10
+            tags.append("高PE↓")
+        else:
+            bonus -= 20
+            tags.append("极高PE↓")
+    
+    if pb is not None and pb > 0:
+        if pb < 2:
+            bonus += 10
+            tags.append("低PB")
+        elif pb < 5:
+            bonus += 3
+        elif pb < 10:
+            pass
+        else:
+            bonus -= 10
+            tags.append("高PB↓")
+    
+    return bonus, tags
+
+
+def get_fundamentals_bonus(ts_code: str) -> tuple:
+    """获取财务质量加分/扣分，返回(分数, 标签列表)"""
+    if ts_code not in _fundamentals_cache:
+        return 0.0, []
+    
+    fin = _fundamentals_cache[ts_code]
+    bonus = 0.0
+    tags = []
+    
+    net_margin = fin['net_margin']
+    if net_margin is not None:
+        if net_margin > 20:
+            bonus += 10
+            tags.append("高利润率")
+        elif net_margin > 10:
+            bonus += 5
+        elif net_margin < 0:
+            bonus -= 10
+            tags.append("亏损↓")
+    
+    gross_margin = fin['gross_margin']
+    if gross_margin is not None:
+        if gross_margin > 40:
+            bonus += 8
+            tags.append("高毛利")
+        elif gross_margin > 20:
+            bonus += 3
+        elif gross_margin < 10:
+            bonus -= 5
+            tags.append("低毛利↓")
+    
+    debt_ratio = fin['debt_ratio']
+    if debt_ratio is not None:
+        if debt_ratio < 40:
+            bonus += 5
+            tags.append("低负债")
+        elif debt_ratio > 70:
+            bonus -= 10
+            tags.append("高负债↓")
+    
+    op_cashflow = fin['operating_cashflow']
+    net_profit = fin['net_profit']
+    if op_cashflow is not None and net_profit is not None and net_profit > 0:
+        cashflow_ratio = op_cashflow / net_profit
+        if cashflow_ratio > 1.2:
+            bonus += 8
+            tags.append("盈利质量高")
+        elif cashflow_ratio < 0.5:
+            bonus -= 5
+            tags.append("盈利质量低↓")
+    
+    return bonus, tags
+
+
+def is_new_stock(ts_code: str) -> bool:
+    """判断是否为次新股（上市<60天）"""
+    if ts_code not in _list_date_cache:
+        return False
+    
+    list_date = _list_date_cache[ts_code]
+    if list_date is None:
+        return False
+    
+    from datetime import date
+    today = date.today()
+    
+    # 处理list_date可能是字符串或date对象
+    if isinstance(list_date, str):
+        try:
+            list_date = date.fromisoformat(list_date)
+        except ValueError:
+            return False
+    
+    return (today - list_date).days < 60
 
 
 # ============================================================
@@ -1694,6 +1862,18 @@ def analyze_ultimate(
         score += concept_bonus
         tags.append(f"热门概念+{concept_bonus:.0f}")
 
+    # PE/PB估值加分
+    val_bonus, val_tags = get_valuation_bonus(ts_code)
+    if val_bonus != 0:
+        score += val_bonus
+        tags.extend(val_tags)
+
+    # 财务质量加分
+    fin_bonus, fin_tags = get_fundamentals_bonus(ts_code)
+    if fin_bonus != 0:
+        score += fin_bonus
+        tags.extend(fin_tags)
+
     # --- 最终判定 ---
     # v1.5.1: 评分上限120分，防止过度叠加导致评分膨胀
     score = min(score, 120)
@@ -1778,6 +1958,11 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
     print(f"开始扫描 {total} 只股票...")
 
     for code in stock_pool:
+        # 次新股过滤：上市<60天直接跳过
+        ts_code = baostock_to_standard(code) if 'baostock_to_standard' in globals() else code
+        if is_new_stock(ts_code):
+            continue
+        
         key = code.replace(".", "").lower()
         real_info = real_map.get(key)
         if real_info is None:

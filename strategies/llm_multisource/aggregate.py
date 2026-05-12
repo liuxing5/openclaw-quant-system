@@ -191,6 +191,51 @@ def aggregate_today():
         })
     logger.info(f"加载 {len(stock_concept_map)} 条概念成分股映射")
 
+    # 加载PE/PB估值数据（从daily_quotes）
+    cur.execute("""
+        SELECT ts_code, pe_ratio, pb_ratio
+        FROM daily_quotes WHERE trade_date=%s
+          AND pe_ratio IS NOT NULL;
+    """, (latest_trade_date,))
+    valuation_cache = {}
+    for r in cur.fetchall():
+        valuation_cache[r['ts_code']] = {
+            'pe_ratio': float(r['pe_ratio']) if r['pe_ratio'] else None,
+            'pb_ratio': float(r['pb_ratio']) if r['pb_ratio'] else None,
+        }
+    logger.info(f"加载 {len(valuation_cache)} 条PE/PB估值数据")
+
+    # 加载财务质量数据（最新季报）
+    cur.execute("""
+        SELECT DISTINCT ON (ts_code)
+               ts_code, net_margin, gross_margin, debt_ratio,
+               revenue, net_profit, operating_cashflow
+        FROM stock_fundamentals
+        ORDER BY ts_code, report_date DESC;
+    """)
+    fundamentals_cache = {}
+    for r in cur.fetchall():
+        fundamentals_cache[r['ts_code']] = {
+            'net_margin': float(r['net_margin']) if r['net_margin'] else None,
+            'gross_margin': float(r['gross_margin']) if r['gross_margin'] else None,
+            'debt_ratio': float(r['debt_ratio']) if r['debt_ratio'] else None,
+            'revenue': float(r['revenue']) if r['revenue'] else None,
+            'net_profit': float(r['net_profit']) if r['net_profit'] else None,
+            'operating_cashflow': float(r['operating_cashflow']) if r['operating_cashflow'] else None,
+        }
+    logger.info(f"加载 {len(fundamentals_cache)} 条财务质量数据")
+
+    # 加载上市时间（用于次新股过滤）
+    cur.execute("""
+        SELECT ts_code, list_date
+        FROM stock_basic_info
+        WHERE list_date IS NOT NULL;
+    """)
+    list_date_cache = {}
+    for r in cur.fetchall():
+        list_date_cache[r['ts_code']] = r['list_date']
+    logger.info(f"加载 {len(list_date_cache)} 条上市时间数据")
+
     cur.execute("""
         SELECT
           e.ts_code, MAX(e.stock_name) AS stock_name,
@@ -239,6 +284,15 @@ def aggregate_today():
         rows = [r for r in rows if not (r['stock_name'] and 'ST' in r['stock_name'].upper())]
 
         for r in rows:
+            ts = r['ts_code']
+            
+            # 次新股过滤：上市<60天直接跳过（波动不可控）
+            if ts in list_date_cache:
+                list_date = list_date_cache[ts]
+                if list_date and (today - list_date).days < 60:
+                    logger.debug(f"{ts} 上市不足60天（次新股），跳过")
+                    continue
+            
             q = quote_cache.get(r['ts_code'])
 
             if not q or not q.get('close'):
@@ -255,7 +309,6 @@ def aggregate_today():
             large_order_net = q.get('large_order_net') or 0
             main_force_net = q.get('main_force_net') or 0
 
-            ts = r['ts_code']
             is_kc_cy = ts.split('.')[0].startswith(('688', '300', '301'))
             limit_threshold = 19.5 if is_kc_cy else 9.5
 
@@ -391,6 +444,79 @@ def aggregate_today():
                         best_concept_bonus = max(best_concept_bonus, bonus)
                 quant_score += best_concept_bonus
 
+            # PE/PB估值评分：低估值加分，高估值扣分
+            if ts in valuation_cache:
+                val = valuation_cache[ts]
+                pe = val['pe_ratio']
+                pb = val['pb_ratio']
+                
+                # PE估值评分
+                if pe is not None and pe > 0:
+                    if pe < 15:
+                        quant_score += 15  # 低估值，加分
+                    elif pe < 30:
+                        quant_score += 5   # 合理估值，小幅加分
+                    elif pe < 60:
+                        pass               # 中等估值，不加分不减分
+                    elif pe < 100:
+                        quant_score -= 10  # 高估值，扣分
+                    else:
+                        quant_score -= 20  # 极高估值，大幅扣分
+                
+                # PB估值评分
+                if pb is not None and pb > 0:
+                    if pb < 2:
+                        quant_score += 10  # 低PB，加分
+                    elif pb < 5:
+                        quant_score += 3   # 合理PB，小幅加分
+                    elif pb < 10:
+                        pass               # 中等PB
+                    else:
+                        quant_score -= 10  # 高PB，扣分
+
+            # 财务质量评分
+            if ts in fundamentals_cache:
+                fin = fundamentals_cache[ts]
+                
+                # 净利润率评分
+                net_margin = fin['net_margin']
+                if net_margin is not None:
+                    if net_margin > 20:
+                        quant_score += 10  # 高利润率，加分
+                    elif net_margin > 10:
+                        quant_score += 5
+                    elif net_margin < 0:
+                        quant_score -= 10  # 亏损，扣分
+                
+                # 毛利率评分
+                gross_margin = fin['gross_margin']
+                if gross_margin is not None:
+                    if gross_margin > 40:
+                        quant_score += 8   # 高毛利率，加分
+                    elif gross_margin > 20:
+                        quant_score += 3
+                    elif gross_margin < 10:
+                        quant_score -= 5   # 低毛利率，扣分
+                
+                # 资产负债率评分
+                debt_ratio = fin['debt_ratio']
+                if debt_ratio is not None:
+                    if debt_ratio < 40:
+                        quant_score += 5   # 低负债，加分
+                    elif debt_ratio > 70:
+                        quant_score -= 10  # 高负债，扣分
+                
+                # 经营现金流评分
+                op_cashflow = fin['operating_cashflow']
+                net_profit = fin['net_profit']
+                if op_cashflow is not None and net_profit is not None and net_profit > 0:
+                    # 经营现金流/净利润 > 1 表示盈利质量高
+                    cashflow_ratio = op_cashflow / net_profit
+                    if cashflow_ratio > 1.2:
+                        quant_score += 8   # 盈利质量高，加分
+                    elif cashflow_ratio < 0.5:
+                        quant_score -= 5   # 盈利质量低，扣分
+
             consensus = min(r['source_diversity'] / 2.0, 1.0)
             llm_n = min(r['llm_score'] / 5.0, 1.0)
             # 提及次数加成
@@ -442,6 +568,12 @@ def aggregate_today():
             ts_code = q['ts_code']
             if not (ts_code.endswith('.SH') or ts_code.endswith('.SZ')):
                 continue
+
+            # 次新股过滤：上市<60天直接跳过（波动不可控）
+            if ts_code in list_date_cache:
+                list_date = list_date_cache[ts_code]
+                if list_date and (today - list_date).days < 60:
+                    continue
 
             close_price = float(q['close']) if q['close'] else None
             pct_chg = q['pct_chg'] or 0
@@ -566,6 +698,72 @@ def aggregate_today():
                             bonus = 0
                         best_concept_bonus = max(best_concept_bonus, bonus)
                 quant_score += best_concept_bonus
+
+            # PE/PB估值评分：低估值加分，高估值扣分
+            if ts_code in valuation_cache:
+                val = valuation_cache[ts_code]
+                pe = val['pe_ratio']
+                pb = val['pb_ratio']
+                
+                if pe is not None and pe > 0:
+                    if pe < 15:
+                        quant_score += 15
+                    elif pe < 30:
+                        quant_score += 5
+                    elif pe < 60:
+                        pass
+                    elif pe < 100:
+                        quant_score -= 10
+                    else:
+                        quant_score -= 20
+                
+                if pb is not None and pb > 0:
+                    if pb < 2:
+                        quant_score += 10
+                    elif pb < 5:
+                        quant_score += 3
+                    elif pb < 10:
+                        pass
+                    else:
+                        quant_score -= 10
+
+            # 财务质量评分
+            if ts_code in fundamentals_cache:
+                fin = fundamentals_cache[ts_code]
+                
+                net_margin = fin['net_margin']
+                if net_margin is not None:
+                    if net_margin > 20:
+                        quant_score += 10
+                    elif net_margin > 10:
+                        quant_score += 5
+                    elif net_margin < 0:
+                        quant_score -= 10
+                
+                gross_margin = fin['gross_margin']
+                if gross_margin is not None:
+                    if gross_margin > 40:
+                        quant_score += 8
+                    elif gross_margin > 20:
+                        quant_score += 3
+                    elif gross_margin < 10:
+                        quant_score -= 5
+                
+                debt_ratio = fin['debt_ratio']
+                if debt_ratio is not None:
+                    if debt_ratio < 40:
+                        quant_score += 5
+                    elif debt_ratio > 70:
+                        quant_score -= 10
+                
+                op_cashflow = fin['operating_cashflow']
+                net_profit = fin['net_profit']
+                if op_cashflow is not None and net_profit is not None and net_profit > 0:
+                    cashflow_ratio = op_cashflow / net_profit
+                    if cashflow_ratio > 1.2:
+                        quant_score += 8
+                    elif cashflow_ratio < 0.5:
+                        quant_score -= 5
 
             final = quant_score * 0.8
 

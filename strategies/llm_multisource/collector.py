@@ -836,11 +836,11 @@ def main():
         fetchers.extend([
             (lambda: fetch_mootdx_realtime(make_signal), 'MootDX行情', FETCH_TIMEOUT),
         ])
-        # Intraday-only: order book
-        if 9 <= beijing_hour <= 15:
-            fetchers.append(
-                (lambda: fetch_mootdx_orderbook(make_signal), 'MootDX盘口', FETCH_TIMEOUT),
-            )
+        # DISABLED: 五档盘口 - 数据衰减快，对隔夜/多源策略价值低
+        # if 9 <= beijing_hour <= 15:
+        #     fetchers.append(
+        #         (lambda: fetch_mootdx_orderbook(make_signal), 'MootDX盘口', FETCH_TIMEOUT),
+        #     )
 
     # ---- Layer 2: Research (always run) ----
     fetchers.extend([
