@@ -114,22 +114,26 @@ def load_funnel_data(trade_date=None):
     return row
 
 
-def load_candidates(source, run_mode=None, retry_empty=False):
+def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False):
     conn = get_db_fresh(use_dict_cursor=True)
     cur = conn.cursor()
-    ref_date = get_beijing_date()
-    cur.execute("""
-        SELECT MAX(snapshot_date) AS max_date
-        FROM daily_candidates
-        WHERE source = %s AND snapshot_date >= %s::date - 7
-          AND ts_code NOT LIKE '%%.AUDIT';
-    """, (source, ref_date))
-    row = cur.fetchone()
-    if not row or not row['max_date']:
-        cur.close(); conn.close()
-        return [], None
-
-    latest = row['max_date']
+    
+    if trade_date:
+        latest = trade_date
+    else:
+        ref_date = get_beijing_date()
+        cur.execute("""
+            SELECT MAX(snapshot_date) AS max_date
+            FROM daily_candidates
+            WHERE source = %s AND snapshot_date >= %s::date - 7
+              AND ts_code NOT LIKE '%%.AUDIT';
+        """, (source, ref_date))
+        row = cur.fetchone()
+        if not row or not row['max_date']:
+            cur.close(); conn.close()
+            return [], None
+        latest = row['max_date']
+    
     if run_mode:
         cur.execute("""
             SELECT * FROM daily_candidates
@@ -170,7 +174,7 @@ def load_scan_stats(strategy, snapshot_date=None):
     return row
 
 
-def generate_unified_html(output_dir=None):
+def generate_unified_html(output_dir=None, trade_date=None):
     if output_dir is None:
         output_dir = Path(__file__).parent / "docs"
     else:
@@ -178,14 +182,14 @@ def generate_unified_html(output_dir=None):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── 加载三策略数据 ──
-    funnel = load_funnel_data()
+    funnel = load_funnel_data(trade_date)
     funnel_date = str(funnel['trade_date']) if funnel else None
 
-    llm_candidates, llm_date = load_candidates('llm_multisource', run_mode='morning')
+    llm_candidates, llm_date = load_candidates('llm_multisource', trade_date=trade_date, run_mode='morning')
     if not llm_candidates:
-        llm_candidates, llm_date = load_candidates('llm_multisource')
+        llm_candidates, llm_date = load_candidates('llm_multisource', trade_date=trade_date)
 
-    eight_candidates, eight_date = load_candidates('overnight_8step')
+    eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
     # 并行 workflow 竞争：overnight_8step 和 funnel 同时 15:10 触发，
     # zuiyou1.py 可能还在写入，最多重试 5 次（每次 15s，共 75s）
     if not eight_candidates or not eight_date:
@@ -193,7 +197,7 @@ def generate_unified_html(output_dir=None):
         for _retry in range(5):
             _time.sleep(15)
             print(f"  ⏳ overnight_8step 数据为空，15s后重试 ({_retry+1}/5)...")
-            eight_candidates, eight_date = load_candidates('overnight_8step')
+            eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
             if eight_candidates:
                 break
     eight_date_str = str(eight_date) if eight_date else None
@@ -524,7 +528,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h1>📊 三策略对比选股系统</h1>
       <div class="sub">
         报告日期: {display_date} | 生成: {gen_time}
-        <select class="date-select" onchange="location.href='?date='+this.value">
+        <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           {history_opts}
         </select>
@@ -605,6 +609,10 @@ function toggleTheme() {{
     document.getElementById('themeBtn').innerHTML = '<span id="themeIcon">☀️</span> 浅色模式';
   }}
 }}
+function switchDate(dateVal) {{
+  if (!dateVal) return;
+  window.location.href = 'funnel-' + dateVal + '.html';
+}}
 (function() {{
   const saved = localStorage.getItem('theme');
   const prefersDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
@@ -619,19 +627,23 @@ function toggleTheme() {{
 </html>'''
 
     # 写入文件
-    output_file = output_dir / "funnel.html"
+    if trade_date:
+        output_file = output_dir / f"funnel-{trade_date}.html"
+    else:
+        output_file = output_dir / "funnel.html"
     output_file.write_text(html, encoding='utf-8')
     print(f"  ✓ 三策略对比 HTML: {output_file}")
 
-    index_file = output_dir / "index.html"
-    index_html = f'''<!DOCTYPE html>
+    if trade_date:
+        index_file = output_dir / "index.html"
+        index_html = f'''<!DOCTYPE html>
 <html><head>
 <meta http-equiv="refresh" content="0; url=funnel.html">
 <title>三策略对比</title>
 </head><body>
 <p>跳转到 <a href="funnel.html">三策略对比页面</a></p>
 </body></html>'''
-    index_file.write_text(index_html, encoding='utf-8')
+        index_file.write_text(index_html, encoding='utf-8')
 
     return output_file
 
@@ -644,4 +656,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     output_dir = args.output
-    generate_unified_html(output_dir=output_dir)
+    generate_unified_html(output_dir=output_dir, trade_date=args.date)
