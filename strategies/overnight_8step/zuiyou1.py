@@ -1,6 +1,10 @@
 """
 隔夜选股法·最优融合版 (zuiyou1 v1.6)
 ========================================
+v1.6.1 修订（2026-05-12）：
+  ✓ 修复 8:25 运行显示"盘中初筛" —— 增加 pre_market 模式，盘前显示"盘前预览"
+  ✓ 修复 MODE 判断 —— 14:00-15:10 为 realtime，其余为 pre_market，15:10 后为 post
+
 v1.6 修订（2026-05-12）：
   ✓ 新增 PE/PB估值评分 —— 低估值加分，高估值扣分
   ✓ 新增 财务质量评分 —— 利润率/毛利率/负债率/现金流质量
@@ -986,16 +990,21 @@ def beijing_now():
     beijing_tz = timezone(timedelta(hours=8))
     return utc_dt.astimezone(beijing_tz)
 
-# 自动判断 MODE：15:10 后为 post，其余为 realtime
+# 自动判断 MODE：15:10 后为 post，14:00-15:10 为 realtime，其余为 pre_market
 _now = beijing_now()
 if DEBUG:
     print(f"  [DEBUG] 服务器时间: {datetime.now()}, 北京时间: {_now.strftime('%Y-%m-%d %H:%M:%S')}")
 if _now.hour > 15 or (_now.hour == 15 and _now.minute >= 10):
     CONFIG_STABLE["MODE"] = "post"
     CONFIG_UPPER["MODE"] = "post"
-else:
+elif _now.hour >= 14:
+    # 14:00-15:10 为盘中尾盘
     CONFIG_STABLE["MODE"] = "realtime"
     CONFIG_UPPER["MODE"] = "realtime"
+else:
+    # 其他时间为盘前
+    CONFIG_STABLE["MODE"] = "pre_market"
+    CONFIG_UPPER["MODE"] = "pre_market"
 if DEBUG:
     print(f"  [DEBUG] MODE: {CONFIG_STABLE['MODE']}")
 
@@ -2361,7 +2370,14 @@ def main():
     # DB 写入仍只在盘后定稿，避免盘中不稳定数据污染 daily_candidates
     current_beijing = beijing_now()
     is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
-    mode_label = "盘后定稿" if is_post_time else "盘中初筛"
+    is_pre_market = current_beijing.hour < 14 and not (current_beijing.hour == 9 and current_beijing.minute >= 30)
+    
+    if is_post_time:
+        mode_label = "盘后定稿"
+    elif is_pre_market:
+        mode_label = "盘前预览"
+    else:
+        mode_label = "盘中初筛"
 
     append_to_summary(final_df, end_d, sentiment_score, mood, total_candidates, mode_label)
 
