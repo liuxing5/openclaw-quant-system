@@ -175,8 +175,18 @@ jobs:
         python ${{ steps.task.outputs.script }} > /tmp/output.log 2>&1
         EXIT_CODE=$?
         
+        # Always show the log for debugging
+        echo "=== FULL OUTPUT (first 50 lines) ==="
+        head -50 /tmp/output.log
+        echo ""
+        echo "=== KEY MESSAGES (errors/warnings/DB writes) ==="
+        grep -E '(写入|daily_candidates|DB_ENABLED|失败|❌|⚠|Error|error|Exception|Traceback)' /tmp/output.log || echo "(none)"
+        echo ""
+        echo "=== OUTPUT (last 20 lines) ==="
+        tail -20 /tmp/output.log
+        
         if [ $EXIT_CODE -ne 0 ]; then
-          echo "Script failed with exit code: $EXIT_CODE"
+          echo "❌ Script failed with exit code: $EXIT_CODE"
           echo "has_result=false" >> $GITHUB_OUTPUT
           echo "script_failed=true" >> $GITHUB_OUTPUT
         elif [ ! -s /tmp/output.log ]; then
@@ -186,14 +196,6 @@ jobs:
         else
           echo "has_result=true" >> $GITHUB_OUTPUT
           echo "script_failed=false" >> $GITHUB_OUTPUT
-          echo "=== OUTPUT (first 20 lines) ==="
-          head -20 /tmp/output.log
-          echo ""
-          echo "=== KEY MESSAGES (errors/warnings/DB writes) ==="
-          grep -E '(写入|daily_candidates|失败|❌|⚠|Error|error|Exception)' /tmp/output.log || echo "(none)"
-          echo ""
-          echo "=== OUTPUT (last 10 lines) ==="
-          tail -10 /tmp/output.log
         fi
 
     - name: Send Telegram notification
