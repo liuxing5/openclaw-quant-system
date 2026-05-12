@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from typing import List, Dict, Optional
 
@@ -21,44 +22,57 @@ from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.db.connection import get_db
 
+try:
+    from tqdm import tqdm
+    HAS_TQDM = True
+except ImportError:
+    HAS_TQDM = False
+    tqdm = None
+
+LAYER3_WORKERS = min(8, (os.cpu_count() or 4))
+
 
 def _calc_ema(values: pd.Series, period: int) -> pd.Series:
     return values.ewm(span=period, adjust=False).mean()
 
 
-def _load_history(ts_code: str, trade_date: date, days: int = 350) -> Optional[pd.DataFrame]:
-    """加载历史K线"""
+def _batch_load_history(
+    stock_list: List[str], trade_date: date, db_conn, days: int = 300
+) -> Dict[str, pd.DataFrame]:
+    """批量加载所有股票的OHLCV历史数据（1次SQL查询）"""
+    if not stock_list:
+        return {}
+
     start_date = trade_date - timedelta(days=days)
-    try:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("""
-            SELECT trade_date, open, high, low, close, volume
-            FROM daily_quotes
-            WHERE ts_code = %s AND trade_date >= %s AND trade_date <= %s
-            ORDER BY trade_date ASC;
-        """, (ts_code, start_date, trade_date))
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
+    result = {}
 
-        if not rows:
-            return None
+    cur = db_conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT ts_code, trade_date, open, high, low, close, volume
+        FROM daily_quotes
+        WHERE ts_code = ANY(%s) AND trade_date >= %s AND trade_date <= %s
+        ORDER BY ts_code, trade_date ASC;
+    """, (stock_list, start_date, trade_date))
+    rows = cur.fetchall()
+    cur.close()
 
-        df = pd.DataFrame(rows)
-        df['trade_date'] = pd.to_datetime(df['trade_date']).dt.date
-        df.set_index('trade_date', inplace=True)
+    if not rows:
+        return result
+
+    df_all = pd.DataFrame(rows)
+    df_all['trade_date'] = pd.to_datetime(df_all['trade_date']).dt.date
+
+    for ts_code, group in df_all.groupby('ts_code'):
+        group = group.set_index('trade_date').sort_index()
         for col in ['open', 'high', 'low', 'close', 'volume']:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df
-    except Exception:
-        return None
+            group[col] = pd.to_numeric(group[col], errors='coerce')
+        result[ts_code] = group
+
+    return result
 
 
 def _detect_trend_structure(df: pd.DataFrame, cfg) -> dict:
-    """
-    识别趋势结构：上升平台 / 回踩支撑 / 未知
-    """
+    """识别趋势结构：上升平台 / 回踩支撑 / 未知"""
     if len(df) < 30:
         return {'structure': 'unknown'}
 
@@ -84,23 +98,10 @@ def _detect_trend_structure(df: pd.DataFrame, cfg) -> dict:
     return {'structure': 'unknown'}
 
 
-def check_trend_structure(
-    ts_code: str,
-    trade_date: date,
-    cfg,
-    verbose: bool = False,
+def _check_single(
+    ts_code: str, cfg, ohlcv_cache: Dict[str, pd.DataFrame]
 ) -> dict:
-    """
-    单股趋势结构检查。
-    
-    返回:
-      {
-        'passed': bool,
-        'score_bonus': float,
-        'details': dict,
-        'reject_reason': str,
-      }
-    """
+    """单股趋势结构检查（从内存缓存读取，无DB访问）"""
     result = {
         'passed': False,
         'score_bonus': 0.0,
@@ -108,7 +109,7 @@ def check_trend_structure(
         'reject_reason': '',
     }
 
-    df = _load_history(ts_code, trade_date, days=350)
+    df = ohlcv_cache.get(ts_code)
     if df is None or len(df) < 50:
         result['reject_reason'] = '历史数据不足'
         return result
@@ -119,7 +120,7 @@ def check_trend_structure(
         return result
 
     # 1. 周线CLOSE > 20周MA（≈100日线）
-    weekly_ma_period = cfg.layer3_weekly_ma_period * 5  # 周线转日线
+    weekly_ma_period = cfg.layer3_weekly_ma_period * 5
     if len(close) >= weekly_ma_period:
         ma_weekly = close.rolling(window=weekly_ma_period, min_periods=weekly_ma_period).mean()
         close_now = close.iloc[-1]
@@ -178,11 +179,20 @@ def check_trend_structure(
     if structure['structure'] in cfg.layer3_trend_structure_modes:
         result['score_bonus'] += 2.0
     elif structure['structure'] == 'unknown' and len(cfg.layer3_trend_structure_modes) == 2:
-        # 如果要求两个结构模式但没有命中任一，仍然通过（不强制）
         pass
 
     result['passed'] = True
     return result
+
+
+def check_trend_structure(ts_code: str, trade_date: date, cfg, verbose: bool = False) -> dict:
+    """单股趋势结构检查（兼容接口，内部用batch load）"""
+    conn = get_db()
+    try:
+        cache = _batch_load_history([ts_code], trade_date, conn, days=300)
+    finally:
+        conn.close()
+    return _check_single(ts_code, cfg, cache)
 
 
 def run_layer3_trend_filter(
@@ -193,7 +203,8 @@ def run_layer3_trend_filter(
 ) -> List[dict]:
     """
     趋势结构过滤，返回通过过滤的股票详情列表。
-    每项包含: {ts_code, passed, score_bonus, details}
+
+    优化: 批量加载OHLCV(1次SQL) + ThreadPoolExecutor并行分析。
     """
     if cfg is None:
         from .funnel_config import DEFAULT_FUNNEL_CONFIG
@@ -211,25 +222,103 @@ def run_layer3_trend_filter(
         cur.close()
         conn.close()
 
+    n_total = len(stock_list)
+
     if verbose:
         print(f"\n{'─'*60}")
-        print(f"  [Layer 3] 趋势结构过滤  — 待筛选 {len(stock_list)} 只")
+        print(f"  [Layer 3] 趋势结构过滤  — 待筛选 {n_total} 只")
         print(f"{'─'*60}")
         print(f"  周线>20MA  EMA{cfg.layer3_ema_fast}>{cfg.layer3_ema_mid}>{cfg.layer3_ema_slow}  "
               f"股价>EMA{cfg.layer3_ema_fast}  结构: {cfg.layer3_trend_structure_modes}")
 
+    # ── 阶段1: 批量加载 OHLCV（1 次 SQL）──
+    conn = get_db()
+    try:
+        if verbose:
+            print(f"  ⏳ 批量加载K线数据 ({n_total} 只)...")
+        ohlcv_cache = _batch_load_history(stock_list, trade_date, conn, days=300)
+    finally:
+        conn.close()
+
+    if verbose:
+        print(f"  ✓ 数据加载完成: {len(ohlcv_cache)}/{n_total} 只有效K线")
+
+    # ── 阶段2: 并行分析 ──
     passed = []
-    reject_stats = {'周线MA': 0, 'EMA排列': 0, '股价位置': 0}
+    reject_stats = {'周线MA': 0, 'EMA排列': 0, '股价位置': 0, '数据不足': 0}
 
+    if len(stock_list) > 100:
+        _run_parallel(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose)
+    else:
+        _run_serial(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose)
+
+    if verbose:
+        print(f"  ✓ 通过: {len(passed)} 只")
+        print(f"  ✗ 淘汰: {n_total - len(passed)} 只")
+        for reason, count in reject_stats.items():
+            if count > 0:
+                print(f"    {reason}: {count} 只")
+
+    return passed
+
+
+def _run_parallel(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose):
+    """多线程并行分析（>100只时启用）"""
+    n_total = len(stock_list)
+    passed_codes = set()
+
+    with ThreadPoolExecutor(max_workers=LAYER3_WORKERS) as executor:
+        futures = {
+            executor.submit(_check_single, ts_code, cfg, ohlcv_cache): ts_code
+            for ts_code in stock_list
+        }
+
+        completed = 0
+        for future in as_completed(futures):
+            completed += 1
+            if verbose and not HAS_TQDM and completed % 100 == 0:
+                print(f"  进度: {completed}/{n_total}")
+
+            ts_code = futures[future]
+            check = future.result()
+            if check['passed']:
+                passed_codes.add(ts_code)
+                passed.append({
+                    'ts_code': ts_code,
+                    'score_bonus': check['score_bonus'],
+                    'details': check['details'],
+                })
+            else:
+                reason = check['reject_reason']
+                if '周线' in reason:
+                    reject_stats['周线MA'] += 1
+                elif 'EMA' in reason:
+                    reject_stats['EMA排列'] += 1
+                elif '股价' in reason:
+                    reject_stats['股价位置'] += 1
+                elif '不足' in reason:
+                    reject_stats['数据不足'] += 1
+
+    if passed_codes:
+        ordered = sorted(passed, key=lambda x: stock_list.index(x['ts_code']))
+        passed.clear()
+        passed.extend(ordered)
+
+
+def _run_serial(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose):
+    """串行分析（≤100只时使用）"""
+    n_total = len(stock_list)
     for i, ts_code in enumerate(stock_list):
-        if verbose and (i + 1) % 100 == 0:
-            print(f"  进度: {i+1}/{len(stock_list)}")
+        if verbose and (i + 1) % 50 == 0:
+            print(f"  进度: {i+1}/{n_total}")
 
-        check = check_trend_structure(ts_code, trade_date, cfg, verbose=False)
-
+        check = _check_single(ts_code, cfg, ohlcv_cache)
         if check['passed']:
-            item = {'ts_code': ts_code, 'score_bonus': check['score_bonus'], 'details': check['details']}
-            passed.append(item)
+            passed.append({
+                'ts_code': ts_code,
+                'score_bonus': check['score_bonus'],
+                'details': check['details'],
+            })
         else:
             reason = check['reject_reason']
             if '周线' in reason:
@@ -238,12 +327,5 @@ def run_layer3_trend_filter(
                 reject_stats['EMA排列'] += 1
             elif '股价' in reason:
                 reject_stats['股价位置'] += 1
-
-    if verbose:
-        print(f"  ✓ 通过: {len(passed)} 只")
-        print(f"  ✗ 淘汰: {len(stock_list) - len(passed)} 只")
-        for reason, count in reject_stats.items():
-            if count > 0:
-                print(f"    {reason}: {count} 只")
-
-    return passed
+            elif '不足' in reason:
+                reject_stats['数据不足'] += 1
