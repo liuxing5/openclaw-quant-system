@@ -303,29 +303,10 @@ def main():
     # 注册消息处理器
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # 检查是否使用 Webhook 模式（Render 部署）
-    webhook_url = os.environ.get("WEBHOOK_URL", "")
-    port = int(os.environ.get("PORT", 0))
-
-    if webhook_url and port:
-        # Webhook 模式（适合云平台部署）
-        print(f" 使用 Webhook 模式: {webhook_url}")
-        print(f"🔌 监听端口: {port}")
-        
-        # 使用简单的路径，避免 token 泄露
-        url_path = "webhook"
-        
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=url_path,
-            webhook_url=f"{webhook_url}/{url_path}",
-        )
-    else:
-        # Polling 模式（适合本地开发）
-        print("✅ Bot 已启动，等待消息...")
-        print("按 Ctrl+C 停止")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # 使用 polling 模式（更稳定，适合 Render 免费计划）
+    print("✅ Bot 已启动，等待消息...")
+    print("按 Ctrl+C 停止")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
