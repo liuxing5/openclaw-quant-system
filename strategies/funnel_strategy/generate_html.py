@@ -468,7 +468,9 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .section-subtitle {{ font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; }}
 
 /* Three column layout */
-.three-col {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }}
+.three-col {{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:start; }}
+.three-col .section {{ margin-bottom:0; height:100%; display:flex; flex-direction:column; }}
+.three-col .cards-grid {{ flex:1; }}
 @media (max-width:1024px) {{ .three-col {{ grid-template-columns:1fr; }} .stats-row {{ grid-template-columns:1fr; }} }}
 
 /* Funnel steps */
