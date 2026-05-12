@@ -1,524 +1,613 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>漏斗策略 - 2026-05-12</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f5f5f5;
-            color: #333;
-            line-height: 1.6;
-        }
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 20px;
-        }
-        header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 30px 20px;
-            text-align: center;
-            border-radius: 12px;
-            margin-bottom: 20px;
-        }
-        header h1 { font-size: 24px; margin-bottom: 10px; }
-        header .date-info { font-size: 14px; opacity: 0.9; }
-        .date-selector {
-            margin: 15px 0;
-            text-align: center;
-        }
-        .date-selector select {
-            padding: 8px 15px;
-            border-radius: 6px;
-            border: 1px solid #ddd;
-            font-size: 14px;
-            background: white;
-            cursor: pointer;
-        }
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            text-align: center;
-        }
-        .stat-card .stat-value {
-            font-size: 28px;
-            font-weight: bold;
-            color: #667eea;
-        }
-        .stat-card .stat-label {
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
-        }
-        .section {
-            background: white;
-            padding: 25px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        .section h2 {
-            font-size: 18px;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #eee;
-        }
-        .funnel-step {
-            display: flex;
-            align-items: center;
-            padding: 15px;
-            margin-bottom: 8px;
-            border-radius: 8px;
-            transition: transform 0.2s;
-        }
-        .funnel-step:hover { transform: translateX(5px); }
-        .step-icon {
-            font-size: 24px;
-            margin-right: 15px;
-        }
-        .step-info { flex: 1; }
-        .step-name {
-            font-weight: bold;
-            font-size: 14px;
-        }
-        .step-rule-inline {
-            font-size: 11px;
-            color: #888;
-            margin-left: 8px;
-        }
-        .step-counts {
-            font-size: 12px;
-            margin-top: 3px;
-        }
-        .pass-count { color: #4caf50; margin-right: 10px; }
-        .eliminated-count { color: #f44336; }
-        .step-rule {
-            font-size: 11px;
-            color: #555;
-            margin-top: 6px;
-            padding: 4px 8px;
-            background: rgba(255,255,255,0.6);
-            border-radius: 4px;
-            line-height: 1.4;
-        }
-        .candidates-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 15px;
-        }
-        .stock-card {
-            background: #fafafa;
-            border-radius: 10px;
-            padding: 15px;
-            border-left: 4px solid #667eea;
-        }
-        .stock-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .stock-code {
-            font-weight: bold;
-            font-size: 16px;
-        }
-        .stock-score {
-            background: #667eea;
-            color: white;
-            padding: 4px 10px;
-            border-radius: 15px;
-            font-size: 14px;
-        }
-        .stock-details { margin-bottom: 10px; }
-        .detail-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 5px 0;
-            font-size: 13px;
-            border-bottom: 1px solid #eee;
-        }
-        .detail-row .label { color: #666; }
-        .detail-row .value { font-weight: bold; }
-        .detail-row .value.stop { color: #f44336; }
-        .detail-row .value.target { color: #4caf50; }
-        .detail-row .value.signal { color: #ff9800; }
-        .detail-row .value.llm-bonus { color: #9c27b0; }
-        .stock-tags {
-            font-size: 12px;
-            color: #666;
-            background: #eee;
-            padding: 5px 10px;
-            border-radius: 5px;
-            display: inline-block;
-        }
-        .no-candidates {
-            text-align: center;
-            padding: 40px;
-            color: #999;
-            font-size: 16px;
-        }
-        .market-env {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 10px;
-        }
-        .env-item {
-            text-align: center;
-            padding: 10px;
-            background: #f9f9f9;
-            border-radius: 6px;
-        }
-        .env-item .env-value {
-            font-size: 18px;
-            font-weight: bold;
-            color: #333;
-        }
-        .env-item .env-label {
-            font-size: 11px;
-            color: #666;
-            margin-top: 3px;
-        }
-        .position-badge {
-            display: inline-block;
-            padding: 4px 12px;
-            border-radius: 15px;
-            color: white;
-            font-weight: bold;
-            font-size: 14px;
-            background: #ff9800;
-        }
-        footer {
-            text-align: center;
-            padding: 20px;
-            color: #999;
-            font-size: 12px;
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>三策略对比 - 2026-05-12</title>
+<style>
+:root {
+  --bg: #f0f2f5; --card: #fff; --text: #1a1a1a; --text2: #666; --border: #e0e0e0;
+  --metric-bg: #f5f5f5; --header-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --header-text: #fff; --score-color: #4caf50; --stop-color: #f44336;
+  --target-color: #4caf50; --badge-bg: #e3f2fd; --badge-text: #1976d2;
+  --sel-border: #4caf50; --elim-color: #f44336; --step-row-hover: #f5f5f5;
+  --tab-active: #667eea; --tab-active-text: #fff; --tab-inactive: #e0e0e0;
+  --section-bg: #fff; --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  --llm-badge-bg: #f3e5f5; --llm-badge-text: #9c27b0;
+  --8step-badge-bg: #ede7f6; --8step-badge-text: #512da8;
+  --funnel-badge-bg: #e8f5e9; --funnel-badge-text: #2e7d32;
+}
+[data-theme="dark"] {
+  --bg: #0d1117; --card: #161b22; --text: #c9d1d9; --text2: #8b949e;
+  --border: #30363d; --metric-bg: #21262d; --header-bg: linear-gradient(135deg, #1f2937 0%, #111827 100%);
+  --header-text: #e5e7eb; --score-color: #3fb950; --stop-color: #f85149;
+  --target-color: #3fb950; --badge-bg: #1f6feb22; --badge-text: #58a6ff;
+  --sel-border: #3fb950; --elim-color: #f85149; --step-row-hover: #1c2128;
+  --tab-active: #58a6ff; --tab-active-text: #fff; --tab-inactive: #21262d;
+  --section-bg: #161b22; --shadow: 0 2px 8px rgba(0,0,0,0.4);
+  --llm-badge-bg: #d2992233; --llm-badge-text: #e3b341;
+  --8step-badge-bg: #a371f733; --8step-badge-text: #a371f7;
+  --funnel-badge-bg: #3fb95033; --funnel-badge-text: #3fb950;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; transition:background .3s,color .3s; }
+.container { max-width:1400px; margin:0 auto; padding:16px; }
+
+/* Header */
+.header { background:var(--header-bg); color:var(--header-text); padding:28px 24px; border-radius:12px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }
+.header h1 { font-size:1.4rem; margin-bottom:6px; }
+.header .sub { font-size:.82rem; opacity:.85; }
+.header .date-select { padding:7px 14px; border-radius:6px; border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.15); color:var(--header-text); font-size:13px; cursor:pointer; }
+.theme-btn { background:rgba(255,255,255,.2); color:var(--header-text); border:none; padding:8px 16px; border-radius:20px; cursor:pointer; font-size:14px; transition:background .2s; }
+.theme-btn:hover { background:rgba(255,255,255,.3); }
+
+/* Summary stats */
+.stats-row { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }
+.stat-card { background:var(--section-bg); border-radius:10px; padding:16px; text-align:center; box-shadow:var(--shadow); border:1px solid var(--border); }
+.stat-card .sv { font-size:1.6rem; font-weight:bold; color:var(--score-color); }
+.stat-card .sl { font-size:.75rem; color:var(--text2); margin-top:4px; }
+.stat-card.funnel .sv { color:var(--funnel-badge-text); }
+.stat-card.llm .sv { color:var(--llm-badge-text); }
+.stat-card.eight .sv { color:var(--8step-badge-text); }
+
+/* Section */
+.section { background:var(--section-bg); border-radius:10px; padding:20px; margin-bottom:16px; box-shadow:var(--shadow); border:1px solid var(--border); }
+.section h2 { font-size:1.05rem; margin-bottom:14px; padding-bottom:8px; border-bottom:2px solid var(--tab-active); }
+.section-subtitle { font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; }
+
+/* Three column layout */
+.three-col { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+@media (max-width:1024px) { .three-col { grid-template-columns:1fr; } .stats-row { grid-template-columns:repeat(2,1fr); } }
+
+/* Funnel steps */
+.step-row { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; font-size:.82rem; transition:background .15s; }
+.step-row:hover { background:var(--step-row-hover); }
+.step-icon { width:22px; text-align:center; }
+.step-name { font-weight:500; min-width:80px; }
+.step-pass { font-weight:bold; color:var(--score-color); min-width:36px; text-align:right; }
+.step-row .elim { color:var(--elim-color); font-size:.72rem; margin-left:4px; }
+.step-row .rule-inline { color:var(--text2); font-size:.7rem; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; }
+.step-note { font-size:.75rem; color:var(--text2); padding:6px 10px; }
+
+/* Candidate cards */
+.cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; }
+.candidate-card { background:var(--metric-bg); border-radius:8px; padding:12px; border:1px solid var(--border); transition:transform .15s,box-shadow .15s; }
+.candidate-card:hover { transform:translateY(-2px); box-shadow:var(--shadow); }
+.candidate-card.selected { border-color:var(--sel-border); }
+.cand-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.cand-code { font-weight:bold; font-size:.92rem; }
+.cand-name { font-size:.78rem; color:var(--text2); margin-left:4px; }
+.cand-score { font-size:1.15rem; font-weight:bold; color:var(--score-color); }
+.cand-metrics { display:grid; grid-template-columns:1fr 1fr; gap:4px; }
+.metric { text-align:center; padding:5px 4px; background:var(--card); border-radius:4px; }
+.metric .mv { font-size:.85rem; font-weight:bold; }
+.metric .ml { font-size:.65rem; color:var(--text2); display:block; }
+.metric.stop .mv { color:var(--stop-color); }
+.metric.target .mv { color:var(--target-color); }
+.cand-tags { font-size:.7rem; color:var(--text2); margin-top:8px; padding:4px 8px; background:var(--card); border-radius:4px; }
+
+/* Badges */
+.badge-8step { display:inline-block; padding:2px 7px; border-radius:10px; font-size:.68rem; font-weight:bold; background:var(--8step-badge-bg); color:var(--8step-badge-text); margin-left:4px; }
+.signal-badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:.68rem; background:var(--badge-bg); color:var(--badge-text); margin-left:4px; }
+.llm-badge { display:inline-block; padding:2px 7px; border-radius:10px; font-size:.68rem; background:var(--llm-badge-bg); color:var(--llm-badge-text); margin-left:4px; }
+.src-badge { display:inline-block; padding:2px 6px; border-radius:10px; font-size:.65rem; background:var(--badge-bg); color:var(--badge-text); margin-left:4px; }
+
+/* Tabs */
+.tabs { display:flex; gap:4px; margin-bottom:14px; flex-wrap:wrap; }
+.tab-btn { padding:6px 16px; border-radius:16px; border:none; cursor:pointer; font-size:.8rem; background:var(--tab-inactive); color:var(--text); transition:all .2s; }
+.tab-btn.active { background:var(--tab-active); color:var(--tab-active-text); }
+
+/* No data */
+.no-data { text-align:center; padding:30px; color:var(--text2); font-size:.88rem; }
+
+/* Footer */
+.footer { text-align:center; padding:20px; color:var(--text2); font-size:.75rem; }
+
+/* Legend */
+.legend { display:flex; gap:14px; flex-wrap:wrap; font-size:.75rem; color:var(--text2); margin-bottom:12px; }
+.legend-item { display:flex; align-items:center; gap:4px; }
+.legend-dot { width:10px; height:10px; border-radius:50%; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>🎯 七步漏斗选股策略</h1>
-            <div class="date-info">报告日期: 2026-05-12 | 生成时间: 2026-05-12 17:48:59</div>
-            <div class="date-selector">
-                <select onchange="location.href='?date=' + this.value">
-                    <option value="2026-05-12" selected>2026-05-12</option>
-                </select>
-            </div>
-        </header>
-
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-value">3607</div>
-                <div class="stat-label">全市场初筛</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">4</div>
-                <div class="stat-label">最终推荐</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value"><span class="position-badge">⚠️ 半仓</span></div>
-                <div class="stat-label">仓位上限 50%</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value">13.7s</div>
-                <div class="stat-label">总耗时</div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>📊 市场环境</h2>
-            <div class="market-env">
-                <div class="env-item">
-                    <div class="env-value">1276</div>
-                    <div class="env-label">上涨家数</div>
-                </div>
-                <div class="env-item">
-                    <div class="env-value">3848</div>
-                    <div class="env-label">下跌家数</div>
-                </div>
-                <div class="env-item">
-                    <div class="env-value">33.22</div>
-                    <div class="env-label">指数收盘</div>
-                </div>
-                <div class="env-item">
-                    <div class="env-value">17.32</div>
-                    <div class="env-label">指数EMA</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h2>🔄 漏斗过滤过程</h2>
-            
-        <div class="funnel-step" style="background: #e3f2fd">
-            <div class="step-icon">📊</div>
-            <div class="step-info">
-                <span class="step-name">全市场初筛</span><span class="step-rule-inline">A股全市场，不做任何过滤</span>
-                <div class="step-counts">
-                    <span class="pass-count">✓ 3607 只</span>
-                    
-                    
-                </div>
-                
-            </div>
-        </div>
-        
-        <div class="funnel-step" style="background: #fff3e0">
-            <div class="step-icon">️</div>
-            <div class="step-info">
-                <div class="step-name">L0 大盘风控</div>
-                <div class="step-counts">
-                    <span class="pass-count">✓ 3607 只</span>
-                    <span class="note-badge">️半仓</span>
-                    
-                </div>
-                <div class="step-rule">上涨家数≥2500 且 全A指数>20EMA → 满仓；否则半仓或休战</div>
-            </div>
-        </div>
-        
-        <div class="funnel-step" style="background: #fce4ec">
-            <div class="step-icon">⚡</div>
-            <div class="step-info">
-                <div class="step-name">L1 硬性防雷</div>
-                <div class="step-counts">
-                    <span class="pass-count">✓ 3515 只</span>
-                    
-                    <span class="eliminated-count">✗ 淘汰 92 只</span>
-                </div>
-                <div class="step-rule">剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%</div>
-            </div>
-        </div>
-        
-        <div class="funnel-step" style="background: #f3e5f5">
-            <div class="step-icon">💧</div>
-            <div class="step-info">
-                <div class="step-name">L2 流动性</div>
-                <div class="step-counts">
-                    <span class="pass-count">✓ 3327 只</span>
-                    
-                    <span class="eliminated-count">✗ 淘汰 188 只</span>
-                </div>
-                <div class="step-rule">20日均成交额>1亿；流通市值>20亿；换手率3~15%</div>
-            </div>
-        </div>
-        
-        <div class="funnel-step" style="background: #e8eaf6">
-            <div class="step-icon">📈</div>
-            <div class="step-info">
-                <div class="step-name">L3 趋势结构</div>
-                <div class="step-counts">
-                    <span class="pass-count">✓ 1553 只</span>
-                    
-                    <span class="eliminated-count">✗ 淘汰 1774 只</span>
-                </div>
-                <div class="step-rule">周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12；上升平台/回踩支撑</div>
-            </div>
-        </div>
-        
-        <div class="funnel-step" style="background: #e0f2f1">
-            <div class="step-icon">🚀</div>
-            <div class="step-info">
-                <div class="step-name">L4 动能信号</div>
-                <div class="step-counts">
-                    <span class="pass-count">✓ 206 只</span>
-                    
-                    <span class="eliminated-count">✗ 淘汰 1347 只</span>
-                </div>
-                <div class="step-rule">量比1.5~3.0；乖离率<6%；需求吸收K线 或 强势接力形态</div>
-            </div>
-        </div>
-        
-        <div class="funnel-step" style="background: #fff8e1">
-            <div class="step-icon">🔥</div>
-            <div class="step-info">
-                <div class="step-name">L5 人气精选</div>
-                <div class="step-counts">
-                    <span class="pass-count">✓ 4 只</span>
-                    
-                    <span class="eliminated-count">✗ 淘汰 202 只</span>
-                </div>
-                <div class="step-rule">综合评分≥80；涨幅3~5%；贴MA5；分时平稳；人气榜加分</div>
-            </div>
-        </div>
-        
-        <div class="funnel-step" style="background: #e8f5e9">
-            <div class="step-icon">🎯</div>
-            <div class="step-info">
-                <div class="step-name">L6 刚性风控</div>
-                <div class="step-counts">
-                    <span class="pass-count">✓ 4 只</span>
-                    
-                    
-                </div>
-                <div class="step-rule">14:30后买入；止损=入场价-1ATR；目标价=入场价+2ATR；盈亏比≥2:1</div>
-            </div>
-        </div>
-        
-        </div>
-
-        <div class="section">
-            <h2>🎯 最终推荐 (4 只)</h2>
-            <div class="candidates-grid">
-                
-            <div class="stock-card">
-                <div class="stock-header">
-                    <span class="stock-code">002597.SZ</span>
-                    <span class="stock-score">87.0</span>
-                </div>
-                <div class="stock-details">
-                    <div class="detail-row">
-                        <span class="label">入场价</span>
-                        <span class="value">23.66</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">止损价</span>
-                        <span class="value stop">22.49</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">目标价</span>
-                        <span class="value target">26.01</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">ATR</span>
-                        <span class="value">1.173</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">盈亏比</span>
-                        <span class="value">2.0:1</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">信号</span>
-                        <span class="value signal">需求吸收（EMA12附近锤子/刺透+放量）</span>
-                    </div>
-                </div>
-                <div class="stock-tags">黄金涨幅, 贴MA5</div>
-            </div>
-            
-            <div class="stock-card">
-                <div class="stock-header">
-                    <span class="stock-code">688028.SH</span>
-                    <span class="stock-score">87.0</span>
-                </div>
-                <div class="stock-details">
-                    <div class="detail-row">
-                        <span class="label">入场价</span>
-                        <span class="value">131.68</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">止损价</span>
-                        <span class="value stop">120.36</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">目标价</span>
-                        <span class="value target">154.32</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">ATR</span>
-                        <span class="value">11.320</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">盈亏比</span>
-                        <span class="value">2.0:1</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">信号</span>
-                        <span class="value signal">需求吸收（EMA12附近锤子/刺透+放量）</span>
-                    </div>
-                </div>
-                <div class="stock-tags">黄金涨幅, 贴MA5</div>
-            </div>
-            
-            <div class="stock-card">
-                <div class="stock-header">
-                    <span class="stock-code">002463.SZ</span>
-                    <span class="stock-score">83.0</span>
-                </div>
-                <div class="stock-details">
-                    <div class="detail-row">
-                        <span class="label">入场价</span>
-                        <span class="value">108.68</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">止损价</span>
-                        <span class="value stop">102.95</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">目标价</span>
-                        <span class="value target">120.14</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">ATR</span>
-                        <span class="value">5.730</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">盈亏比</span>
-                        <span class="value">2.0:1</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">信号</span>
-                        <span class="value signal">需求吸收（EMA12附近锤子/刺透+放量）</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">LLM联动</span>
-                        <span class="value llm-bonus">+13.0分 (LLM评33; 2源提及)</span>
-                    </div>
-                </div>
-                <div class="stock-tags">紧贴MA5, LLM评33, 多源×2</div>
-            </div>
-            
-            <div class="stock-card">
-                <div class="stock-header">
-                    <span class="stock-code">600644.SH</span>
-                    <span class="stock-score">83.0</span>
-                </div>
-                <div class="stock-details">
-                    <div class="detail-row">
-                        <span class="label">入场价</span>
-                        <span class="value">12.25</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">止损价</span>
-                        <span class="value stop">11.76</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">目标价</span>
-                        <span class="value target">13.24</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">ATR</span>
-                        <span class="value">0.493</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">盈亏比</span>
-                        <span class="value">2.0:1</span>
-                    </div>
-                    <div class="detail-row">
-                        <span class="label">信号</span>
-                        <span class="value signal">需求吸收（EMA12附近锤子/刺透+放量）</span>
-                    </div>
-                </div>
-                <div class="stock-tags">黄金涨幅</div>
-            </div>
-            
-            </div>
-        </div>
-
-        <footer>
-            AI Stock Recommendation System | 漏斗策略每日 15:10 自动更新
-        </footer>
+<div class="container">
+  <div class="header">
+    <div>
+      <h1>📊 三策略对比选股系统</h1>
+      <div class="sub">
+        报告日期: 2026-05-12 | 生成: 2026-05-12 21:38:23
+        <select class="date-select" onchange="location.href='?date='+this.value">
+          <option value="">历史日期</option>
+          <option value="2026-05-11" >2026-05-11</option><option value="2026-05-12" selected>2026-05-12</option>
+        </select>
+      </div>
     </div>
+    <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">
+      <span id="themeIcon">🌙</span> 深色模式
+    </button>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat-card funnel">
+      <div class="sv">4</div>
+      <div class="sl">🎯 漏斗最终推荐</div>
+    </div>
+    <div class="stat-card llm">
+      <div class="sv">15</div>
+      <div class="sl">🤖 LLM多源候选</div>
+    </div>
+    <div class="stat-card eight">
+      <div class="sv">0</div>
+      <div class="sl">🔮 八步法候选</div>
+    </div>
+    <div class="stat-card">
+      <div class="sv">13s</div>
+      <div class="sl">⏱ 漏斗耗时</div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--score-color)"></div> 通过数</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--elim-color)"></div> 淘汰数</div>
+    <div class="legend-item"><span class="badge-8step">八步法</span> 八步法标记</div>
+    <div class="legend-item"><span class="llm-badge">LLM+</span> LLM联动加分</div>
+    <div class="legend-item"><span class="signal-badge">信号</span> 买入信号</div>
+  </div>
+
+  <div class="three-col">
+    <!-- ========== 七步漏斗 ========== -->
+    <div class="section">
+      <h2>🎯 七步漏斗选股<span class="section-subtitle">大盘环境→防雷→流动性→趋势→动能→人气→风控</span></h2>
+      
+            <div class="step-row">
+              <span class="step-icon">📊</span>
+              <span class="step-name">全市场</span>
+              <span class="step-pass">3607</span>
+              
+              <span class="rule-inline">A股全市场日成交额>1亿</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon">🌤️</span>
+              <span class="step-name">L0 大盘风控</span>
+              <span class="step-pass">3607</span>
+              
+              <span class="rule-inline">⚠️半仓</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon">⚡</span>
+              <span class="step-name">L1 硬性防雷</span>
+              <span class="step-pass">3515</span>
+              <span class="elim">92</span>
+              <span class="rule-inline">剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon">💧</span>
+              <span class="step-name">L2 流动性</span>
+              <span class="step-pass">3327</span>
+              <span class="elim">188</span>
+              <span class="rule-inline">20日均成交额>1亿；流通市值>20亿；换手率3~15%</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon">📈</span>
+              <span class="step-name">L3 趋势结构</span>
+              <span class="step-pass">1553</span>
+              <span class="elim">1774</span>
+              <span class="rule-inline">周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon">🚀</span>
+              <span class="step-name">L4 动能信号</span>
+              <span class="step-pass">206</span>
+              <span class="elim">1347</span>
+              <span class="rule-inline">量比1.5~3.0；乖离率<6%；需求吸收K线或强势接力形态</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon">🔥</span>
+              <span class="step-name">L5 人气精选</span>
+              <span class="step-pass">4</span>
+              <span class="elim">202</span>
+              <span class="rule-inline">综合评分≥80；涨幅3~5%；贴MA5；人气榜+LLM联动加分</span>
+            </div>
+            <div class="step-row">
+              <span class="step-icon">🎯</span>
+              <span class="step-name">L6 刚性风控</span>
+              <span class="step-pass">4</span>
+              
+              <span class="rule-inline">14:30后买入；止损=入场价-1ATR；目标=入场价+2ATR；盈亏比≥2:1</span>
+            </div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 (4只)</h3>
+      <div class="cards-grid">
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">002597.SZ</span>
+              <span class="cand-name"></span>
+              <span class="signal-badge">需求吸收</span>
+              
+            </div>
+            <span class="cand-score">87</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">23.66</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">22.49</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">26.01</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">0</span><span class="ml">量化分</span></div>
+          </div>
+          
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">688028.SH</span>
+              <span class="cand-name"></span>
+              <span class="signal-badge">需求吸收</span>
+              
+            </div>
+            <span class="cand-score">87</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">131.68</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">120.36</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">154.32</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">0</span><span class="ml">量化分</span></div>
+          </div>
+          
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">002463.SZ</span>
+              <span class="cand-name"></span>
+              <span class="signal-badge">需求吸收</span> <span class="llm-badge">LLM+13.0</span>
+              
+            </div>
+            <span class="cand-score">83</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">108.68</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">102.95</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">120.14</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">0</span><span class="ml">量化分</span></div>
+          </div>
+          
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600644.SH</span>
+              <span class="cand-name"></span>
+              <span class="signal-badge">需求吸收</span>
+              
+            </div>
+            <span class="cand-score">83</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">12.25</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">11.76</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">13.24</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">0</span><span class="ml">量化分</span></div>
+          </div>
+          
+        </div></div>
+    </div>
+
+    <!-- ========== LLM多源 ========== -->
+    <div class="section">
+      <h2>🤖 LLM多源策略<span class="section-subtitle">2026-05-12</span></h2>
+      
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (15只)</h3>
+      <div class="cards-grid">
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300502.SZ</span>
+              <span class="cand-name">新易盛</span>
+              
+              <span class="src-badge">5源</span>
+            </div>
+            <span class="cand-score">43</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">567.77</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">547.60</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">622.53</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">42</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 题材</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300308.SZ</span>
+              <span class="cand-name">中际旭创</span>
+              
+              <span class="src-badge">6源</span>
+            </div>
+            <span class="cand-score">38</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">963.03</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">928.82</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">1055.92</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">技术 · 盈利预测 · 题材</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">688008.SH</span>
+              <span class="cand-name">澜起科技</span>
+              
+              <span class="src-badge">6源</span>
+            </div>
+            <span class="cand-score">35</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">245.48</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">236.76</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">269.16</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">29</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 题材 · 首板</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300620.SZ</span>
+              <span class="cand-name">光库科技</span>
+              
+              <span class="src-badge">3源</span>
+            </div>
+            <span class="cand-score">35</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">267.01</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">257.53</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">292.77</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">36</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 题材</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">000002.SZ</span>
+              <span class="cand-name">万  科Ａ</span>
+              
+              <span class="src-badge">2源</span>
+            </div>
+            <span class="cand-score">33</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">4.05</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">3.97</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">4.29</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">33</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股 · 盈利预测</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600498.SH</span>
+              <span class="cand-name">烽火通信</span>
+              
+              <span class="src-badge">4源</span>
+            </div>
+            <span class="cand-score">31</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">58.71</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">57.52</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">62.27</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 首板</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">688981.SH</span>
+              <span class="cand-name">中芯国际</span>
+              
+              <span class="src-badge">2源</span>
+            </div>
+            <span class="cand-score">30</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">120.68</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">116.39</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">132.32</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">44</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600172.SH</span>
+              <span class="cand-name">黄河旋风</span>
+              
+              <span class="src-badge">3源</span>
+            </div>
+            <span class="cand-score">30</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">9.94</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">9.74</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">10.54</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">事件 · 首板</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">000636.SZ</span>
+              <span class="cand-name">风华高科</span>
+              
+              <span class="src-badge">3源</span>
+            </div>
+            <span class="cand-score">30</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">28.71</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">28.13</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">30.45</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">35</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 首板</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">301666.SZ</span>
+              <span class="cand-name">大普微-UW</span>
+              
+              <span class="src-badge">2源</span>
+            </div>
+            <span class="cand-score">30</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">506.24</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">488.25</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">555.07</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 龙虎榜</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300394.SZ</span>
+              <span class="cand-name">天孚通信</span>
+              
+              <span class="src-badge">3源</span>
+            </div>
+            <span class="cand-score">29</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">334.22</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">322.34</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">366.45</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">39</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300576.SZ</span>
+              <span class="cand-name">容大感光</span>
+              
+              <span class="src-badge">3源</span>
+            </div>
+            <span class="cand-score">29</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">38.65</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">37.28</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">42.38</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">24</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">机构调研 · 题材</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600330.SH</span>
+              <span class="cand-name">天通股份</span>
+              
+              <span class="src-badge">3源</span>
+            </div>
+            <span class="cand-score">29</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">32.62</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">31.96</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">34.60</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">33</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 首板</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">000811.SZ</span>
+              <span class="cand-name">冰轮环境</span>
+              
+              <span class="src-badge">4源</span>
+            </div>
+            <span class="cand-score">29</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">29.40</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">28.81</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">31.19</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">28</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">机构调研 · 盈利预测 · 首板</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603936.SH</span>
+              <span class="cand-name">博敏电子</span>
+              
+              <span class="src-badge">4源</span>
+            </div>
+            <span class="cand-score">29</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">20.51</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">20.10</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">21.76</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">30</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">机构调研 · 盈利预测 · 首板</div>
+        </div></div>
+    </div>
+
+    <!-- ========== 八步法 ========== -->
+    <div class="section">
+      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-05-11</span></h2>
+      
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (0只)</h3>
+      <div class="cards-grid"><div class="no-data">今日无推荐</div></div>
+    </div>
+  </div>
+
+  <div class="footer">
+    AI Stock Recommendation System | 三策略对比 · 每日15:10自动更新
+  </div>
+</div>
+
+<script>
+function toggleTheme() {
+  const html = document.documentElement;
+  const isDark = html.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    html.removeAttribute('data-theme');
+    localStorage.setItem('theme', 'light');
+    document.getElementById('themeIcon').textContent = '🌙';
+    document.getElementById('themeBtn').innerHTML = '<span id="themeIcon">🌙</span> 深色模式';
+  } else {
+    html.setAttribute('data-theme', 'dark');
+    localStorage.setItem('theme', 'dark');
+    document.getElementById('themeIcon').textContent = '☀️';
+    document.getElementById('themeBtn').innerHTML = '<span id="themeIcon">☀️</span> 浅色模式';
+  }
+}
+(function() {
+  const saved = localStorage.getItem('theme');
+  const prefersDark = window.matchMedia('(prefers-color-scheme:dark)').matches;
+  if (saved === 'dark' || (!saved && prefersDark)) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.getElementById('themeIcon').textContent = '☀️';
+    document.getElementById('themeBtn').innerHTML = '<span id="themeIcon">☀️</span> 浅色模式';
+  }
+})();
+</script>
 </body>
 </html>
