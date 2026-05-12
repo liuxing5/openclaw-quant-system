@@ -57,8 +57,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             --badge-8step-bg: #9C27B0;
             --table-header-bg: #f5f5f5;
             --hover-shadow: rgba(0,0,0,0.15);
-            --selected-border: #4CAF50;
-            --selected-bg: #f8fff8;
+            --selected-border: #FF9800;
+            --selected-bg: #fff8e1;
             --btn-bg: #4CAF50;
             --btn-text: #ffffff;
         }
@@ -81,8 +81,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             --badge-8step-bg: #a371f7;
             --table-header-bg: #21262d;
             --hover-shadow: rgba(0,0,0,0.5);
-            --selected-border: #238636;
-            --selected-bg: #0d2818;
+            --selected-border: #FF9800;
+            --selected-bg: #3e2723;
             --btn-bg: #238636;
             --btn-text: #ffffff;
         }
@@ -331,13 +331,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="card">
             <h2>📡 数据源统计</h2>
             <table>
-                <tr><th>数据源</th><th>信号数</th><th>平均置信度</th><th>平均强度</th></tr>
+                <tr><th>数据源</th><th>信号数</th><th>数据等级</th><th>最新时间</th></tr>
                 {% for s in source_stats %}
                 <tr>
-                    <td>{{ s.name }}</td>
+                    <td>{{ s.source_name }}</td>
                     <td>{{ s.signal_count }}</td>
-                    <td>{{ "%.2f"|format(s.avg_confidence or 0) }}</td>
-                    <td>{{ "%.1f"|format(s.avg_strength or 0) }}</td>
+                    <td>{{ s.tier_label }}</td>
+                    <td>{{ s.latest_time or '—' }}</td>
                 </tr>
                 {% endfor %}
             </table>
@@ -349,10 +349,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 <tr><th>标题</th><th>来源</th><th>时间</th><th>链接</th></tr>
                 {% for a in articles %}
                 <tr>
-                    <td>{{ a.title or '无标题' }}</td>
+                    <td><a href="{{ a.url }}" target="_blank" style="color: var(--link-color); text-decoration: none;">{{ a.title or '无标题' }}</a></td>
                     <td>{{ a.source_name }}</td>
                     <td>{{ a.pub_time }}</td>
-                    <td>{% if a.url %}<a href="{{ a.url }}" target="_blank" style="color: #4CAF50;">查看原文</a>{% else %}—{% endif %}</td>
+                    <td><a href="{{ a.url }}" target="_blank" style="color: var(--link-color);">🔗</a></td>
                 </tr>
                 {% endfor %}
             </table>
@@ -446,7 +446,7 @@ def generate_report():
     if step_date:
         cur.execute("""
             SELECT * FROM daily_candidates
-            WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
+            WHERE snapshot_date = %s AND source = 'overnight_8step'
             ORDER BY final_score DESC;
         """, (step_date,))
         eight_step_picks = cur.fetchall()
@@ -454,7 +454,14 @@ def generate_report():
         eight_step_picks = []
     
     cur.execute("""
-        SELECT source_name, COUNT(*) as signal_count, source_tier
+        SELECT source_name, COUNT(*) as signal_count, source_tier,
+               CASE source_tier
+                   WHEN 1 THEN '⭐ 核心'
+                   WHEN 2 THEN '⭐⭐ 重要'
+                   WHEN 3 THEN '⭐⭐⭐ 辅助'
+                   ELSE '其他'
+               END as tier_label,
+               MAX(fetch_time) as latest_time
         FROM raw_signals
         WHERE fetch_time >= %s
         GROUP BY source_name, source_tier
@@ -465,7 +472,7 @@ def generate_report():
     cur.execute("""
         SELECT title, url, pub_time, source_name
         FROM raw_signals
-        WHERE pub_time IS NOT NULL
+        WHERE pub_time IS NOT NULL AND url IS NOT NULL AND url != ''
         ORDER BY pub_time DESC LIMIT 20;
     """)
     articles = cur.fetchall()
@@ -532,7 +539,7 @@ def generate_text_report():
     if step_date:
         cur.execute("""
             SELECT * FROM daily_candidates
-            WHERE snapshot_date = %s AND source = 'overnight_8step' AND selected = TRUE
+            WHERE snapshot_date = %s AND source = 'overnight_8step'
             ORDER BY final_score DESC;
         """, (step_date,))
         eight_step_picks = cur.fetchall()
