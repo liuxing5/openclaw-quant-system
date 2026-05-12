@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>漏斗策略 - 2026-05-12</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f5f5f5;
+            color: #333;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        header h1 { font-size: 24px; margin-bottom: 10px; }
+        header .date-info { font-size: 14px; opacity: 0.9; }
+        .date-selector {
+            margin: 15px 0;
+            text-align: center;
+        }
+        .date-selector select {
+            padding: 8px 15px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+            font-size: 14px;
+            background: white;
+            cursor: pointer;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .stat-card .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-card .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+        .section {
+            background: white;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+        .funnel-step {
+            display: flex;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            transition: transform 0.2s;
+        }
+        .funnel-step:hover { transform: translateX(5px); }
+        .step-icon {
+            font-size: 24px;
+            margin-right: 15px;
+        }
+        .step-info { flex: 1; }
+        .step-name {
+            font-weight: bold;
+            font-size: 14px;
+        }
+        .step-counts {
+            font-size: 12px;
+            margin-top: 3px;
+        }
+        .pass-count { color: #4caf50; margin-right: 10px; }
+        .eliminated-count { color: #f44336; }
+        .candidates-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+        .stock-card {
+            background: #fafafa;
+            border-radius: 10px;
+            padding: 15px;
+            border-left: 4px solid #667eea;
+        }
+        .stock-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .stock-code {
+            font-weight: bold;
+            font-size: 16px;
+        }
+        .stock-score {
+            background: #667eea;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 15px;
+            font-size: 14px;
+        }
+        .stock-details { margin-bottom: 10px; }
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 5px 0;
+            font-size: 13px;
+            border-bottom: 1px solid #eee;
+        }
+        .detail-row .label { color: #666; }
+        .detail-row .value { font-weight: bold; }
+        .detail-row .value.stop { color: #f44336; }
+        .detail-row .value.target { color: #4caf50; }
+        .detail-row .value.signal { color: #ff9800; }
+        .stock-tags {
+            font-size: 12px;
+            color: #666;
+            background: #eee;
+            padding: 5px 10px;
+            border-radius: 5px;
+            display: inline-block;
+        }
+        .no-candidates {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+            font-size: 16px;
+        }
+        .market-env {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+        }
+        .env-item {
+            text-align: center;
+            padding: 10px;
+            background: #f9f9f9;
+            border-radius: 6px;
+        }
+        .env-item .env-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #333;
+        }
+        .env-item .env-label {
+            font-size: 11px;
+            color: #666;
+            margin-top: 3px;
+        }
+        .position-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 15px;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            background: #ff9800;
+        }
+        footer {
+            text-align: center;
+            padding: 20px;
+            color: #999;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 七步漏斗选股策略</h1>
+            <div class="date-info">报告日期: 2026-05-12 | 生成时间: 2026-05-12 13:46:09</div>
+            <div class="date-selector">
+                <select onchange="location.href='?date=' + this.value">
+                    <option value="2026-05-12" selected>2026-05-12</option>
+                </select>
+            </div>
+        </header>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">2890</div>
+                <div class="stat-label">全市场初筛</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">2</div>
+                <div class="stat-label">最终推荐</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value"><span class="position-badge">⚠️ 半仓</span></div>
+                <div class="stat-label">仓位上限 50%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">14.0s</div>
+                <div class="stat-label">总耗时</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📊 市场环境</h2>
+            <div class="market-env">
+                <div class="env-item">
+                    <div class="env-value">1073</div>
+                    <div class="env-label">上涨家数</div>
+                </div>
+                <div class="env-item">
+                    <div class="env-value">4047</div>
+                    <div class="env-label">下跌家数</div>
+                </div>
+                <div class="env-item">
+                    <div class="env-value">33.03</div>
+                    <div class="env-label">指数收盘</div>
+                </div>
+                <div class="env-item">
+                    <div class="env-value">17.3</div>
+                    <div class="env-label">指数EMA</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>🔄 漏斗过滤过程</h2>
+            
+        <div class="funnel-step" style="background: #e3f2fd">
+            <div class="step-icon">📊</div>
+            <div class="step-info">
+                <div class="step-name">全市场初筛</div>
+                <div class="step-counts">
+                    <span class="pass-count">✓ 2890 只</span>
+                    
+                </div>
+            </div>
+        </div>
+        
+        <div class="funnel-step" style="background: #fff3e0">
+            <div class="step-icon">🛡️</div>
+            <div class="step-info">
+                <div class="step-name">L0 大盘风控</div>
+                <div class="step-counts">
+                    <span class="pass-count">✓ 0 只</span>
+                    <span class="eliminated-count">✗ 淘汰 2890 只</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="funnel-step" style="background: #fce4ec">
+            <div class="step-icon">⚡</div>
+            <div class="step-info">
+                <div class="step-name">L1 硬性防雷</div>
+                <div class="step-counts">
+                    <span class="pass-count">✓ 2831 只</span>
+                    <span class="eliminated-count">✗ 淘汰 59 只</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="funnel-step" style="background: #f3e5f5">
+            <div class="step-icon">💧</div>
+            <div class="step-info">
+                <div class="step-name">L2 流动性</div>
+                <div class="step-counts">
+                    <span class="pass-count">✓ 2781 只</span>
+                    <span class="eliminated-count">✗ 淘汰 50 只</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="funnel-step" style="background: #e8eaf6">
+            <div class="step-icon">📈</div>
+            <div class="step-info">
+                <div class="step-name">L3 趋势结构</div>
+                <div class="step-counts">
+                    <span class="pass-count">✓ 1310 只</span>
+                    <span class="eliminated-count">✗ 淘汰 1471 只</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="funnel-step" style="background: #e0f2f1">
+            <div class="step-icon">🚀</div>
+            <div class="step-info">
+                <div class="step-name">L4 动能信号</div>
+                <div class="step-counts">
+                    <span class="pass-count">✓ 88 只</span>
+                    <span class="eliminated-count">✗ 淘汰 1222 只</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="funnel-step" style="background: #fff8e1">
+            <div class="step-icon">🔥</div>
+            <div class="step-info">
+                <div class="step-name">L5 人气精选</div>
+                <div class="step-counts">
+                    <span class="pass-count">✓ 2 只</span>
+                    <span class="eliminated-count">✗ 淘汰 86 只</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="funnel-step" style="background: #e8f5e9">
+            <div class="step-icon">🎯</div>
+            <div class="step-info">
+                <div class="step-name">L6 刚性风控</div>
+                <div class="step-counts">
+                    <span class="pass-count">✓ 2 只</span>
+                    
+                </div>
+            </div>
+        </div>
+        
+        </div>
+
+        <div class="section">
+            <h2>🎯 最终推荐 (2 只)</h2>
+            <div class="candidates-grid">
+                
+            <div class="stock-card">
+                <div class="stock-header">
+                    <span class="stock-code">300285.SZ</span>
+                    <span class="stock-score">83.0</span>
+                </div>
+                <div class="stock-details">
+                    <div class="detail-row">
+                        <span class="label">入场价</span>
+                        <span class="value">39.92</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">止损价</span>
+                        <span class="value stop">38.11</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">目标价</span>
+                        <span class="value target">43.54</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">ATR</span>
+                        <span class="value">1.810</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">盈亏比</span>
+                        <span class="value">2.0:1</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">信号</span>
+                        <span class="value signal">demand_absorption</span>
+                    </div>
+                </div>
+                <div class="stock-tags">黄金涨幅</div>
+            </div>
+            
+            <div class="stock-card">
+                <div class="stock-header">
+                    <span class="stock-code">600644.SH</span>
+                    <span class="stock-score">83.0</span>
+                </div>
+                <div class="stock-details">
+                    <div class="detail-row">
+                        <span class="label">入场价</span>
+                        <span class="value">12.25</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">止损价</span>
+                        <span class="value stop">11.76</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">目标价</span>
+                        <span class="value target">13.24</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">ATR</span>
+                        <span class="value">0.493</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">盈亏比</span>
+                        <span class="value">2.0:1</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="label">信号</span>
+                        <span class="value signal">demand_absorption</span>
+                    </div>
+                </div>
+                <div class="stock-tags">黄金涨幅</div>
+            </div>
+            
+            </div>
+        </div>
+
+        <footer>
+            AI Stock Recommendation System | 漏斗策略每日 15:10 自动更新
+        </footer>
+    </div>
+</body>
+</html>
