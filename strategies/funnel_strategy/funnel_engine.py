@@ -403,7 +403,24 @@ class FunnelEngine:
             cur = conn.cursor()
 
             s = self._stats
-            candidates_json = json.dumps(candidates, ensure_ascii=False, default=str) if candidates else '[]'
+            
+            # 清理 NaN 值，转换为 null (PostgreSQL JSON 不接受 NaN)
+            def clean_nan(obj):
+                if isinstance(obj, dict):
+                    return {k: clean_nan(v) for k, v in obj.items()}
+                elif isinstance(obj, list):
+                    return [clean_nan(item) for item in obj]
+                elif isinstance(obj, float):
+                    if obj != obj:  # NaN check
+                        return None
+                    return obj
+                return obj
+            
+            candidates_json = json.dumps(
+                clean_nan(candidates), 
+                ensure_ascii=False, 
+                default=str
+            ) if candidates else '[]'
 
             cur.execute("""
                 INSERT INTO funnel_results (
