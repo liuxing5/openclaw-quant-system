@@ -571,22 +571,22 @@ def is_llm_candidate(code: str) -> tuple:
 
 
 def get_llm_boost_score(code: str) -> float:
-    """获取LLM候选池的加成分数"""
+    """获取LLM候选池的加成分数，上限12分（总分120的10%）"""
     is_candidate, info = is_llm_candidate(code)
     if not is_candidate:
         return 0.0
     
     boost = 0.0
-    boost += min(info.get('final_score', 0) * 0.1, 15.0)
-    boost += min(info.get('llm_score', 0) * 0.05, 10.0)
+    boost += min(info.get('final_score', 0) * 0.05, 8.0)
+    boost += min(info.get('llm_score', 0) * 0.03, 5.0)
     
     source_diversity = info.get('source_diversity', 0)
     if source_diversity >= 3:
-        boost += 5.0
+        boost += 2.0
     elif source_diversity >= 2:
-        boost += 3.0
+        boost += 1.0
     
-    return min(boost, 25.0)
+    return min(boost, 12.0)
 
 
 # ============================================================
@@ -599,11 +599,12 @@ _stock_concept_map = {}
 _valuation_cache = {}
 _fundamentals_cache = {}
 _list_date_cache = {}
+_indicators_loaded = False
 
 def load_new_indicators(trade_date: str = None):
     """从数据库加载新增指标到缓存"""
     global _strong_rank_cache, _earnings_cache, _concept_cache, _stock_concept_map
-    global _valuation_cache, _fundamentals_cache, _list_date_cache
+    global _valuation_cache, _fundamentals_cache, _list_date_cache, _indicators_loaded
     
     if not DB_ENABLED:
         return
@@ -721,6 +722,7 @@ def load_new_indicators(trade_date: str = None):
         
         cur.close()
         conn.close()
+        _indicators_loaded = True
         print(f"✓ 加载新增指标: 强势股{len(_strong_rank_cache)}只, 机构预期{len(_earnings_cache)}只, 概念{len(_concept_cache)}个, 估值{len(_valuation_cache)}只, 财务{len(_fundamentals_cache)}只, 上市时间{len(_list_date_cache)}只")
     except Exception as e:
         print(f"⚠️ 新增指标加载失败: {e}")
@@ -900,7 +902,14 @@ def get_fundamentals_bonus(ts_code: str) -> tuple:
 
 
 def is_new_stock(ts_code: str) -> bool:
-    """判断是否为次新股（上市<60天）"""
+    """判断是否为次新股（上市<60天）
+    当指标缓存未加载时，返回 False（不拦截）并记录警告。
+    """
+    if not _indicators_loaded:
+        if DEBUG:
+            print(f"  [DEBUG] 次新股过滤: 指标缓存未加载，无法判断 {ts_code}")
+        return False
+    
     if ts_code not in _list_date_cache:
         return False
     
@@ -1192,22 +1201,24 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         
         # 综合情绪评分（0-100分）
         # 各维度权重：涨停家数(25%) + 涨跌比(20%) + 封板率(20%) + 连板高度(15%) + 炸板率(15%) + 跌停(5%)
+        # 使用 sqrt 对数压缩，避免极端值线性扭曲总分
+        import math
         score = 50  # 基础分
         
-        # 涨停家数评分
-        zt_score = min(zt_count / 100 * 25, 25)
+        # 涨停家数评分（sqrt压缩：50→7.9, 100→11.2, 200→15.8, 500→25）
+        zt_score = min(math.sqrt(zt_count) / math.sqrt(500) * 25, 25) if zt_count > 0 else 0
         score += zt_score
         
-        # 涨跌比评分
-        ratio_score = min(up_down_ratio * 10, 20)
+        # 涨跌比评分（sqrt压缩）
+        ratio_score = min(math.sqrt(max(up_down_ratio, 0.1)) / math.sqrt(5) * 20, 20)
         score += ratio_score
         
-        # 封板率评分
+        # 封板率评分（线性，封板率本身就是0-1归一化值）
         seal_score = seal_rate * 20
         score += seal_score
         
-        # 连板高度评分
-        streak_score = min(max_streak * 3, 15)
+        # 连板高度评分（sqrt压缩：3板→10.4, 5板→13.4, 10板→19）
+        streak_score = min(math.sqrt(max_streak) / math.sqrt(15) * 15, 15) if max_streak > 0 else 0
         score += streak_score
         
         # 炸板率扣分
@@ -1553,10 +1564,14 @@ def analyze_ultimate(
         return None
 
     # --- STEP 6a: 均线验证（昨收序列，严格无未来函数）---
-    # v1.1: 统一不含今日收盘 —— 无论 realtime 还是 post
-    # 原因：realtime 模式下 baostock 当日"close"是延迟数据，会污染均线
-    #       post 模式下今日已收盘，但 MA 应基于"昨日及之前"的历史序列
-    hist_close = df["close"].tolist()[:-1]
+    # post 模式：今日收盘已确定，纳入MA计算更准确
+    # realtime 模式：今日价格仍在变动，排除今日收盘
+    if cfg["MODE"] == "post" and curr_price > 0:
+        hist_close = df["close"].tolist()
+        if hist_close:
+            hist_close[-1] = curr_price
+    else:
+        hist_close = df["close"].tolist()[:-1]
 
     if len(hist_close) < 10:
         if reject_stats is not None:
@@ -1773,9 +1788,9 @@ def analyze_ultimate(
     fine_score = 0
 
     # F1. 成交额放大度（今日成交额 vs 5日均值）
+    # 两者均为元: curr_amount=腾讯_f(37)*10000, baostock amount 原始为元
     if curr_amount > 0 and "amount" in df.columns and len(df) >= 5:
-        # baostock的amount单位是元，腾讯的curr_amount单位是万元
-        hist_amounts = df["amount"].astype(float) / 10000  # 转为万元
+        hist_amounts = df["amount"].astype(float)
         avg_amount_5d = hist_amounts.iloc[-5:].mean()
         if avg_amount_5d > 0:
             amount_ratio = curr_amount / avg_amount_5d
@@ -1827,13 +1842,13 @@ def analyze_ultimate(
         score += 5
         tags.append("振幅偏大")
 
-    # 量比评分：量比>1.5表示放量，加分（与B部分量比评分互补）
+    # 量比确认：腾讯瞬时量比作为辅助验证（B部分已做主力评分，此处仅微调±3）
     volume_ratio = real_info.get('volume_ratio', 0) if real_info else 0
     if volume_ratio > 1.5:
-        score += min(15, (volume_ratio - 1.5) * 10)
+        score += min(3, (volume_ratio - 1.5) * 2)
         tags.append("放量确认")
     elif volume_ratio < 0.8:
-        score -= 5
+        score -= 3
         tags.append("缩量↓")
 
     # 委比评分：委比>0表示买盘强，加分
@@ -2698,7 +2713,12 @@ def debug_stock(code: str, cfg: dict = None):
         return
 
     # Step 6a: 均线
-    hist_close = df["close"].tolist()[:-1]
+    if cfg["MODE"] == "post" and curr_price > 0:
+        hist_close = df["close"].tolist()
+        if hist_close:
+            hist_close[-1] = curr_price
+    else:
+        hist_close = df["close"].tolist()[:-1]
     if len(hist_close) < 10:
         steps.append(("均线", False, f"有效数据仅{len(hist_close)}条，不足计算"))
         _print_debug_steps(steps)
