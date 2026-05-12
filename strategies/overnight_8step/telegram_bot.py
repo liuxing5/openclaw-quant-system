@@ -309,14 +309,17 @@ def main():
 
     if webhook_url and port:
         # Webhook 模式（适合云平台部署）
-        print(f"🌐 使用 Webhook 模式: {webhook_url}")
+        print(f" 使用 Webhook 模式: {webhook_url}")
         print(f"🔌 监听端口: {port}")
+        
+        # 使用简单的路径，避免 token 泄露
+        url_path = "webhook"
         
         application.run_webhook(
             listen="0.0.0.0",
             port=port,
-            url_path=BOT_TOKEN,  # 使用 token 作为路径增加安全性
-            webhook_url=f"{webhook_url}/{BOT_TOKEN}",
+            url_path=url_path,
+            webhook_url=f"{webhook_url}/{url_path}",
         )
     else:
         # Polling 模式（适合本地开发）
