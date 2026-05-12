@@ -56,6 +56,35 @@ from position_manager import (
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
+# 消息去重：记录最近处理过的消息ID和时间戳
+_processed_message_ids = {}  # {message_id: timestamp}
+_MAX_MESSAGE_CACHE = 1000  # 最多缓存1000个消息ID
+_DEDUP_WINDOW_SECONDS = 5  # 5秒内相同消息ID视为重复
+
+
+def is_duplicate_message(message_id: int) -> bool:
+    """检查消息是否重复"""
+    import time
+    now = time.time()
+    
+    if message_id in _processed_message_ids:
+        last_time = _processed_message_ids[message_id]
+        if now - last_time < _DEDUP_WINDOW_SECONDS:
+            return True
+    
+    # 更新或添加时间戳
+    _processed_message_ids[message_id] = now
+    
+    # 清理过期记录
+    if len(_processed_message_ids) > _MAX_MESSAGE_CACHE:
+        cutoff = now - 60  # 清理60秒前的记录
+        _processed_message_ids = {
+            mid: ts for mid, ts in _processed_message_ids.items()
+            if ts > cutoff
+        }
+    
+    return False
+
 # 日志配置
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -69,6 +98,10 @@ logger = logging.getLogger(__name__)
 # ============================================================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /start 命令"""
+    if is_duplicate_message(update.message.message_id):
+        logger.debug(f"跳过重复命令: /start")
+        return
+    
     welcome = """👋 欢迎使用 OpenClaw 量化交易系统
 
 📊 功能：
@@ -82,18 +115,30 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /help 命令"""
+    if is_duplicate_message(update.message.message_id):
+        logger.debug(f"跳过重复命令: /help")
+        return
+    
     reply = handle_command("help")
     await update.message.reply_text(reply)
 
 
 async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /positions 命令"""
+    if is_duplicate_message(update.message.message_id):
+        logger.debug(f"跳过重复命令: /positions")
+        return
+    
     reply = format_positions()
     await update.message.reply_text(reply)
 
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /add 命令"""
+    if is_duplicate_message(update.message.message_id):
+        logger.debug(f"跳过重复命令: /add")
+        return
+    
     args = " ".join(context.args) if context.args else ""
     reply = handle_command("add", args)
     await update.message.reply_text(reply)
@@ -101,6 +146,10 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /remove 命令"""
+    if is_duplicate_message(update.message.message_id):
+        logger.debug(f"跳过重复命令: /remove")
+        return
+    
     args = " ".join(context.args) if context.args else ""
     reply = handle_command("remove", args)
     await update.message.reply_text(reply)
@@ -108,6 +157,10 @@ async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理 /import 命令"""
+    if is_duplicate_message(update.message.message_id):
+        logger.debug(f"跳过重复命令: /import")
+        return
+    
     reply = handle_command("import")
     await update.message.reply_text(reply)
 
@@ -165,6 +218,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """处理普通消息"""
+    # 消息去重：检查是否已处理过此消息
+    message_id = update.message.message_id
+    if is_duplicate_message(message_id):
+        logger.debug(f"跳过重复消息: {message_id}")
+        return
+    
     text = update.message.text
     if not text:
         return
@@ -244,10 +303,26 @@ def main():
     # 注册消息处理器
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # 启动
-    print("✅ Bot 已启动，等待消息...")
-    print("按 Ctrl+C 停止")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # 检查是否使用 Webhook 模式（Render 部署）
+    webhook_url = os.environ.get("WEBHOOK_URL", "")
+    port = int(os.environ.get("PORT", 0))
+
+    if webhook_url and port:
+        # Webhook 模式（适合云平台部署）
+        print(f"🌐 使用 Webhook 模式: {webhook_url}")
+        print(f"🔌 监听端口: {port}")
+        
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=BOT_TOKEN,  # 使用 token 作为路径增加安全性
+            webhook_url=f"{webhook_url}/{BOT_TOKEN}",
+        )
+    else:
+        # Polling 模式（适合本地开发）
+        print("✅ Bot 已启动，等待消息...")
+        print("按 Ctrl+C 停止")
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
