@@ -378,13 +378,17 @@ def _persist_to_daily_candidates(
                              'streak': int(row.get('streak', 0))}],
             })
     if not items:
+        print("  ⚠️ 无候选标的，跳过 daily_candidates 写入")
         return 0
+    print(f"  📝 准备写入 {len(items)} 条到 daily_candidates (source=overnight_8step, run_mode={run_mode})")
     try:
-        return write_candidates(items, snapshot_date, source='overnight_8step', run_mode=run_mode)
+        n = write_candidates(items, snapshot_date, source='overnight_8step', run_mode=run_mode)
+        print(f"  ✓ 写入 {n} 条到 daily_candidates 成功")
+        return n
     except Exception as e:
         import sys
         import traceback
-        msg = f"⚠️ daily_candidates 写入失败（不影响推送）: {e}"
+        msg = f"❌ daily_candidates 写入失败: {e}"
         print(msg)
         print(msg, file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
