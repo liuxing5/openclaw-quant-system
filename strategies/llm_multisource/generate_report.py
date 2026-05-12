@@ -470,7 +470,7 @@ def generate_report():
         cur.execute("""
             SELECT * FROM daily_candidates
             WHERE snapshot_date = %s AND source = 'overnight_8step'
-                AND ts_code NOT LIKE '%.AUDIT'
+                AND ts_code NOT LIKE '%%.AUDIT'
             ORDER BY final_score DESC;
         """, (step_date,))
         eight_step_picks = cur.fetchall()
@@ -585,7 +585,7 @@ def generate_text_report():
         cur.execute("""
             SELECT * FROM daily_candidates
             WHERE snapshot_date = %s AND source = 'overnight_8step'
-                AND ts_code NOT LIKE '%.AUDIT'
+                AND ts_code NOT LIKE '%%.AUDIT'
             ORDER BY final_score DESC;
         """, (step_date,))
         eight_step_picks = cur.fetchall()
