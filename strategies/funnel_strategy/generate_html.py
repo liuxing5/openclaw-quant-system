@@ -43,33 +43,6 @@ def query_dicts(sql, params=None):
     return rows
 
 
-def ensure_strategy_scans_table():
-    """兜底建表：strategy_scans 不存在时自动创建"""
-    try:
-        conn = get_db_fresh()
-        conn.autocommit = True
-        cur = conn.cursor()
-        cur.execute("""
-            CREATE TABLE IF NOT EXISTS strategy_scans (
-                id BIGSERIAL PRIMARY KEY,
-                snapshot_date DATE NOT NULL,
-                strategy VARCHAR(30) NOT NULL,
-                total_scanned INT DEFAULT 0,
-                total_passed INT DEFAULT 0,
-                filter_stats JSONB,
-                sentiment_score INT,
-                mood VARCHAR(30),
-                created_at TIMESTAMPTZ DEFAULT NOW(),
-                CONSTRAINT strategy_scans_unique UNIQUE (snapshot_date, strategy)
-            );
-            CREATE INDEX IF NOT EXISTS idx_strategy_scans_date ON strategy_scans(snapshot_date DESC);
-        """)
-        cur.close()
-        conn.close()
-    except Exception:
-        pass
-
-
 def query_one(sql, params=None):
     rows = query_dicts(sql, params)
     return rows[0] if rows else None
@@ -175,21 +148,18 @@ def load_candidates(source, run_mode=None):
 
 
 def load_scan_stats(strategy, snapshot_date=None):
-    try:
-        if snapshot_date:
-            row = query_one("""
-                SELECT * FROM strategy_scans
-                WHERE strategy = %s AND snapshot_date = %s
-                ORDER BY snapshot_date DESC LIMIT 1;
-            """, (strategy, snapshot_date))
-        else:
-            row = query_one("""
-                SELECT * FROM strategy_scans
-                WHERE strategy = %s
-                ORDER BY snapshot_date DESC LIMIT 1;
-            """, (strategy,))
-    except Exception:
-        return None
+    if snapshot_date:
+        row = query_one("""
+            SELECT * FROM strategy_scans
+            WHERE strategy = %s AND snapshot_date = %s
+            ORDER BY snapshot_date DESC LIMIT 1;
+        """, (strategy, snapshot_date))
+    else:
+        row = query_one("""
+            SELECT * FROM strategy_scans
+            WHERE strategy = %s
+            ORDER BY snapshot_date DESC LIMIT 1;
+        """, (strategy,))
     if not row:
         return None
     stats = row.get('filter_stats')
@@ -205,9 +175,6 @@ def generate_unified_html(output_dir=None):
     else:
         output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    # 兜底建表
-    ensure_strategy_scans_table()
 
     # ── 加载三策略数据 ──
     funnel = load_funnel_data()
@@ -472,7 +439,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .theme-btn:hover {{ background:rgba(255,255,255,.3); }}
 
 /* Summary stats */
-.stats-row {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:16px; }}
+.stats-row {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }}
 .stat-card {{ background:var(--section-bg); border-radius:10px; padding:16px; text-align:center; box-shadow:var(--shadow); border:1px solid var(--border); }}
 .stat-card .sv {{ font-size:1.6rem; font-weight:bold; color:var(--score-color); }}
 .stat-card .sl {{ font-size:.75rem; color:var(--text2); margin-top:4px; }}
@@ -487,7 +454,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 
 /* Three column layout */
 .three-col {{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }}
-@media (max-width:1024px) {{ .three-col {{ grid-template-columns:1fr; }} .stats-row {{ grid-template-columns:repeat(2,1fr); }} }}
+@media (max-width:1024px) {{ .three-col {{ grid-template-columns:1fr; }} .stats-row {{ grid-template-columns:1fr; }} }}
 
 /* Funnel steps */
 .step-row {{ display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; font-size:.82rem; transition:background .15s; }}
@@ -569,10 +536,6 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <div class="stat-card eight">
       <div class="sv">{eight_count}</div>
       <div class="sl">🔮 八步法候选</div>
-    </div>
-    <div class="stat-card">
-      <div class="sv">{funnel_elapsed:.0f}s</div>
-      <div class="sl">⏱ 漏斗耗时</div>
     </div>
   </div>
 
