@@ -322,6 +322,7 @@ try:
     from core.utils.env import load_project_env
     load_project_env()
     DB_ENABLED = db_configured()
+    print(f"🔌 DB_ENABLED={DB_ENABLED} (POSTGRES_HOST={os.getenv('POSTGRES_HOST', 'NOT_SET')[:10]}...)")
     if not DB_ENABLED:
         print("ℹ️ POSTGRES_* 未配置，不启用 daily_candidates 写入")
 except Exception as _e:
