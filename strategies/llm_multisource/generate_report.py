@@ -57,8 +57,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             --badge-8step-bg: #9C27B0;
             --table-header-bg: #f5f5f5;
             --hover-shadow: rgba(0,0,0,0.15);
-            --selected-border: #FF9800;
-            --selected-bg: #fff8e1;
+            --selected-border: #9e9e9e;
+            --selected-bg: #f5f5f5;
             --btn-bg: #4CAF50;
             --btn-text: #ffffff;
         }
@@ -81,8 +81,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             --badge-8step-bg: #a371f7;
             --table-header-bg: #21262d;
             --hover-shadow: rgba(0,0,0,0.5);
-            --selected-border: #FF9800;
-            --selected-bg: #3e2723;
+            --selected-border: #757575;
+            --selected-bg: #2d2d2d;
             --btn-bg: #238636;
             --btn-text: #ffffff;
         }
@@ -133,6 +133,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .history-nav select { padding: 7px 14px; border: 2px solid var(--header-border); border-radius: 6px; font-size: 14px; color: var(--text); background: var(--card-bg); cursor: pointer; outline: none; }
         .history-nav select:hover { border-color: var(--score-color); }
         .history-nav select:focus { border-color: var(--badge-llm-bg); box-shadow: 0 0 0 3px rgba(33,150,243,0.2); }
+        .page-btn { padding: 6px 12px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .page-btn:hover { border-color: var(--score-color); }
+        .page-btn.active { background: var(--score-color); color: #fff; border-color: var(--score-color); }
+        .article-page { display: none; }
+        .article-page.active { display: table-row; }
 
         /* Responsive */
         @media (max-width: 768px) {
@@ -348,7 +353,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             <table>
                 <tr><th>标题</th><th>来源</th><th>时间</th><th>链接</th></tr>
                 {% for a in articles %}
-                <tr>
+                <tr class="article-row" data-page="{{ (loop.index0 // page_size) + 1 }}">
                     <td><a href="{{ a.url }}" target="_blank" style="color: var(--link-color); text-decoration: none;">{{ a.title or '无标题' }}</a></td>
                     <td>{{ a.source_name }}</td>
                     <td>{{ a.pub_time }}</td>
@@ -356,6 +361,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 </tr>
                 {% endfor %}
             </table>
+            {% if total_pages > 1 %}
+            <div style="display:flex;justify-content:center;gap:8px;margin-top:14px;flex-wrap:wrap;" id="pagination">
+                {% for p in range(1, total_pages + 1) %}
+                <button onclick="showPage({{ p }})" class="page-btn {% if p == 1 %}active{% endif %}" data-page="{{ p }}">{{ p }}</button>
+                {% endfor %}
+            </div>
+            {% endif %}
         </div>
         
         <div class="footer">
@@ -394,6 +406,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                 text.textContent = '浅色';
             }
         }
+        function showPage(pageNum) {
+            document.querySelectorAll('.article-row').forEach(function(row) {
+                var p = parseInt(row.getAttribute('data-page'));
+                row.style.display = (p === pageNum) ? '' : 'none';
+            });
+            document.querySelectorAll('.page-btn').forEach(function(btn) {
+                var bp = parseInt(btn.getAttribute('data-page'));
+                btn.classList.toggle('active', bp === pageNum);
+            });
+        }
+        (function() { showPage(1); })();
     </script>
 </body>
 </html>"""
@@ -447,6 +470,7 @@ def generate_report():
         cur.execute("""
             SELECT * FROM daily_candidates
             WHERE snapshot_date = %s AND source = 'overnight_8step'
+                AND ts_code NOT LIKE '%.AUDIT'
             ORDER BY final_score DESC;
         """, (step_date,))
         eight_step_picks = cur.fetchall()
@@ -473,9 +497,9 @@ def generate_report():
         SELECT title, url, pub_time, source_name
         FROM raw_signals
         WHERE pub_time IS NOT NULL AND url IS NOT NULL AND url != ''
-        ORDER BY pub_time DESC LIMIT 20;
+        ORDER BY pub_time DESC;
     """)
-    articles = cur.fetchall()
+    all_articles = cur.fetchall()
     
     cur.execute("""
         SELECT DISTINCT snapshot_date FROM daily_candidates
@@ -486,9 +510,27 @@ def generate_report():
     
     cur.close(); conn.close()
     
+    def format_time(t):
+        if t is None:
+            return '—'
+        s = str(t).replace('+00:00', '').replace('+00', '')
+        if '.' in s:
+            s = s[:s.index('.')]
+        return s
+
+    articles_with_time = []
+    for a in all_articles:
+        d = dict(a)
+        d['pub_time'] = format_time(d.get('pub_time'))
+        articles_with_time.append(d)
+
     display_date = str(llm_date or step_date or snapshot_date)
     llm_date_str = str(llm_date) if llm_date else None
     step_date_str = str(step_date) if step_date else None
+    
+    PAGE_SIZE = 10
+    total_articles = len(articles_with_time)
+    total_pages = (total_articles + PAGE_SIZE - 1) // PAGE_SIZE if total_articles else 1
     
     template = Template(HTML_TEMPLATE)
     html = template.render(
@@ -497,11 +539,14 @@ def generate_report():
         candidates=[dict(c) for c in candidates],
         eight_step_picks=[dict(c) for c in eight_step_picks],
         source_stats=[dict(s) for s in source_stats],
-        articles=[dict(a) for a in articles],
+        articles=articles_with_time,
         history_dates=history_dates,
         run_mode=RUN_MODE,
         llm_date=llm_date_str,
         step_date=step_date_str,
+        page_size=PAGE_SIZE,
+        total_pages=total_pages,
+        total_articles=total_articles,
     )
     
     output_dir = os.path.join(BASE_DIR, 'docs', display_date)
@@ -540,6 +585,7 @@ def generate_text_report():
         cur.execute("""
             SELECT * FROM daily_candidates
             WHERE snapshot_date = %s AND source = 'overnight_8step'
+                AND ts_code NOT LIKE '%.AUDIT'
             ORDER BY final_score DESC;
         """, (step_date,))
         eight_step_picks = cur.fetchall()
