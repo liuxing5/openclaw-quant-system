@@ -1,4 +1,5 @@
 """每日候选池生成 - 盘前/盘后双跑"""
+import json
 import os, sys, math
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from datetime import date, timedelta, datetime, timezone
@@ -847,8 +848,35 @@ def aggregate_today():
         items.append(c)
 
     n = write_candidates(items, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
+    _persist_llm_scan_stats(today, len(candidates), len(qualified), len(selected_list), conn)
     cur.close(); conn.close()
     logger.info(f"候选池生成完毕，snapshot_date={today}，共写入 {n} 条记录")
+
+
+def _persist_llm_scan_stats(snapshot_date, total_candidates, total_qualified, total_selected, conn):
+    """将 LLM 多源聚合统计写入 strategy_scans，供 HTML 报告渲染"""
+    try:
+        cur = conn.cursor()
+        filter_stats = {
+            "多源聚合后": total_candidates,
+            "综合评分≥阈值": total_qualified,
+            "精选标记": total_selected,
+        }
+        cur.execute("""
+            INSERT INTO strategy_scans
+                (snapshot_date, strategy, total_scanned, total_passed, filter_stats)
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (snapshot_date, strategy) DO UPDATE SET
+                total_scanned = EXCLUDED.total_scanned,
+                total_passed  = EXCLUDED.total_passed,
+                filter_stats  = EXCLUDED.filter_stats;
+        """, (
+            snapshot_date, SOURCE, total_candidates, total_selected,
+            json.dumps(filter_stats, ensure_ascii=False),
+        ))
+        cur.close()
+    except Exception as e:
+        logger.warning(f"扫描统计写入失败: {e}")
 
 
 if __name__ == '__main__':

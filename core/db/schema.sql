@@ -349,3 +349,18 @@ CREATE TABLE IF NOT EXISTS funnel_results (
     CONSTRAINT funnel_unique_date UNIQUE (trade_date)
 );
 CREATE INDEX IF NOT EXISTS idx_funnel_date ON funnel_results(trade_date DESC);
+
+-- Strategy scan filter statistics (for 八步法 / LLM filtering visualization)
+CREATE TABLE IF NOT EXISTS strategy_scans (
+    id BIGSERIAL PRIMARY KEY,
+    snapshot_date DATE NOT NULL,
+    strategy VARCHAR(30) NOT NULL,
+    total_scanned INT DEFAULT 0,
+    total_passed INT DEFAULT 0,
+    filter_stats JSONB,
+    sentiment_score INT,
+    mood VARCHAR(30),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT strategy_scans_unique UNIQUE (snapshot_date, strategy)
+);
+CREATE INDEX IF NOT EXISTS idx_strategy_scans_date ON strategy_scans(snapshot_date DESC);

@@ -390,6 +390,38 @@ def _persist_to_daily_candidates(
         traceback.print_exc(file=sys.stderr)
         return 0
 
+def _persist_scan_stats(snapshot_date, reject_stats: dict, total_scanned: int, total_passed: int,
+                         sentiment_score: int, mood: str, run_mode: str = 'afternoon'):
+    """将八步法扫描统计写入 strategy_scans 表，供 HTML 报告渲染过滤漏斗"""
+    if not DB_ENABLED:
+        return
+    try:
+        from core.db.connection import get_db_fresh
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO strategy_scans
+                (snapshot_date, strategy, total_scanned, total_passed,
+                 filter_stats, sentiment_score, mood)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (snapshot_date, strategy) DO UPDATE SET
+                total_scanned = EXCLUDED.total_scanned,
+                total_passed  = EXCLUDED.total_passed,
+                filter_stats  = EXCLUDED.filter_stats,
+                sentiment_score = EXCLUDED.sentiment_score,
+                mood          = EXCLUDED.mood;
+        """, (
+            snapshot_date, 'overnight_8step', total_scanned, total_passed,
+            json.dumps(reject_stats, ensure_ascii=False),
+            sentiment_score, mood,
+        ))
+        conn.commit()
+        cur.close()
+        conn.close()
+        print(f"  ✓ 扫描统计已写入 strategy_scans")
+    except Exception as e:
+        print(f"  ⚠️ 扫描统计写入失败: {e}")
+
 
 def _persist_zero_result_audit(snapshot_date, reject_stats: dict, sentiment_score: int, mood: str) -> int:
     """零候选场景下写一行审计记录到 daily_candidates。
@@ -2404,6 +2436,14 @@ def main():
     print(f"━━ 过滤统计，共{total_scanned}只 ━━")
     _print_reject_summary(total_rejects, total_scanned, cfg=CONFIG_STABLE)
     _save_reject_trend(end_d, total_rejects)
+    _persist_scan_stats(
+        end_d, total_rejects,
+        total_scanned=total_scanned,
+        total_passed=total_candidates,
+        sentiment_score=sentiment_score,
+        mood=mood,
+        run_mode='afternoon' if is_post_time else 'intraday',
+    )
 
     # 14:30 盘中初筛 与 15:10 盘后定稿都允许推送和写汇总文件，
     # DB 写入仍只在盘后定稿，避免盘中不稳定数据污染 daily_candidates
