@@ -37,7 +37,7 @@ from .layer4_momentum_filter import run_layer4_momentum_filter
 from .layer5_popularity_filter import run_layer5_popularity_filter
 from .layer6_risk_control import run_layer6_risk_control
 
-from core.db.connection import get_db
+from core.db.connection import get_db, close_db_session
 from psycopg2.extras import RealDictCursor
 
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -502,8 +502,11 @@ def run_funnel_strategy(
     custom_universe: List[str] = None,
 ) -> Dict:
     """便捷函数：一键运行七步漏斗"""
-    engine = FunnelEngine(cfg)
-    return engine.run(trade_date=trade_date, custom_universe=custom_universe)
+    try:
+        engine = FunnelEngine(cfg)
+        return engine.run(trade_date=trade_date, custom_universe=custom_universe)
+    finally:
+        close_db_session()
 
 
 if __name__ == "__main__":

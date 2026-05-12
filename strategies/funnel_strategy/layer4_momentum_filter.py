@@ -368,10 +368,8 @@ def run_layer4_momentum_filter(
     if not quick_pass:
         return passed
 
-    if len(quick_pass) > 200:
-        _run_parallel(quick_pass, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose)
-    else:
-        _run_serial(quick_pass, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose)
+    # 纯 Python 检查极快（~0.01ms/只），串行即可避免线程调度开销
+    _run_serial(quick_pass, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose)
 
     if verbose:
         print(f"  ✓ 通过: {len(passed)} 只")

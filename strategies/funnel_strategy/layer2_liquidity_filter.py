@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sys
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from typing import List, Dict
 
@@ -19,7 +20,7 @@ import pandas as pd
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db, get_db_fresh
 
 
 def _load_liquidity_data(stock_list: List[str], trade_date: date) -> Dict:
@@ -32,7 +33,7 @@ def _load_liquidity_data(stock_list: List[str], trade_date: date) -> Dict:
 
     cache = {}
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT ts_code, amount, pct_chg, turnover_rate,
@@ -63,7 +64,7 @@ def _load_20d_avg_amount(stock_list: List[str], trade_date: date) -> Dict[str, f
     start_date = trade_date - timedelta(days=40)
     cache = {}
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT ts_code, amount
@@ -121,8 +122,12 @@ def run_layer2_liquidity_filter(
         print(f"  20日均额>{min_amt_yi:.0f}亿  流通市值>{min_mcap_yi:.0f}亿  "
               f"换手{cfg.layer2_turn_rate_min}~{cfg.layer2_turn_rate_max}%")
 
-    liq_cache = _load_liquidity_data(stock_list, trade_date)
-    avg_amount_cache = _load_20d_avg_amount(stock_list, trade_date)
+    # 并行执行两个独立查询（节省一半DB往返时间）
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_liq = ex.submit(_load_liquidity_data, stock_list, trade_date)
+        f_avg = ex.submit(_load_20d_avg_amount, stock_list, trade_date)
+        liq_cache = f_liq.result()
+        avg_amount_cache = f_avg.result()
 
     # 数据完整性检测：turnover_rate 全部为0说明数据管道未填充此字段
     has_turnover = any(v.get('turnover_rate', 0) > 0 for v in liq_cache.values())
