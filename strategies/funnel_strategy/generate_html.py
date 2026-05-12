@@ -176,6 +176,30 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
             target = c.get('target_price', 0)
             plr = c.get('profit_loss_ratio', 0)
             atr = c.get('atr', 0)
+            llm_bonus = c.get('llm_bonus', 0)
+            llm_details = c.get('llm_details', {})
+
+            # LLM bonus info row
+            llm_info_html = ''
+            if llm_bonus > 0 and llm_details:
+                detail_parts = []
+                if llm_details.get('consensus'):
+                    detail_parts.append(f'共识{llm_details["consensus"]:.0f}')
+                if llm_details.get('final_score'):
+                    detail_parts.append(f'LLM评{llm_details["final_score"]:.0f}')
+                if llm_details.get('mention'):
+                    detail_parts.append(f'{llm_details["mention"]}源提及')
+                if llm_details.get('selected'):
+                    detail_parts.append('LLM精选')
+                if llm_details.get('concepts'):
+                    concept_names = ', '.join(llm_details['concepts'][:3])
+                    detail_parts.append(f'概念: {concept_names}')
+                if detail_parts:
+                    llm_info_html = f"""
+                    <div class="detail-row">
+                        <span class="label">LLM联动</span>
+                        <span class="value llm-bonus">+{llm_bonus}分 ({'; '.join(detail_parts)})</span>
+                    </div>"""
 
             candidates_html += f"""
             <div class="stock-card">
@@ -207,7 +231,7 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
                     <div class="detail-row">
                         <span class="label">信号</span>
                         <span class="value signal">{signal_text}</span>
-                    </div>
+                    </div>{llm_info_html}
                 </div>
                 {f'<div class="stock-tags">{tags_str}</div>' if tags_str else ''}
             </div>
@@ -398,6 +422,7 @@ def generate_funnel_html(trade_date: date = None, output_dir: str = None):
         .detail-row .value.stop {{ color: #f44336; }}
         .detail-row .value.target {{ color: #4caf50; }}
         .detail-row .value.signal {{ color: #ff9800; }}
+        .detail-row .value.llm-bonus {{ color: #9c27b0; }}
         .stock-tags {{
             font-size: 12px;
             color: #666;

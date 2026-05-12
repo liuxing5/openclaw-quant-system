@@ -310,9 +310,10 @@ class FunnelEngine:
                 writer.writerow([
                     'code', 'score', 'pct', 'entry_price', 'atr', 'stop_loss',
                     'target_price', 'profit_loss_ratio', 'signal_type', 'tags',
-                    'time_window_ok', 'max_position_pct',
+                    'time_window_ok', 'max_position_pct', 'llm_bonus', 'llm_details',
                 ])
                 for item in l6_result:
+                    llm_details_str = json.dumps(item.get('llm_details', {}), ensure_ascii=False) if item.get('llm_details') else ''
                     writer.writerow([
                         item.get('ts_code', ''),
                         item.get('score', 0),
@@ -326,6 +327,8 @@ class FunnelEngine:
                         '|'.join(item.get('tags', [])),
                         item.get('time_window_ok', False),
                         self._stats['layer0_max_position'],
+                        item.get('llm_bonus', 0),
+                        llm_details_str,
                     ])
 
         elapsed = time.perf_counter() - t_total_start

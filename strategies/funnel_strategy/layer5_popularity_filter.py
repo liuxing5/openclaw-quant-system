@@ -88,11 +88,71 @@ def _load_popularity_ranks(trade_date: date, db_conn) -> Dict[str, int]:
     return rank_map
 
 
+def _load_llm_candidates(trade_date: date, db_conn) -> Dict[str, dict]:
+    """从 daily_candidates 加载 LLM 多源候选（source='llm_multisource'）"""
+    llm_map = {}
+    try:
+        cur = db_conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT ts_code, stock_name, mention_count, source_diversity,
+                   consensus_score, llm_score, quant_score, final_score,
+                   logic_tags, selected, sources
+            FROM daily_candidates
+            WHERE snapshot_date = %s AND source = 'llm_multisource'
+            ORDER BY final_score DESC;
+        """, (trade_date,))
+        for r in cur.fetchall():
+            llm_map[r['ts_code']] = {
+                'stock_name': r['stock_name'],
+                'mention_count': r['mention_count'] or 0,
+                'source_diversity': r['source_diversity'] or 0,
+                'consensus_score': float(r['consensus_score']) if r['consensus_score'] else 0,
+                'llm_score': float(r['llm_score']) if r['llm_score'] else 0,
+                'quant_score': float(r['quant_score']) if r['quant_score'] else 0,
+                'final_score': float(r['final_score']) if r['final_score'] else 0,
+                'logic_tags': r['logic_tags'] or [],
+                'selected': r['selected'] or False,
+            }
+        cur.close()
+    except Exception:
+        pass
+    return llm_map
+
+
+def _load_concept_map(stock_list: List[str], db_conn) -> Dict[str, list]:
+    """加载股票的概念标签"""
+    concept_map = {}
+    if not stock_list:
+        return concept_map
+    try:
+        cur = db_conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT ts_code, concept_name
+            FROM concept_membership
+            WHERE ts_code = ANY(%s);
+        """, (stock_list,))
+        for r in cur.fetchall():
+            code = r['ts_code']
+            if code not in concept_map:
+                concept_map[code] = []
+            concept_map[code].append(r['concept_name'])
+        cur.close()
+    except Exception:
+        pass
+    return concept_map
+
+
 def _score_single(
     ts_code: str, cfg, ohlcv_cache: Dict[str, pd.DataFrame],
     rank_map: Dict[str, int], trend_bonus: float = 0.0, momentum_bonus: float = 0.0,
+    llm_map: Dict[str, dict] = None, concept_map: Dict[str, list] = None,
 ) -> dict:
     """单股综合评分（从内存缓存读取，无DB访问）"""
+    if llm_map is None:
+        llm_map = {}
+    if concept_map is None:
+        concept_map = {}
+
     result = {
         'score': 0,
         'pct': 0.0,
@@ -100,6 +160,8 @@ def _score_single(
         'bias_score': 0,
         'stability_score': 0,
         'popularity_bonus': 0,
+        'llm_bonus': 0,
+        'llm_details': {},
         'trend_bonus': trend_bonus,
         'momentum_bonus': momentum_bonus,
         'tags': [],
@@ -158,11 +220,66 @@ def _score_single(
         result['popularity_bonus'] = cfg.layer5_bonus_popularity_rank
         result['tags'].append(f'人气#{rank}')
 
+    # E. LLM多源联动加分
+    if cfg.layer5_llm_bonus_enabled:
+        llm_data = llm_map.get(ts_code)
+        if llm_data:
+            llm_bonus = 0.0
+            llm_details = {}
+
+            # E1. LLM共识评分（多源一致性）
+            if llm_data['consensus_score'] >= cfg.layer5_llm_consensus_threshold:
+                llm_bonus += cfg.layer5_llm_consensus_bonus
+                llm_details['consensus'] = round(llm_data['consensus_score'], 1)
+                result['tags'].append(f'LLM共识{llm_data["consensus_score"]:.0f}')
+
+            # E2. LLM最终评分
+            if llm_data['final_score'] >= cfg.layer5_llm_finalscore_threshold:
+                llm_bonus += cfg.layer5_llm_finalscore_bonus
+                llm_details['final_score'] = round(llm_data['final_score'], 1)
+                result['tags'].append(f'LLM评{llm_data["final_score"]:.0f}')
+
+            # E3. 多源提及次数
+            if llm_data['mention_count'] >= cfg.layer5_llm_mention_threshold:
+                llm_bonus += cfg.layer5_llm_mention_bonus
+                llm_details['mention'] = llm_data['mention_count']
+                result['tags'].append(f'多源×{llm_data["mention_count"]}')
+
+            # E4. LLM标记为精选(selected)
+            if llm_data['selected']:
+                llm_bonus += cfg.layer5_llm_selected_bonus
+                llm_details['selected'] = True
+                result['tags'].append('LLM精选')
+
+            result['llm_bonus'] = round(llm_bonus, 1)
+            result['llm_details'] = llm_details
+
+        # E5. 概念共振：当前股票的概念是否与LLM热门概念匹配
+        stock_concepts = set(concept_map.get(ts_code, []))
+        if stock_concepts:
+            # 收集LLM候选的热门概念（出现次数最多的概念）
+            llm_concept_counts = {}
+            for code, info in llm_map.items():
+                for name in concept_map.get(code, []):
+                    llm_concept_counts[name] = llm_concept_counts.get(name, 0) + 1
+            # 取Top 10热门概念
+            hot_concepts = set(
+                c for c, _ in sorted(llm_concept_counts.items(), key=lambda x: -x[1])[:10]
+            )
+            matched = stock_concepts & hot_concepts
+            if matched:
+                result['llm_bonus'] += cfg.layer5_llm_concept_bonus
+                if 'llm_details' not in result:
+                    result['llm_details'] = {}
+                result['llm_details']['concepts'] = sorted(matched)[:5]
+                result['tags'].append(f'概念共振({len(matched)})')
+
     # 总分
     base = 50
     result['score'] = (
         base + result['pct_score'] + result['bias_score'] + result['stability_score']
         + result['popularity_bonus'] + result['trend_bonus'] + result['momentum_bonus']
+        + result['llm_bonus']
     )
     result['score'] = min(result['score'], 100)
 
@@ -223,20 +340,30 @@ def run_layer5_popularity_filter(
         print(f"  综合评分≥{cfg.layer5_min_composite_score}  "
               f"涨幅{cfg.layer5_pct_range_low}~{cfg.layer5_pct_range_high}%  "
               f"人气榜加分≤{cfg.layer5_popularity_rank_threshold}")
+        if cfg.layer5_llm_bonus_enabled:
+            print(f"  🤖 LLM联动: 共识≥{cfg.layer5_llm_consensus_threshold}加分"
+                  f"  终评≥{cfg.layer5_llm_finalscore_threshold}加分"
+                  f"  提及≥{cfg.layer5_llm_mention_threshold}源加分"
+                  f"  精选+{cfg.layer5_llm_selected_bonus}"
+                  f"  概念共振+{cfg.layer5_llm_concept_bonus}")
 
-    # ── 阶段1: 加载人气排名 + 批量加载OHLCV ──
+    # ── 阶段1: 加载人气排名 + LLM候选 + 概念 + 批量加载OHLCV ──
     stock_list = [item['ts_code'] for item in stock_items]
     db_conn = get_db()
     try:
         if verbose:
-            print(f"  ⏳ 加载人气排名 + 批量K线 ({n_total} 只)...")
+            llm_note = " + LLM候选 + 概念" if cfg.layer5_llm_bonus_enabled else ""
+            print(f"  ⏳ 加载人气排名{llm_note} + 批量K线 ({n_total} 只)...")
         rank_map = _load_popularity_ranks(trade_date, db_conn)
+        llm_map = _load_llm_candidates(trade_date, db_conn) if cfg.layer5_llm_bonus_enabled else {}
+        concept_map = _load_concept_map(stock_list, db_conn) if cfg.layer5_llm_bonus_enabled else {}
         ohlcv_cache = _batch_load_ohlcv(stock_list, trade_date, db_conn, days=10)
     finally:
         db_conn.close()
 
     if verbose:
-        print(f"  ✓ 数据就绪: 人气{len(rank_map)}只, K线{len(ohlcv_cache)}只")
+        llm_info = f", LLM候选{len(llm_map)}只, 概念{len(concept_map)}只" if cfg.layer5_llm_bonus_enabled else ""
+        print(f"  ✓ 数据就绪: 人气{len(rank_map)}只, K线{len(ohlcv_cache)}只{llm_info}")
 
     # ── 阶段2: 评分 ──
     scored = []
@@ -253,7 +380,7 @@ def run_layer5_popularity_filter(
                     momentum_bonus = item.get('score_bonus', 0.0)
                 futures[executor.submit(
                     _score_single, ts_code, cfg, ohlcv_cache, rank_map,
-                    trend_bonus, momentum_bonus
+                    trend_bonus, momentum_bonus, llm_map, concept_map,
                 )] = item
 
             for future in as_completed(futures):
@@ -267,6 +394,8 @@ def run_layer5_popularity_filter(
                     item['bias_score'] = pop_result['bias_score']
                     item['stability_score'] = pop_result['stability_score']
                     item['popularity_bonus'] = pop_result['popularity_bonus']
+                    item['llm_bonus'] = pop_result['llm_bonus']
+                    item['llm_details'] = pop_result['llm_details']
                     scored.append(item)
     else:
         for item in stock_items:
@@ -278,7 +407,7 @@ def run_layer5_popularity_filter(
 
             pop_result = _score_single(
                 ts_code, cfg, ohlcv_cache, rank_map,
-                trend_bonus, momentum_bonus,
+                trend_bonus, momentum_bonus, llm_map, concept_map,
             )
             if pop_result['score'] >= cfg.layer5_min_composite_score:
                 item['score'] = pop_result['score']
@@ -288,6 +417,8 @@ def run_layer5_popularity_filter(
                 item['bias_score'] = pop_result['bias_score']
                 item['stability_score'] = pop_result['stability_score']
                 item['popularity_bonus'] = pop_result['popularity_bonus']
+                item['llm_bonus'] = pop_result['llm_bonus']
+                item['llm_details'] = pop_result['llm_details']
                 scored.append(item)
 
     scored.sort(key=lambda x: x['score'], reverse=True)

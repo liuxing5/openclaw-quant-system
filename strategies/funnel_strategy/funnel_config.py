@@ -102,6 +102,19 @@ class FunnelConfig:
     discipline_review_check_all: bool = True         # 任一步不满足推倒重来 [④纪律]
 
     # ================================================================
+    # Layer 5: LLM多源联动 [⑧LLM多源共识/概念共振]
+    # ================================================================
+    layer5_llm_bonus_enabled: bool = True            # 是否启用LLM联动加分
+    layer5_llm_consensus_bonus: float = 8.0           # LLM共识评分≥60加分 [⑧LLM]
+    layer5_llm_consensus_threshold: float = 60.0      # LLM共识评分门槛
+    layer5_llm_finalscore_bonus: float = 10.0         # LLM最终评分≥30加分
+    layer5_llm_finalscore_threshold: float = 30.0     # LLM最终评分门槛
+    layer5_llm_mention_bonus: float = 3.0             # 多源提及(≥2次)加分
+    layer5_llm_mention_threshold: int = 2             # 多源提及门槛
+    layer5_llm_selected_bonus: float = 5.0            # LLM标记为selected加分
+    layer5_llm_concept_bonus: float = 5.0             # 概念共振加分
+
+    # ================================================================
     # 输出控制
     # ================================================================
     max_final_candidates: int = 5                    # 最终推荐最多5只
