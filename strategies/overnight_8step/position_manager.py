@@ -19,6 +19,7 @@ Telegram 命令：
 """
 
 import os
+import re
 import json
 from datetime import datetime, timezone, timedelta
 
@@ -32,6 +33,24 @@ POSITIONS_FILE = os.path.join(os.path.dirname(__file__), "positions.json")
 
 DEFAULT_PATH = "稳健"
 VALID_PATHS = ["稳健", "高位"]
+
+
+def _normalize_code(code: str) -> str:
+    """统一代码格式为 sh.600519 / sz.000001 / bj.430047"""
+    c = code.strip().lower()
+    c = re.sub(r'^(sh|sz|bj)\.?', '', c)
+    c = re.sub(r'\.(sh|sz|bj)$', '', c)
+    c = c.replace('.', '')
+    digits = re.sub(r'[^0-9]', '', c)
+    if len(digits) < 6:
+        return code.strip()
+    code6 = digits[:6]
+    if code6.startswith(('6', '68', '688', '9')):
+        return f"sh.{code6}"
+    elif code6.startswith(('8', '4')):
+        return f"bj.{code6}"
+    else:
+        return f"sz.{code6}"
 
 
 # ============================================================
@@ -76,6 +95,7 @@ def add_position(code: str, cost: float, path: str = None, entry_date: str = Non
     Returns:
         新持仓记录
     """
+    code = _normalize_code(code)
     if path is None:
         path = DEFAULT_PATH
     if path not in VALID_PATHS:
@@ -115,6 +135,7 @@ def remove_position(code: str) -> Dict:
         {"action": "removed", "position": {...}} 或 {"action": "not_found"}
     """
     positions = load_positions()
+    code = _normalize_code(code)
     for i, p in enumerate(positions):
         if p["code"] == code:
             removed = positions.pop(i)
@@ -217,7 +238,7 @@ def handle_command(command: str, args: str = "") -> str:
         if len(parts) < 2:
             return "❌ 用法: /add <代码> <成本> [路径]\n例: /add 601933 4.10 稳健"
 
-        code = parts[0]
+        code = _normalize_code(parts[0])
         try:
             cost = float(parts[1])
         except ValueError:
@@ -232,7 +253,7 @@ def handle_command(command: str, args: str = "") -> str:
             return f" 已更新持仓: {code} 成本¥{cost:.2f} 路径:{result['position']['path']}"
 
     elif command == "remove" or command == "del" or command == "delete":
-        code = args.strip()
+        code = _normalize_code(args.strip())
         if not code:
             return "❌ 用法: /remove <代码>\n例: /remove 601933"
 
