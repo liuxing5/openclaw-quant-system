@@ -286,30 +286,32 @@ def main():
             print(f"🏥 健康检查端口已开启: {port}", flush=True)
 
         import time as _time
-        max_retries = 5
-        for retry in range(max_retries):
+
+        # 启动前等待一段时间，确保 Render 旧实例已完全退出
+        safe_wait = 30
+        print(f"⏳ 等待 {safe_wait} 秒确保旧实例已退出...", flush=True)
+        _time.sleep(safe_wait)
+
+        # 永久重试循环：不管什么原因 bot 断了，自动重连
+        retry_num = 0
+        while True:
+            retry_num += 1
             try:
+                print(f"🚀 启动 polling (第{retry_num}次)...", flush=True)
                 application.run_polling(
                     allowed_updates=Update.ALL_TYPES,
                     poll_interval=3,
                     timeout=10,
                     drop_pending_updates=False,
                 )
-                break
             except Exception as e:
-                from telegram.error import Conflict
-                if "Conflict" in str(e) or isinstance(e, Conflict):
-                    wait = (retry + 1) * 5
-                    print(f"⚠️ Polling 冲突 (第{retry+1}次)，等待 {wait} 秒后重试...", flush=True)
-                    _time.sleep(wait)
-                else:
-                    print(f"❌ Polling 模式异常: {e}", flush=True)
-                    import traceback
-                    traceback.print_exc()
-                    sys.exit(1)
-        else:
-            print("❌ 已达到最大重试次数，退出", flush=True)
-            sys.exit(1)
+                wait_sec = min(retry_num * 10, 120)
+                print(f"⚠️ Polling 异常退出: {e}", flush=True)
+                print(f"⏳ 等待 {wait_sec} 秒后重试...", flush=True)
+                _time.sleep(wait_sec)
+                continue
+            # 正常退出（Ctrl+C 等）
+            break
     elif port and webhook_url:
         # Webhook 模式
         print(f"✅ Bot 已启动 (webhook 模式)", flush=True)
