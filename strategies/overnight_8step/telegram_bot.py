@@ -94,11 +94,37 @@ def release_lock():
 
 
 # ============================================================
+# 去重：防止同一条消息被处理多次
+# ============================================================
+_PROCESSED_UPDATES = set()
+_MAX_PROCESSED = 500
+
+
+def _is_duplicate(update: Update) -> bool:
+    """检查是否为重复更新"""
+    if update.effective_message:
+        uid = update.effective_message.message_id
+        chat = update.effective_chat.id if update.effective_chat else 0
+        key = (chat, uid)
+        if key in _PROCESSED_UPDATES:
+            return True
+        _PROCESSED_UPDATES.add(key)
+        if len(_PROCESSED_UPDATES) > _MAX_PROCESSED:
+            # 只保留最近的一半
+            items = list(_PROCESSED_UPDATES)
+            _PROCESSED_UPDATES.clear()
+            _PROCESSED_UPDATES.update(items[-_MAX_PROCESSED // 2:])
+    return False
+
+
+# ============================================================
 # 调试：捕获所有更新
 # ============================================================
 async def debug_catch_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """捕获所有没有被其他 handler 处理的更新"""
-    _p(f"🔍 [DEBUG] 未处理更新: type={type(update).__name__}")
+    if _is_duplicate(update):
+        return
+    _p(f" [DEBUG] 未处理更新: type={type(update).__name__}")
     if update.message:
         msg = update.message
         _p(f"   text='{msg.text}' from={msg.from_user.id} chat={msg.chat_id}")
@@ -111,6 +137,8 @@ async def debug_catch_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # 命令处理
 # ============================================================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
     _p(f"📩 cmd_start from={update.message.from_user.id}")
     await update.message.reply_text(
         "👋 欢迎使用 OpenClaw 量化交易系统\n\n输入 /help 查看可用命令"
@@ -118,18 +146,24 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
     _p(f"📩 cmd_help from={update.message.from_user.id}")
     reply = handle_command("help")
     await update.message.reply_text(reply)
 
 
 async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
     _p(f"📩 cmd_positions from={update.message.from_user.id}")
     reply = format_positions()
     await update.message.reply_text(reply)
 
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
     args = " ".join(context.args) if context.args else ""
     _p(f"📩 cmd_add args='{args}' from={update.message.from_user.id}")
     reply = handle_command("add", args)
@@ -137,6 +171,8 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
     args = " ".join(context.args) if context.args else ""
     _p(f"📩 cmd_remove args='{args}' from={update.message.from_user.id}")
     reply = handle_command("remove", args)
@@ -144,12 +180,16 @@ async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
     _p(f"📩 cmd_import from={update.message.from_user.id}")
     reply = handle_command("import")
     await update.message.reply_text(reply)
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
     query = update.callback_query
     await query.answer()
     data = query.data
@@ -242,8 +282,16 @@ async def _managed_polling(app, poll_interval=3, timeout=10, drop_pending=True):
     当 updater 因任何原因停止时（Conflict、网络错误等），自动退出。
     """
     async with app:
-        _p("📡 初始化...")
+        _p(" 初始化...")
         await app.initialize()
+        
+        # 在 start() 之前删除 webhook 并丢弃待处理更新，防止旧更新被处理
+        try:
+            await app.bot.delete_webhook(drop_pending_updates=True)
+            _p("🔄 已删除 webhook 并丢弃待处理更新")
+        except Exception as e:
+            _p(f"⚠️ 删除 webhook 失败: {e}")
+        
         await app.start()
         await app.updater.start_polling(
             poll_interval=poll_interval,
