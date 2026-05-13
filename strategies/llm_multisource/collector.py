@@ -803,18 +803,38 @@ def store_signals(rows):
             logger.warning(f"数据源 '{source_name}' 无法注册，source_id 设为 NULL")
         rows_with_id.append((source_id,) + row[1:])
 
-    # 批量插入
+    # 预过滤已存在的 content_hash，避免大量 ON CONFLICT 检查导致索引超时
+    hashes = [row[-1] for row in rows_with_id]
+    cur.execute("SELECT content_hash FROM raw_signals WHERE content_hash = ANY(%s);", (hashes,))
+    existing = set(r[0] for r in cur.fetchall())
+    new_rows = [r for r in rows_with_id if r[-1] not in existing]
+
     inserted = 0
-    batch_size = 100
-    for i in range(0, len(rows_with_id), batch_size):
-        batch = rows_with_id[i:i + batch_size]
-        cur.executemany("""
-            INSERT INTO raw_signals
-            (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (content_hash) DO NOTHING;
-        """, batch)
-        inserted += cur.rowcount
+    batch_size = 50
+    for i in range(0, len(new_rows), batch_size):
+        batch = new_rows[i:i + batch_size]
+        try:
+            execute_values(
+                cur,
+                """INSERT INTO raw_signals
+                (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
+                VALUES %s""",
+                batch,
+                page_size=batch_size,
+            )
+            inserted += cur.rowcount
+        except Exception as e:
+            logger.warning(f"batch insert error at offset {i}: {e}")
+            for row in batch:
+                try:
+                    cur.execute("""
+                        INSERT INTO raw_signals
+                        (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                    """, row)
+                    inserted += cur.rowcount
+                except Exception:
+                    pass
 
     conn.commit()
     cur.close(); conn.close()
