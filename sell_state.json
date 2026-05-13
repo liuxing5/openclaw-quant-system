@@ -1,9 +1,9 @@
 {
   "603319": {
     "cost": 40.04,
-    "high_water": 1.0239760239760332,
-    "high_water_price": 40.45,
-    "take1_done": false,
+    "high_water": 4.470529470529469,
+    "high_water_price": 41.83,
+    "take1_done": true,
     "take2_done": false,
     "limit_up_hit": false,
     "limit_strength_evaluated": false,

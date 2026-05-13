@@ -11,20 +11,22 @@
   - 后续由 core/market_data/quotes.py 每日增量采集
 
 参数：
-  --days  回填天数（默认 350）
-  --batch 每批写入条数（默认 500）
-  --sleep 每只股票间休眠秒（默认 0.08s）
-  --limit 限制股票数（调试用，默认无限制）
+  --start-date  开始日期 (YYYY-MM-DD，默认 350 天前)
+  --end-date    结束日期 (YYYY-MM-DD，默认今天)
+  --days        回填天数（当不指定 start-date 时生效，默认 350）
+  --batch       每批写入条数（默认 500）
+  --sleep       每只股票间休眠秒（默认 0.08s）
+  --limit       限制股票数（调试用，默认无限制）
 
 用法：
   # 全量回填 350 天
   python strategies/funnel_strategy/backfill_klines.py --days 350
 
+  # 指定日期范围回填
+  python strategies/funnel_strategy/backfill_klines.py --start-date 2025-01-01 --end-date 2026-05-12
+
   # 测试：只回填 10 只股票 30 天
   python strategies/funnel_strategy/backfill_klines.py --days 30 --limit 10
-
-  # 补最新 5 天（日常补充用）
-  python strategies/funnel_strategy/backfill_klines.py --days 5
 """
 from __future__ import annotations
 
@@ -160,6 +162,8 @@ def _insert_batch(ts_code: str, rows: list) -> int:
 
 def run_backfill(
     days: int = 350,
+    start_date: str = None,
+    end_date: str = None,
     batch_size: int = 500,
     sleep_sec: float = 0.08,
     limit: int = 0,
@@ -170,15 +174,22 @@ def run_backfill(
         print("❌ 数据库未配置")
         return
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=days * 2)
+    # 解析日期
+    if end_date:
+        end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
+    else:
+        end_dt = date.today()
+
+    if start_date:
+        start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()
+    else:
+        start_dt = end_dt - timedelta(days=days * 2)
 
     print("=" * 60)
     print("  全量历史K线回填")
     print("=" * 60)
     print(f"  数据源: baostock (后复权)")
-    print(f"  日期区间: {start_date} ~ {end_date}")
-    print(f"  目标天数: {days}")
+    print(f"  日期区间: {start_dt} ~ {end_dt}")
     print(f"  写入策略: ON CONFLICT DO NOTHING (可断点续传)")
     print("=" * 60)
 
@@ -204,8 +215,8 @@ def run_backfill(
     failed_count = 0
     start_time = time.time()
 
-    end_str = end_date.strftime('%Y-%m-%d')
-    start_str = start_date.strftime('%Y-%m-%d')
+    end_str = end_dt.strftime('%Y-%m-%d')
+    start_str = start_dt.strftime('%Y-%m-%d')
 
     batch_buffer = {}
 
@@ -258,8 +269,12 @@ if __name__ == '__main__':
     import argparse
 
     parser = argparse.ArgumentParser(description='全量历史K线回填')
+    parser.add_argument('--start-date', type=str, default=None,
+                        help='开始日期 YYYY-MM-DD (默认 350 天前)')
+    parser.add_argument('--end-date', type=str, default=None,
+                        help='结束日期 YYYY-MM-DD (默认今天)')
     parser.add_argument('--days', type=int, default=350,
-                        help='回填天数 (default: 350)')
+                        help='回填天数 (default: 350, 当不指定 start-date 时生效)')
     parser.add_argument('--batch', type=int, default=500,
                         help='每批写入股票数 (default: 500)')
     parser.add_argument('--sleep', type=float, default=0.08,
@@ -270,6 +285,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     run_backfill(
         days=args.days,
+        start_date=args.start_date,
+        end_date=args.end_date,
         batch_size=args.batch,
         sleep_sec=args.sleep,
         limit=args.limit,

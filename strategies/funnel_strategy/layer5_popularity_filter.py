@@ -123,7 +123,8 @@ def _load_llm_candidates(trade_date: date, db_conn) -> Dict[str, dict]:
                    logic_tags, selected, sources
             FROM daily_candidates
             WHERE snapshot_date = %s AND source = 'llm_multisource'
-            ORDER BY final_score DESC;
+              AND run_mode = 'afternoon'
+            ORDER BY final_score ASC;
         """, (trade_date,))
         for r in cur.fetchall():
             llm_map[r['ts_code']] = {
@@ -235,8 +236,8 @@ def _score_single(
     if pd.isna(amplitude) or amplitude is None:
         amplitude = 0.0
     if amplitude < 2.0:
-        result['stability_score'] = 10
-        result['tags'].append('分时平稳')
+        result['stability_score'] = 15
+        result['tags'].append('极度平稳')
     elif 2.0 <= amplitude <= 5.0:
         result['stability_score'] = 10
         result['tags'].append('分时平稳')

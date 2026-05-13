@@ -10,9 +10,6 @@ set -uo pipefail
 
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 
-# 清理上一轮的验证标记，开启新一轮验收周期
-rm -f "$PROJECT_DIR/.claude/.verification_done"
-
 if git -C "$PROJECT_DIR" rev-parse --git-dir >/dev/null 2>&1; then
   git -C "$PROJECT_DIR" fetch origin --prune >/dev/null 2>&1 \
     || echo "⚠️ git fetch origin --prune failed (offline or no remote)" >&2

@@ -31,8 +31,8 @@ try:
         ContextTypes,
     )
 except ImportError:
-    print("⚠️ 需要安装 python-telegram-bot")
-    print("  pip install python-telegram-bot")
+    print("⚠️ 需要安装 python-telegram-bot", flush=True)
+    print("  pip install python-telegram-bot", flush=True)
     sys.exit(1)
 
 from position_manager import (
@@ -57,6 +57,7 @@ _DEDUP_WINDOW_SECONDS = 5
 
 def is_duplicate_message(message_id: int) -> bool:
     """检查消息是否重复"""
+    global _processed_message_ids
     import time
     now = time.time()
 
@@ -73,12 +74,20 @@ def is_duplicate_message(message_id: int) -> bool:
 
     return False
 
-# 日志配置
+# 日志配置 - 强制输出到 stdout
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
+
+
+def log_print(msg: str):
+    """同时输出到 print 和 logger，确保不被缓冲"""
+    print(msg, flush=True)
+    logger.info(msg)
+
 
 # ============================================================
 # 命令处理
@@ -95,6 +104,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 输入 /help 查看可用命令"""
     await update.message.reply_text(welcome)
+    logger.info(f"📩 收到 /start 来自 {update.message.from_user.id}")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,6 +112,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     reply = handle_command("help")
     await update.message.reply_text(reply)
+    logger.info(f"📩 收到 /help 来自 {update.message.from_user.id}")
 
 
 async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -109,6 +120,7 @@ async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     reply = format_positions()
     await update.message.reply_text(reply)
+    logger.info(f"📩 收到 /positions 来自 {update.message.from_user.id}")
 
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -117,6 +129,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = " ".join(context.args) if context.args else ""
     reply = handle_command("add", args)
     await update.message.reply_text(reply)
+    logger.info(f"📩 收到 /add {args} 来自 {update.message.from_user.id}")
 
 
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -125,6 +138,7 @@ async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = " ".join(context.args) if context.args else ""
     reply = handle_command("remove", args)
     await update.message.reply_text(reply)
+    logger.info(f"📩 收到 /remove {args} 来自 {update.message.from_user.id}")
 
 
 async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -132,6 +146,7 @@ async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     reply = handle_command("import")
     await update.message.reply_text(reply)
+    logger.info(f"📩 收到 /import 来自 {update.message.from_user.id}")
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -187,11 +202,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 def main():
     if not BOT_TOKEN:
-        print("❌ 请设置 TELEGRAM_BOT_TOKEN 环境变量")
+        print("❌ 请设置 TELEGRAM_BOT_TOKEN 环境变量", flush=True)
         sys.exit(1)
 
-    print("🤖 启动 Telegram Bot...")
-    print(f"Bot Token: {BOT_TOKEN[:10]}...{BOT_TOKEN[-4:]}")
+    print("=" * 60, flush=True)
+    print("🤖 启动 Telegram Bot...", flush=True)
+    print(f"Bot Token: {BOT_TOKEN[:10]}...{BOT_TOKEN[-4:]}", flush=True)
 
     # 创建应用
     application = Application.builder().token(BOT_TOKEN).build()
@@ -214,33 +230,34 @@ def main():
     webhook_url = os.environ.get("WEBHOOK_URL", "")
     port = int(os.environ.get("PORT", 0))
 
+    print("🔍 调试信息:", flush=True)
+    print(f"   PORT={port}", flush=True)
+    print(f"   TELEGRAM_POLLING={use_polling}", flush=True)
+    print(f"   WEBHOOK_URL={'已设置' if webhook_url else '未设置'}", flush=True)
+    print(f"   PYTHONUNBUFFERED={os.environ.get('PYTHONUNBUFFERED', '未设置')}", flush=True)
+
     if use_polling:
         # Polling 模式（默认，最稳定）
-        print("✅ Bot 已启动 (polling 模式)")
-        print("📡 每 3 秒拉取一次更新")
-        print("💡 如需切换到 webhook 模式，设置 TELEGRAM_POLLING=0 并配置 WEBHOOK_URL")
-        application.run_polling(
-            allowed_updates=Update.ALL_TYPES,
-            poll_interval=3,
-            timeout=10,
-            drop_pending_updates=False,
-        )
+        print("✅ Bot 已启动 (polling 模式)", flush=True)
+        print("📡 每 3 秒拉取一次更新", flush=True)
+        print("💡 如需 webhook 模式：设置 TELEGRAM_POLLING=0 并配置 WEBHOOK_URL", flush=True)
+        try:
+            application.run_polling(
+                allowed_updates=Update.ALL_TYPES,
+                poll_interval=3,
+                timeout=10,
+                drop_pending_updates=False,
+            )
+        except Exception as e:
+            print(f"❌ Polling 模式异常: {e}", flush=True)
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
     elif port and webhook_url:
         # Webhook 模式
-        print(f"✅ Bot 已启动 (webhook 模式)")
-        print(f"🔌 端口: {port}")
-        print(f"📡 Webhook URL: {webhook_url}")
-
-        # 先删除旧 webhook
-        print("🔄 删除旧 webhook...")
-        try:
-            import urllib.request
-            delete_url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
-            req = urllib.request.urlopen(urllib.request.Request(delete_url), timeout=10)
-            result = req.read().decode()
-            print(f"   删除结果: {result}")
-        except Exception as e:
-            print(f"   ⚠️ 删除旧 webhook 失败: {e}")
+        print(f"✅ Bot 已启动 (webhook 模式)", flush=True)
+        print(f"🔌 端口: {port}", flush=True)
+        print(f"📡 Webhook URL: {webhook_url}", flush=True)
 
         try:
             application.run_webhook(
@@ -251,15 +268,14 @@ def main():
                 drop_pending_updates=False,
             )
         except Exception as e:
-            print(f"❌ Webhook 启动失败: {e}")
+            print(f"❌ Webhook 启动失败: {e}", flush=True)
             import traceback
             traceback.print_exc()
-            print("\n💡 改用 polling 模式：在环境变量中设置 TELEGRAM_POLLING=1")
             sys.exit(1)
     else:
-        print("❌ 配置不完整")
-        print("  需要设置 TELEGRAM_POLLING=1 使用 polling 模式")
-        print("  或设置 WEBHOOK_URL + PORT 使用 webhook 模式")
+        print("❌ 配置不完整", flush=True)
+        print("  设置 TELEGRAM_POLLING=1 使用 polling 模式", flush=True)
+        print("  或设置 WEBHOOK_URL + PORT 使用 webhook 模式", flush=True)
         sys.exit(1)
 
 

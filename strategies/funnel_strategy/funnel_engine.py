@@ -302,7 +302,7 @@ class FunnelEngine:
         # ════════════════════════════════════════════════════════
         output_dir = Path(cfg.output_dir).resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
-        today_str = datetime.now(BEIJING_TZ).strftime("%Y%m%d")
+        today_str = trade_date.strftime("%Y%m%d")
         out_path = output_dir / f"funnel_{today_str}.csv"
 
         if l6_result:

@@ -123,11 +123,13 @@ class DailyReviewer:
         # 映射漏斗字段到 review 期望的字段名
         picks = []
         for c in picks_raw:
+            entry_price = c.get('entry_price', 0)
             picks.append({
                 'ts_code': c.get('ts_code', ''),
                 'stock_name': c.get('stock_name', ''),
-                'entry_low': round(c.get('entry_price', 0) * 0.99, 2) if c.get('entry_price') else None,
-                'entry_high': round(c.get('entry_price', 0) * 1.01, 2) if c.get('entry_price') else None,
+                'entry_price': entry_price,
+                'entry_low': round(entry_price * 0.99, 2) if entry_price else None,
+                'entry_high': round(entry_price * 1.01, 2) if entry_price else None,
                 'stop_loss': c.get('stop_loss'),
                 'target_1': c.get('target_price'),
                 'target_2': None,
@@ -163,7 +165,7 @@ class DailyReviewer:
 
         for p in picks:
             code = p['ts_code']
-            entry = float(p.get('entry_high', 0)) or float(p.get('entry_low', 0))
+            entry = float(p.get('entry_price', 0))
             stop_loss = float(p.get('stop_loss', 0))
             q = quotes.get(code)
 

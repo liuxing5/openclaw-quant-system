@@ -977,8 +977,8 @@ def is_new_stock(ts_code: str) -> bool:
         return False
     
     from datetime import date
-    today = date.today()
-    
+    today = beijing_now().date()
+
     # 处理list_date可能是字符串或date对象
     if isinstance(list_date, str):
         try:
@@ -2458,7 +2458,7 @@ def main():
     # DB 写入仍只在盘后定稿，避免盘中不稳定数据污染 daily_candidates
     current_beijing = beijing_now()
     is_post_time = current_beijing.hour > 15 or (current_beijing.hour == 15 and current_beijing.minute >= 10)
-    is_pre_market = current_beijing.hour < 14 and not (current_beijing.hour == 9 and current_beijing.minute >= 30)
+    is_pre_market = (current_beijing.hour < 9) or (current_beijing.hour == 9 and current_beijing.minute < 30)
 
     _persist_scan_stats(
         end_d, total_rejects,

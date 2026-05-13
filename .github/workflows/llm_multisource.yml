@@ -53,18 +53,24 @@ jobs:
       - name: Determine run mode
         id: mode
         run: |
-          HOUR=$(date -u +%H)
-          HOUR_NUM=$((10#$HOUR))
-          if [ "$HOUR_NUM" -lt 2 ]; then
-            echo "mode=morning" >> $GITHUB_OUTPUT
-            echo "盘前模式 (UTC ${HOUR}:30 = 北京时间 08:30)"
-          elif [ "$HOUR_NUM" -lt 7 ]; then
-            echo "mode=intraday" >> $GITHUB_OUTPUT
-            echo "盘中模式 (UTC ${HOUR}:30 = 北京时间 $((HOUR_NUM+8)):30)"
+          if [ -n "${{ inputs.run_mode }}" ]; then
+            MODE="${{ inputs.run_mode }}"
+            echo "使用手动指定模式: $MODE"
           else
-            echo "mode=afternoon" >> $GITHUB_OUTPUT
-            echo "盘后模式 (UTC ${HOUR}:30 = 北京时间 $((HOUR_NUM+8)):30)"
+            HOUR=$(date -u +%H)
+            HOUR_NUM=$((10#$HOUR))
+            if [ "$HOUR_NUM" -lt 2 ]; then
+              MODE="morning"
+              echo "盘前模式 (UTC ${HOUR}:30 = 北京时间 08:30)"
+            elif [ "$HOUR_NUM" -lt 7 ]; then
+              MODE="intraday"
+              echo "盘中模式 (UTC ${HOUR}:30 = 北京时间 $((HOUR_NUM+8)):30)"
+            else
+              MODE="afternoon"
+              echo "盘后模式 (UTC ${HOUR}:30 = 北京时间 $((HOUR_NUM+8)):30)"
+            fi
           fi
+          echo "mode=$MODE" >> $GITHUB_OUTPUT
       
       - name: Setup Python
         uses: actions/setup-python@v5

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "'D:\\pythonProject\\openclaw-quant-system\\.codex\\hooks\\session-start.sh'",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

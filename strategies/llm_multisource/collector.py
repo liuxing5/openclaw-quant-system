@@ -101,11 +101,11 @@ def get_db():
 
 def make_signal(source, title, content, url='', pub_time=None, tier=2):
     """构造 raw_signal 入库行"""
-    h = hashlib.md5(f"{source}|{title}|{content[:200]}".encode()).hexdigest()
+    h = hashlib.md5(f"{source}|{title}|{content[:200]}".encode('utf-8')).hexdigest()
     return (
         None, source, tier, title[:1000],
         (content or '')[:5000], url[:500],
-        pub_time or datetime.now(), datetime.now(), h,
+        pub_time or datetime.now(BEIJING_TZ), datetime.now(BEIJING_TZ), h,
     )
 
 
@@ -783,17 +783,19 @@ def store_signals(rows):
             # 替换 row 中的 source_id 占位符
             row_with_id = (source_id,) + row[1:]
 
+            cur.execute("SAVEPOINT sp_row;")
             cur.execute("""
                 INSERT INTO raw_signals
                 (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (content_hash) DO NOTHING;
             """, row_with_id)
+            cur.execute("RELEASE SAVEPOINT sp_row;")
             if cur.rowcount > 0:
                 inserted += 1
         except Exception as e:
             logger.debug(f"insert err: {e}")
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_row;")
             continue
     conn.commit()
     cur.close(); conn.close()

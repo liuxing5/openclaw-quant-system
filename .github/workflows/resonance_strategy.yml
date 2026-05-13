@@ -11,7 +11,7 @@ on:
       - 'core/**'
       - '.github/workflows/resonance_strategy.yml'
   schedule:
-    - cron: '15 7 * * 1-5'  # UTC 7:15 = 北京时间 15:15 (晚于 funnel/8step 5min，确保LLM数据就绪)
+    - cron: '45 7 * * 1-5'  # UTC 7:45 = 北京时间 15:45 (晚于 LLM盘后 15min，确保daily_candidates数据就绪)
   workflow_dispatch:
     inputs:
       date:
@@ -90,10 +90,15 @@ jobs:
             CMD="$CMD --llm-db"
           fi
           echo "Running: $CMD"
+          set +e
           $CMD 2>&1 | tee /tmp/resonance_output.log
-          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "EXIT_CODE=$EXIT_CODE" >> $GITHUB_ENV
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "strategy_failed=true" >> $GITHUB_ENV
+          fi
 
-      - name: Send Telegram notification
+      - name: Send Telegram notification (success)
         if: always() && env.EXIT_CODE == '0'
         env:
           POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}

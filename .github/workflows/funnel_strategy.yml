@@ -8,7 +8,7 @@ on:
       - 'core/**'
       - '.github/workflows/funnel_strategy.yml'
   schedule:
-    - cron: '10 7 * * 1-5'  # UTC 7:10 = 北京时间 15:10
+    - cron: '45 7 * * 1-5'  # UTC 7:45 = 北京时间 15:45 (晚于 LLM盘后 15min，确保daily_candidates数据就绪)
   workflow_dispatch:
     inputs:
       date:
@@ -69,8 +69,13 @@ jobs:
             done
           fi
           echo "Running: $CMD"
+          set +e
           $CMD 2>&1 | tee /tmp/funnel_output.log
-          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+          EXIT_CODE=${PIPESTATUS[0]}
+          echo "EXIT_CODE=$EXIT_CODE" >> $GITHUB_ENV
+          if [ "$EXIT_CODE" -ne 0 ]; then
+            echo "strategy_failed=true" >> $GITHUB_ENV
+          fi
 
       - name: Generate HTML report
         run: |

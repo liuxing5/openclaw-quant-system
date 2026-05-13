@@ -245,7 +245,7 @@ def check_fundamental(
 
     # 3c. 营收同比
     revenue_yoy = fin.get('revenue_yoy')
-    result['details']['revenue_yoy'] = round(revenue_yoy, 2) if revenue_yoy else None
+    result['details']['revenue_yoy'] = round(revenue_yoy, 2) if revenue_yoy is not None else None
     if revenue_yoy is not None and revenue_yoy < cfg.layer1_min_revenue_yoy:
         result['passed'] = False
         result['reject_reason'] = f'营收同比={revenue_yoy:.1f}%<{cfg.layer1_min_revenue_yoy}%'
@@ -271,7 +271,7 @@ def check_fundamental(
 
     # 3e. P0: 商誉暴雷风险
     goodwill_pct = compute_goodwill_pct(fin)
-    result['details']['goodwill_pct'] = round(goodwill_pct, 2) if goodwill_pct else None
+    result['details']['goodwill_pct'] = round(goodwill_pct, 2) if goodwill_pct is not None else None
     if goodwill_pct is not None and goodwill_pct > cfg.layer1_max_goodwill_pct:
         result['passed'] = False
         result['reject_reason'] = f'商誉/净资产={goodwill_pct:.1f}%>{cfg.layer1_max_goodwill_pct}%'
@@ -286,7 +286,7 @@ def check_fundamental(
 
     # 3g. P1: 质押比例
     pledge_ratio = fin.get('pledge_ratio')
-    result['details']['pledge_ratio'] = round(pledge_ratio, 2) if pledge_ratio else None
+    result['details']['pledge_ratio'] = round(pledge_ratio, 2) if pledge_ratio is not None else None
     if cfg.layer1_check_pledge and pledge_ratio is not None and pledge_ratio > cfg.layer1_max_pledge_ratio:
         result['passed'] = False
         result['reject_reason'] = f'质押比例={pledge_ratio:.1f}%>{cfg.layer1_max_pledge_ratio}%'

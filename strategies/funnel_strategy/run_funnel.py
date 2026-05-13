@@ -62,8 +62,8 @@ def main():
                         help="交易日期 (YYYY-MM-DD)，默认最新交易日")
     parser.add_argument("--output", "-o", type=str, default="./results",
                         help="输出目录")
-    parser.add_argument("--disable", nargs="*", type=int, default=[],
-                        help="禁用的层级 (0-6)")
+    parser.add_argument("--disable", nargs="+", type=int, default=[], action="append",
+                        help="禁用的层级 (0-6)，可重复指定")
     parser.add_argument("--funnel", action="store_true", default=True,
                         help="运行漏斗选股 (默认)")
     parser.add_argument("--review", action="store_true",
@@ -87,7 +87,10 @@ def main():
     if args.funnel:
         cfg = DEFAULT_FUNNEL_CONFIG
         cfg.output_dir = args.output
-        for layer_num in (args.disable or []):
+        disabled_layers = []
+        for group in (args.disable or []):
+            disabled_layers.extend(group)
+        for layer_num in disabled_layers:
             if 0 <= layer_num <= 6:
                 setattr(cfg, f'layer{layer_num}_enabled', False)
 

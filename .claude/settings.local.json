@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(gh run *)",
+      "WebFetch(domain:liuxing5.github.io)",
+      "Bash(python *)",
+      "Bash(pip show *)",
+      "Bash(pip index *)",
+      "Bash(pip install *)",
+      "Bash(Get-ChildItem -Path \"D:\\\\pythonProject\\\\openclaw-quant-system\" -Depth 0)",
+      "Bash(Format-Table Name, Mode -AutoSize)",
+      "Bash(git commit *)",
+      "Bash(git remote *)",
+      "Bash(Format-Table Name, Mode)",
+      "Bash(Get-ChildItem -Path . -Directory)",
+      "Bash(Select-Object Name)"
+    ]
+  }
+}
