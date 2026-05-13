@@ -328,8 +328,21 @@ async def main():
         await site.start()
         print(f" 健康检查: http://0.0.0.0:{port}/health")
         
-        # 运行 polling
-        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+        # 手动启动 polling（避免事件循环冲突）
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        
+        # 保持运行
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
     else:
         # 本地开发：直接 polling
         print("✅ Bot 已启动，等待消息...")
