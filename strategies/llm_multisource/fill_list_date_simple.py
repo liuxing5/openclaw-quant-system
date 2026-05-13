@@ -145,69 +145,9 @@ KNOWN_LIST_DATES = {
 }
 
 def infer_list_date(code):
-    """根据股票代码推断上市日期"""
-    # 首先检查已知列表
+    """根据股票代码推断上市日期 — 仅使用已知列表，不做算术猜测"""
     if code in KNOWN_LIST_DATES:
         return pd.to_datetime(KNOWN_LIST_DATES[code]).date()
-    
-    # 根据代码前缀推断年份范围
-    ts_code = code
-    code_num = code.split('.')[0]
-    
-    # 沪市主板 (600, 601, 603, 605)
-    if code_num.startswith(('600', '601', '603', '605')):
-        # 大致上市年份范围
-        if code_num.startswith('600'):
-            # 600开头通常是较早上市的
-            year = 1993 + int(code_num[1:3]) // 50
-        elif code_num.startswith('601'):
-            year = 2006 + int(code_num[3:5]) // 30
-        else:
-            year = 2010 + int(code_num[3:5]) // 50
-        return pd.to_datetime(f'{year}-06-15').date()
-    
-    # 深市主板 (000, 001)
-    elif code_num.startswith(('000', '001')):
-        # 000开头通常是较早上市的
-        seq = int(code_num[1:4])
-        if seq <= 100:
-            year = 1991 + seq // 20
-        elif seq <= 500:
-            year = 1996 + (seq - 100) // 80
-        else:
-            year = 2000 + (seq - 500) // 100
-        return pd.to_datetime(f'{year}-06-15').date()
-    
-    # 中小板 (002)
-    elif code_num.startswith('002'):
-        seq = int(code_num[3:6])
-        year = 2004 + seq // 200
-        return pd.to_datetime(f'{year}-06-15').date()
-    
-    # 深市主板注册制 (003)
-    elif code_num.startswith('003'):
-        seq = int(code_num[3:6])
-        year = 2022 + seq // 150
-        return pd.to_datetime(f'{year}-06-15').date()
-    
-    # 创业板 (300)
-    elif code_num.startswith('300'):
-        seq = int(code_num[3:6])
-        year = 2009 + seq // 300
-        return pd.to_datetime(f'{year}-06-15').date()
-    
-    # 创业板注册制 (301, 302)
-    elif code_num.startswith(('301', '302')):
-        seq = int(code_num[3:6])
-        year = 2020 + seq // 200
-        return pd.to_datetime(f'{year}-06-15').date()
-    
-    # 科创板 (688, 689)
-    elif code_num.startswith(('688', '689')):
-        seq = int(code_num[3:6])
-        year = 2019 + seq // 400
-        return pd.to_datetime(f'{year}-06-15').date()
-    
     return None
 
 def batch_fill_list_date(limit=1000):

@@ -23,7 +23,6 @@ def fetch_cninfo_announcements(make_signal) -> list:
         try:
             logger.debug(f"巨潮公告: {date_str}")
             df = ak.stock_zh_a_disclosure_report_cninfo(
-                symbol='000001',
                 market='沪深京',
                 start_date=date_str,
                 end_date=date_str,

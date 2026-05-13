@@ -33,6 +33,7 @@ def store_fundamentals(fundamentals: list) -> int:
 
     for item in fundamentals:
         try:
+            cur.execute("SAVEPOINT sp_fund;")
             cur.execute("""
                 INSERT INTO stock_fundamentals
                     (ts_code, report_date, revenue, net_profit, eps, bps, fetched_at)
@@ -45,11 +46,12 @@ def store_fundamentals(fundamentals: list) -> int:
                     bps = EXCLUDED.bps,
                     fetched_at = NOW();
             """, item)
+            cur.execute("RELEASE SAVEPOINT sp_fund;")
             if cur.rowcount > 0:
                 upserted += 1
         except Exception as e:
             logger.debug(f"fundamentals upsert {item.get('ts_code')}: {e}")
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_fund;")
             continue
 
     conn.commit()
@@ -76,6 +78,7 @@ def store_order_book(snapshots: list) -> int:
 
     for item in snapshots:
         try:
+            cur.execute("SAVEPOINT sp_ob;")
             cur.execute("""
                 INSERT INTO order_book_snapshot
                     (ts_code, snapshot_time,
@@ -94,11 +97,12 @@ def store_order_book(snapshots: list) -> int:
                         %(ask5_price)s, %(ask5_vol)s)
                 ON CONFLICT (ts_code, snapshot_time) DO NOTHING;
             """, {**item, 'snapshot_time': now})
+            cur.execute("RELEASE SAVEPOINT sp_ob;")
             if cur.rowcount > 0:
                 inserted += 1
         except Exception as e:
             logger.debug(f"order_book insert {item.get('ts_code')}: {e}")
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_ob;")
             continue
 
     conn.commit()
@@ -124,6 +128,7 @@ def store_announcements(announcements: list) -> int:
 
     for item in announcements:
         try:
+            cur.execute("SAVEPOINT sp_ann;")
             title = item.get('title', '')
             content_hash = hashlib.md5(title.encode('utf-8')).hexdigest()
             cur.execute("""
@@ -134,11 +139,12 @@ def store_announcements(announcements: list) -> int:
                         %(publish_date)s, %(url)s, %(content_hash)s, %(source)s, NOW())
                 ON CONFLICT (content_hash) DO NOTHING;
             """, {**item, 'content_hash': content_hash})
+            cur.execute("RELEASE SAVEPOINT sp_ann;")
             if cur.rowcount > 0:
                 inserted += 1
         except Exception as e:
             logger.debug(f"announcements insert: {e}")
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_ann;")
             continue
 
     conn.commit()
@@ -169,6 +175,7 @@ def update_tencent_quotes(tencent_data: list) -> int:
 
     for item in tencent_data:
         try:
+            cur.execute("SAVEPOINT sp_tx;")
             cur.execute("""
                 UPDATE daily_quotes SET
                     pe_ratio = %(pe_ratio)s,
@@ -188,11 +195,12 @@ def update_tencent_quotes(tencent_data: list) -> int:
                       WHERE ts_code = %(ts_code)s
                   );
             """, item)
+            cur.execute("RELEASE SAVEPOINT sp_tx;")
             if cur.rowcount > 0:
                 updated += 1
         except Exception as e:
             logger.debug(f"tencent update {item.get('ts_code')}: {e}")
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_tx;")
             continue
 
     conn.commit()
@@ -220,6 +228,7 @@ def store_strong_stock_rank(data: list) -> int:
 
     for item in data:
         try:
+            cur.execute("SAVEPOINT sp_ssr;")
             cur.execute("""
                 INSERT INTO strong_stock_rank
                     (trade_date, ts_code, stock_name, rank_type, rank_position,
@@ -237,11 +246,12 @@ def store_strong_stock_rank(data: list) -> int:
                     latest_price = EXCLUDED.latest_price,
                     fetched_at = NOW();
             """, item)
+            cur.execute("RELEASE SAVEPOINT sp_ssr;")
             if cur.rowcount > 0:
                 upserted += 1
         except Exception as e:
             logger.debug(f"strong_stock_rank upsert {item.get('ts_code')}: {e}")
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_ssr;")
             continue
 
     conn.commit()
@@ -269,6 +279,7 @@ def store_earnings_forecast(data: list) -> int:
 
     for item in data:
         try:
+            cur.execute("SAVEPOINT sp_ef;")
             cur.execute("""
                 INSERT INTO earnings_forecast
                     (ts_code, stock_name, forecast_year, institution_count,
@@ -289,11 +300,12 @@ def store_earnings_forecast(data: list) -> int:
                     profit_mean = EXCLUDED.profit_mean,
                     fetched_at = NOW();
             """, item)
+            cur.execute("RELEASE SAVEPOINT sp_ef;")
             if cur.rowcount > 0:
                 upserted += 1
         except Exception as e:
             logger.debug(f"earnings_forecast upsert {item.get('ts_code')}: {e}")
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_ef;")
             continue
 
     conn.commit()
@@ -320,6 +332,7 @@ def store_concept_board_quotes(data: list) -> int:
 
     for item in data:
         try:
+            cur.execute("SAVEPOINT sp_cbq;")
             cur.execute("""
                 INSERT INTO concept_board_quotes
                     (trade_date, concept_code, concept_name, pct_chg,
@@ -337,11 +350,12 @@ def store_concept_board_quotes(data: list) -> int:
                     stock_count = EXCLUDED.stock_count,
                     fetched_at = NOW();
             """, item)
+            cur.execute("RELEASE SAVEPOINT sp_cbq;")
             if cur.rowcount > 0:
                 upserted += 1
         except Exception as e:
             logger.debug(f"concept_board_quotes upsert {item.get('concept_code')}: {e}")
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_cbq;")
             continue
 
     conn.commit()

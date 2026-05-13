@@ -177,11 +177,13 @@ def load_state() -> Dict:
 
 
 def save_state(state: Dict) -> None:
-    """保存状态文件"""
+    """原子写入状态文件，防止并发实例间数据丢失"""
     try:
-        with open(CONFIG["state_file"], "w", encoding="utf-8") as f:
+        tmp = CONFIG["state_file"] + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(state, f, ensure_ascii=False, indent=2)
-    except IOError as e:
+        os.replace(tmp, CONFIG["state_file"])
+    except (IOError, OSError) as e:
         print(f"⚠️ 状态文件写入失败: {e}")
 
 
@@ -301,6 +303,32 @@ def get_limit_pct(code: str) -> float:
     return 9.8
 
 
+def _get_yesterday_vol_baostock(code: str) -> float:
+    """用 baostock 获取昨日成交量(手)，用于盘前封板强度评估"""
+    try:
+        import baostock as bs
+        lg = bs.login()
+        if lg.error_code != '0':
+            return 0
+        pure = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
+        bs_code = f"sh.{pure}" if (pure.startswith("6") or pure.startswith("9")) else f"sz.{pure}"
+        today = get_beijing_time()
+        end_date = (today - timedelta(days=5)).strftime("%Y-%m-%d")
+        start_date = today.strftime("%Y-%m-%d")
+        rs = bs.query_history_k_data_plus(
+            bs_code, "date,volume", start_date=end_date, end_date=start_date,
+            frequency="d", adjustflag="3",
+        )
+        if rs.error_code == '0':
+            rows = rs.get_data()
+            if not rows.empty and len(rows) >= 1:
+                return float(rows.iloc[-1]["volume"]) if rows.iloc[-1]["volume"] else 0
+        bs.logout()
+        return 0
+    except Exception:
+        return 0
+
+
 def evaluate_limit_strength(
     code: str,
     market_data: dict,
@@ -308,14 +336,14 @@ def evaluate_limit_strength(
 ) -> Optional[Dict]:
     """
     评估封板强度(基于猎手公式)
-    
+
     封单成交率 = (收盘买一封单量 / 全天成交量) × 100%
-    
+
     Args:
         code: 股票代码(腾讯接口格式如 sh600519)
         market_data: get_realtime_data 返回的数据字典
         mktcap_yi: 流通市值(亿),用于动态调整阈值
-    
+
     Returns:
         None: 不是涨停板或数据不足
         dict: {
@@ -340,6 +368,12 @@ def evaluate_limit_strength(
     # 拿封单量和成交量(腾讯接口字段都有)
     bid1_vol = info.get("bid1_vol", 0)
     today_vol = info.get("vol", 0)
+
+    # 盘前(09:26)腾讯成交量已重置为0，需用昨日baostock数据
+    if today_vol < 100 and bid1_vol > 0:
+        yesterday_vol = _get_yesterday_vol_baostock(code)
+        if yesterday_vol > 0:
+            today_vol = yesterday_vol
 
     if today_vol <= 0:
         return None

@@ -1536,6 +1536,8 @@ def analyze_ultimate(
         curr_vol = real_info["vol"]
         curr_amount = real_info["amount"]
         curr_turn = real_info.get("turn", 0.0)
+        curr_high = real_info.get("high", 0.0)
+        curr_low = real_info.get("low", 0.0)
         if curr_turn <= 0:
             curr_turn = float(df.iloc[-1]["turn"]) if "turn" in df.columns else 0.0
         # 盘后模式下，time_weight=1.0，不需要时间加权
@@ -1549,6 +1551,8 @@ def analyze_ultimate(
         curr_vol = float(last["volume"])
         curr_turn = float(last["turn"])
         curr_amount = float(last["amount"]) if "amount" in df.columns else 0.0
+        curr_high = float(last["high"]) if "high" in df.columns else 0.0
+        curr_low = float(last["low"]) if "low" in df.columns else 0.0
         est_full_vol = curr_vol
         hist_vols = df["volume"].tolist()[:-1]
 
@@ -1733,8 +1737,7 @@ def analyze_ultimate(
         score += 20
         tags.append("高位博弈")
         if cfg["MODE"] == "post":
-            today_high = float(df.iloc[-1]["high"]) if "high" in df.columns else 0
-            if today_high > 0 and curr_price >= today_high * 0.998:
+            if curr_high > 0 and curr_price >= curr_high * 0.998:
                 score += 10
                 tags.append("光头大阳")
 
@@ -1850,9 +1853,8 @@ def analyze_ultimate(
 
     # 尾盘回落检测：post模式下检查今日是否从高点大幅回落
     if cfg["MODE"] == "post":
-        today_high = float(df.iloc[-1]["high"]) if "high" in df.columns else 0
-        if today_high > 0 and curr_price > 0:
-            drawdown_from_high = (today_high - curr_price) / today_high
+        if curr_high > 0 and curr_price > 0:
+            drawdown_from_high = (curr_high - curr_price) / curr_high
             if drawdown_from_high > 0.03:
                 score -= 15
                 tags.append("尾盘回落↓")
@@ -2738,6 +2740,7 @@ def debug_stock(code: str, cfg: dict = None):
     curr_vol = real_info["vol"]
     curr_amount = real_info["amount"]
     curr_turn = real_info.get("turn", 0.0)
+    curr_high = real_info.get("high", 0.0)
     if curr_turn <= 0:
         curr_turn = float(df.iloc[-1]["turn"]) if "turn" in df.columns else 0.0
 
@@ -2846,9 +2849,8 @@ def debug_stock(code: str, cfg: dict = None):
 
     # 尾盘回落（post模式）
     if cfg["MODE"] == "post":
-        today_high = float(df.iloc[-1]["high"]) if "high" in df.columns else 0
-        if today_high > 0 and curr_price > 0:
-            drawdown = (today_high - curr_price) / today_high
+        if curr_high > 0 and curr_price > 0:
+            drawdown = (curr_high - curr_price) / curr_high
             ok = drawdown <= 0.03
             steps.append(("尾盘回落", ok, f"回撤:{drawdown*100:.2f}% 阈值:3%"))
 
