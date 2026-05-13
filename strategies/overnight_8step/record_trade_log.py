@@ -29,7 +29,9 @@ import csv
 import sys
 import json
 import requests
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 from typing import Optional
 
 # ============================================================
@@ -73,7 +75,7 @@ FIELDNAMES = [
 
 def get_latest_trading_day() -> str:
     """获取最近一个交易日（跳过周末）"""
-    today = datetime.now()
+    today = datetime.now(BEIJING_TZ)
     for delta in range(7):
         day = today - timedelta(days=delta)
         if day.weekday() < 5:
@@ -291,7 +293,7 @@ def morning_mode():
         print("  CSV 为空，无记录需要补充")
         return
     
-    today = datetime.now().date()
+    today = datetime.now(BEIJING_TZ).date()
     updated = False
     
     for row in rows:

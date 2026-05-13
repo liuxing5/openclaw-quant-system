@@ -27,6 +27,7 @@ def get_db():
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),
+        sslmode='require',
     )
 
 

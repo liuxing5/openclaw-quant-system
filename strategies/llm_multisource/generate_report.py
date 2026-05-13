@@ -28,6 +28,7 @@ def get_db():
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),
+        sslmode='require',
     )
 
 
@@ -551,7 +552,7 @@ def generate_report():
     template = Template(HTML_TEMPLATE)
     html = template.render(
         date=display_date,
-        generated_at=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        generated_at=datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S'),
         candidates=[dict(c) for c in candidates],
         eight_step_picks=[dict(c) for c in eight_step_picks],
         source_stats=[dict(s) for s in source_stats],

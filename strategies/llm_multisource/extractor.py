@@ -74,6 +74,7 @@ def get_db():
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),
+        sslmode='require',
     )
 
 
@@ -149,6 +150,20 @@ def store_extraction(raw_id: int, source_name: str, pub_time, items: list):
     return stored
 
 
+def mark_signal_processed(raw_id, source_name, pub_time):
+    """标记信号已处理，避免 LLM 空返回导致无限重试循环"""
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO extracted_recommendations
+        (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
+         strength, logic_summary, pub_time)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT DO NOTHING;
+    """, (raw_id, source_name, 'SKIP', 'SKIP', 'skip', 0, 'llm_no_result', pub_time))
+    conn.commit()
+    cur.close(); conn.close()
+
+
 def process_one(row):
     prompt = PROMPT_TPL.format(
         source_category=row['category'], source_tier=row['source_tier'],
@@ -158,12 +173,15 @@ def process_one(row):
     n = 0
     try:
         result = call_llm(prompt)
-        
-        # 调试：记录 LLM 返回结果
+
+        if not result:
+            logger.warning(f"raw_id={row['id']}: LLM 返回空结果，标记已处理避免无限重试")
+            mark_signal_processed(row['id'], row['source_name'], row['pub_time'])
+            return row['id'], 0
+
         is_recommendation = result.get('is_recommendation', False)
         items_raw = result.get('items', [])
-        
-        # 折中：只容错明确 buy/strong_buy 的
+
         if not is_recommendation and items_raw:
             items = [it for it in items_raw
                      if it.get('recommendation_type') in ('buy', 'strong_buy')]
@@ -173,11 +191,14 @@ def process_one(row):
             items = items_raw
         else:
             items = []
-        
+
         n = store_extraction(row['id'], row['source_name'], row['pub_time'], items)
+        if n == 0:
+            mark_signal_processed(row['id'], row['source_name'], row['pub_time'])
         logger.info(f"raw_id={row['id']} -> {n or 0} signals (is_recommendation={is_recommendation}, items_raw={len(items_raw)})")
     except Exception as e:
         logger.error(f"extract failed for {row['id']}: {e}")
+        mark_signal_processed(row['id'], row['source_name'], row['pub_time'])
     return row['id'], n
 
 

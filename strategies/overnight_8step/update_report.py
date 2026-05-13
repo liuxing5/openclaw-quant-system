@@ -8,7 +8,7 @@ import subprocess
 from datetime import datetime
 
 REPORT_PATH = r"d:\pythonProject\openclaw-quant-system\recommend\完整报告.md"
-ZUIYOU_PATH = r"d:\pythonProject\openclaw-quant-system\recommend\xuangu\zuiyou1.py"
+ZUIYOU_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zuiyou1.py")
 
 def run_zuiyou():
     """运行zuiyou1.py并返回输出"""

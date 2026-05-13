@@ -20,7 +20,9 @@ Telegram 命令：
 
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 from typing import List, Dict, Optional
 
 # ============================================================
@@ -75,7 +77,7 @@ def add_position(code: str, cost: float, path: str = None, entry_date: str = Non
         path = DEFAULT_PATH
 
     if entry_date is None:
-        entry_date = datetime.now().strftime("%Y-%m-%d")
+        entry_date = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
     position = {
         "code": code,
@@ -175,7 +177,7 @@ def import_from_picks(picks: List[Dict], path: str = None) -> Dict:
             "code": code,
             "cost": price,
             "path": path,
-            "entry_date": datetime.now().strftime("%Y-%m-%d"),
+            "entry_date": datetime.now(BEIJING_TZ).strftime("%Y-%m-%d"),
         }
         positions.append(position)
         added.append(position)

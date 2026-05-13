@@ -125,7 +125,7 @@ def store_announcements(announcements: list) -> int:
     for item in announcements:
         try:
             title = item.get('title', '')
-            content_hash = hashlib.md5(title.encode()).hexdigest()
+            content_hash = hashlib.md5(title.encode('utf-8')).hexdigest()
             cur.execute("""
                 INSERT INTO stock_announcements
                     (ts_code, stock_name, title, category, publish_date, url,

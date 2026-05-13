@@ -105,7 +105,7 @@ except ImportError:
     ]
 
 CONFIG = {
-    "state_file": "./sell_state.json",
+    "state_file": os.path.join(os.path.dirname(os.path.abspath(__file__)), "sell_state.json"),
     "check_times": ["09:30", "10:00", "10:30", "13:00", "14:00"],
     "stop_loss_global": -2.5,
 
@@ -202,7 +202,7 @@ def get_position_state(state: Dict, code: str, cost: float) -> Dict:
         "limit_strength_evaluated": False,  # 是否已评估过封板强度(只评估一次)
         "limit_strength_level": 0,          # 评估出的强度等级 1-5
         "limit_strength_ratio": 0.0,        # 评估出的封单成交率
-        "first_seen": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "first_seen": datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S"),
     }
 
     if not rec:
@@ -260,10 +260,10 @@ def get_realtime_data(codes: list) -> dict:
         curr_pct = (now_price - pre_close) / pre_close * 100
         high_pct = (today_high - pre_close) / pre_close * 100
 
-        # 涨停判断：现价≥昨收×1.0998（兼容浮点误差，主板10%）
-        is_limit_up = curr_pct >= 9.8
-        # 是否曾涨停：当日最高≥9.8%
-        was_limit_up = high_pct >= 9.8
+        # 涨停判断：根据板块动态阈值（主板10%/创业板科创板20%/北交所30%）
+        limit_threshold = get_limit_pct(code_raw) - 0.2
+        is_limit_up = curr_pct >= limit_threshold
+        was_limit_up = high_pct >= limit_threshold
 
         results[code_raw] = {
             "name": name,
@@ -727,7 +727,10 @@ def run():
     print(f"  运行时间: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 45)
 
-    if not POSITIONS:
+    # 每次运行时重新加载持仓（支持盘中通过 Telegram 动态添加）
+    positions = load_positions_dynamic() or POSITIONS
+
+    if not positions:
         print("\n⚠️ 持仓列表为空，请编辑POSITIONS配置")
         return
 
@@ -735,7 +738,7 @@ def run():
     state = load_state()
     print(f"\n📂 状态文件: {CONFIG['state_file']}（已记录 {len(state)} 只历史持仓）")
 
-    codes = [p["code"] for p in POSITIONS]
+    codes = [p["code"] for p in positions]
     print(f"📊 当前持仓: {len(codes)} 只")
 
     market_data = get_realtime_data(codes)
@@ -751,7 +754,7 @@ def run():
         print("─" * 45)
         print("📢 集合竞价挂单建议（09:20-09:25）")
         print("─" * 45)
-        for p in POSITIONS:
+        for p in positions:
             advice = auction_advice(p["code"], p["cost"], p.get("path", "稳健"), market_data)
             if advice:
                 print(f"  {p['code']}: {advice}")

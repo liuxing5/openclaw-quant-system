@@ -261,7 +261,7 @@ def run_resonance_strategy(
                 r['name'] = all_name_map.get(raw_code, all_name_map.get(code, ''))
             if 'industry' not in r:
                 from overnight_8step.zuiyou1 import get_stock_industry
-                industry = get_stock_industry(code)
+                industry = get_stock_industry(raw_code)
                 r['industry'] = industry
             all_results[code] = r
 

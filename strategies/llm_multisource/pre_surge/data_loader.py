@@ -116,7 +116,7 @@ class DataLoader:
 
     # -------------------- 缓存 --------------------
     def _cache_path(self, key: str) -> Path:
-        h = hashlib.md5(key.encode()).hexdigest()[:16]
+        h = hashlib.md5(key.encode('utf-8')).hexdigest()[:16]
         return self.cache_dir / f"{h}.parquet"
 
     def _get_cache_ttl_hours(self) -> int:

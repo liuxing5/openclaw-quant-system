@@ -405,7 +405,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
     llm_count = len(llm_candidates)
     eight_count = len(eight_candidates)
 
-    gen_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    gen_time = datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
     # ════════════════════════════════════════════════════════════
     # HTML 模板
