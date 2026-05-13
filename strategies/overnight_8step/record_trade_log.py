@@ -195,7 +195,7 @@ def parse_zuiyou1_results() -> tuple:
     从 zuiyou1.py 的选股记录汇总文件中解析当日推荐结果
     返回: (stable_best, upper_best)
     """
-    summary_file = os.path.join(LOG_DIR, "..", "..", "recommend", "选股记录汇总.txt")
+    summary_file = os.path.join(LOG_DIR, "..", "选股记录汇总.txt")
     
     if not os.path.exists(summary_file):
         print("⚠️ 选股记录汇总文件不存在")
