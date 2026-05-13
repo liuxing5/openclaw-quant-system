@@ -272,6 +272,16 @@ def generate_unified_html(output_dir=None, trade_date=None):
         mood = eight_scan.get('mood', '')
         mood_text = f"情绪{mood}({sentiment}分)" if sentiment else ""
 
+        step_rules = {
+            "涨幅筛选": "3%≤涨幅≤8%，剔除涨停/跌停",
+            "成交额过滤": "成交额>2亿，保证流动性",
+            "换手率过滤": "换手率3%~15%，活跃度适中",
+            "市值过滤": "流通市值>30亿，剔除小盘股",
+            "量比过滤": "量比>1.5，放量确认",
+            "均线+压力": "5/10/20日均线多头，距压力位>3%",
+            "乖离率过滤": "乖离率<8%，避免追高",
+            "综合评分": "综合评分≥70，量化+情绪加权",
+        }
         step_keys = [
             ("涨幅筛选", ["涨幅不符"]),
             ("成交额过滤", ["成交额"]),
@@ -287,31 +297,42 @@ def generate_unified_html(output_dir=None, trade_date=None):
             elim = sum(reject_map.get(k, 0) for k in keys)
             remaining = max(0, remaining - elim)
             elim_html = f'<span class="elim">{elim}</span>' if elim else ''
+            rule = step_rules.get(sname, '')
+            rule_html = f'<span class="rule-inline">{rule}</span>' if rule else ''
             eight_steps_html += f"""
             <div class="step-row">
               <span class="step-name">{sname}</span>
               <span class="step-pass">{remaining}</span>
               {elim_html}
+              {rule_html}
             </div>"""
         if mood_text:
-            eight_steps_html += f'<div class="step-note">📊 {mood_text}</div>'
+            eight_steps_html += f'<div class="step-note"> {mood_text}</div>'
 
     # ── LLM多源步骤 ──
     llm_steps_html = ""
     if llm_scan:
         stats = llm_scan.get('filter_stats', {})
+        llm_step_rules = {
+            "多源信号采集": "龙虎榜/涨停/研报/公告/调研多源聚合",
+            "综合评分≥阈值": "量化评分+LLM评分加权≥60",
+            "精选标记": "人工精选+LLM二次确认",
+        }
         llm_steps_html += f"""
         <div class="step-row">
           <span class="step-name">多源信号采集</span>
           <span class="step-pass">{stats.get('多源聚合后', '—')}</span>
+          <span class="rule-inline">{llm_step_rules['多源信号采集']}</span>
         </div>
         <div class="step-row">
           <span class="step-name">综合评分≥阈值</span>
           <span class="step-pass">{stats.get('综合评分≥阈值', '—')}</span>
+          <span class="rule-inline">{llm_step_rules['综合评分≥阈值']}</span>
         </div>
         <div class="step-row">
           <span class="step-name">精选标记</span>
           <span class="step-pass">{stats.get('精选标记', '—')}</span>
+          <span class="rule-inline">{llm_step_rules['精选标记']}</span>
         </div>"""
 
     # ── 候选卡片渲染 ──
