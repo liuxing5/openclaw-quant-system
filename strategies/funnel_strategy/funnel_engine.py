@@ -45,6 +45,7 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 
 def load_universe(trade_date: date, min_amount: float = 1e8) -> List[str]:
     """从 daily_quotes 加载全市场初筛股票池（日成交额>1亿）"""
+    conn = None
     try:
         conn = get_db()
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -56,11 +57,15 @@ def load_universe(trade_date: date, min_amount: float = 1e8) -> List[str]:
         """, (trade_date, min_amount))
         codes = [row['ts_code'] for row in cur.fetchall()]
         cur.close()
-        conn.close()
         return codes
     except Exception as e:
         print(f"❌ 全市场加载失败: {e}")
+        import traceback
+        traceback.print_exc()
         return []
+    finally:
+        if conn:
+            conn.close()
 
 
 class FunnelEngine:

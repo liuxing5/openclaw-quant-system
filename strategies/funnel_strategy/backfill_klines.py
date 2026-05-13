@@ -178,7 +178,7 @@ def run_backfill(
     if end_date:
         end_dt = datetime.strptime(end_date, '%Y-%m-%d').date()
     else:
-        end_dt = date.today()
+        end_dt = datetime.now(BEIJING_TZ).date()
 
     if start_date:
         start_dt = datetime.strptime(start_date, '%Y-%m-%d').date()

@@ -178,8 +178,9 @@ class DailyReviewer:
             today_close = float(q['close'])
             today_pct = float(q.get('pct_chg', 0) or 0)
 
-            # 止损触发检查
-            stop_hit = today_open <= stop_loss or (float(q['low']) if q['low'] else 0) <= stop_loss
+            # 止损触发检查 (stop_loss>0 防止未设止损时误触发)
+            today_low = float(q['low']) if q['low'] is not None and q['low'] == q['low'] else None
+            stop_hit = stop_loss > 0 and (today_open <= stop_loss or (today_low is not None and today_low <= stop_loss))
             if stop_hit:
                 report['stop_loss_hit'] += 1
                 report['losses'] += 1
