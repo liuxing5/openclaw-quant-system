@@ -235,12 +235,27 @@ async def main():
         await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
         print("✓ Webhook 已设置")
         
-        # 启动 webhook
-        await application.run_webhook(
+        # 手动启动 webhook（避免事件循环冲突）
+        await application.initialize()
+        await application.start()
+        await application.updater.start_webhook(
             listen="0.0.0.0",
             port=port,
             url_path=BOT_TOKEN,
         )
+        print("✓ Webhook 服务器已启动")
+        print("📡 等待 Telegram 推送消息...")
+        
+        # 保持运行
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
     else:
         # 本地开发：polling 模式
         print("✅ Bot 已启动 (polling 模式)")
