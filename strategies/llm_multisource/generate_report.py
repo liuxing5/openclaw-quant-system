@@ -514,7 +514,7 @@ def generate_report():
         SELECT title, url, pub_time, source_name
         FROM raw_signals
         WHERE pub_time IS NOT NULL AND url IS NOT NULL AND url != ''
-        ORDER BY pub_time DESC;
+        ORDER BY pub_time DESC LIMIT 200;
     """)
     all_articles = cur.fetchall()
     

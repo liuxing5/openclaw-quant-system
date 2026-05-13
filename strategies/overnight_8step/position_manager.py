@@ -91,9 +91,9 @@ def add_position(code: str, cost: float, path: str = None, entry_date: str = Non
     # 检查是否已存在
     for i, p in enumerate(positions):
         if p["code"] == code:
-            positions[i] = position
+            positions[i].update(position)
             save_positions(positions)
-            return {"action": "updated", "position": position}
+            return {"action": "updated", "position": positions[i]}
 
     positions.append(position)
     save_positions(positions)

@@ -858,7 +858,7 @@ def run():
             print("  📲 紧急信号已推送到 Telegram（每日一次）\n")
 
     # v2.1: 即使没有紧急信号,也推送一份完整的卖出建议(每天首次运行时)
-    elif TELEGRAM_ENABLED and results_sorted:
+    if TELEGRAM_ENABLED and results_sorted:
         # 只在尾盘时段(13:50-15:00)推送一次完整持仓状态
         hhmm = now.hour * 100 + now.minute
         if 1350 <= hhmm <= 1500:

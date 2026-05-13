@@ -18,7 +18,7 @@ PRIMARY_API_KEY = os.getenv('LLM_API_KEY') or os.getenv('DEEPSEEK_API_KEY') or o
 PRIMARY_BASE_URL = os.getenv('LLM_BASE_URL') or os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 PRIMARY_MODEL = os.getenv('LLM_MODEL') or os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
-BACKUP_API_KEY = os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
+BACKUP_API_KEY = os.getenv('BACKUP_API_KEY') or os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
 BACKUP_BASE_URL = os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
 BACKUP_MODEL = os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
@@ -134,7 +134,8 @@ def store_extraction(raw_id: int, source_name: str, pub_time, items: list):
             (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, target_price, stop_loss,
              time_horizon, raw_excerpt, confidence, pub_time)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT DO NOTHING;
         """, (
             raw_id, source_name,
             ts_code, it.get('stock_name'),
@@ -193,7 +194,7 @@ def process_one(row):
             items = []
 
         n = store_extraction(row['id'], row['source_name'], row['pub_time'], items)
-        if n == 0:
+        if not n:
             mark_signal_processed(row['id'], row['source_name'], row['pub_time'])
         logger.info(f"raw_id={row['id']} -> {n or 0} signals (is_recommendation={is_recommendation}, items_raw={len(items_raw)})")
     except Exception as e:

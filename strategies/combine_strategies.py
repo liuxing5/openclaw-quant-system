@@ -144,6 +144,10 @@ def run_resonance_strategy(
     返回：
       最终入选标的列表
     """
+    try:
+        from overnight_8step.zuiyou1 import get_stock_industry
+    except ImportError:
+        get_stock_industry = None
     print("=" * 70)
     print("  策略整合器 — 5策略共振 + LLM多源 + 八步法")
     print("=" * 70)
@@ -187,7 +191,7 @@ def run_resonance_strategy(
         print("✗ 没有股票通过共振过滤")
         return []
 
-    resonance_codes = [r['ts_code'] for r in resonance_results]
+    resonance_codes = [normalize_code(r['ts_code']) for r in resonance_results]
     print(f"✓ 共振过滤通过: {len(resonance_codes)} 只")
 
     # ========== 第2层：LLM多源策略 ==========
@@ -259,10 +263,8 @@ def run_resonance_strategy(
             # 补充 name 和 industry（scan_pool 不返回这些字段）
             if 'name' not in r or not r.get('name'):
                 r['name'] = all_name_map.get(raw_code, all_name_map.get(code, ''))
-            if 'industry' not in r:
-                from overnight_8step.zuiyou1 import get_stock_industry
-                industry = get_stock_industry(raw_code)
-                r['industry'] = industry
+            if 'industry' not in r and get_stock_industry is not None:
+                r['industry'] = get_stock_industry(raw_code)
             all_results[code] = r
 
     resonance_set = {normalize_code(c) for c in final_candidates}
@@ -277,7 +279,7 @@ def run_resonance_strategy(
 
     if result:
         # 构建共振结果字典，O(1)查找替代O(n²)线性扫描
-        resonance_map = {r['ts_code']: r for r in resonance_results}
+        resonance_map = {normalize_code(r['ts_code']): r for r in resonance_results}
 
         # 写入CSV
         with open(out_path, 'w', newline='', encoding='utf-8-sig') as f:
