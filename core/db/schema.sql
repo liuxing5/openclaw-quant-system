@@ -291,9 +291,14 @@ CREATE TABLE IF NOT EXISTS stock_fundamentals (
     net_margin FLOAT,
     total_assets NUMERIC(20,2),
     total_liabilities NUMERIC(20,2),
+    current_assets NUMERIC(20,2),
+    current_liabilities NUMERIC(20,2),
     equity NUMERIC(20,2),
     debt_ratio FLOAT,
     operating_cashflow NUMERIC(20,2),
+    accounts_receivable NUMERIC(20,2),
+    inventory NUMERIC(20,2),
+    goodwill NUMERIC(20,2),
     eps NUMERIC(10,4),
     bps NUMERIC(10,4),
     pe_ratio FLOAT,
@@ -306,9 +311,19 @@ CREATE TABLE IF NOT EXISTS stock_fundamentals (
     listing_date DATE,
     shareholder_count INT,
     top10_holder_pct FLOAT,
+    pledge_ratio FLOAT,
     fetched_at TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (ts_code, report_date)
 );
+CREATE INDEX IF NOT EXISTS idx_fund_ts ON stock_fundamentals(ts_code, report_date DESC);
+
+-- Add columns if table already exists (idempotent migrations)
+ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS current_assets NUMERIC(20,2);
+ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS current_liabilities NUMERIC(20,2);
+ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS accounts_receivable NUMERIC(20,2);
+ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS inventory NUMERIC(20,2);
+ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS goodwill NUMERIC(20,2);
+ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS pledge_ratio FLOAT;
 CREATE INDEX IF NOT EXISTS idx_fund_ts ON stock_fundamentals(ts_code, report_date DESC);
 
 -- Layer 5: Announcements (巨潮 cninfo + mootdx)

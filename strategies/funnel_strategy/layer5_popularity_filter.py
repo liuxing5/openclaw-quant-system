@@ -88,6 +88,29 @@ def _load_popularity_ranks(trade_date: date, db_conn) -> Dict[str, int]:
     return rank_map
 
 
+def _load_valuation_data(stock_list: List[str], trade_date: date, db_conn) -> Dict[str, dict]:
+    """从 daily_quotes 加载 PE/PB 估值数据"""
+    val_map = {}
+    if not stock_list:
+        return val_map
+    try:
+        cur = db_conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("""
+            SELECT ts_code, pe_ratio, pb_ratio
+            FROM daily_quotes
+            WHERE trade_date = %s AND ts_code = ANY(%s);
+        """, (trade_date, stock_list))
+        for r in cur.fetchall():
+            val_map[r['ts_code']] = {
+                'pe_ratio': float(r['pe_ratio']) if r['pe_ratio'] else None,
+                'pb_ratio': float(r['pb_ratio']) if r['pb_ratio'] else None,
+            }
+        cur.close()
+    except Exception:
+        pass
+    return val_map
+
+
 def _load_llm_candidates(trade_date: date, db_conn) -> Dict[str, dict]:
     """从 daily_candidates 加载 LLM 多源候选（source='llm_multisource'）"""
     llm_map = {}
@@ -350,32 +373,56 @@ def run_layer5_popularity_filter(
                   f"  精选+{cfg.layer5_llm_selected_bonus}"
                   f"  概念共振+{cfg.layer5_llm_concept_bonus}")
 
-    # ── 阶段1: 加载人气排名 + LLM候选 + 概念 + 批量加载OHLCV ──
-    stock_list = [item['ts_code'] for item in stock_items]
+    # ── 阶段1: 加载人气排名 + LLM候选 + 概念 + 估值 + 批量加载OHLCV ──
+    stock_list_all = [item['ts_code'] for item in stock_items]
     db_conn = get_db()
     try:
         if verbose:
             llm_note = " + LLM候选 + 概念" if cfg.layer5_llm_bonus_enabled else ""
-            print(f"  ⏳ 加载人气排名{llm_note} + 批量K线 ({n_total} 只)...")
+            print(f"  ⏳ 加载人气排名{llm_note} + 估值 + 批量K线 ({n_total} 只)...")
         rank_map = _load_popularity_ranks(trade_date, db_conn)
         llm_map = _load_llm_candidates(trade_date, db_conn) if cfg.layer5_llm_bonus_enabled else {}
-        concept_map = _load_concept_map(stock_list, db_conn) if cfg.layer5_llm_bonus_enabled else {}
-        ohlcv_cache = _batch_load_ohlcv(stock_list, trade_date, db_conn, days=10)
+        concept_map = _load_concept_map(stock_list_all, db_conn) if cfg.layer5_llm_bonus_enabled else {}
+        val_map = _load_valuation_data(stock_list_all, trade_date, db_conn)
+        ohlcv_cache = _batch_load_ohlcv(stock_list_all, trade_date, db_conn, days=10)
     finally:
         db_conn.close()
 
     if verbose:
         llm_info = f", LLM候选{len(llm_map)}只, 概念{len(concept_map)}只" if cfg.layer5_llm_bonus_enabled else ""
-        print(f"  ✓ 数据就绪: 人气{len(rank_map)}只, K线{len(ohlcv_cache)}只{llm_info}")
+        print(f"  ✓ 数据就绪: 人气{len(rank_map)}只, 估值{len(val_map)}只, K线{len(ohlcv_cache)}只{llm_info}")
+
+    # ── 阶段1.5: PE/PB 估值预筛（在评分前剔除高估股票）──
+    stock_items_filtered = []
+    pe_reject = 0
+    pb_reject = 0
+    for item in stock_items:
+        ts_code = item['ts_code']
+        val = val_map.get(ts_code, {})
+        pe = val.get('pe_ratio')
+        pb = val.get('pb_ratio')
+        if pe is not None and pe > cfg.layer5_max_pe:
+            pe_reject += 1
+            continue
+        if pb is not None and pb > cfg.layer5_max_pb:
+            pb_reject += 1
+            continue
+        stock_items_filtered.append(item)
+
+    if verbose and (pe_reject > 0 or pb_reject > 0):
+        print(f"  ⚡ 估值预筛淘汰: PE>{cfg.layer5_max_pe} ({pe_reject}只) + PB>{cfg.layer5_max_pb} ({pb_reject}只)")
+
+    stock_list = [item['ts_code'] for item in stock_items_filtered]
 
     # ── 阶段2: 评分 ──
     scored = []
+    n_filtered = len(stock_items_filtered)
 
-    if n_total > 50:
+    if n_filtered > 50:
         # 多线程并行
         with ThreadPoolExecutor(max_workers=LAYER5_WORKERS) as executor:
             futures = {}
-            for item in stock_items:
+            for item in stock_items_filtered:
                 ts_code = item['ts_code']
                 trend_bonus = item.get('trend_bonus', item.get('score_bonus', 0.0))
                 momentum_bonus = item.get('momentum_bonus', 0.0)
@@ -401,7 +448,7 @@ def run_layer5_popularity_filter(
                     item['llm_details'] = pop_result['llm_details']
                     scored.append(item)
     else:
-        for item in stock_items:
+        for item in stock_items_filtered:
             ts_code = item['ts_code']
             trend_bonus = item.get('trend_bonus', item.get('score_bonus', 0.0))
             momentum_bonus = item.get('momentum_bonus', 0.0)
@@ -428,6 +475,7 @@ def run_layer5_popularity_filter(
 
     if verbose:
         print(f"  ✓ 通过: {len(scored)} 只")
-        print(f"  ✗ 淘汰: {n_total - len(scored)} 只 (得分<{cfg.layer5_min_composite_score})")
+        total_rejected = n_total - len(scored)
+        print(f"  ✗ 淘汰: {total_rejected} 只 (含估值{pe_reject + pb_reject} + 评分{total_rejected - pe_reject - pb_reject})")
 
     return scored

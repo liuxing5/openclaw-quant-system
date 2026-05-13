@@ -34,6 +34,19 @@ class FunnelConfig:
     layer1_revenue_check_quarters: int = 3       # 近N季度 [①基本面]
     layer1_max_consecutive_rev_decline: int = 0  # 营收连续负增≤0次 [①基本面]
     layer1_min_revenue_yoy: float = -10.0        # 营收同比最低（%） [①基本面]
+    # P0: 现金流质量 + 商誉风险
+    layer1_min_cashflow_ratio: float = 0.5       # 经营现金流/净利润 ≥ 0.5（盈利质量门槛）
+    layer1_max_goodwill_pct: float = 50.0        # 商誉/净资产 ≤ 50%（商誉暴雷风险）
+    # P1: 减持/质押检测
+    layer1_check_reduction: bool = True          # 检测大股东减持
+    layer1_reduction_days: int = 60              # 近N天内有减持公告则拒绝
+    layer1_check_pledge: bool = True             # 检测股权质押
+    layer1_max_pledge_ratio: float = 50.0        # 质押比例≤50%
+    # P2: 应收/存货异常
+    layer1_check_ar_anomaly: bool = True         # 检测应收账款异常
+    layer1_max_ar_growth_ratio: float = 1.5      # 应收增速/营收增速 ≤ 1.5倍
+    layer1_check_inventory_anomaly: bool = True  # 检测存货异常
+    layer1_max_inventory_growth_ratio: float = 2.0  # 存货增速/营收增速 ≤ 2倍
 
     # ================================================================
     # Layer 2: 流动性筛选 [③八步法/⑥人气榜]
@@ -82,6 +95,9 @@ class FunnelConfig:
     layer5_pct_range_high: float = 5.0              # 涨幅上限 [③八步法]
     layer5_bonus_popularity_rank: float = 5.0       # 人气榜≤100加分 [⑥人气榜]
     layer5_popularity_rank_threshold: int = 100      # 人气榜排名阈值
+    # P1: 估值天花板（价值投资约束）
+    layer5_max_pe: float = 80.0                     # PE≤80（排除严重高估）
+    layer5_max_pb: float = 8.0                      # PB≤8（排除市净率过高）
 
     # ================================================================
     # Layer 6: 刚性风控 [⑦海龟风控/ATR]
@@ -139,12 +155,22 @@ class FunnelConfig:
             errors.append("layer0_min_advancers 必须 >= 0")
         if self.layer1_min_current_ratio <= 0:
             errors.append("layer1_min_current_ratio 必须 > 0")
+        if self.layer1_min_cashflow_ratio < 0:
+            errors.append("layer1_min_cashflow_ratio 必须 >= 0")
+        if self.layer1_max_goodwill_pct < 0:
+            errors.append("layer1_max_goodwill_pct 必须 >= 0")
+        if self.layer1_max_pledge_ratio < 0 or self.layer1_max_pledge_ratio > 100:
+            errors.append("layer1_max_pledge_ratio 必须在 0~100")
         if self.layer2_min_avg_amount_20d <= 0:
             errors.append("layer2_min_avg_amount_20d 必须 > 0")
         if self.layer3_ema_fast >= self.layer3_ema_mid or self.layer3_ema_mid >= self.layer3_ema_slow:
             errors.append("EMA 参数必须满足: fast < mid < slow")
         if self.layer4_volume_ratio_min >= self.layer4_volume_ratio_max:
             errors.append("layer4_volume_ratio_min 必须 < layer4_volume_ratio_max")
+        if self.layer5_max_pe <= 0:
+            errors.append("layer5_max_pe 必须 > 0")
+        if self.layer5_max_pb <= 0:
+            errors.append("layer5_max_pb 必须 > 0")
         if self.layer6_atr_period < 5:
             errors.append("layer6_atr_period 必须 >= 5")
         if self.layer6_min_profit_loss_ratio < 1.0:

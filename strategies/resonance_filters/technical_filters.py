@@ -461,20 +461,24 @@ class ResonanceFilters:
                           enable_annual_line: bool = True,
                           enable_bollinger: bool = True,
                           ma_min_bias: float = 0.0,
+                          max_pe: float = 80.0,
+                          max_pb: float = 8.0,
                           verbose: bool = True) -> list:
         """
         批量过滤股票列表
-        
+
         参数：
-          stock_list: 股票代码列表（如 ['600519.SH', '000001.SZ']）
+          stock_list: 股票代码列表
           trade_date: 交易日期
           min_pass_count: 最少通过的策略数量
           require_core: 是否要求核心3策略必须全部通过
           enable_annual_line: 是否启用年线过滤
           enable_bollinger: 是否启用布林带过滤
           ma_min_bias: 20周线最小偏离度百分比
+          max_pe: PE上限（0=不限制）
+          max_pb: PB上限（0=不限制）
           verbose: 是否打印详细日志
-        
+
         返回：
           通过过滤的股票列表（包含详细结果）
         """
@@ -482,6 +486,11 @@ class ResonanceFilters:
             print(f"\n{'='*70}")
             print(f"  5策略共振过滤")
             print(f"  待筛选: {len(stock_list)} 只")
+            if max_pe > 0 or max_pb > 0:
+                pe_str = f"PE≤{max_pe}" if max_pe > 0 else ""
+                pb_str = f"PB≤{max_pb}" if max_pb > 0 else ""
+                sep = " + " if max_pe > 0 and max_pb > 0 else ""
+                print(f"  估值预筛: {pe_str}{sep}{pb_str}")
             print(f"  核心策略: 20周线 + 均线多头 + MACD金叉")
             if enable_bollinger:
                 print(f"  增强策略: 布林上轨")
@@ -489,6 +498,43 @@ class ResonanceFilters:
                 print(f"  增强策略: 年线")
             print(f"  最少通过: {min_pass_count}/{3 + int(enable_bollinger) + int(enable_annual_line)}")
             print(f"{'='*70}")
+
+        # P2: 估值预筛（加载 PE/PB 并提前剔除高估股票）
+        if max_pe > 0 or max_pb > 0:
+            filtered_list = []
+            pe_reject = 0
+            pb_reject = 0
+            try:
+                conn = self._get_conn()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute("""
+                    SELECT ts_code, pe_ratio, pb_ratio
+                    FROM daily_quotes
+                    WHERE trade_date = %s AND ts_code = ANY(%s);
+                """, (trade_date, stock_list))
+                val_map = {}
+                for r in cur.fetchall():
+                    val_map[r['ts_code']] = {
+                        'pe_ratio': float(r['pe_ratio']) if r['pe_ratio'] else None,
+                        'pb_ratio': float(r['pb_ratio']) if r['pb_ratio'] else None,
+                    }
+                cur.close()
+                for ts_code in stock_list:
+                    val = val_map.get(ts_code, {})
+                    pe = val.get('pe_ratio')
+                    pb = val.get('pb_ratio')
+                    if max_pe > 0 and pe is not None and pe > max_pe:
+                        pe_reject += 1
+                        continue
+                    if max_pb > 0 and pb is not None and pb > max_pb:
+                        pb_reject += 1
+                        continue
+                    filtered_list.append(ts_code)
+                if verbose and (pe_reject > 0 or pb_reject > 0):
+                    print(f"  ⚡ 估值预筛淘汰: PE>{max_pe} ({pe_reject}只) + PB>{max_pb} ({pb_reject}只)")
+                stock_list = filtered_list
+            except Exception:
+                pass
 
         results = []
         passed_stocks = []
@@ -537,10 +583,12 @@ def run_resonance_filter(trade_date: date = None,
                          enable_annual_line: bool = True,
                          enable_bollinger: bool = True,
                          ma_min_bias: float = 0.0,
+                         max_pe: float = 80.0,
+                         max_pb: float = 8.0,
                          verbose: bool = True) -> list:
     """
     便捷函数：直接运行5策略共振过滤
-    
+
     参数：
       trade_date: 交易日期（默认最新交易日）
       stock_list: 股票代码列表（默认从数据库读取全市场）
@@ -549,8 +597,10 @@ def run_resonance_filter(trade_date: date = None,
       enable_annual_line: 是否启用年线过滤
       enable_bollinger: 是否启用布林带过滤
       ma_min_bias: 20周线最小偏离度百分比
+      max_pe: PE上限（0=不限制）
+      max_pb: PB上限（0=不限制）
       verbose: 是否打印详细日志
-    
+
     返回：
       通过过滤的股票列表
     """
@@ -586,6 +636,8 @@ def run_resonance_filter(trade_date: date = None,
             enable_annual_line=enable_annual_line,
             enable_bollinger=enable_bollinger,
             ma_min_bias=ma_min_bias,
+            max_pe=max_pe,
+            max_pb=max_pb,
             verbose=verbose
         )
         return results

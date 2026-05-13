@@ -62,6 +62,10 @@ class ResonanceConfig:
     annual_line_period: int = 250
     annual_line_min_bias: float = 0.0  # 最小偏离度（%）
 
+    # P2: 估值预筛（价值投资约束，0=不限制）
+    resonance_max_pe: float = 80.0     # PE≤80（排除严重高估，0禁用）
+    resonance_max_pb: float = 8.0      # PB≤8（排除市净率过高，0禁用）
+
     # LLM多源参数
     llm_min_score: float = 25.0  # LLM最低分数阈值
     llm_require_intersection: bool = False  # 是否要求与共振结果取交集
@@ -118,6 +122,10 @@ class ResonanceConfig:
 
         if self.bollinger_period < 10:
             errors.append("bollinger_period 必须 >= 10")
+        if self.resonance_max_pe < 0:
+            errors.append("resonance_max_pe 必须 >= 0")
+        if self.resonance_max_pb < 0:
+            errors.append("resonance_max_pb 必须 >= 0")
 
         return errors
 
