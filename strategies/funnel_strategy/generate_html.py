@@ -314,15 +314,30 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if llm_scan:
         stats = llm_scan.get('filter_stats', {})
         llm_step_rules = {
-            "多源信号采集": "龙虎榜/涨停/研报/公告/调研多源聚合",
-            "综合评分≥阈值": "量化评分+LLM评分加权≥60",
-            "精选标记": "人工精选+LLM二次确认",
+            "多源信号采集": "6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐",
+            "流动性过滤": "成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股",
+            "量化评分": "10维量化打分：涨幅(-3%~7%最优)/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100",
+            "估值与财务": "PE/PB估值打分(PE<15加分/PE>60扣分)；净利润率/毛利率/负债率/现金流质量评估",
+            "综合评分≥阈值": "量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池",
+            "精选标记": "综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只",
         }
         llm_steps_html += f"""
         <div class="step-row">
           <span class="step-name">多源信号采集</span>
           <span class="step-pass">{stats.get('多源聚合后', '—')}</span>
           <span class="rule-inline">{llm_step_rules['多源信号采集']}</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">流动性过滤</span>
+          <span class="rule-inline">{llm_step_rules['流动性过滤']}</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">量化评分</span>
+          <span class="rule-inline">{llm_step_rules['量化评分']}</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">估值与财务</span>
+          <span class="rule-inline">{llm_step_rules['估值与财务']}</span>
         </div>
         <div class="step-row">
           <span class="step-name">综合评分≥阈值</span>
