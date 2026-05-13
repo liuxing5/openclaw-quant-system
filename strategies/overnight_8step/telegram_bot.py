@@ -1,20 +1,11 @@
 """
-Telegram Bot 交互处理器
+Telegram Bot 交互处理器 - 诊断版
 ========================================
-监听 Telegram 消息，处理持仓管理命令和交互按钮。
 使用 PID 锁文件确保只有一个实例在 polling。
 """
 
-import os
-import sys
-import logging
-import threading
-import http.server
-import time
-import signal
-import atexit
+import os, sys, logging, threading, http.server, time, atexit
 
-# ⚠️ 必须在任何导入之前设置 PYTHONPATH
 sys.path.insert(0, os.path.dirname(__file__))
 
 from dotenv import load_dotenv
@@ -23,17 +14,12 @@ load_dotenv()
 try:
     from telegram import Update
     from telegram.ext import (
-        Application,
-        ApplicationBuilder,
-        CommandHandler,
-        MessageHandler,
-        CallbackQueryHandler,
-        filters,
-        ContextTypes,
+        Application, ApplicationBuilder,
+        CommandHandler, MessageHandler, CallbackQueryHandler,
+        filters, ContextTypes,
     )
 except ImportError:
-    print("⚠️ 需要安装 python-telegram-bot", flush=True)
-    print("  pip install python-telegram-bot", flush=True)
+    print("pip install python-telegram-bot", flush=True)
     sys.exit(1)
 
 from position_manager import (
@@ -42,13 +28,10 @@ from position_manager import (
 )
 
 # ============================================================
-# 配置
-# ============================================================
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 LOCK_FILE = os.path.join(os.path.dirname(__file__), ".bot_lock")
 
-# 日志
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -58,49 +41,39 @@ logger = logging.getLogger(__name__)
 
 
 def _p(msg):
-    """打印并刷新"""
     print(msg, flush=True)
 
 
 # ============================================================
-# PID 锁 —— 确保只有一个实例
+# PID 锁
 # ============================================================
 def acquire_lock():
-    """获取 PID 锁。如果旧实例仍在运行，等待其退出。"""
-    for attempt in range(60):  # 最多等 60 秒
+    for attempt in range(60):
         if os.path.exists(LOCK_FILE):
             try:
                 with open(LOCK_FILE, "r") as f:
                     old_pid = int(f.read().strip())
-                # 检查旧进程是否还活着
                 try:
-                    os.kill(old_pid, 0)  # signal 0 不杀进程，只检查是否存在
+                    os.kill(old_pid, 0)
                     if attempt == 0:
-                        _p(f"⏳ 旧实例 (PID={old_pid}) 仍在运行，等待退出...")
+                        _p(f"⏳ 旧实例 PID={old_pid} 仍在运行，等待...")
                     time.sleep(1)
                     continue
                 except (OSError, ProcessLookupError):
-                    # 旧进程已退出，删除锁文件
-                    _p(f"   旧实例 (PID={old_pid}) 已退出")
+                    _p(f"   旧实例 PID={old_pid} 已退出")
                     os.remove(LOCK_FILE)
             except (ValueError, FileNotFoundError):
                 pass
-
-        # 写入新 PID
         with open(LOCK_FILE, "w") as f:
             f.write(str(os.getpid()))
-        _p(f"🔒 PID 锁已获取 (PID={os.getpid()})")
-
-        # 注册退出时清理
+        _p(f"🔒 锁已获取 PID={os.getpid()}")
         atexit.register(release_lock)
         return True
-
-    _p("❌ 等待旧实例退出超时（60秒）")
+    _p("❌ 等待超时")
     return False
 
 
 def release_lock():
-    """释放 PID 锁"""
     try:
         if os.path.exists(LOCK_FILE):
             os.remove(LOCK_FILE)
@@ -109,47 +82,57 @@ def release_lock():
 
 
 # ============================================================
+# 调试：捕获所有更新
+# ============================================================
+async def debug_catch_all(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """捕获所有没有被其他 handler 处理的更新"""
+    _p(f"🔍 [DEBUG] 未处理更新: type={type(update).__name__}")
+    if update.message:
+        msg = update.message
+        _p(f"   text='{msg.text}' from={msg.from_user.id} chat={msg.chat_id}")
+        if msg.entities:
+            for e in msg.entities:
+                _p(f"   entity: type={e.type} offset={e.offset} len={e.length}")
+
+
+# ============================================================
 # 命令处理
 # ============================================================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _p(f"📩 cmd_start from={update.message.from_user.id}")
     await update.message.reply_text(
-        "👋 欢迎使用 OpenClaw 量化交易系统\n\n"
-        "📊 功能：\n"
-        "  • 自动选股推送\n"
-        "  • 卖出信号提醒\n"
-        "  • 持仓管理\n\n"
-        "输入 /help 查看可用命令"
+        "👋 欢迎使用 OpenClaw 量化交易系统\n\n输入 /help 查看可用命令"
     )
-    logger.info(f"✅ 回复 /start → {update.message.from_user.id}")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _p(f"📩 cmd_help from={update.message.from_user.id}")
     reply = handle_command("help")
     await update.message.reply_text(reply)
-    logger.info(f"✅ 回复 /help → {update.message.from_user.id}")
 
 
 async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _p(f"📩 cmd_positions from={update.message.from_user.id}")
     reply = format_positions()
     await update.message.reply_text(reply)
-    logger.info(f"✅ 回复 /positions → {update.message.from_user.id}")
 
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = " ".join(context.args) if context.args else ""
+    _p(f"📩 cmd_add args='{args}' from={update.message.from_user.id}")
     reply = handle_command("add", args)
     await update.message.reply_text(reply)
-    logger.info(f"✅ 回复 /add {args} → {update.message.from_user.id}")
 
 
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = " ".join(context.args) if context.args else ""
+    _p(f"📩 cmd_remove args='{args}' from={update.message.from_user.id}")
     reply = handle_command("remove", args)
     await update.message.reply_text(reply)
-    logger.info(f"✅ 回复 /remove {args} → {update.message.from_user.id}")
 
 
 async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    _p(f"📩 cmd_import from={update.message.from_user.id}")
     reply = handle_command("import")
     await update.message.reply_text(reply)
 
@@ -158,40 +141,33 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
-    chat_id = query.message.chat_id
-    if CHAT_ID and str(chat_id) != CHAT_ID:
+    if CHAT_ID and str(query.message.chat_id) != CHAT_ID:
         await query.edit_message_text("❌ 无权操作")
         return
     if data.startswith("buy_"):
         parts = data.split("_")
         if len(parts) >= 4:
-            result = add_position(parts[1], float(parts[2]), parts[3])
-            await query.edit_message_text(f"✅ 已买入: {parts[1]}\n成本: ¥{parts[2]}\n路径: {parts[3]}")
+            add_position(parts[1], float(parts[2]), parts[3])
+            await query.edit_message_text(f"✅ 已买入: {parts[1]}")
     elif data.startswith("sell_"):
         code = data.split("_")[1]
-        result = remove_position(code)
-        await query.edit_message_text(f"✅ 已卖出: {code}" if result["action"] == "removed" else f"未找到持仓: {code}")
-
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if not text or not text.startswith("/"):
-        return
-    parts = text[1:].split()
-    reply = handle_command(parts[0], " ".join(parts[1:]) if len(parts) > 1 else "")
-    await update.message.reply_text(reply)
+        remove_position(code)
+        await query.edit_message_text(f"✅ 已卖出: {code}")
 
 
 # ============================================================
-# 主程序
+# 构建应用
 # ============================================================
 def build_app():
-    """创建并配置 Application"""
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    async def _error(update: object, context: ContextTypes.DEFAULT_TYPE):
-        logger.error(f"❌ Handler 异常: {context.error}", exc_info=context.error)
+    # 错误处理
+    async def _err(update: object, context: ContextTypes.DEFAULT_TYPE):
+        _p(f"❌ ERROR: {context.error}")
+        logger.error(f"Handler error: {context.error}", exc_info=context.error)
+    app.add_error_handler(_err)
 
+    # 命令处理器
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("positions", cmd_positions))
@@ -202,30 +178,27 @@ def build_app():
     app.add_handler(CommandHandler("delete", cmd_remove))
     app.add_handler(CommandHandler("import", cmd_import))
     app.add_handler(CallbackQueryHandler(button_callback))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_error_handler(_error)
+
+    # 兜底：捕获所有未被处理的更新（放在最后）
+    app.add_handler(MessageHandler(filters.ALL, debug_catch_all))
 
     return app
 
 
+# ============================================================
+# 基础设施
+# ============================================================
 def start_health_server(port):
-    """启动轻量 HTTP 健康检查服务器"""
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
-            self.send_response(200)
-            self.send_header("Content-Type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b"OK")
-        def log_message(self, *args):
-            pass
+            self.send_response(200); self.end_headers(); self.wfile.write(b"OK")
+        def log_message(self, *a): pass
     srv = http.server.HTTPServer(("0.0.0.0", port), H)
-    t = threading.Thread(target=srv.serve_forever, daemon=True)
-    t.start()
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
     _p(f"🏥 健康检查: 0.0.0.0:{port}")
 
 
 def delete_webhook():
-    """删除旧 webhook"""
     import urllib.request
     for i in range(3):
         try:
@@ -238,27 +211,23 @@ def delete_webhook():
 
 
 def run_polling_forever(app):
-    """永久 polling 循环 —— 断了就重来"""
     attempt = 0
     while True:
         attempt += 1
         try:
-            _p(f"🚀 Polling 启动 (第{attempt}次)...")
+            _p(f"🚀 Polling (第{attempt}次)...")
             app.run_polling(
-                allowed_updates=Update.ALL_TYPES,
                 poll_interval=3,
                 timeout=10,
                 drop_pending_updates=False,
             )
-            _p("Polling 正常退出")
-            break
+            _p("Polling 正常退出"); break
         except Exception as e:
             err = str(e)
             if "Conflict" in err or "409" in err:
                 wait = attempt * 5
-                _p(f"⚠️ Conflict (第{attempt}次)，等{wait}秒后重试...")
+                _p(f"⚠️ Conflict，等{wait}s重试...")
                 time.sleep(wait)
-                # 重建 application（内部状态可能已损坏）
                 app = build_app()
                 delete_webhook()
             else:
@@ -267,29 +236,22 @@ def run_polling_forever(app):
 
 def main():
     if not BOT_TOKEN:
-        _p("❌ 请设置 TELEGRAM_BOT_TOKEN")
-        sys.exit(1)
+        _p("❌ 缺 BOT_TOKEN"); sys.exit(1)
 
     _p("=" * 50)
-    _p("🤖 OpenClaw Telegram Bot")
+    _p("🤖 OpenClaw Bot 诊断版")
 
-    # PID 锁 —— 确保只有一个实例
     if not acquire_lock():
         sys.exit(1)
 
-    # 环境检查
     port = int(os.environ.get("PORT", 0))
-    webhook_url = os.environ.get("WEBHOOK_URL", "")
-    _p(f"PORT={port}  POLLING={os.environ.get('TELEGRAM_POLLING','1')}")
+    _p(f"PORT={port}")
 
-    # 删除旧 webhook
     delete_webhook()
 
-    # 健康检查
     if port:
         start_health_server(port)
 
-    # 创建 app 并运行
     app = build_app()
     run_polling_forever(app)
 
