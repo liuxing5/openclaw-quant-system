@@ -454,8 +454,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .theme-btn:hover {{ background:rgba(255,255,255,.3); }}
 
 /* Summary stats */
-.stats-row-wrap {{ display:flex; justify-content:center; margin-bottom:16px; }}
-.stats-row {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:700px; width:100%; align-items:stretch; }}
+.stats-row {{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:16px; align-items:stretch; }}
 .stat-card {{ background:var(--section-bg); border-radius:10px; padding:16px; text-align:center; box-shadow:var(--shadow); border:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:80px; }}
 .stat-card .sv {{ font-size:1.6rem; font-weight:bold; color:var(--score-color); }}
 .stat-card .sl {{ font-size:.75rem; color:var(--text2); margin-top:4px; }}
@@ -542,21 +541,19 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     </button>
   </div>
 
-  <div class="stats-row-wrap">
   <div class="stats-row">
     <div class="stat-card funnel">
       <div class="sv">{funnel_count}</div>
-      <div class="sl"> 漏斗最终推荐</div>
+      <div class="sl">🎯 漏斗最终推荐</div>
     </div>
     <div class="stat-card llm">
       <div class="sv">{llm_count}</div>
-      <div class="sl"> LLM多源候选</div>
+      <div class="sl">🤖 LLM多源候选</div>
     </div>
     <div class="stat-card eight">
       <div class="sv">{eight_count}</div>
-      <div class="sl"> 八步法候选</div>
+      <div class="sl">🔮 八步法候选</div>
     </div>
-  </div>
   </div>
 
   <div class="legend">
