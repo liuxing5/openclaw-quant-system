@@ -327,9 +327,9 @@ def _get_yesterday_vol_baostock(code: str) -> float:
         if rs.error_code == '0':
             rows = rs.get_data()
             if not rows.empty and len(rows) >= 1:
-                result = float(rows.iloc[-1]["volume"]) if rows.iloc[-1]["volume"] else 0
+                result = float(rows.iloc[-1]["volume"]) / 100 if rows.iloc[-1]["volume"] else 0
                 bs.logout()
-                return result
+                return result  # 股→手，与腾讯p[6]单位一致
         bs.logout()
         return 0
     except Exception:

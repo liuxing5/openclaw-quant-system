@@ -84,43 +84,11 @@ def fetch_cninfo_announcements(make_signal) -> list:
 
 
 def fetch_mootdx_announcements(make_signal) -> list:
-    """MootDX公告 -- client.announcement()
+    """mootdx 无公告查询接口，此 fetcher 已禁用。
 
-    Uses mootdx to fetch company announcements for top stocks.
-    Falls back gracefully if mootdx connection fails.
+    mootdx Quotes 对象不提供 announcement() 方法。可用方法:
+      quotes(), bars(), finance(), xdxr(), gpjy(), index(), minute(),
+      transaction(), history() —— 均与公告无关。
+    唯一公告数据源是巨潮 cninfo (fetch_cninfo_announcements)。
     """
-    rows = []
-
-    try:
-        from mootdx.quotes import Quotes
-        client = Quotes.factory(market='std', timeout=5)
-        if client is None:
-            logger.debug("MootDX公告: 连接失败")
-            return rows
-
-        # Fetch announcement list
-        try:
-            result = client.announcement()
-            if result is not None and hasattr(result, 'empty') and not result.empty:
-                for _, r in result.head(30).iterrows():
-                    try:
-                        title = str(r.get('title', '') or r.get('标题', '') or '')
-                        if not title or len(title) < 5:
-                            continue
-                        rows.append(make_signal(
-                            source='MootDX-公告', tier=2,
-                            title=title[:1000],
-                            content=title[:5000],
-                        ))
-                    except Exception:
-                        continue
-                logger.info(f"MootDX公告: {len(rows)} 条")
-        except Exception as e:
-            logger.debug(f"MootDX公告查询失败: {e}")
-
-    except ImportError:
-        logger.debug("mootdx 未安装，跳过 MootDX 公告")
-    except Exception as e:
-        logger.debug(f"MootDX公告失败: {e}")
-
-    return rows
+    return []

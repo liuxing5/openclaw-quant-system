@@ -112,17 +112,20 @@ def _batch_load_and_precompute(
         today_high = float(group['high'].iloc[-1])
         today_low = float(group['low'].iloc[-1])
         today_vol = float(volume_arr[-1])
-        today_pct = float(group['pct_chg'].iloc[-1] or 0)
-        today_amplitude = float(group['amplitude'].iloc[-1] or 0)
-        today_vol_ratio = float(group['volume_ratio'].iloc[-1] or 0)
+        _raw_pct = group['pct_chg'].iloc[-1]
+        today_pct = float(_raw_pct) if pd.notna(_raw_pct) else 0.0
+        _raw_amp = group['amplitude'].iloc[-1]
+        today_amplitude = float(_raw_amp) if pd.notna(_raw_amp) else 0.0
+        _raw_vr = group['volume_ratio'].iloc[-1]
+        today_vol_ratio = float(_raw_vr) if pd.notna(_raw_vr) else 0.0
 
         # EMA12
         ema12 = _fast_ema_last(close_arr, 12)
-        bias_pct = (today_close - ema12) / ema12 * 100.0 if ema12 > 0 else 999.0
+        bias_pct = (today_close - ema12) / ema12 * 100.0 if ema12 > 0 and pd.notna(today_close) else 999.0
 
         # 量比（后备计算）
         vol_ratio = today_vol_ratio
-        if vol_ratio <= 0 and n >= 5:
+        if (pd.isna(vol_ratio) or vol_ratio <= 0) and n >= 5:
             avg_vol = volume_arr[-6:-1].mean() if n >= 6 else volume_arr[:-1].mean()
             vol_ratio = today_vol / avg_vol if avg_vol > 0 else 0.0
 
@@ -153,7 +156,7 @@ def _batch_load_and_precompute(
                 'low': float(group['low'].iloc[i]),
                 'close': float(group['close'].iloc[i]),
                 'volume': float(group['volume'].iloc[i]),
-                'pct_chg': float(group['pct_chg'].iloc[i] or 0),
+                'pct_chg': float(group['pct_chg'].iloc[i]) if pd.notna(group['pct_chg'].iloc[i]) else 0.0,
             })
         ohlcv_cache[ts_code] = tail_rows
 
@@ -355,11 +358,11 @@ def run_layer4_momentum_filter(
             continue
         # 量比快速过滤
         vr = pre['vol_ratio']
-        if vr < cfg.layer4_volume_ratio_min or vr > cfg.layer4_volume_ratio_max:
+        if pd.isna(vr) or vr < cfg.layer4_volume_ratio_min or vr > cfg.layer4_volume_ratio_max:
             reject_stats['量比不符'] += 1
             continue
         # 乖离快速过滤
-        if abs(pre['bias_pct']) > cfg.layer4_max_bias_pct:
+        if pd.isna(pre['bias_pct']) or abs(pre['bias_pct']) > cfg.layer4_max_bias_pct:
             reject_stats['乖离超标'] += 1
             continue
         quick_pass.append(ts_code)

@@ -20,7 +20,7 @@ from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_d
 # Multi-layer fetchers
 from strategies.llm_multisource.fetchers.layer3_news import fetch_cls_telegraph
 from strategies.llm_multisource.fetchers.layer2_research import fetch_em_profit_forecast, fetch_ths_profit_forecast
-from strategies.llm_multisource.fetchers.layer5_announcements import fetch_cninfo_announcements, fetch_mootdx_announcements
+from strategies.llm_multisource.fetchers.layer5_announcements import fetch_cninfo_announcements
 from strategies.llm_multisource.fetchers.layer1_market import (
     fetch_tencent_supplementary, fetch_ths_strong_stocks, fetch_ths_concept_tags,
     fetch_ths_strong_stocks_structured, fetch_concept_board_quotes,
@@ -861,7 +861,6 @@ def main():
     # ---- Layer 5: Announcements (always run) ----
     fetchers.extend([
         (lambda: fetch_cninfo_announcements(make_signal), '巨潮公告', FETCH_TIMEOUT),
-        (lambda: fetch_mootdx_announcements(make_signal), 'MootDX公告', FETCH_TIMEOUT),
     ])
 
     all_rows = []

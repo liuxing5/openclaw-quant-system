@@ -94,27 +94,27 @@ def get_next_trading_day(date_str: str) -> str:
 
 
 def fetch_stock_info(code: str) -> Optional[dict]:
-    """从腾讯接口获取股票实时行情"""
+    """从腾讯接口获取股票实时行情（仅用于当日数据）"""
     api_code = code.replace(".", "").lower()
     url = f"http://qt.gtimg.cn/q={api_code}"
     try:
         resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
         if resp.status_code != 200:
             return None
-        
+
         for line in resp.text.split(";"):
             if len(line) < 50:
                 continue
             p = line.split("~")
             if len(p) < 40:
                 continue
-            
+
             def _f(idx, default=0.0):
                 try:
                     return float(p[idx]) if p[idx].strip() else default
                 except (ValueError, IndexError):
                     return default
-            
+
             return {
                 "name": p[1] if len(p) > 1 else "",
                 "pre_close": _f(4),
@@ -128,6 +128,66 @@ def fetch_stock_info(code: str) -> Optional[dict]:
     except Exception:
         return None
     return None
+
+
+def fetch_historical_daily(code: str, target_date: str) -> Optional[dict]:
+    """通过 baostock 获取指定日期的历史日线数据（OHLCV），用于 T+1 回填。
+
+    腾讯实时接口只返回当前价格，不能用于历史 T+1 数据回填。
+    baostock volume 为股，转为手以与腾讯接口单位一致。
+    """
+    try:
+        import baostock as bs
+        lg = bs.login()
+        if lg.error_code != '0':
+            return None
+
+        pure = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
+        if pure.startswith(("6", "9")):
+            bs_code = f"sh.{pure}"
+        elif pure.startswith("8") or pure.startswith("4"):
+            bs_code = f"bj.{pure}"
+        else:
+            bs_code = f"sz.{pure}"
+
+        # 拉取前后几天确保覆盖目标日期
+        from datetime import datetime as _dt
+        dt = _dt.strptime(target_date, "%Y-%m-%d")
+        start = (dt - timedelta(days=3)).strftime("%Y-%m-%d")
+        end = (dt + timedelta(days=1)).strftime("%Y-%m-%d")
+
+        rs = bs.query_history_k_data_plus(
+            bs_code, "date,open,high,low,close,volume,preclose,pctChg,turn",
+            start_date=start, end_date=end,
+            frequency="d", adjustflag="3",
+        )
+        if rs.error_code != '0':
+            bs.logout()
+            return None
+
+        rows = rs.get_data()
+        bs.logout()
+
+        if rows.empty:
+            return None
+
+        # 找目标日期
+        for _, r in rows.iterrows():
+            if r["date"] == target_date:
+                vol = float(r["volume"]) / 100 if r["volume"] else 0  # 股→手
+                return {
+                    "name": "",
+                    "pre_close": float(r["preclose"]) if r["preclose"] else 0,
+                    "open": float(r["open"]) if r["open"] else 0,
+                    "high": float(r["high"]) if r["high"] else 0,
+                    "low": float(r["low"]) if r["low"] else 0,
+                    "now": float(r["close"]) if r["close"] else 0,
+                    "pct": float(r["pctChg"]) if r["pctChg"] else 0,
+                    "turn": float(r["turn"]) if r["turn"] else 0,
+                }
+        return None
+    except Exception:
+        return None
 
 
 def parse_zuiyou1_results() -> tuple:
@@ -312,8 +372,11 @@ def morning_mode():
         if today < next_trading_day:
             continue
         
-        # 拉取腾讯接口
-        info = fetch_stock_info(code)
+        # T+1 当天用腾讯实时接口, 历史用 baostock 日线
+        if next_trading_day == today:
+            info = fetch_stock_info(code)
+        else:
+            info = fetch_historical_daily(code, next_trading_day_str)
         if info is None:
             print(f"  ⚠️ {code} 获取行情失败")
             continue

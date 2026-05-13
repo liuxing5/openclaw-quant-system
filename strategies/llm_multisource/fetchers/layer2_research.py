@@ -108,6 +108,22 @@ def fetch_ths_profit_forecast(make_signal) -> list:
         logger.info("THS预测: 无股票列表")
         return rows
 
+    # Batch lookup stock names to avoid per-stock DB connections
+    name_map = {}
+    try:
+        from core.db.connection import get_db as get_db2
+        conn2 = get_db2()
+        cur2 = conn2.cursor()
+        cur2.execute(
+            "SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s)",
+            (codes,)
+        )
+        for row in cur2.fetchall():
+            name_map[row[0]] = row[1] or ''
+        cur2.close(); conn2.close()
+    except Exception:
+        pass
+
     for ts_code in codes:
         try:
             code = ts_code.split('.')[0]
@@ -134,18 +150,7 @@ def fetch_ths_profit_forecast(make_signal) -> list:
             max_eps = float(first.get(col_max, 0) or 0) if col_max else 0
             industry_avg = float(first.get(col_industry_avg, 0) or 0) if col_industry_avg else 0
 
-            # Get stock name
-            stock_name = ''
-            try:
-                conn2 = get_db()
-                cur2 = conn2.cursor()
-                cur2.execute("SELECT stock_name FROM stock_basic_info WHERE ts_code=%s", (ts_code,))
-                r2 = cur2.fetchone()
-                if r2:
-                    stock_name = r2[0]
-                cur2.close(); conn2.close()
-            except Exception:
-                pass
+            stock_name = name_map.get(ts_code, '')
 
             content = (f"代码 {code} {stock_name} {year}年预测EPS: "
                       f"均值{mean_eps:.2f} 区间[{min_eps:.2f},{max_eps:.2f}] "
