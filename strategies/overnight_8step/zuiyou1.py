@@ -562,6 +562,7 @@ def get_llm_candidates_from_supabase(
     if not DB_ENABLED:
         return {}
 
+    conn = None
     try:
         conn = get_db()
         cur = conn.cursor()
@@ -612,6 +613,12 @@ def get_llm_candidates_from_supabase(
     except Exception as e:
         print(f"⚠️ LLM候选池读取失败: {e}")
         return {}
+    finally:
+        if conn is not None:
+            try: cur.close()
+            except Exception: pass
+            try: conn.close()
+            except Exception: pass
 
 
 def is_llm_candidate(code: str) -> tuple:
@@ -671,10 +678,11 @@ def load_new_indicators(trade_date: str = None):
     if trade_date is None:
         trade_date = beijing_now().strftime("%Y-%m-%d")
     
+    conn = None
     try:
         conn = get_db()
         cur = conn.cursor()
-        
+
         # 加载强势股排名
         cur.execute("""
             SELECT ts_code, rank_type, rank_position, consecutive_days,
@@ -779,12 +787,15 @@ def load_new_indicators(trade_date: str = None):
         for r in cur.fetchall():
             _list_date_cache[r[0]] = r[1]
         
-        cur.close()
-        conn.close()
         _indicators_loaded = True
         print(f"✓ 加载新增指标: 强势股{len(_strong_rank_cache)}只, 机构预期{len(_earnings_cache)}只, 概念{len(_concept_cache)}个, 估值{len(_valuation_cache)}只, 财务{len(_fundamentals_cache)}只, 上市时间{len(_list_date_cache)}只")
     except Exception as e:
         print(f"⚠️ 新增指标加载失败: {e}")
+    finally:
+        try: cur.close()
+        except Exception: pass
+        try: conn.close()
+        except Exception: pass
 
 
 def get_strong_rank_bonus(ts_code: str) -> float:
@@ -1066,23 +1077,23 @@ def beijing_now():
     beijing_tz = timezone(timedelta(hours=8))
     return utc_dt.astimezone(beijing_tz)
 
-# 自动判断 MODE：15:10 后为 post，14:00-15:10 为 realtime，其余为 pre_market
-_now = beijing_now()
-if DEBUG:
-    print(f"  [DEBUG] 服务器时间: {datetime.now()}, 北京时间: {_now.strftime('%Y-%m-%d %H:%M:%S')}")
-if _now.hour > 15 or (_now.hour == 15 and _now.minute >= 10):
-    CONFIG_STABLE["MODE"] = "post"
-    CONFIG_UPPER["MODE"] = "post"
-elif _now.hour >= 14:
-    # 14:00-15:10 为盘中尾盘
-    CONFIG_STABLE["MODE"] = "realtime"
-    CONFIG_UPPER["MODE"] = "realtime"
-else:
-    # 其他时间为盘前
-    CONFIG_STABLE["MODE"] = "pre_market"
-    CONFIG_UPPER["MODE"] = "pre_market"
-if DEBUG:
-    print(f"  [DEBUG] MODE: {CONFIG_STABLE['MODE']}")
+def _update_mode():
+    """运行时重新计算 MODE，避免模块导入时冻结的值"""
+    _now = beijing_now()
+    if _now.hour > 15 or (_now.hour == 15 and _now.minute >= 10):
+        CONFIG_STABLE["MODE"] = "post"
+        CONFIG_UPPER["MODE"] = "post"
+    elif _now.hour >= 14:
+        CONFIG_STABLE["MODE"] = "realtime"
+        CONFIG_UPPER["MODE"] = "realtime"
+    else:
+        CONFIG_STABLE["MODE"] = "pre_market"
+        CONFIG_UPPER["MODE"] = "pre_market"
+    if DEBUG:
+        print(f"  [DEBUG] MODE: {CONFIG_STABLE['MODE']}  (北京: {_now.strftime('%H:%M')})")
+
+# 模块加载时计算一次（兼容直接 import 的场景）
+_update_mode()
 
 FIELDS_HIST = "date,code,open,high,low,close,preclose,volume,amount,turn,pctChg"
 
@@ -2354,6 +2365,8 @@ def _save_reject_trend(date_str: str, rejects: dict):
 #  8. 主程序
 # ============================================================
 def main():
+    _update_mode()  # 运行时重新计算 MODE
+
     print(f"隔夜选股法·最优融合版 v1.5.5")
     print(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
     print(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")

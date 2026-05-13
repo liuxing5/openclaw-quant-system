@@ -47,8 +47,9 @@ def _load_fundamentals_cache(trade_date: date = None) -> Dict:
                    revenue_yoy, profit_yoy,
                    industry, listing_date
             FROM stock_fundamentals
+            WHERE report_date <= %(trade_date)s
             ORDER BY ts_code, report_date DESC;
-        """)
+        """, {"trade_date": trade_date})
         for r in cur.fetchall():
             cache[r['ts_code']] = {
                 'report_date': r['report_date'],
