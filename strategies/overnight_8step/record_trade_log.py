@@ -42,6 +42,14 @@ LOG_FILE = os.path.join(LOG_DIR, "trade_log.csv")
 MY_TRADES_FILE = os.path.join(LOG_DIR, "my_trades.json")
 ZUIYOU1_FILE = os.path.join(LOG_DIR, "zuiyou1.py")
 
+# 数据库支持
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+    from core.db.connection import get_db_fresh
+    DB_ENABLED = True
+except Exception:
+    DB_ENABLED = False
+
 # CSV 字段定义
 FIELDNAMES = [
     "date",              # 入选日期
@@ -192,7 +200,101 @@ def fetch_historical_daily(code: str, target_date: str) -> Optional[dict]:
 
 def parse_zuiyou1_results() -> tuple:
     """
-    从 zuiyou1.py 的选股记录汇总文件中解析当日推荐结果
+    从数据库 daily_candidates 读取当日 zuiyou1 推荐结果
+    返回: (stable_best, upper_best)
+    """
+    if not DB_ENABLED:
+        print("⚠️ 数据库未启用，回退到本地文件模式")
+        return _parse_from_local_file()
+    
+    today = get_latest_trading_day()
+    
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT ts_code, stock_name, final_score, quant_score, llm_score,
+                   sources, logic_tags, entry_low, entry_high, stop_loss, target_1
+            FROM daily_candidates
+            WHERE snapshot_date = %s
+              AND source = 'overnight_8step'
+              AND run_mode = 'afternoon'
+            ORDER BY final_score DESC;
+        """, (today,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"⚠️ 数据库查询失败: {e}，回退到本地文件模式")
+        return _parse_from_local_file()
+    
+    if not rows:
+        print(f"⚠️ 今日({today})无数据库选股记录")
+        return None, None
+    
+    stable_best = None
+    upper_best = None
+    stable_max_score = -1
+    upper_max_score = -1
+    
+    for row in rows:
+        ts_code = row[0]
+        stock_name = row[1] or ""
+        final_score = float(row[2] or 0)
+        sources_raw = row[5]
+        stop_loss = row[9]
+        
+        # 解析 sources JSON 获取详细信息
+        source_info = {}
+        if sources_raw:
+            try:
+                if isinstance(sources_raw, str):
+                    sources_list = json.loads(sources_raw)
+                else:
+                    sources_list = sources_raw
+                if isinstance(sources_list, list) and len(sources_list) > 0:
+                    source_info = sources_list[0]
+            except (json.JSONDecodeError, TypeError):
+                pass
+        
+        pool = source_info.get('pool', '')
+        pct = float(source_info.get('pct', 0))
+        vol_ratio = float(source_info.get('vol_ratio', 0))
+        turn = float(source_info.get('turn', 0))
+        streak = int(source_info.get('streak', 0))
+        
+        # 从 sources 中获取价格信息，或使用 stop_loss 反推
+        entry_price = source_info.get('price', 0)
+        if entry_price <= 0 and stop_loss:
+            entry_price = float(stop_loss) / 0.975
+        
+        stock_data = {
+            "code": ts_code,
+            "name": stock_name,
+            "price": entry_price,
+            "pct": pct,
+            "vol_ratio": vol_ratio,
+            "turn": turn,
+            "streak": streak,
+            "bias": 0,
+            "score": final_score,
+        }
+        
+        if 'stable' in pool.lower():
+            if final_score > stable_max_score:
+                stable_max_score = final_score
+                stable_best = {**stock_data, "path": "稳健"}
+        elif 'upper' in pool.lower():
+            if final_score > upper_max_score:
+                upper_max_score = final_score
+                upper_best = {**stock_data, "path": "高位"}
+    
+    return stable_best, upper_best
+
+
+def _parse_from_local_file() -> tuple:
+    """
+    从本地选股记录汇总文件解析（回退模式）
     返回: (stable_best, upper_best)
     """
     summary_file = os.path.join(LOG_DIR, "..", "选股记录汇总.txt")
@@ -467,10 +569,26 @@ def evening_mode():
     print(f"\nStep 4: 记录到 CSV...")
     for stock in stocks_to_record:
         code = stock["code"]
+        stock_name = stock.get("name", "")
+        
+        # 尝试获取实时行情（用于验证），但不依赖它
         info = fetch_stock_info(code)
         if info is None:
-            print(f"  ⚠️ {code} 获取信息失败")
-            continue
+            # 如果获取失败，使用数据库中的数据
+            if not stock_name or stock["price"] <= 0:
+                print(f"  ⚠️ {code} 获取信息失败且无有效数据")
+                continue
+            info = {
+                "name": stock_name,
+                "pre_close": stock["price"],
+                "open": stock["price"],
+                "high": stock["price"],
+                "low": stock["price"],
+                "now": stock["price"],
+                "pct": stock["pct"],
+                "turn": stock.get("turn", 0),
+            }
+            print(f"  ⚠️ {code} 使用数据库缓存数据")
         
         # 检查是否实际买入
         pure_code = code.replace('sh.', '').replace('sz.', '').replace('bj.', '').replace('.', '')
