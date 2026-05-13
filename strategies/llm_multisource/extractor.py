@@ -220,11 +220,13 @@ def main(once=False):
     total_processed = 0
 
     while total_processed < MAX_BATCH:
-        rows = fetch_pending(50)
+        limit = 5 if once else 50
+        rows = fetch_pending(limit)
         if not rows:
             logger.info("无待处理数据，退出")
             break
 
+        logger.info(f"本次处理 {len(rows)} 条信号")
         with concurrent.futures.ThreadPoolExecutor(max_workers=CONCURRENCY) as executor:
             futures = {executor.submit(process_one, r): r for r in rows}
             for future in concurrent.futures.as_completed(futures):
