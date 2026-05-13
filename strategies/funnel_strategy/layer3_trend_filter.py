@@ -85,7 +85,7 @@ def _detect_trend_structure(df: pd.DataFrame, cfg) -> dict:
     if len(df) >= 5:
         recent_low_5 = df['low'].iloc[-5:].min()
         ema12_latest = ema12.iloc[-1]
-        if abs(recent_low_5 - ema12_latest) / ema12_latest <= 0.03:
+        if ema12_latest > 0 and abs(recent_low_5 - ema12_latest) / ema12_latest <= 0.03:
             if close.iloc[-1] > ema12_latest:
                 return {'structure': 'pullback_support'}
 

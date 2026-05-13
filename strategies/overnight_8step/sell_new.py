@@ -225,7 +225,12 @@ def get_position_state(state: Dict, code: str, cost: float) -> Dict:
 #  获取实时行情（腾讯接口）
 # ============================================================
 def get_realtime_data(codes: list) -> dict:
-    code_str = ",".join(["sh" + c if c.startswith("6") else "sz" + c for c in codes])
+    code_str = ",".join([
+        ("sh" + (c.replace("sh.", "").replace("sz.", "").replace("bj.", ""))
+         if c.replace("sh.", "").replace("sz.", "").replace("bj.", "").startswith(("6", "9"))
+         else "sz" + c.replace("sh.", "").replace("sz.", "").replace("bj.", "")))
+        for c in codes
+    ])
     url = f"http://qt.gtimg.cn/q={code_str}"
 
     try:
@@ -322,7 +327,9 @@ def _get_yesterday_vol_baostock(code: str) -> float:
         if rs.error_code == '0':
             rows = rs.get_data()
             if not rows.empty and len(rows) >= 1:
-                return float(rows.iloc[-1]["volume"]) if rows.iloc[-1]["volume"] else 0
+                result = float(rows.iloc[-1]["volume"]) if rows.iloc[-1]["volume"] else 0
+                bs.logout()
+                return result
         bs.logout()
         return 0
     except Exception:

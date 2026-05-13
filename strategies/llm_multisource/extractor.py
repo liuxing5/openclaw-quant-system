@@ -166,10 +166,12 @@ def mark_signal_processed(raw_id, source_name, pub_time):
 
 
 def process_one(row):
+    safe_title = (row['title'] or '').replace('{', '{{').replace('}', '}}')
+    safe_content = ((row['content'] or '')[:4000]).replace('{', '{{').replace('}', '}}')
     prompt = PROMPT_TPL.format(
         source_category=row['category'], source_tier=row['source_tier'],
-        pub_time=row['pub_time'], title=row['title'] or '',
-        content=(row['content'] or '')[:4000],
+        pub_time=row['pub_time'], title=safe_title,
+        content=safe_content,
     )
     n = 0
     try:

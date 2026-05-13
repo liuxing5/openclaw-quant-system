@@ -6,7 +6,7 @@ Telegram Bot 交互处理器 - 诊断版
 - 健康检查 HTTP 服务（Render 兼容）
 """
 
-import os, sys, logging, threading, http.server, time, uuid, asyncio, json
+import os, sys, logging, threading, http.server, time, uuid, asyncio, json, random
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -200,6 +200,12 @@ def build_app():
 # ============================================================
 # 基础设施
 # ============================================================
+_JITTER_RANGE = 10
+
+def _jitter():
+    return random.randint(0, _JITTER_RANGE)
+
+
 def start_health_server(port):
     class H(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
@@ -223,11 +229,6 @@ def delete_webhook():
 
 
 def _conflict_cleanup():
-    """
-    当检测到 Conflict 错误时执行激进清理：
-    1. 多次删除 webhook
-    2. 等待 Telegram 超时旧的 polling 连接
-    """
     _p("🧹 Conflict 专项清理...")
     delete_webhook()
     delete_webhook()
@@ -235,8 +236,28 @@ def _conflict_cleanup():
     time.sleep(30)
 
 
+async def _managed_polling(app, poll_interval=3, timeout=10, drop_pending=True):
+    """
+    手动管理 polling 生命周期 —— 不依赖 run_polling() 的阻塞行为。
+    当 updater 因任何原因停止时（Conflict、网络错误等），自动退出。
+    """
+    async with app:
+        _p("📡 初始化...")
+        await app.initialize()
+        await app.start()
+        await app.updater.start_polling(
+            poll_interval=poll_interval,
+            timeout=timeout,
+            drop_pending_updates=drop_pending,
+        )
+        _p("📡 Polling 已启动，监控 updater 状态...")
+        while app.updater.running:
+            await asyncio.sleep(2)
+        _p("⚠️ Updater 已停止")
+    _p("🔒 Application 已关闭")
+
+
 async def _shutdown_app(app):
-    """安全关闭 Application"""
     try:
         if app.running:
             await app.stop()
@@ -248,7 +269,14 @@ async def _shutdown_app(app):
         pass
 
 
-def run_polling_forever(app):
+def _wait_with_jitter(base_seconds, label=""):
+    j = _jitter()
+    total = base_seconds + j
+    _p(f"⏳ 等待 {total}s ({base_seconds}s + jitter {j}s) {label}...")
+    time.sleep(total)
+
+
+def run_polling_forever():
     """永久 polling —— Conflict 时主动退避，不管什么原因退出都重来"""
     attempt = 0
     consecutive_conflicts = 0
@@ -257,39 +285,35 @@ def run_polling_forever(app):
     while True:
         attempt += 1
         _p(f"🚀 Polling (第{attempt}次) drop_pending={drop_pending}...")
+
+        app = build_app()
+        is_conflict = False
         try:
-            app.run_polling(
-                poll_interval=3,
-                timeout=10,
-                drop_pending_updates=drop_pending,
-            )
+            asyncio.run(_managed_polling(app, drop_pending=drop_pending))
         except Exception as e:
             err_str = str(e)
             is_conflict = "Conflict" in err_str or "terminated by other" in err_str
             _p(f"❌ Polling 异常: {e}")
-
-            if is_conflict:
-                consecutive_conflicts += 1
-                _conflict_cleanup()
-            else:
-                consecutive_conflicts = 0
-                delete_webhook()
         else:
             _p("Polling 正常退出（不应发生）")
-            consecutive_conflicts = 0
-            delete_webhook()
+
+        try:
+            asyncio.run(_shutdown_app(app))
+        except Exception:
+            pass
 
         drop_pending = True
 
-        if consecutive_conflicts > 0:
-            wait = min(consecutive_conflicts * 30, 180)
+        if is_conflict:
+            consecutive_conflicts += 1
+            _conflict_cleanup()
+            base_wait = min(consecutive_conflicts * 30, 180)
         else:
-            wait = min(attempt * 10, 60)
-        _p(f"⏳ 等待 {wait}s 后重新启动 (连续 Conflict: {consecutive_conflicts})...")
-        time.sleep(wait)
+            consecutive_conflicts = 0
+            delete_webhook()
+            base_wait = min(attempt * 10, 60)
 
-        asyncio.run(_shutdown_app(app))
-        app = build_app()
+        _wait_with_jitter(base_wait, f"(连续 Conflict: {consecutive_conflicts})")
 
 
 def main():
@@ -306,8 +330,8 @@ def main():
     atexit.register(release_lock)
 
     delete_webhook()
-    _p("⏳ 等待 10 秒确保旧实例退出...")
-    time.sleep(10)
+    _wrap = "= Render 部署需要 35s+ 确保旧容器长连接在 Telegram 服务端超时"
+    _wait_with_jitter(35, _wrap)
 
     port = int(os.environ.get("PORT", 0))
     _p(f"PORT={port}")
@@ -315,8 +339,7 @@ def main():
     if port:
         start_health_server(port)
 
-    app = build_app()
-    run_polling_forever(app)
+    run_polling_forever()
 
 
 if __name__ == "__main__":

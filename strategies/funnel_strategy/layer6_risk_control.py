@@ -266,7 +266,7 @@ def run_layer6_risk_control(
         if df is not None and len(df) > 0:
             close_price = float(df['close'].iloc[-1])
 
-        if close_price <= 0:
+        if close_price <= 0 or pd.isna(close_price):
             continue
 
         risk = compute_risk_params(ts_code, close_price, cfg, ohlcv_cache)

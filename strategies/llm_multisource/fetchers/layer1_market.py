@@ -5,6 +5,8 @@ import requests
 from datetime import datetime, timedelta, timezone
 from loguru import logger
 
+from . import FetchResult
+
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 # ============================================================
@@ -17,7 +19,7 @@ def fetch_ths_strong_stocks_structured(make_signal) -> list:
     Returns make_signal() tuples + attaches _strong_stock_rank data.
     """
     import akshare as ak
-    rows = []
+    rows = FetchResult()
     strong_data = []
     today = datetime.now(BEIJING_TZ).date()
 
@@ -104,7 +106,7 @@ def fetch_concept_board_quotes(make_signal) -> list:
     """
     import akshare as ak
     import pandas as pd
-    rows = []
+    rows = FetchResult()
     concept_data = []
     today = datetime.now(BEIJING_TZ).date()
 
@@ -186,7 +188,7 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
     """
     import akshare as ak
     import pandas as pd
-    rows = []
+    rows = FetchResult()
     forecast_data = []
     current_year = datetime.now(BEIJING_TZ).year
 
@@ -277,7 +279,7 @@ def fetch_tencent_supplementary(make_signal, get_db_func=None) -> list:
     Returns make_signal() tuples for notable value stocks (low PE/PB).
     Pattern: same as zuiyou1.py get_realtime_quotes() but extracts extra fields.
     """
-    rows = []
+    rows = FetchResult()
     tencent_data = []  # structured data for daily_quotes update
 
     # Get stock list from daily_quotes
@@ -417,7 +419,7 @@ def fetch_ths_strong_stocks(make_signal) -> list:
     3. stock_rank_ljqd_ths() -- 量价齐升
     """
     import akshare as ak
-    rows = []
+    rows = FetchResult()
 
     fetchers = [
         ('连续上涨', lambda: ak.stock_rank_lxsz_ths()),
@@ -497,7 +499,7 @@ def fetch_ths_concept_tags(make_signal) -> list:
     Returns make_signal() for top-moving concepts.
     """
     import akshare as ak
-    rows = []
+    rows = FetchResult()
 
     try:
         logger.debug("THS概念: stock_board_concept_name_ths")
@@ -575,7 +577,7 @@ def fetch_mootdx_realtime(make_signal, codes=None) -> list:
     Returns make_signal() tuples for notable movers.
     Connection failure: returns [], does NOT crash.
     """
-    rows = []
+    rows = FetchResult()
     client = _get_mootdx_client()
     if client is None:
         return rows
@@ -650,7 +652,7 @@ def fetch_mootdx_orderbook(make_signal, codes=None) -> list:
     Only during trading hours (9:30-15:00 Beijing time).
     Returns empty list outside trading hours.
     """
-    rows = []
+    rows = FetchResult()
     now = datetime.now(BEIJING_TZ)
     hour, minute = now.hour, now.minute
 
@@ -731,7 +733,7 @@ def fetch_mootdx_kline(make_signal, codes=None, frequency='d') -> list:
     frequency: 'd' (daily), 'w' (weekly), 'm' (monthly)
     Default: fetches last 60 daily bars for top-50 stocks.
     """
-    rows = []
+    rows = FetchResult()
     client = _get_mootdx_client()
     if client is None:
         return rows

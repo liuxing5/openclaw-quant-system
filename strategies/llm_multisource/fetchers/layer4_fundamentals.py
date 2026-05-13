@@ -2,6 +2,8 @@
 import time
 from loguru import logger
 
+from . import FetchResult
+
 
 def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
     """MootDX财务数据 -- client.finance() + client.info()
@@ -11,7 +13,7 @@ def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
     Returns make_signal() tuples for stocks with notable fundamentals.
     Rate-limited: 0.2s between requests.
     """
-    rows = []
+    rows = FetchResult()
 
     try:
         from mootdx.quotes import Quotes

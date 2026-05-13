@@ -138,12 +138,13 @@ def update_report():
         # 如果没有标记，在文件末尾添加
         new_content = content + f"\n\n{marker}\n\n{daily_md}\n{end_marker}\n"
     
-    # 更新最后更新日期
-    if "**最后更新**:" in new_content:
-        new_content = new_content.replace(
-            "**最后更新**: " + (datetime.now().replace(day=1).strftime("%Y-%m-%d")),
-            f"**最后更新**: {date}"
-        )
+    # 更新最后更新日期（用正则替换任意日期）
+    import re
+    new_content = re.sub(
+        r"\*\*最后更新\*\*:\s*\S+",
+        f"**最后更新**: {date}",
+        new_content,
+    )
     else:
         # 在生成时间后添加最后更新
         new_content = new_content.replace(

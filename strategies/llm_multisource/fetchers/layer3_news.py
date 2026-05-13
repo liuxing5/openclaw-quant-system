@@ -46,6 +46,7 @@ def fetch_cls_telegraph(make_signal) -> list:
                         time_str = str(r.get(col_time, '') or '')
                         try:
                             pub_time = datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
+                            pub_time = pub_time.replace(tzinfo=BEIJING_TZ)
                         except Exception:
                             pass
 

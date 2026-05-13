@@ -297,7 +297,6 @@ def get_stock_industry(code: str) -> str:
         if DEBUG:
             print(f"  [DEBUG] 行业查询异常 {code}: {e}")
         _industry_fail_times[code] = now_ts
-    _industry_cache[code] = ""
     return ""
 
 # ============================================================
@@ -2369,7 +2368,7 @@ def _save_reject_trend(date_str: str, rejects: dict):
 def main():
     _update_mode()  # 运行时重新计算 MODE
 
-    print(f"隔夜选股法·最优融合版 v1.5.5")
+    print(f"隔夜选股法·最优融合版 v1.6.2")
     print(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
     print(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
     print(f"运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
@@ -2562,7 +2561,7 @@ def main():
     #  v1.5+: 盘中初筛 / 盘后定稿 都推送，标题用 mode_label 区分
     # ============================================================
     if TELEGRAM_ENABLED:
-        title = f"zuiyou1 v1.5 [{mode_label}]"
+        title = f"zuiyou1 v1.6.2 [{mode_label}]"
         mood_info = f"情绪: {mood} ({sentiment_score}分)"
 
         # 使用已筛选的 stable_picks 和 upper_picks（已应用推荐数限制）

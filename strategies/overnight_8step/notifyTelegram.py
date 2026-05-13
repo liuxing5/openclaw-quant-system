@@ -311,7 +311,7 @@ def send_stock_picks_with_buttons(
         lines.append(f"━━ 稳健路径 ({len(stable_picks)} 只) ━━")
         lines.append("💰 单票≤15% 总仓位")
         for s in stable_picks:
-            lines.append(f"• {s['code']}  ¥{s['price']}  +{s['pct']:.2f}%")
+            lines.append(f"• {s['code']}  ¥{s['price']}  +{(s.get('pct') or 0):.2f}%")
             lines.append(f"  得分 {s['score']} | {s['tags']}")
         lines.append("")
 
@@ -319,7 +319,7 @@ def send_stock_picks_with_buttons(
         lines.append(f"━━ 高位路径 ({len(upper_picks)} 只) ━━")
         lines.append("💰 单票≤8% 总仓位")
         for s in upper_picks:
-            lines.append(f"• {s['code']}  ¥{s['price']}  +{s['pct']:.2f}%")
+            lines.append(f"• {s['code']}  ¥{s['price']}  +{(s.get('pct') or 0):.2f}%")
             lines.append(f"  得分 {s['score']} | {s['tags']}")
         lines.append("")
 
