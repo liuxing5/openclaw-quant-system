@@ -149,9 +149,13 @@ jobs:
         elif (( BEIJING_HOUR == 15 && BEIJING_MIN >= 10 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 盘后选股定稿" >> $GITHUB_OUTPUT
-        elif (( BEIJING_HOUR >= 15 )); then
+        elif (( BEIJING_HOUR >= 15 && BEIJING_HOUR < 16 )); then
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🎯 盘后选股定稿" >> $GITHUB_OUTPUT
+        elif (( BEIJING_HOUR >= 16 )); then
+          # 16:00之后不再运行选股脚本，避免重复生成数据
+          echo "script=record_trade_log.py evening" >> $GITHUB_OUTPUT
+          echo "title=📝 盘后实战日志记录" >> $GITHUB_OUTPUT
         else
           echo "script=zuiyou1.py" >> $GITHUB_OUTPUT
           echo "title=🔍 非交易时段测试" >> $GITHUB_OUTPUT
