@@ -8,7 +8,6 @@ import os
 import sys
 import logging
 import asyncio
-from datetime import datetime
 from dotenv import load_dotenv
 
 # 加载 .env 文件
@@ -18,7 +17,7 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(__file__))
 
 try:
-    from telegram import Update
+    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
     from telegram.ext import (
         Application,
         CommandHandler,
@@ -27,7 +26,6 @@ try:
         filters,
         ContextTypes,
     )
-    from telegram.error import RetryAfter
 except ImportError:
     print("⚠️ 需要安装 python-telegram-bot")
     print("  pip install python-telegram-bot")
@@ -57,18 +55,18 @@ def is_duplicate_message(message_id: int) -> bool:
     """检查消息是否重复"""
     import time
     now = time.time()
-    
+
     if message_id in _processed_message_ids:
         last_time = _processed_message_ids[message_id]
         if now - last_time < _DEDUP_WINDOW_SECONDS:
             return True
-    
+
     _processed_message_ids[message_id] = now
-    
+
     if len(_processed_message_ids) > _MAX_MESSAGE_CACHE:
         cutoff = now - 60
         _processed_message_ids = {mid: ts for mid, ts in _processed_message_ids.items() if ts > cutoff}
-    
+
     return False
 
 # 日志配置
@@ -167,7 +165,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message_id = update.message.message_id
     if is_duplicate_message(message_id):
         return
-    
+
     text = update.message.text
     if not text:
         return
@@ -183,14 +181,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ============================================================
 # 主程序
 # ============================================================
-async def main():
+def main():
     if not BOT_TOKEN:
         print("❌ 请设置 TELEGRAM_BOT_TOKEN 环境变量")
         sys.exit(1)
 
     print("🤖 启动 Telegram Bot...")
     print(f"Bot Token: {BOT_TOKEN[:10]}...{BOT_TOKEN[-4:]}")
-    
+
     # 创建应用
     application = Application.builder().token(BOT_TOKEN).build()
 
@@ -207,22 +205,17 @@ async def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # 先删除旧的 webhook（避免冲突）
-    print("🔄 清理旧的 webhook 设置...")
-    await application.bot.delete_webhook(drop_pending_updates=True)
-    print("✓ 旧 webhook 已删除")
-    
     # 检查运行环境
     port = int(os.environ.get("PORT", 0))
     webhook_url = os.environ.get("WEBHOOK_URL", "")
     render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "")
-    
+
     # 调试信息
     print(f"🔍 调试信息:")
     print(f"   PORT={port}")
     print(f"   WEBHOOK_URL={'已设置' if webhook_url else '未设置'}")
     print(f"   RENDER_EXTERNAL_HOSTNAME={render_host if render_host else '未设置'}")
-    
+
     # 自动构建 webhook URL
     if port and not webhook_url:
         if render_host:
@@ -233,62 +226,33 @@ async def main():
             print("   请在 Render 环境变量中添加 WEBHOOK_URL")
             print("   格式：https://your-service.onrender.com/YOUR_BOT_TOKEN")
             sys.exit(1)
-    
+
     if port and webhook_url:
         # Render 生产环境：webhook 模式
         print(f"✅ Bot 已启动 (webhook 模式)")
         print(f"🔌 端口: {port}")
         print(f"📡 Webhook URL: {webhook_url}")
-        
-        # 初始化 application
-        await application.initialize()
-        
-        # 启动 webhook（带重试机制）
-        max_retries = 5
-        retry_delay = 2
-        
-        for attempt in range(max_retries):
-            try:
-                await application.start()
-                await application.updater.start_webhook(
-                    listen="0.0.0.0",
-                    port=port,
-                    url_path=BOT_TOKEN,
-                    webhook_url=webhook_url,
-                )
-                print("✓ Webhook 服务器已启动")
-                print("📡 等待 Telegram 推送消息...")
-                break
-            except RetryAfter as e:
-                wait_time = e.retry_after + 1
-                print(f"⚠️  Telegram 限流，等待 {wait_time} 秒后重试...")
-                await asyncio.sleep(wait_time)
-            except Exception as e:
-                print(f"❌ Webhook 启动失败 (尝试 {attempt+1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    print(f"⏳ 等待 {retry_delay} 秒后重试...")
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2
-                else:
-                    print("❌ 已达到最大重试次数，退出")
-                    sys.exit(1)
-        
-        # 保持运行
+
+        # 使用 run_webhook（同步方式，内部自动管理事件循环）
         try:
-            while True:
-                await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await application.updater.stop()
-            await application.stop()
-            await application.shutdown()
+            application.run_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path=BOT_TOKEN,
+                webhook_url=webhook_url,
+                drop_pending_updates=True,
+            )
+        except Exception as e:
+            print(f"❌ Webhook 启动失败: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
     else:
         # 本地开发：polling 模式
         print("✅ Bot 已启动 (polling 模式)")
         print("按 Ctrl+C 停止")
-        await application.run_polling(allowed_updates=Update.ALL_TYPES)
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
