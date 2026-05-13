@@ -771,32 +771,28 @@ def store_signals(rows):
     source_map = {row[1]: row[0] for row in cur.fetchall()}
     logger.info(f"加载 {len(source_map)} 个数据源映射: {list(source_map.keys())}")
 
-    inserted = 0
+    # 替换 source_id 占位符
+    rows_with_id = []
     for row in rows:
-        try:
-            # row 结构: (source_id_placeholder, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
-            source_name = row[1]
-            source_id = source_map.get(source_name)
-            if source_id is None:
-                logger.debug(f"数据源 '{source_name}' 未在 feed_sources 中注册，source_id 设为 NULL")
+        source_name = row[1]
+        source_id = source_map.get(source_name)
+        if source_id is None:
+            pass  # source_id 为 NULL 即可
+        rows_with_id.append((source_id,) + row[1:])
 
-            # 替换 row 中的 source_id 占位符
-            row_with_id = (source_id,) + row[1:]
+    # 批量插入
+    inserted = 0
+    batch_size = 100
+    for i in range(0, len(rows_with_id), batch_size):
+        batch = rows_with_id[i:i + batch_size]
+        cur.executemany("""
+            INSERT INTO raw_signals
+            (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (content_hash) DO NOTHING;
+        """, batch)
+        inserted += cur.rowcount
 
-            cur.execute("SAVEPOINT sp_row;")
-            cur.execute("""
-                INSERT INTO raw_signals
-                (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                ON CONFLICT (content_hash) DO NOTHING;
-            """, row_with_id)
-            cur.execute("RELEASE SAVEPOINT sp_row;")
-            if cur.rowcount > 0:
-                inserted += 1
-        except Exception as e:
-            logger.debug(f"insert err: {e}")
-            cur.execute("ROLLBACK TO SAVEPOINT sp_row;")
-            continue
     conn.commit()
     cur.close(); conn.close()
     return inserted
