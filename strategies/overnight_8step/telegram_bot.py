@@ -27,6 +27,7 @@ try:
         filters,
         ContextTypes,
     )
+    from telegram.error import RetryAfter
 except ImportError:
     print("⚠️ 需要安装 python-telegram-bot")
     print("  pip install python-telegram-bot")
@@ -239,20 +240,38 @@ async def main():
         print(f"🔌 端口: {port}")
         print(f"📡 Webhook URL: {webhook_url}")
         
-        # 设置新的 webhook
-        await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
-        print("✓ Webhook 已设置")
-        
-        # 手动启动 webhook（避免事件循环冲突）
+        # 初始化 application
         await application.initialize()
-        await application.start()
-        await application.updater.start_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=BOT_TOKEN,
-        )
-        print("✓ Webhook 服务器已启动")
-        print("📡 等待 Telegram 推送消息...")
+        
+        # 启动 webhook（带重试机制）
+        max_retries = 5
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                await application.start()
+                await application.updater.start_webhook(
+                    listen="0.0.0.0",
+                    port=port,
+                    url_path=BOT_TOKEN,
+                    webhook_url=webhook_url,
+                )
+                print("✓ Webhook 服务器已启动")
+                print("📡 等待 Telegram 推送消息...")
+                break
+            except RetryAfter as e:
+                wait_time = e.retry_after + 1
+                print(f"⚠️  Telegram 限流，等待 {wait_time} 秒后重试...")
+                await asyncio.sleep(wait_time)
+            except Exception as e:
+                print(f"❌ Webhook 启动失败 (尝试 {attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    print(f"⏳ 等待 {retry_delay} 秒后重试...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2
+                else:
+                    print("❌ 已达到最大重试次数，退出")
+                    sys.exit(1)
         
         # 保持运行
         try:
