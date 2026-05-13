@@ -334,6 +334,9 @@ async def main():
             await application.bot.delete_webhook(drop_pending_updates=True)
             print("✓ 旧 webhook 已删除")
             
+            # 初始化 application
+            await application.initialize()
+            
             # 设置新的 webhook
             await application.bot.set_webhook(
                 url=webhook_url,
@@ -342,7 +345,6 @@ async def main():
             print(f"✓ Webhook 已设置")
             
             # 启动 webhook 服务器
-            await application.start()
             await application.updater.start_webhook(
                 listen="0.0.0.0",
                 port=port,
