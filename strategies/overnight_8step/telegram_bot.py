@@ -206,6 +206,11 @@ async def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # 先删除旧的 webhook（避免冲突）
+    print("🔄 清理旧的 webhook 设置...")
+    await application.bot.delete_webhook(drop_pending_updates=True)
+    print("✓ 旧 webhook 已删除")
+    
     # 检查运行环境
     port = int(os.environ.get("PORT", 0))
     webhook_url = os.environ.get("WEBHOOK_URL", "")
@@ -225,10 +230,6 @@ async def main():
         print(f"✅ Bot 已启动 (webhook 模式)")
         print(f"🔌 端口: {port}")
         print(f"📡 Webhook URL: {webhook_url}")
-        
-        # 删除旧的 webhook
-        print("🔄 删除旧的 webhook...")
-        await application.bot.delete_webhook(drop_pending_updates=True)
         
         # 设置新的 webhook
         await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
