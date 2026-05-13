@@ -1,0 +1,113 @@
+name: resonance_strategy
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'strategies/combine_strategies.py'
+      - 'strategies/run_resonance_strategy.py'
+      - 'strategies/resonance_filters/**'
+      - 'strategies/overnight_8step/**'
+      - 'core/**'
+      - '.github/workflows/resonance_strategy.yml'
+  schedule:
+    - cron: '15 7 * * 1-5'  # UTC 7:15 = 北京时间 15:15 (晚于 funnel/8step 5min，确保LLM数据就绪)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '交易日期 (YYYY-MM-DD)，留空=最新'
+        required: false
+      no_llm:
+        description: '跳过LLM层 (仅共振+八步法)'
+        type: boolean
+        required: false
+        default: false
+      no_annual:
+        description: '禁用年线过滤'
+        type: boolean
+        required: false
+        default: false
+      no_bollinger:
+        description: '禁用布林带过滤'
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  resonance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+      POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+      POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_SSLMODE: require
+      TZ: Asia/Shanghai
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Apply DB schema migrations
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        run: |
+          pip install psycopg2-binary python-dotenv
+          python -m core.db.apply_schema || echo "⚠️ apply_schema 失败，继续执行"
+
+      - name: Run resonance strategy
+        run: |
+          CMD="python -m strategies.run_resonance_strategy --output ./results"
+          if [ -n "${{ inputs.date }}" ]; then
+            CMD="$CMD --date ${{ inputs.date }}"
+          fi
+          if [ "${{ inputs.no_annual }}" = "true" ]; then
+            CMD="$CMD --no-annual"
+          fi
+          if [ "${{ inputs.no_bollinger }}" = "true" ]; then
+            CMD="$CMD --no-bollinger"
+          fi
+          if [ "${{ inputs.no_llm }}" = "true" ]; then
+            true
+          else
+            CMD="$CMD --llm-db"
+          fi
+          echo "Running: $CMD"
+          $CMD 2>&1 | tee /tmp/resonance_output.log
+          echo "EXIT_CODE=${PIPESTATUS[0]}" >> $GITHUB_ENV
+
+      - name: Send Telegram notification
+        if: always() && env.EXIT_CODE == '0'
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        run: |
+          pip install psycopg2-binary python-dotenv
+          python .github/scripts/resonance_telegram.py
+
+      - name: Upload results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: resonance-results
+          path: results/resonance_*.csv

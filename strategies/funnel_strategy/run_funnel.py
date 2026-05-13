@@ -85,20 +85,21 @@ def main():
 
     # Step B: 运行漏斗选股
     if args.funnel:
-        # 检查是否暂停交易
-        can_trade, reason = reviewer.is_trading_allowed()
-        if not can_trade:
-            print(f"\n{'='*70}")
-            print(f"  🚫 {reason}")
-            print(f"  → 跳过当日选股")
-            print(f"{'='*70}\n")
-            sys.exit(0)
-
         cfg = DEFAULT_FUNNEL_CONFIG
         cfg.output_dir = args.output
         for layer_num in (args.disable or []):
             if 0 <= layer_num <= 6:
                 setattr(cfg, f'layer{layer_num}_enabled', False)
+
+        # 纪律检查：连续止损失败暂停交易 [④纪律]
+        if cfg.discipline_review_check_all:
+            can_trade, reason = reviewer.is_trading_allowed()
+            if not can_trade:
+                print(f"\n{'='*70}")
+                print(f"  🚫 {reason}")
+                print(f"  → 跳过当日选股")
+                print(f"{'='*70}\n")
+                sys.exit(0)
 
         trade_date = None
         if args.date:
