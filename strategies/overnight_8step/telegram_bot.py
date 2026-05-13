@@ -188,6 +188,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def build_app():
     """创建并配置 Application"""
     app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    async def _error(update: object, context: ContextTypes.DEFAULT_TYPE):
+        logger.error(f"❌ Handler 异常: {context.error}", exc_info=context.error)
+
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("positions", cmd_positions))
@@ -199,6 +203,8 @@ def build_app():
     app.add_handler(CommandHandler("import", cmd_import))
     app.add_handler(CallbackQueryHandler(button_callback))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_error_handler(_error)
+
     return app
 
 
@@ -242,7 +248,7 @@ def run_polling_forever(app):
                 allowed_updates=Update.ALL_TYPES,
                 poll_interval=3,
                 timeout=10,
-                drop_pending_updates=True,
+                drop_pending_updates=False,
             )
             _p("Polling 正常退出")
             break
