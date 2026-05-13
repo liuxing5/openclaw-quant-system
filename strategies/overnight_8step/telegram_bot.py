@@ -286,25 +286,29 @@ async def _managed_polling(app, poll_interval=3, timeout=10, drop_pending=True):
         await app.initialize()
         
         # 关键修复：在 start() 之前主动跳过所有待处理更新
-        # delete_webhook 不够可靠，直接 getUpdates 拿到最新 offset 然后丢弃
+        # 1. 先删除 webhook 并丢弃待处理更新
         try:
-            updates = await app.bot.get_updates(limit=1)
+            await app.bot.delete_webhook(drop_pending_updates=True)
+            _p("🔄 已删除 webhook 并丢弃待处理更新")
+        except Exception as e:
+            _p(f"⚠️ 删除 webhook 失败: {e}")
+        
+        # 2. 等待让 Telegram 服务端清理旧连接
+        _p("⏳ 等待 15s 让旧连接超时...")
+        await asyncio.sleep(15)
+        
+        # 3. 获取所有待处理更新并跳过
+        try:
+            updates = await app.bot.get_updates(limit=100)
             if updates:
                 last_id = max(u.update_id for u in updates)
-                _p(f"🔄 发现待处理更新，最新 update_id={last_id}，跳过所有旧更新")
+                _p(f"🔄 发现 {len(updates)} 个待处理更新，最新 update_id={last_id}，跳过所有")
                 # 通过设置 offset 跳过所有旧更新
                 await app.bot.get_updates(offset=last_id + 1)
             else:
                 _p("🔄 无待处理更新")
         except Exception as e:
             _p(f"⚠️ 跳过待处理更新失败: {e}")
-        
-        # 再删除 webhook 确保 polling 模式
-        try:
-            await app.bot.delete_webhook(drop_pending_updates=True)
-            _p("🔄 已删除 webhook")
-        except Exception as e:
-            _p(f"⚠️ 删除 webhook 失败: {e}")
         
         await app.start()
         await app.updater.start_polling(
