@@ -762,7 +762,7 @@ def run():
 
     # 主决策
     results = []
-    for p in POSITIONS:
+    for p in positions:
         code = p["code"]
         cost = p["cost"]
         path = p.get("path", "稳健")

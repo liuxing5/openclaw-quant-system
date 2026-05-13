@@ -32,7 +32,7 @@ on:
 jobs:
   stock-pick:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
 
     steps:
     - uses: actions/checkout@v4
@@ -265,4 +265,5 @@ jobs:
       with:
         personal_token: ${{ secrets.GH_PAT }}
         publish_dir: ./strategies/llm_multisource/docs
+        destination_dir: 8step
         keep_files: true

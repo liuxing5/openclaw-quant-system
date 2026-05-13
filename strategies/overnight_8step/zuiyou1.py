@@ -536,7 +536,7 @@ def _normalize_to_baostock(code: str) -> str:
             return f"sz.{code}"
         if code.startswith("0"):
             return f"sz.{code}"
-        if code.startswith(("8", "4")):
+        if code.startswith("92") or code.startswith(("8", "4")):
             return f"bj.{code}"
     return code
 
@@ -1096,7 +1096,7 @@ def get_limit_pct(code: str) -> float:
 
     if pure_code.startswith("30") or pure_code.startswith("68"):
         return 19.8
-    if pure_code.startswith("8") or pure_code.startswith("43"):
+    if pure_code.startswith("92") or pure_code.startswith("8") or pure_code.startswith("43"):
         return 29.8
     return 9.8
 

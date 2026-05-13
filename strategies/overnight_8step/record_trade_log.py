@@ -410,15 +410,19 @@ def evening_mode():
             continue
         
         # 检查是否实际买入
-        trade_key = code
+        pure_code = code.replace('sh.', '').replace('sz.', '').replace('bj.', '').replace('.', '')
         actually_bought = "no"
         actual_buy_price = ""
-        
-        if trade_key in my_trades:
-            trade = my_trades[trade_key]
-            if trade.get("date") == today and trade.get("bought", False):
-                actually_bought = "yes"
-                actual_buy_price = trade.get("buy_price", "")
+
+        # 尝试多种key格式匹配my_trades
+        for trade_key in [pure_code, f"sh.{pure_code}", f"sz.{pure_code}",
+                          f"sh{pure_code}", f"sz{pure_code}"]:
+            if trade_key in my_trades:
+                trade = my_trades[trade_key]
+                if trade.get("date") == today and trade.get("bought", False):
+                    actually_bought = "yes"
+                    actual_buy_price = trade.get("buy_price", "")
+                break
         
         row = {
             "date": today,

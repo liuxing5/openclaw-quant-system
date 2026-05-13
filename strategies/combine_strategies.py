@@ -111,7 +111,7 @@ def normalize_code(code: str) -> str:
         return f"{code}.SH"
     elif code.startswith(('0', '2', '3')):
         return f"{code}.SZ"
-    elif code.startswith(('4', '8')):
+    elif code.startswith('92') or code.startswith(('4', '8')):
         return f"{code}.BJ"
     return f"{code}.SH"
 
@@ -262,7 +262,8 @@ def run_resonance_strategy(
         if code not in all_results or r.get('score', 0) > all_results[code].get('score', 0):
             # 补充 name 和 industry（scan_pool 不返回这些字段）
             if 'name' not in r or not r.get('name'):
-                r['name'] = all_name_map.get(raw_code, all_name_map.get(code, ''))
+                lookup_key = raw_code.replace('.', '')
+                r['name'] = all_name_map.get(lookup_key, all_name_map.get(code, ''))
             if 'industry' not in r and get_stock_industry is not None:
                 r['industry'] = get_stock_industry(raw_code)
             all_results[code] = r

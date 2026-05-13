@@ -11,7 +11,7 @@ on:
       - 'core/**'
       - '.github/workflows/resonance_strategy.yml'
   schedule:
-    - cron: '45 7 * * 1-5'  # UTC 7:45 = 北京时间 15:45 (晚于 LLM盘后 15min，确保daily_candidates数据就绪)
+    - cron: '50 7 * * 1-5'  # UTC 7:50 = 北京时间 15:50 (错开5min避免与funnel撞库)
   workflow_dispatch:
     inputs:
       date:

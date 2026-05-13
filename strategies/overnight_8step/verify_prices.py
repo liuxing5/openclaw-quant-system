@@ -29,8 +29,11 @@ def to_baostock_code(code: str) -> str:
 
 def fetch_historical_prices(codes: list, date_str: str) -> dict:
     """通过 baostock 获取指定日期的收盘价和涨跌幅"""
-    bs.login()
     results = {}
+    lg = bs.login()
+    if lg.error_code != '0':
+        print(f"baostock 登录失败: {lg.error_msg}")
+        return results
     try:
         for code in codes:
             bs_code = to_baostock_code(code)

@@ -5,7 +5,7 @@
 """
 import os
 import subprocess
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 REPORT_PATH = r"d:\pythonProject\openclaw-quant-system\recommend\完整报告.md"
 ZUIYOU_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zuiyou1.py")
@@ -20,6 +20,10 @@ def run_zuiyou():
         cwd=os.path.dirname(ZUIYOU_PATH),
         timeout=300
     )
+    if result.returncode != 0:
+        print(f"zuiyou1.py exited with code {result.returncode}")
+        if result.stderr:
+            print(result.stderr[:500])
     return result.stdout.strip()
 
 def parse_output(output):
@@ -92,7 +96,7 @@ def format_daily_md(date, market_sentiment, sections, raw_output):
 
 def update_report():
     """更新报告"""
-    date = datetime.now().strftime("%Y-%m-%d")
+    date = datetime.now(timezone(timedelta(hours=8))).strftime("%Y-%m-%d")
     
     print(f"📊 更新每日选股报告 - {date}")
     print("=" * 50)

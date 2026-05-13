@@ -52,13 +52,16 @@ def load_positions() -> List[Dict]:
 def save_positions(positions: List[Dict]) -> None:
     """保存持仓列表"""
     try:
-        with open(POSITIONS_FILE, "w", encoding="utf-8") as f:
+        tmp = POSITIONS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
             json.dump(positions, f, ensure_ascii=False, indent=2)
-    except IOError as e:
+        os.replace(tmp, POSITIONS_FILE)
+    except (IOError, OSError) as e:
         print(f"⚠️ 持仓文件写入失败: {e}")
 
 
-def add_position(code: str, cost: float, path: str = None, entry_date: str = None) -> Dict:
+def add_position(code: str, cost: float, path: str = None, entry_date: str = None,
+                 limit_up_at_buy: bool = False, mktcap_yi: float = 0.0) -> Dict:
     """
     添加持仓。
 
@@ -67,6 +70,8 @@ def add_position(code: str, cost: float, path: str = None, entry_date: str = Non
         cost: 买入成本
         path: 路径（稳健/高位），默认"稳健"
         entry_date: 入场日期，默认今天
+        limit_up_at_buy: 买入时是否封板
+        mktcap_yi: 市值（亿元）
 
     Returns:
         新持仓记录
@@ -84,6 +89,8 @@ def add_position(code: str, cost: float, path: str = None, entry_date: str = Non
         "cost": cost,
         "path": path,
         "entry_date": entry_date,
+        "limit_up_at_buy": limit_up_at_buy,
+        "mktcap_yi": mktcap_yi,
     }
 
     positions = load_positions()

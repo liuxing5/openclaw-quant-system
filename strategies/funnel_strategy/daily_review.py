@@ -179,7 +179,7 @@ class DailyReviewer:
             today_pct = float(q.get('pct_chg', 0) or 0)
 
             # 止损触发检查
-            stop_hit = today_open <= stop_loss or float(q['low']) <= stop_loss
+            stop_hit = today_open <= stop_loss or (float(q['low']) if q['low'] else 0) <= stop_loss
             if stop_hit:
                 report['stop_loss_hit'] += 1
                 report['losses'] += 1
@@ -239,7 +239,7 @@ class DailyReviewer:
             report['action'] = f'🚫 连续{self.state["consecutive_fails"]}次失败，暂停交易至{resume_date}'
         elif self.state['is_suspended']:
             suspended_until = date.fromisoformat(self.state['suspended_until']) if self.state['suspended_until'] else datetime.now(BEIJING_TZ).date()
-            if datetime.now(BEIJING_TZ).date() >= suspended_until:
+            if datetime.now(BEIJING_TZ).date() > suspended_until:
                 self.state['is_suspended'] = False
                 self.state['suspended_until'] = None
                 self.state['consecutive_fails'] = 0

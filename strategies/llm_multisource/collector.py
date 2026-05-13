@@ -105,7 +105,7 @@ def make_signal(source, title, content, url='', pub_time=None, tier=2):
     return (
         None, source, tier, title[:1000],
         (content or '')[:5000], url[:500],
-        pub_time or datetime.now(BEIJING_TZ), datetime.now(BEIJING_TZ), h,
+        pub_time if pub_time is not None and not pd.isna(pub_time) else datetime.now(BEIJING_TZ), datetime.now(BEIJING_TZ), h,
     )
 
 
