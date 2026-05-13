@@ -229,33 +229,41 @@ def fetch_akshare_lhb():
         try:
             logger.debug(f"lhb 接口1: {date_str}")
             df = ak.stock_lhb_detail_em(start_date=date_str, end_date=date_str)
-            if df is not None and hasattr(df, 'empty') and not df.empty:
-                logger.info(f"lhb detail {date_str} 返回 {len(df)} 条")
-                col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
-                col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
-                col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
-                col_net = next((c for c in ['龙虎榜净买额', '净买额', '净额'] if c in df.columns), None)
-                if col_code:
-                    for _, r in df.iterrows():
-                        try:
-                            raw_code = str(r.get(col_code, '') or '')
-                            code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
-                            if not code or code == 'nan' or len(code) < 4:
-                                continue
-                            name = r.get(col_name, '') or '' if col_name else ''
-                            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
-                            net = r.get(col_net, 0) or 0 if col_net else 0
-                            reason = r.get(col_reason, '') or '' if col_reason else ''
-                            rows.append(make_signal(
-                                source='AKShare-龙虎榜', tier=1,
-                                title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
-                                content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net} 元",
-                            ))
-                        except Exception:
+            if df is None:
+                continue
+            if not hasattr(df, 'empty') or not hasattr(df, 'columns'):
+                logger.debug(f"lhb detail {date_str}: 返回非 DataFrame 类型")
+                continue
+            if df.empty:
+                continue
+            logger.info(f"lhb detail {date_str} 返回 {len(df)} 条")
+            col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
+            col_name = next((c for c in ['名称', '股票名称', 'name'] if c in df.columns), None)
+            col_reason = next((c for c in ['上榜原因', '解读', 'reason'] if c in df.columns), None)
+            col_net = next((c for c in ['龙虎榜净买额', '净买额', '净额'] if c in df.columns), None)
+            if col_code:
+                for _, r in df.iterrows():
+                    try:
+                        if r is None:
                             continue
-                    if rows:
-                        logger.info(f"龙虎榜 (detail {date_str}): {len(rows)} 条")
-                        return rows
+                        raw_code = str(r.get(col_code, '') or '')
+                        code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                        if not code or code == 'nan' or len(code) < 4:
+                            continue
+                        name = r.get(col_name, '') or '' if col_name else ''
+                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        net = r.get(col_net, 0) or 0 if col_net else 0
+                        reason = r.get(col_reason, '') or '' if col_reason else ''
+                        rows.append(make_signal(
+                            source='AKShare-龙虎榜', tier=1,
+                            title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
+                            content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net} 元",
+                        ))
+                    except Exception:
+                        continue
+                if rows:
+                    logger.info(f"龙虎榜 (detail {date_str}): {len(rows)} 条")
+                    return rows
         except Exception as e:
             logger.debug(f"lhb 接口1 {date_str} 失败: {e}")
     
@@ -692,7 +700,10 @@ def fetch_akshare_jgdy():
                 if df is None:
                     logger.debug(f"jgdy detail {d}: 返回 None")
                     continue
-                if not hasattr(df, 'empty') or df.empty:
+                if not hasattr(df, 'empty') or not hasattr(df, 'columns'):
+                    logger.debug(f"jgdy detail {d}: 返回非 DataFrame 类型")
+                    continue
+                if df.empty:
                     logger.debug(f"jgdy detail {d}: 无数据")
                     continue
                 col_code = next((c for c in ['股票代码', '代码'] if c in df.columns), None)
@@ -703,6 +714,8 @@ def fetch_akshare_jgdy():
                     continue
                 for _, r in df.iterrows():
                     try:
+                        if r is None:
+                            continue
                         raw_code = str(r.get(col_code, '') or '')
                         code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
                         if not code or len(code) < 6:
@@ -728,13 +741,19 @@ def fetch_akshare_jgdy():
         # 接口2: stock_jgdy_summary_em (汇总)
         try:
             df = ak.stock_jgdy_summary_em()
-            if df is not None and hasattr(df, 'empty') and not df.empty:
+            if df is None:
+                pass
+            elif not hasattr(df, 'empty') or not hasattr(df, 'columns'):
+                logger.debug("jgdy summary: 返回非 DataFrame 类型")
+            elif not df.empty:
                 col_code = next((c for c in ['股票代码', '代码'] if c in df.columns), None)
                 col_name = next((c for c in ['股票简称', '名称'] if c in df.columns), None)
                 col_count = next((c for c in ['接待机构数量', '机构数', '调研家数'] if c in df.columns), None)
                 if col_code:
                     for _, r in df.iterrows():
                         try:
+                            if r is None:
+                                continue
                             raw_code = str(r.get(col_code, '') or '')
                             code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
                             if not code or len(code) < 6:

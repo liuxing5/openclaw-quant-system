@@ -27,7 +27,12 @@ def fetch_cninfo_announcements(make_signal) -> list:
                 start_date=date_str,
                 end_date=date_str,
             )
-            if df is None or not hasattr(df, 'empty') or df.empty:
+            if df is None:
+                continue
+            if not hasattr(df, 'empty') or not hasattr(df, 'columns'):
+                logger.debug(f"巨潮公告 {date_str}: 返回非 DataFrame 类型")
+                continue
+            if df.empty:
                 continue
 
             col_title = next((c for c in ['公告标题', '标题', 'title'] if c in df.columns), None)
@@ -37,11 +42,13 @@ def fetch_cninfo_announcements(make_signal) -> list:
             col_url = next((c for c in ['公告链接', '链接', 'url'] if c in df.columns), None)
 
             if not col_title:
-                logger.warning(f"巨潮公告列不全: {list(df.columns)[:10]}")
+                logger.debug(f"巨潮公告 {date_str} 列不全: {list(df.columns)[:10]}")
                 continue
 
             for _, r in df.head(50).iterrows():
                 try:
+                    if r is None:
+                        continue
                     title = str(r.get(col_title, '') or '')
                     if not title or title == 'nan' or len(title) < 5:
                         continue
@@ -72,7 +79,7 @@ def fetch_cninfo_announcements(make_signal) -> list:
 
             if rows:
                 logger.info(f"巨潮公告 ({date_str}): {len(rows)} 条")
-                break  # Got data, stop trying older dates
+                break
             time.sleep(0.5)
 
         except Exception as e:
