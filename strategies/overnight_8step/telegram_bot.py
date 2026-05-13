@@ -214,15 +214,23 @@ async def main():
     # 检查运行环境
     port = int(os.environ.get("PORT", 0))
     webhook_url = os.environ.get("WEBHOOK_URL", "")
+    render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "")
+    
+    # 调试信息
+    print(f"🔍 调试信息:")
+    print(f"   PORT={port}")
+    print(f"   WEBHOOK_URL={'已设置' if webhook_url else '未设置'}")
+    print(f"   RENDER_EXTERNAL_HOSTNAME={render_host if render_host else '未设置'}")
     
     # 自动构建 webhook URL
     if port and not webhook_url:
-        render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "")
         if render_host:
             webhook_url = f"https://{render_host}/{BOT_TOKEN}"
             print(f"ℹ️  自动构建 Webhook URL: {webhook_url}")
         else:
             print("❌ 错误：在 Render 上运行但无法构建 WEBHOOK_URL")
+            print("   请在 Render 环境变量中添加 WEBHOOK_URL")
+            print("   格式：https://your-service.onrender.com/YOUR_BOT_TOKEN")
             sys.exit(1)
     
     if port and webhook_url:
