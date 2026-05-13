@@ -88,8 +88,7 @@ def lhb_to_extraction():
             INSERT INTO extracted_recommendations
             (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, confidence, pub_time)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (raw_signal_id) DO NOTHING;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
             r['raw_id'], r['source_name'], ts_code, stock_name,
             rec_type, strength,
@@ -166,8 +165,7 @@ def zt_pool_to_extraction():
             INSERT INTO extracted_recommendations
             (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, confidence, pub_time)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (raw_signal_id) DO NOTHING;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
             r['raw_id'], r['source_name'], ts_code, stock_name,
             rec_type, strength,
@@ -235,8 +233,7 @@ def jgdy_to_extraction():
             INSERT INTO extracted_recommendations
             (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, confidence, pub_time)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (raw_signal_id) DO NOTHING;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
             r['raw_id'], r['source_name'], ts_code, stock_name,
             rec_type, strength,
@@ -305,8 +302,7 @@ def strong_stocks_to_extraction():
             INSERT INTO extracted_recommendations
             (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, confidence, pub_time)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (raw_signal_id) DO NOTHING;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
             r['raw_id'], r['source_name'], ts_code, stock_name,
             'watch', strength,
@@ -379,8 +375,7 @@ def profit_forecast_to_extraction():
             INSERT INTO extracted_recommendations
             (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, confidence, pub_time)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (raw_signal_id) DO NOTHING;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
             r['raw_id'], r['source_name'], ts_code, stock_name,
             'watch', strength,
@@ -450,8 +445,7 @@ def announcements_to_extraction():
             INSERT INTO extracted_recommendations
             (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, confidence, pub_time)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (raw_signal_id) DO NOTHING;
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
         """, (
             r['raw_id'], r['source_name'], ts_code, stock_name,
             rec_type, strength,

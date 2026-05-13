@@ -134,8 +134,7 @@ def store_extraction(raw_id: int, source_name: str, pub_time, items: list):
             (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
              strength, logic_category, logic_summary, target_price, stop_loss,
              time_horizon, raw_excerpt, confidence, pub_time)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            ON CONFLICT DO NOTHING;
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
         """, (
             raw_id, source_name,
             ts_code, it.get('stock_name'),
@@ -158,8 +157,7 @@ def mark_signal_processed(raw_id, source_name, pub_time):
         INSERT INTO extracted_recommendations
         (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
          strength, logic_summary, pub_time)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT DO NOTHING;
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s);
     """, (raw_id, source_name, 'SKIP', 'SKIP', 'skip', 0, 'llm_no_result', pub_time))
     conn.commit()
     cur.close(); conn.close()
