@@ -167,7 +167,7 @@ INDUSTRY_CATEGORIES = {
             "食品饮料", "白酒", "啤酒", "乳制品", "调味品",
             "零售", "百货", "超市", "家电", "家具",
             "建筑装饰", "建筑材料", "水泥", "玻璃",
-            "交通运输", "物流", "快递", "仓储",
+            "物流", "快递", "仓储",
             "通信服务", "运营商", "光纤", "通信设备",
         ],
         "score_bonus": 0,
@@ -346,7 +346,13 @@ def _persist_to_daily_candidates(
     if not DB_ENABLED:
         return 0
     items = []
+    # 路径目标：稳健 +3%/+5%，高位 +5%/+7%
+    path_targets = {
+        'stable': (1.03, 1.05),
+        'upper': (1.05, 1.07),
+    }
     for picks_df, pool_label, position in [(stable_picks, 'stable', CONFIG_STABLE['position_ratio']), (upper_picks, 'upper', CONFIG_UPPER['position_ratio'])]:
+        t1_mult, t2_mult = path_targets.get(pool_label, (1.05, 1.10))
         for _, row in picks_df.iterrows():
             price = float(row['price'])
             tags_str = row.get('tags') or ''
@@ -357,6 +363,9 @@ def _persist_to_daily_candidates(
             if name_map:
                 key = code.replace(".", "").lower()
                 stock_name = name_map.get(key)
+            # 连板≥3: 仓位减半
+            streak_val = int(row.get('streak', 0))
+            adj_position = position / 2 if streak_val >= 3 else position
             items.append({
                 'ts_code': baostock_to_standard(code),
                 'stock_name': stock_name,
@@ -368,15 +377,15 @@ def _persist_to_daily_candidates(
                 'source_diversity': 1,
                 'logic_tags': logic_tags,
                 'selected': True,
-                'position_pct': position,
+                'position_pct': round(adj_position, 4),
                 'entry_low': round(price * 0.99, 2),
                 'entry_high': round(price * 1.01, 2),
                 'stop_loss': round(price * 0.975, 2),
-                'target_1': round(price * 1.05, 2),
-                'target_2': round(price * 1.10, 2),
+                'target_1': round(price * t1_mult, 2),
+                'target_2': round(price * t2_mult, 2),
                 'sources': [{'source': 'zuiyou1', 'pool': pool_label, 'pct': float(row.get('pct', 0)),
                              'vol_ratio': float(row.get('vol_ratio', 0)), 'turn': float(row.get('turn', 0)),
-                             'streak': int(row.get('streak', 0))}],
+                             'streak': streak_val}],
             })
     if not items:
         print("  ⚠️ 无候选标的，跳过 daily_candidates 写入")
@@ -1376,7 +1385,7 @@ def get_realtime_quotes(stock_list: list) -> dict:
                         "volume_ratio": _f(49),
                         "commission_ratio": _f(50),
                         "large_order_net": _f(51),
-                        "main_force_net": _f(52) * 10000 if _f(52) > 0 else 0,
+                        "main_force_net": _f(52) * 10000 if _f(52) else 0,
                         "limit_up_price": _f(47),
                         "limit_down_price": _f(48),
                     }
@@ -1520,7 +1529,8 @@ def analyze_ultimate(
             curr_turn = float(df.iloc[-1]["turn"]) if "turn" in df.columns else 0.0
         # 盘后模式下，time_weight=1.0，不需要时间加权
         est_full_vol = curr_vol / time_weight if time_weight > 0 else curr_vol
-        hist_vols = df["volume"].tolist()
+        # 排除今日baostock行避免与实时量重复计数
+        hist_vols = df["volume"].tolist()[:-1] if len(df) > 0 else []
     else:
         last = df.iloc[-1]
         curr_price = float(last["close"])

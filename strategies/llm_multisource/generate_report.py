@@ -470,9 +470,18 @@ def generate_report():
             ORDER BY final_score DESC;
         """, (llm_date, RUN_MODE))
         candidates = cur.fetchall()
+        for c in candidates:
+            raw_sources = c.get('sources', [])
+            if isinstance(raw_sources, str):
+                try:
+                    raw_sources = json.loads(raw_sources)
+                except Exception:
+                    raw_sources = []
+            c['source_count'] = len(raw_sources) if isinstance(raw_sources, list) else 0
+            c['sources_detail'] = raw_sources if isinstance(raw_sources, list) else []
     else:
         candidates = []
-    
+
     if step_date:
         cur.execute("""
             SELECT * FROM daily_candidates
@@ -483,7 +492,7 @@ def generate_report():
         eight_step_picks = cur.fetchall()
     else:
         eight_step_picks = []
-    
+
     cur.execute("""
         SELECT source_name, COUNT(*) as signal_count, source_tier,
                CASE source_tier

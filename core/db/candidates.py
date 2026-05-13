@@ -31,14 +31,6 @@ def _clean_num(val):
     return val
 
 
-def _clean_num(val):
-    if val is None:
-        return None
-    if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
-        return None
-    return val
-
-
 _INSERT_SQL = """
 INSERT INTO daily_candidates
   (snapshot_date, ts_code, stock_name, mention_count, source_diversity,

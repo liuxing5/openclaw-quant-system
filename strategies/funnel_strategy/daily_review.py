@@ -109,18 +109,30 @@ class DailyReviewer:
 
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # 从 daily_candidates 读昨日漏斗推荐
+        # 从 funnel_results 读昨日漏斗推荐（JSON candidates 列）
         cur.execute("""
-            SELECT ts_code, stock_name, entry_low, entry_high, stop_loss,
-                   target_1, target_2, final_score
-            FROM daily_candidates
-            WHERE snapshot_date = %s
-              AND source = 'funnel_strategy'
-              AND selected = TRUE
-            ORDER BY final_score DESC;
+            SELECT candidates
+            FROM funnel_results
+            WHERE trade_date = %s
+            ORDER BY trade_date DESC
+            LIMIT 1;
         """, (yesterday,))
 
-        picks = cur.fetchall()
+        row = cur.fetchone()
+        picks_raw = json.loads(row['candidates']) if row and row.get('candidates') else []
+        # 映射漏斗字段到 review 期望的字段名
+        picks = []
+        for c in picks_raw:
+            picks.append({
+                'ts_code': c.get('ts_code', ''),
+                'stock_name': c.get('stock_name', ''),
+                'entry_low': round(c.get('entry_price', 0) * 0.99, 2) if c.get('entry_price') else None,
+                'entry_high': round(c.get('entry_price', 0) * 1.01, 2) if c.get('entry_price') else None,
+                'stop_loss': c.get('stop_loss'),
+                'target_1': c.get('target_price'),
+                'target_2': None,
+                'final_score': c.get('score', 0),
+            })
 
         if not picks:
             report['action'] = '昨日无漏斗推荐，无需复盘'
@@ -225,7 +237,7 @@ class DailyReviewer:
             report['action'] = f'🚫 连续{self.state["consecutive_fails"]}次失败，暂停交易至{resume_date}'
         elif self.state['is_suspended']:
             suspended_until = date.fromisoformat(self.state['suspended_until']) if self.state['suspended_until'] else date.today()
-            if date.today() > suspended_until:
+            if date.today() >= suspended_until:
                 self.state['is_suspended'] = False
                 self.state['suspended_until'] = None
                 self.state['consecutive_fails'] = 0

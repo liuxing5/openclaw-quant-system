@@ -51,8 +51,8 @@ def _fetch_market_breadth(trade_date=None) -> Tuple[int, int]:
         conn.close()
         if row:
             return int(row['advancers'] or 0), int(row['decliners'] or 0)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"  ⚠️ Layer0 市场广度查询失败: {e}")
     return 0, 0
 
 

@@ -452,8 +452,10 @@ def aggregate_today():
                 pb = val['pb_ratio']
                 
                 # PE估值评分
-                if pe is not None and pe > 0:
-                    if pe < 15:
+                if pe is not None:
+                    if pe <= 0:
+                        quant_score -= 20  # 亏损公司，大幅扣分
+                    elif pe < 15:
                         quant_score += 15  # 低估值，加分
                     elif pe < 30:
                         quant_score += 5   # 合理估值，小幅加分
@@ -463,10 +465,12 @@ def aggregate_today():
                         quant_score -= 10  # 高估值，扣分
                     else:
                         quant_score -= 20  # 极高估值，大幅扣分
-                
+
                 # PB估值评分
-                if pb is not None and pb > 0:
-                    if pb < 2:
+                if pb is not None:
+                    if pb <= 0:
+                        quant_score -= 10  # 负PB（资不抵债），扣分
+                    elif pb < 2:
                         quant_score += 10  # 低PB，加分
                     elif pb < 5:
                         quant_score += 3   # 合理PB，小幅加分
@@ -523,7 +527,8 @@ def aggregate_today():
             # 提及次数加成
             mention_bonus = min(0.2, r['mention_count'] * 0.03)
             llm_n = min(1.0, llm_n + mention_bonus)
-            quant_n = quant_score / 100.0  # 满分改为100
+            quant_score = max(0, quant_score)  # 防止负分
+            quant_n = min(quant_score / 100.0, 1.0)  # 上限1.0
 
             if llm_n > 0 and quant_n > 0:
                 final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
@@ -543,7 +548,7 @@ def aggregate_today():
             candidates.append({
                 'ts_code': r['ts_code'], 'stock_name': name_cache.get(r['ts_code']) or r['stock_name'],
                 'mention_count': r['mention_count'], 'source_diversity': r['source_diversity'],
-                'consensus_score': consensus, 'llm_score': llm_n * 100,
+                'consensus_score': consensus * 100, 'llm_score': llm_n * 100,
                 'quant_score': quant_score, 'final_score': final,
                 'logic_tags': r['logic_tags'], 'sources': r['sources'],
                 'close': close_price,
@@ -706,8 +711,10 @@ def aggregate_today():
                 pe = val['pe_ratio']
                 pb = val['pb_ratio']
                 
-                if pe is not None and pe > 0:
-                    if pe < 15:
+                if pe is not None:
+                    if pe <= 0:
+                        quant_score -= 20
+                    elif pe < 15:
                         quant_score += 15
                     elif pe < 30:
                         quant_score += 5
@@ -717,9 +724,11 @@ def aggregate_today():
                         quant_score -= 10
                     else:
                         quant_score -= 20
-                
-                if pb is not None and pb > 0:
-                    if pb < 2:
+
+                if pb is not None:
+                    if pb <= 0:
+                        quant_score -= 10
+                    elif pb < 2:
                         quant_score += 10
                     elif pb < 5:
                         quant_score += 3
@@ -771,7 +780,7 @@ def aggregate_today():
             candidates.append({
                 'ts_code': ts_code, 'stock_name': name_cache.get(ts_code, ''),
                 'mention_count': 1, 'source_diversity': 1,
-                'consensus_score': 0.3, 'llm_score': 0,
+                'consensus_score': 30.0, 'llm_score': 0,
                 'quant_score': quant_score, 'final_score': final,
                 'logic_tags': ['量化选股'], 'sources': [{'source': 'quant', 'tier': 2}],
                 'close': close_price,
@@ -842,7 +851,8 @@ def aggregate_today():
         is_selected = c in selected_list
         levels = calc_price_levels(c['close'], c['ts_code'])
         c['selected'] = is_selected
-        c['position_pct'] = 0.08 if is_selected else 0
+        # 仓位随共识度缩放：共识100→8%，共识50→4%
+        c['position_pct'] = round(0.08 * c.get('consensus_score', 50) / 100, 4) if is_selected else 0
         if levels:
             c.update(levels)
         items.append(c)

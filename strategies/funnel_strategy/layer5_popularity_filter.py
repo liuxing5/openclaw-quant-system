@@ -198,7 +198,9 @@ def _score_single(
     close = today['close']
 
     # A. 涨幅评分（3~5%满分20，1~7范围给分）
-    pct = today.get('pct_chg', 0) or 0
+    pct = today.get('pct_chg', 0)
+    if pd.isna(pct) or pct is None:
+        pct = 0.0
     result['pct'] = round(pct, 2)
     if cfg.layer5_pct_range_low <= pct <= cfg.layer5_pct_range_high:
         result['pct_score'] = 20
@@ -228,7 +230,9 @@ def _score_single(
             result['tags'].append('乖离偏大')
 
     # C. 分时平稳（振幅倒数，越小越平稳）
-    amplitude = today.get('amplitude', 0) or 0
+    amplitude = today.get('amplitude', 0)
+    if pd.isna(amplitude) or amplitude is None:
+        amplitude = 0.0
     if amplitude < 2.0:
         result['stability_score'] = 10
         result['tags'].append('分时平稳')
@@ -401,10 +405,12 @@ def run_layer5_popularity_filter(
         val = val_map.get(ts_code, {})
         pe = val.get('pe_ratio')
         pb = val.get('pb_ratio')
-        if pe is not None and pe > cfg.layer5_max_pe:
+        # 拒绝PE异常：负PE（亏损）或PE过高
+        if pe is not None and (pe <= 0 or pe > cfg.layer5_max_pe):
             pe_reject += 1
             continue
-        if pb is not None and pb > cfg.layer5_max_pb:
+        # 拒绝PB异常：负PB（资不抵债）或PB过高
+        if pb is not None and (pb <= 0 or pb > cfg.layer5_max_pb):
             pb_reject += 1
             continue
         stock_items_filtered.append(item)

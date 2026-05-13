@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import sys
 import os
@@ -26,7 +27,7 @@ from typing import List, Tuple, Dict, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from overnight_8step.zuiyou1 import scan_pool, fetch_market_sentiment, CONFIG
+from overnight_8step.zuiyou1 import scan_pool, fetch_market_sentiment, CONFIG_STABLE, CONFIG_UPPER
 from resonance_filters.technical_filters import ResonanceFilters, run_resonance_filter
 
 
@@ -220,14 +221,29 @@ def run_resonance_strategy(
     print(f"  [Layer 3/3] 隔夜八步法精选")
     print(f"{'='*70}")
 
-    # 获取市场情绪
-    sentiment = fetch_market_sentiment()
-    sentiment_score = sentiment.get('score', 50)
-    print(f"  市场情绪评分: {sentiment_score:.1f}")
-    print(f"  涨停家数: {sentiment.get('zt_count', 0)}")
+    # 获取市场情绪 (returns Tuple[int, str])
+    sentiment_score, mood = fetch_market_sentiment()
+    print(f"  市场情绪评分: {sentiment_score}  |  情绪: {mood}")
 
-    # 运行八步法扫描
-    result = scan_pool(final_candidates, verbose=True)
+    # 运行八步法扫描：用 stable + upper 双池扫描，然后按 resonance 结果过滤
+    stable_cfg = copy.deepcopy(CONFIG_STABLE)
+    upper_cfg = copy.deepcopy(CONFIG_UPPER)
+    stable_cfg["MODE"] = "post"
+    upper_cfg["MODE"] = "post"
+
+    stable_results = scan_pool(stable_cfg, sentiment_score, mood, preloaded=False)
+    upper_results = scan_pool(upper_cfg, sentiment_score, mood, preloaded=True)
+
+    # 合并去重然后按 resonance 结果过滤
+    all_results = {}
+    for r in stable_results + upper_results:
+        code = r.get('code', '')
+        if code not in all_results or r.get('score', 0) > all_results[code].get('score', 0):
+            all_results[code] = r
+
+    resonance_set = set(final_candidates)
+    result = [all_results[code] for code in resonance_set if code in all_results]
+    result.sort(key=lambda x: x.get('score', 0), reverse=True)
 
     # ========== 输出结果 ==========
     out_dir = Path(output_dir).resolve()

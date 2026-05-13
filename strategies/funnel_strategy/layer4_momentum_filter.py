@@ -163,10 +163,14 @@ def _batch_load_and_precompute(
 
 def _is_hammer(row: dict) -> bool:
     body = abs(row['close'] - row['open'])
+    upper_shadow = row['high'] - max(row['open'], row['close'])
     lower_shadow = min(row['open'], row['close']) - row['low']
     if body == 0:
-        return lower_shadow > (row['high'] - row['low']) * 0.6
-    return (lower_shadow >= body * 2) and (body < (row['high'] - row['low']) * 0.4)
+        return (lower_shadow > (row['high'] - row['low']) * 0.6 and
+                upper_shadow < lower_shadow * 0.5)
+    return (lower_shadow >= body * 2 and
+            body < (row['high'] - row['low']) * 0.4 and
+            upper_shadow < lower_shadow * 0.5)
 
 
 def _is_piercing(today: dict, yesterday: dict) -> bool:
@@ -176,7 +180,7 @@ def _is_piercing(today: dict, yesterday: dict) -> bool:
     if today['close'] <= today['open']:
         return False
     midpoint = yesterday['close'] + prev_body * 0.5
-    return today['close'] > midpoint and today['open'] < yesterday['close']
+    return today['close'] > midpoint and today['open'] < yesterday['low']
 
 
 def _get_limit_pct(ts_code: str) -> float:

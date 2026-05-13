@@ -227,7 +227,7 @@ def check_fundamental(
 
     # 3a. 流动比率
     current_ratio = compute_current_ratio(fin)
-    result['details']['current_ratio'] = round(current_ratio, 2) if current_ratio else None
+    result['details']['current_ratio'] = round(current_ratio, 2) if current_ratio is not None else None
     if current_ratio is not None and current_ratio < cfg.layer1_min_current_ratio:
         result['passed'] = False
         result['reject_reason'] = f'流动比率={current_ratio:.2f}<{cfg.layer1_min_current_ratio}'
@@ -235,7 +235,7 @@ def check_fundamental(
 
     # 3b. 负债率
     debt_ratio = fin.get('debt_ratio')
-    result['details']['debt_ratio'] = round(debt_ratio, 2) if debt_ratio else None
+    result['details']['debt_ratio'] = round(debt_ratio, 2) if debt_ratio is not None else None
     if debt_ratio is not None and debt_ratio > cfg.layer1_max_debt_ratio:
         result['passed'] = False
         result['reject_reason'] = f'负债率={debt_ratio:.1f}%>{cfg.layer1_max_debt_ratio}%'
@@ -249,9 +249,17 @@ def check_fundamental(
         result['reject_reason'] = f'营收同比={revenue_yoy:.1f}%<{cfg.layer1_min_revenue_yoy}%'
         return result
 
-    # 3d. P0: 现金流质量
+    # 3d. P0: 亏损检测（净利润为负直接淘汰）
+    net_profit = fin.get('net_profit')
+    if net_profit is not None and net_profit <= 0:
+        result['passed'] = False
+        result['reject_reason'] = f'净利润为负({net_profit:.1f}亿)'
+        result['details']['net_profit_negative'] = True
+        return result
+
+    # 3e. P0: 现金流质量
     cashflow_ratio = compute_cashflow_ratio(fin)
-    result['details']['cashflow_ratio'] = round(cashflow_ratio, 2) if cashflow_ratio else None
+    result['details']['cashflow_ratio'] = round(cashflow_ratio, 2) if cashflow_ratio is not None else None
     if cashflow_ratio is not None and cashflow_ratio < cfg.layer1_min_cashflow_ratio:
         net_profit = fin.get('net_profit')
         if net_profit and net_profit > 0:

@@ -87,12 +87,12 @@ def _detect_trend_structure(df: pd.DataFrame, cfg) -> dict:
             if close.iloc[-1] > ema12_latest:
                 return {'structure': 'pullback_support'}
 
-    # 上升平台：近10日高低点区间收窄（振幅<5%），今日突破上沿
+    # 上升平台：前9日高低点区间收窄（振幅<8%），今日突破上沿
     if len(df) >= 10:
-        hi_10 = df['high'].iloc[-10:].max()
-        lo_10 = df['low'].iloc[-10:].min()
-        range_pct = (hi_10 - lo_10) / lo_10 if lo_10 > 0 else 1
-        if range_pct < 0.08 and close.iloc[-1] >= hi_10 * 0.99:
+        hi_9 = df['high'].iloc[-10:-1].max()
+        lo_9 = df['low'].iloc[-10:-1].min()
+        range_pct = (hi_9 - lo_9) / lo_9 if lo_9 > 0 else 1
+        if range_pct < 0.08 and close.iloc[-1] > hi_9:
             return {'structure': 'ascending_platform'}
 
     return {'structure': 'unknown'}
