@@ -255,6 +255,20 @@ def main():
         print("✅ Bot 已启动 (polling 模式)", flush=True)
         print("📡 每 3 秒拉取一次更新", flush=True)
 
+        # 显式删除 webhook，避免与旧实例冲突
+        import time
+        import urllib.request
+        for retry in range(3):
+            try:
+                delete_url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+                req = urllib.request.urlopen(urllib.request.Request(delete_url), timeout=10)
+                result = req.read().decode()
+                print(f"🔄 删除旧 webhook (第{retry+1}次): {result}", flush=True)
+                break
+            except Exception as e:
+                print(f"⚠️ 删除 webhook 失败 (第{retry+1}次): {e}", flush=True)
+                time.sleep(2)
+
         # 如果 Render 提供了 PORT，启动一个轻量 HTTP 健康检查服务器
         if port:
             class HealthHandler(http.server.BaseHTTPRequestHandler):
