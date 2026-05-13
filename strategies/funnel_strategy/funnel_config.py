@@ -173,6 +173,14 @@ class FunnelConfig:
             errors.append("layer5_max_pb 必须 > 0")
         if self.layer6_atr_period < 5:
             errors.append("layer6_atr_period 必须 >= 5")
+        if self.layer0_partial_cap < 0 or self.layer0_partial_cap > 1:
+            errors.append("layer0_partial_cap 必须在 0~1")
+        if self.layer1_exclude_new_ipo_days < 0:
+            errors.append("layer1_exclude_new_ipo_days 必须 >= 0")
+        if self.layer2_turn_rate_min >= self.layer2_turn_rate_max:
+            errors.append("layer2_turn_rate_min 必须 < layer2_turn_rate_max")
+        if self.layer5_pct_range_low >= self.layer5_pct_range_high:
+            errors.append("layer5_pct_range_low 必须 < layer5_pct_range_high")
         if self.layer6_min_profit_loss_ratio < 1.0:
             errors.append("盈亏比 必须 >= 1.0")
         return errors

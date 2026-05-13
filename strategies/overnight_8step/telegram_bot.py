@@ -11,7 +11,7 @@ import os, sys, logging, threading, http.server, time, uuid, asyncio, json, rand
 sys.path.insert(0, os.path.dirname(__file__))
 
 from dotenv import load_dotenv
-load_dotenv()
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '.env'))
 
 try:
     from telegram import Update

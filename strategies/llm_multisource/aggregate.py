@@ -296,7 +296,7 @@ def aggregate_today():
             
             q = quote_cache.get(r['ts_code'])
 
-            if not q or not q.get('close'):
+            if not q or q.get('close') is None:
                 logger.debug(f"{r['ts_code']} 无行情，跳过")
                 continue
 
@@ -581,7 +581,7 @@ def aggregate_today():
                 if list_date and (today - list_date).days < 60:
                     continue
 
-            close_price = float(q['close']) if q['close'] else None
+            close_price = float(q['close']) if q['close'] is not None else None
             pct_chg = q['pct_chg'] or 0
             turnover = q['turnover_rate'] or 0
             amount = q['amount'] or 0

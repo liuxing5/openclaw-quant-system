@@ -170,7 +170,6 @@ def update_tencent_quotes(tencent_data: list) -> int:
 
     conn = get_db()
     cur = conn.cursor()
-    today = datetime.now(BEIJING_TZ).date()
     updated = 0
 
     for item in tencent_data:

@@ -166,7 +166,8 @@ class DailyReviewer:
         for p in picks:
             code = p['ts_code']
             entry = float(p.get('entry_price') or 0)
-            stop_loss = float(p.get('stop_loss', 0))
+            sl_raw = p.get('stop_loss')
+            stop_loss = float(sl_raw) if sl_raw is not None else 0
             q = quotes.get(code)
 
             if not q or not q.get('open'):
