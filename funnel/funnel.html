@@ -42,7 +42,8 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 .theme-btn:hover { background:rgba(255,255,255,.3); }
 
 /* Summary stats */
-.stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; align-items:stretch; }
+.stats-row-wrap { display:flex; justify-content:center; margin-bottom:16px; }
+.stats-row { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; max-width:700px; width:100%; align-items:stretch; }
 .stat-card { background:var(--section-bg); border-radius:10px; padding:16px; text-align:center; box-shadow:var(--shadow); border:1px solid var(--border); display:flex; flex-direction:column; justify-content:center; align-items:center; min-height:80px; }
 .stat-card .sv { font-size:1.6rem; font-weight:bold; color:var(--score-color); }
 .stat-card .sl { font-size:.75rem; color:var(--text2); margin-top:4px; }
@@ -56,7 +57,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 .section-subtitle { font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; }
 
 /* Three column layout */
-.three-col { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:start; }
+.three-col { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:stretch; }
 .three-col .section { margin-bottom:0; height:100%; display:flex; flex-direction:column; }
 .three-col .cards-grid { flex:1; }
 @media (max-width:1024px) { .three-col { grid-template-columns:1fr; } .stats-row { grid-template-columns:1fr; } }
@@ -117,7 +118,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 三策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-05-12 | 生成: 2026-05-13 12:33:03
+        报告日期: 2026-05-12 | 生成: 2026-05-13 15:20:14
         <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           <option value="2026-05-13" >2026-05-13</option><option value="2026-05-12" selected>2026-05-12</option>
@@ -129,19 +130,21 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     </button>
   </div>
 
+  <div class="stats-row-wrap">
   <div class="stats-row">
     <div class="stat-card funnel">
       <div class="sv">4</div>
-      <div class="sl">🎯 漏斗最终推荐</div>
+      <div class="sl"> 漏斗最终推荐</div>
     </div>
     <div class="stat-card llm">
       <div class="sv">15</div>
-      <div class="sl">🤖 LLM多源候选</div>
+      <div class="sl"> LLM多源候选</div>
     </div>
     <div class="stat-card eight">
-      <div class="sv">8</div>
-      <div class="sl">🔮 八步法候选</div>
+      <div class="sv">19</div>
+      <div class="sl"> 八步法候选</div>
     </div>
+  </div>
   </div>
 
   <div class="legend">
@@ -298,74 +301,38 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         <div class="candidate-card selected">
           <div class="cand-header">
             <div>
-              <span class="cand-code">300502.SZ</span>
-              <span class="cand-name">新易盛</span>
+              <span class="cand-code">300308.SZ</span>
+              <span class="cand-name">中际旭创</span>
               
-              <span class="src-badge">8源</span>
+              <span class="src-badge">12源</span>
             </div>
-            <span class="cand-score">40</span>
+            <span class="cand-score">48</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">586.45</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">565.61</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">643.01</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">35</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">1030.50</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">993.88</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">1129.89</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">44</span><span class="ml">量化分</span></div>
           </div>
-          <div class="cand-tags">盈利预测 · 资金 · 题材</div>
+          <div class="cand-tags">事件 · 技术 · 盈利预测</div>
         </div>
         <div class="candidate-card selected">
           <div class="cand-header">
             <div>
-              <span class="cand-code">688008.SH</span>
-              <span class="cand-name">澜起科技</span>
+              <span class="cand-code">688037.SH</span>
+              <span class="cand-name">芯源微</span>
               
-              <span class="src-badge">7源</span>
+              <span class="src-badge">4源</span>
             </div>
-            <span class="cand-score">39</span>
+            <span class="cand-score">41</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">237.70</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">229.25</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">260.63</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">272.00</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">262.33</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">298.23</span><span class="ml">目标</span></div>
             <div class="metric"><span class="mv">33</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">盈利预测 · 资金 · 题材</div>
-        </div>
-        <div class="candidate-card selected">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">600487.SH</span>
-              <span class="cand-name">亨通光电</span>
-              
-              <span class="src-badge">6源</span>
-            </div>
-            <span class="cand-score">39</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">75.31</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">73.79</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">79.87</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">38</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">盈利预测 · 题材</div>
-        </div>
-        <div class="candidate-card selected">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">600276.SH</span>
-              <span class="cand-name">恒瑞医药</span>
-              
-              <span class="src-badge">5源</span>
-            </div>
-            <span class="cand-score">39</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">55.60</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">54.48</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">58.97</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">30</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">事件 · 盈利预测</div>
         </div>
         <div class="candidate-card selected">
           <div class="cand-header">
@@ -375,141 +342,105 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
               
               <span class="src-badge">4源</span>
             </div>
-            <span class="cand-score">37</span>
+            <span class="cand-score">40</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">58.65</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">57.46</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">62.20</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">35</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">58.28</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">57.10</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">61.81</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">39</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">事件 · 盈利预测 · 题材</div>
         </div>
-        <div class="candidate-card ">
+        <div class="candidate-card selected">
           <div class="cand-header">
             <div>
-              <span class="cand-code">603269.SH</span>
-              <span class="cand-name">海鸥股份</span>
-              
-              <span class="src-badge">6源</span>
-            </div>
-            <span class="cand-score">37</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">20.63</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">20.21</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">21.88</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">35</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">事件 · 盈利预测 · 连板</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">300285.SZ</span>
-              <span class="cand-name">国瓷材料</span>
-              
-              <span class="src-badge">5源</span>
-            </div>
-            <span class="cand-score">37</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">41.43</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">39.96</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">45.42</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">33</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">盈利预测 · 题材</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">688766.SH</span>
-              <span class="cand-name">普冉股份</span>
-              
-              <span class="src-badge">5源</span>
-            </div>
-            <span class="cand-score">36</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">401.93</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">387.65</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">440.69</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">36</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">盈利预测 · 资金 · 首板</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">002463.SZ</span>
-              <span class="cand-name">沪电股份</span>
+              <span class="cand-code">000063.SZ</span>
+              <span class="cand-name">中兴通讯</span>
               
               <span class="src-badge">2源</span>
             </div>
-            <span class="cand-score">36</span>
+            <span class="cand-score">39</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">109.29</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">107.08</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">115.91</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">37</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">38.44</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">37.67</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">40.77</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">41</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股 · 盈利预测</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600276.SH</span>
+              <span class="cand-name">恒瑞医药</span>
+              
+              <span class="src-badge">5源</span>
+            </div>
+            <span class="cand-score">38</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">55.34</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">54.22</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">58.70</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">29</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">事件 · 盈利预测</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300014.SZ</span>
+              <span class="cand-name">亿纬锂能</span>
+              
+              <span class="src-badge">5源</span>
+            </div>
+            <span class="cand-score">38</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">67.42</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">65.03</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">73.93</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">事件 · 盈利预测</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">002428.SZ</span>
+              <span class="cand-name">云南锗业</span>
+              
+              <span class="src-badge">7源</span>
+            </div>
+            <span class="cand-score">38</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">100.78</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">98.75</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">106.89</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">35</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">机构调研 · 盈利预测 · 首板</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600487.SH</span>
+              <span class="cand-name">亨通光电</span>
+              
+              <span class="src-badge">7源</span>
+            </div>
+            <span class="cand-score">37</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">74.41</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">72.91</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">78.92</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">34</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">盈利预测 · 题材</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">300620.SZ</span>
-              <span class="cand-name">光库科技</span>
-              
-              <span class="src-badge">3源</span>
-            </div>
-            <span class="cand-score">36</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">263.00</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">253.65</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">288.36</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">37</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">盈利预测 · 题材</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">300394.SZ</span>
-              <span class="cand-name">天孚通信</span>
-              
-              <span class="src-badge">6源</span>
-            </div>
-            <span class="cand-score">36</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">353.02</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">340.48</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">387.07</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">30</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">盈利预测 · 资金</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">300308.SZ</span>
-              <span class="cand-name">中际旭创</span>
-              
-              <span class="src-badge">12源</span>
-            </div>
-            <span class="cand-score">36</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">992.50</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">957.23</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">1088.22</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">27</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">事件 · 技术 · 盈利预测</div>
         </div>
         <div class="candidate-card ">
           <div class="cand-header">
@@ -519,51 +450,123 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
               
               <span class="src-badge">3源</span>
             </div>
-            <span class="cand-score">35</span>
+            <span class="cand-score">36</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">27.49</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">26.94</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">29.16</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">27.41</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">26.86</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">29.07</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">33</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">强势股 · 盈利预测</div>
         </div>
         <div class="candidate-card ">
           <div class="cand-header">
             <div>
-              <span class="cand-code">002491.SZ</span>
-              <span class="cand-name">通鼎互联</span>
+              <span class="cand-code">300394.SZ</span>
+              <span class="cand-name">天孚通信</span>
               
-              <span class="src-badge">6源</span>
+              <span class="src-badge">8源</span>
             </div>
-            <span class="cand-score">35</span>
+            <span class="cand-score">36</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">25.80</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">25.28</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">27.36</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">28</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">373.40</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">360.14</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">409.42</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">29</span><span class="ml">量化分</span></div>
           </div>
-          <div class="cand-tags">连板 · 题材 · 首板</div>
+          <div class="cand-tags">盈利预测 · 资金</div>
         </div>
         <div class="candidate-card ">
           <div class="cand-header">
             <div>
-              <span class="cand-code">002179.SZ</span>
-              <span class="cand-name">中航光电</span>
+              <span class="cand-code">603083.SH</span>
+              <span class="cand-name">剑桥科技</span>
+              
+              <span class="src-badge">2源</span>
+            </div>
+            <span class="cand-score">35</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">189.63</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">185.80</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">201.13</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">36</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">题材</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600869.SH</span>
+              <span class="cand-name">远东股份</span>
+              
+              <span class="src-badge">3源</span>
+            </div>
+            <span class="cand-score">35</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">22.80</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">22.34</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">24.18</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 题材 · 龙虎榜</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">002463.SZ</span>
+              <span class="cand-name">沪电股份</span>
+              
+              <span class="src-badge">2源</span>
+            </div>
+            <span class="cand-score">35</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">111.33</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">109.08</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">118.07</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">35</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 题材</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300285.SZ</span>
+              <span class="cand-name">国瓷材料</span>
+              
+              <span class="src-badge">5源</span>
+            </div>
+            <span class="cand-score">35</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">41.84</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">40.36</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">45.88</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">31</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">盈利预测 · 题材</div>
+        </div>
+        <div class="candidate-card ">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">688099.SH</span>
+              <span class="cand-name">晶晨股份</span>
               
               <span class="src-badge">4源</span>
             </div>
-            <span class="cand-score">34</span>
+            <span class="cand-score">35</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">41.22</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">40.39</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">43.72</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">36</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">114.61</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">110.54</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">125.67</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
           </div>
-          <div class="cand-tags">盈利预测 · 首板 · 龙虎榜</div>
+          <div class="cand-tags">强势股 · 盈利预测</div>
         </div></div>
     </div>
 
@@ -573,45 +576,45 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
       
             <div class="step-row">
               <span class="step-name">涨幅筛选</span>
-              <span class="step-pass">84</span>
+              <span class="step-pass">187</span>
               
             </div>
             <div class="step-row">
               <span class="step-name">成交额过滤</span>
-              <span class="step-pass">69</span>
-              <span class="elim">15</span>
+              <span class="step-pass">144</span>
+              <span class="elim">43</span>
             </div>
             <div class="step-row">
               <span class="step-name">换手率过滤</span>
-              <span class="step-pass">22</span>
-              <span class="elim">47</span>
+              <span class="step-pass">52</span>
+              <span class="elim">92</span>
             </div>
             <div class="step-row">
               <span class="step-name">市值过滤</span>
-              <span class="step-pass">21</span>
+              <span class="step-pass">51</span>
               <span class="elim">1</span>
             </div>
             <div class="step-row">
               <span class="step-name">量比过滤</span>
-              <span class="step-pass">10</span>
-              <span class="elim">11</span>
+              <span class="step-pass">27</span>
+              <span class="elim">24</span>
             </div>
             <div class="step-row">
               <span class="step-name">均线+压力</span>
-              <span class="step-pass">9</span>
-              <span class="elim">1</span>
+              <span class="step-pass">25</span>
+              <span class="elim">2</span>
             </div>
             <div class="step-row">
               <span class="step-name">乖离率过滤</span>
-              <span class="step-pass">8</span>
-              <span class="elim">1</span>
+              <span class="step-pass">25</span>
+              
             </div>
             <div class="step-row">
               <span class="step-name">综合评分</span>
-              <span class="step-pass">8</span>
-              
-            </div><div class="step-note">📊 情绪活跃(64分)</div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (8只)</h3>
+              <span class="step-pass">24</span>
+              <span class="elim">1</span>
+            </div><div class="step-note">📊 情绪高潮(96分)</div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (19只)</h3>
       <div class="cards-grid">
         <div class="candidate-card selected">
           <div class="cand-header">
@@ -648,6 +651,222 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             <div class="metric"><span class="mv">98</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">高位博弈 · 爆量博弈 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603116.SH</span>
+              <span class="cand-name">红蜻蜓</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">7.61</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">7.50</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">7.92</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600452.SH</span>
+              <span class="cand-name">涪陵电力</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">12.37</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">12.18</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">12.86</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600509.SH</span>
+              <span class="cand-name">天富能源</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">9.30</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">9.16</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">9.67</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">90</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600593.SH</span>
+              <span class="cand-name">大连圣亚</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">36.49</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">35.94</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">38.70</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">110</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603165.SH</span>
+              <span class="cand-name">荣晟环保</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">19.68</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">19.38</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">20.87</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">115</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600698.SH</span>
+              <span class="cand-name">湖南天雁</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">7.90</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">7.78</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">8.38</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">113</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 爆量博弈 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603126.SH</span>
+              <span class="cand-name">中材节能</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">8.92</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">8.78</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">9.46</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">113</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300001.SZ</span>
+              <span class="cand-name">特锐德</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">34.14</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">33.62</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">35.51</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603116.SH</span>
+              <span class="cand-name">红蜻蜓</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">7.63</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">7.52</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">7.94</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600452.SH</span>
+              <span class="cand-name">涪陵电力</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">12.37</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">12.18</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">12.86</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603165.SH</span>
+              <span class="cand-name">荣晟环保</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">19.59</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">19.30</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">20.78</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">125</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 光头大阳 · 黄金放量</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">300373.SZ</span>
+              <span class="cand-name">扬杰科技</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">120</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">82.29</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">81.04</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">87.28</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">100</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 光头大阳 · 量能达标</div>
         </div>
         <div class="candidate-card selected">
           <div class="cand-header">
@@ -706,42 +925,6 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         <div class="candidate-card selected">
           <div class="cand-header">
             <div>
-              <span class="cand-code">600698.SH</span>
-              <span class="cand-name">湖南天雁</span>
-              <span class="badge-8step">八步法</span>
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">120</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">7.90</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">7.78</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">8.38</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">113</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">高位博弈 · 爆量博弈 · 黄金换手</div>
-        </div>
-        <div class="candidate-card selected">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">603126.SH</span>
-              <span class="cand-name">中材节能</span>
-              <span class="badge-8step">八步法</span>
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">120</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">8.92</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">8.78</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">9.46</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">113</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手</div>
-        </div>
-        <div class="candidate-card selected">
-          <div class="cand-header">
-            <div>
               <span class="cand-code">603386.SH</span>
               <span class="cand-name">骏亚科技</span>
               <span class="badge-8step">八步法</span>
@@ -756,6 +939,24 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             <div class="metric"><span class="mv">86</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">稳健蓄势 · 黄金放量 · 换手偏高</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">601975.SH</span>
+              <span class="cand-name">招商南油</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">81</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">4.89</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">4.82</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">5.19</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">68</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 量能达标 · 换手偏高</div>
         </div></div>
     </div>
   </div>
