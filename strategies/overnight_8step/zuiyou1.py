@@ -1984,8 +1984,8 @@ def analyze_ultimate(
         tags.extend(fin_tags)
 
     # --- 最终判定 ---
-    # v1.5.1: 评分上限120分，防止过度叠加导致评分膨胀
-    score = min(score, 120)
+    # v1.6.3: 评分上限150分（v1.6新增PE/PB/财务/振幅等加成后120分不足区分）
+    score = min(score, 150)
     if score < cfg["score_threshold"]:
         if reject_stats is not None:
             reject_stats["得分不足"] += 1
@@ -2895,7 +2895,7 @@ def debug_stock(code: str, cfg: dict = None):
             tags.append("共识强化")
         tags.append("🤖LLM")
 
-    score = min(score, 120)
+    score = min(score, 150)
 
     steps.append(("评分", score >= cfg["score_threshold"],
                   f"得分:{score} 阈值:{cfg['score_threshold']} 标签:{' | '.join(tags)}"))
