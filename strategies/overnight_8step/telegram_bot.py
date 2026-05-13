@@ -4,7 +4,7 @@ Telegram Bot 交互处理器 - 诊断版
 使用 PID 锁文件确保只有一个实例在 polling。
 """
 
-import os, sys, logging, threading, http.server, time, atexit
+import os, sys, logging, threading, http.server, time
 
 sys.path.insert(0, os.path.dirname(__file__))
 
@@ -30,7 +30,6 @@ from position_manager import (
 # ============================================================
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
-LOCK_FILE = os.path.join(os.path.dirname(__file__), ".bot_lock")
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -42,43 +41,6 @@ logger = logging.getLogger(__name__)
 
 def _p(msg):
     print(msg, flush=True)
-
-
-# ============================================================
-# PID 锁
-# ============================================================
-def acquire_lock():
-    for attempt in range(60):
-        if os.path.exists(LOCK_FILE):
-            try:
-                with open(LOCK_FILE, "r") as f:
-                    old_pid = int(f.read().strip())
-                try:
-                    os.kill(old_pid, 0)
-                    if attempt == 0:
-                        _p(f"⏳ 旧实例 PID={old_pid} 仍在运行，等待...")
-                    time.sleep(1)
-                    continue
-                except (OSError, ProcessLookupError):
-                    _p(f"   旧实例 PID={old_pid} 已退出")
-                    os.remove(LOCK_FILE)
-            except (ValueError, FileNotFoundError):
-                pass
-        with open(LOCK_FILE, "w") as f:
-            f.write(str(os.getpid()))
-        _p(f"🔒 锁已获取 PID={os.getpid()}")
-        atexit.register(release_lock)
-        return True
-    _p("❌ 等待超时")
-    return False
-
-
-def release_lock():
-    try:
-        if os.path.exists(LOCK_FILE):
-            os.remove(LOCK_FILE)
-    except Exception:
-        pass
 
 
 # ============================================================
@@ -211,27 +173,28 @@ def delete_webhook():
 
 
 def run_polling_forever(app):
+    """永久 polling —— 不管什么原因退出都重来，永不停止"""
     attempt = 0
     while True:
         attempt += 1
+        _p(f"🚀 Polling (第{attempt}次)...")
         try:
-            _p(f"🚀 Polling (第{attempt}次)...")
             app.run_polling(
                 poll_interval=3,
                 timeout=10,
                 drop_pending_updates=False,
             )
-            _p("Polling 正常退出"); break
         except Exception as e:
-            err = str(e)
-            if "Conflict" in err or "409" in err:
-                wait = attempt * 5
-                _p(f"⚠️ Conflict，等{wait}s重试...")
-                time.sleep(wait)
-                app = build_app()
-                delete_webhook()
-            else:
-                _p(f"❌ Polling 异常: {e}")
+            _p(f"❌ Polling 异常: {e}")
+        else:
+            _p("Polling 异常退出（Conflict 等）")
+
+        # 不管什么原因退出，先删除 webhook、等待、然后重试
+        wait = min(attempt * 10, 60)
+        _p(f"⏳ 等待 {wait}s 后重新启动...")
+        delete_webhook()
+        time.sleep(wait)
+        app = build_app()
 
 
 def main():
@@ -239,19 +202,22 @@ def main():
         _p("❌ 缺 BOT_TOKEN"); sys.exit(1)
 
     _p("=" * 50)
-    _p("🤖 OpenClaw Bot 诊断版")
+    _p("🤖 OpenClaw Bot")
 
-    if not acquire_lock():
-        sys.exit(1)
+    # 删除旧 webhook + 等待旧实例退出
+    delete_webhook()
+    _p("⏳ 等待 10 秒确保旧实例退出...")
+    time.sleep(10)
 
+    # 环境检查
     port = int(os.environ.get("PORT", 0))
     _p(f"PORT={port}")
 
-    delete_webhook()
-
+    # 健康检查
     if port:
         start_health_server(port)
 
+    # 永久运行
     app = build_app()
     run_polling_forever(app)
 
