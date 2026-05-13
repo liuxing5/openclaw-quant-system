@@ -21,16 +21,17 @@ SOURCES = [
     ('Tencent-行情补充', 'tencent_quotes', 'market', 1, 0.9),
     ('THS-强势股', 'ths_strong_stocks', 'market', 1, 1.1),
     ('THS-概念标签', 'ths_concept_tags', 'concept', 2, 0.8),
+    ('THS-概念板块', 'ths_concept_board', 'concept', 2, 0.8),
     # === Layer 2: Research Reports ===
     ('东财-盈利预测', 'em_profit_forecast', 'research', 1, 1.2),
     ('THS-盈利预测', 'ths_profit_forecast', 'research', 1, 1.1),
+    ('CNINFO-机构预测', 'cninfo_forecast', 'research', 1, 1.1),
     # === Layer 3: News ===
     ('财联社-电报', 'cls_telegraph', 'news', 1, 1.1),
     # === Layer 4: Fundamentals ===
     ('MootDX-财务数据', 'mootdx_fundamentals', 'fundamental', 1, 0.8),
     # === Layer 5: Announcements ===
     ('巨潮-公告', 'cninfo_announcements', 'announcement', 2, 0.7),
-    ('MootDX-公告', 'mootdx_announcements', 'announcement', 2, 0.6),
 ]
 
 

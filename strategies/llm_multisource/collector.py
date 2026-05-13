@@ -52,8 +52,13 @@ def is_trading_day(d):
     return _calendar_is_trading_day(d)
 
 
-def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=2):
-    """带超时的采集包装器（支持重试）"""
+def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=1):
+    """带超时的采集包装器。
+
+    超时仅重试 1 次（共 2 次），不再无限重试。
+    异常重试 1 次。
+    超时不重试多次：因为接口挂死时重试仍挂死，只会成倍耗时。
+    """
     for attempt in range(max_retries + 1):
         result = [None]
         error = [None]
@@ -69,13 +74,9 @@ def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=2):
         t.join(timeout=timeout)
 
         if t.is_alive():
-            if attempt < max_retries:
-                logger.warning(f"{fetcher_func.__name__} 超时 ({timeout}s)，第 {attempt + 1} 次重试...")
-                time.sleep(2)
-                continue
-            else:
-                logger.warning(f"{fetcher_func.__name__} 超时 ({timeout}s)，已重试 {max_retries} 次，跳过")
-                return []
+            # 超时：不再重试（重试必然也超时），直接跳过
+            logger.warning(f"{fetcher_func.__name__} 超时 ({timeout}s)，跳过（不重试）")
+            return []
         if error[0]:
             if attempt < max_retries:
                 logger.warning(f"{fetcher_func.__name__} 异常: {error[0]}，第 {attempt + 1} 次重试...")
@@ -769,7 +770,29 @@ def store_signals(rows):
     # 预加载 feed_sources 映射
     cur.execute("SELECT id, name FROM feed_sources;")
     source_map = {row[1]: row[0] for row in cur.fetchall()}
-    logger.info(f"加载 {len(source_map)} 个数据源映射: {list(source_map.keys())}")
+
+    # 发现未知数据源，自动注册到 feed_sources
+    seen_sources = set(row[1] for row in rows)
+    new_sources = seen_sources - set(source_map.keys())
+    if new_sources:
+        for src in new_sources:
+            route = 'auto_' + src.lower().replace('-', '_').replace(' ', '_')[:40]
+            cur.execute("""
+                INSERT INTO feed_sources (name, route, category, tier, weight, poll_interval_sec)
+                VALUES (%s, %s, 'auto', 2, 1.0, 86400)
+                ON CONFLICT (name) DO NOTHING
+                RETURNING id;
+            """, (src, route))
+            new_id = cur.fetchone()
+            if new_id:
+                source_map[src] = new_id[0]
+            else:
+                cur.execute("SELECT id FROM feed_sources WHERE name = %s;", (src,))
+                row2 = cur.fetchone()
+                if row2:
+                    source_map[src] = row2[0]
+        conn.commit()
+        logger.warning(f"自动注册 {len(new_sources)} 个新数据源: {list(new_sources)}")
 
     # 替换 source_id 占位符
     rows_with_id = []
@@ -777,7 +800,7 @@ def store_signals(rows):
         source_name = row[1]
         source_id = source_map.get(source_name)
         if source_id is None:
-            pass  # source_id 为 NULL 即可
+            logger.warning(f"数据源 '{source_name}' 无法注册，source_id 设为 NULL")
         rows_with_id.append((source_id,) + row[1:])
 
     # 批量插入
