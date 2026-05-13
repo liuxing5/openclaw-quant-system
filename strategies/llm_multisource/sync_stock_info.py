@@ -80,9 +80,10 @@ def sync():
                         list_date_str = str(list_date_row['value'].iloc[0])
                         if list_date_str and list_date_str != 'nan' and len(list_date_str) == 8:
                             list_date = pd.to_datetime(list_date_str, format='%Y%m%d').date()
-                            cur.execute("""
-                                UPDATE stock_basic_info SET list_date = %s WHERE ts_code = %s;
-                            """, (list_date, ts_code))
+                            if list_date < date.today():
+                                cur.execute("""
+                                    UPDATE stock_basic_info SET list_date = %s WHERE ts_code = %s;
+                                """, (list_date, ts_code))
                             conn.commit()
                             logger.debug(f"{ts_code} list_date = {list_date}")
                 time.sleep(0.3)

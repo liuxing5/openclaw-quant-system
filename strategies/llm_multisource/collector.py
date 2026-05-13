@@ -24,7 +24,7 @@ from strategies.llm_multisource.fetchers.layer5_announcements import fetch_cninf
 from strategies.llm_multisource.fetchers.layer1_market import (
     fetch_tencent_supplementary, fetch_ths_strong_stocks, fetch_ths_concept_tags,
     fetch_ths_strong_stocks_structured, fetch_concept_board_quotes,
-    fetch_earnings_forecast_structured,
+    fetch_earnings_forecast_structured, fetch_concept_constituents,
     fetch_mootdx_realtime, fetch_mootdx_orderbook, fetch_mootdx_kline,
 )
 from strategies.llm_multisource.fetchers.layer4_fundamentals import fetch_mootdx_fundamentals
@@ -891,6 +891,7 @@ def main():
             (lambda: fetch_tencent_supplementary(make_signal), 'Tencent补充', FETCH_TIMEOUT),
             (lambda: fetch_ths_strong_stocks_structured(make_signal), 'THS强势股', FETCH_TIMEOUT),
             (lambda: fetch_concept_board_quotes(make_signal), 'THS概念板块', CONCEPT_TIMEOUT),
+            (lambda: fetch_concept_constituents(make_signal), 'THS概念成分', CONCEPT_TIMEOUT),
         ])
         # mootdx (graceful if not installed or connection fails)
         fetchers.extend([
@@ -926,6 +927,7 @@ def main():
     fundamentals_data = []
     strong_stock_data = []
     concept_board_data = []
+    concept_membership_data = []
     earnings_forecast_data = []
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
@@ -948,6 +950,8 @@ def main():
                     strong_stock_data.extend(rows._strong_stock_rank)
                 if hasattr(rows, '_concept_board_quotes'):
                     concept_board_data.extend(rows._concept_board_quotes)
+                if hasattr(rows, '_concept_membership'):
+                    concept_membership_data.extend(rows._concept_membership)
                 if hasattr(rows, '_earnings_forecast'):
                     earnings_forecast_data.extend(rows._earnings_forecast)
                 logger.info(f"{name}: {len(rows)} 条")
@@ -962,7 +966,7 @@ def main():
         from strategies.llm_multisource.store_structured import (
             update_tencent_quotes, store_fundamentals,
             store_strong_stock_rank, store_concept_board_quotes,
-            store_earnings_forecast,
+            store_earnings_forecast, store_concept_membership,
         )
         if tencent_data:
             update_tencent_quotes(tencent_data)
@@ -972,6 +976,8 @@ def main():
             store_strong_stock_rank(strong_stock_data)
         if concept_board_data:
             store_concept_board_quotes(concept_board_data)
+        if concept_membership_data:
+            store_concept_membership(concept_membership_data)
         if earnings_forecast_data:
             store_earnings_forecast(earnings_forecast_data)
     except Exception as e:

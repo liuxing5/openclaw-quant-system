@@ -57,12 +57,17 @@ FIELDS = "date,open,high,low,close,volume,amount,turn,pctChg"
 
 
 def _get_target_stocks() -> list:
-    """从 daily_quotes 获取当前活跃股票列表（按最新交易日成交额降序）"""
+    """从 stock_basic_info 获取全市场股票列表（按代码排序）
+
+    使用 stock_basic_info 而非 daily_quotes 以避免鸡生蛋问题：
+    daily_quotes 可能只有少量股票，导致回填覆盖不全。
+    """
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT DISTINCT ts_code
-        FROM daily_quotes
+        SELECT ts_code
+        FROM stock_basic_info
+        WHERE is_active = TRUE
         ORDER BY ts_code
     """)
     codes = [r[0] for r in cur.fetchall()]

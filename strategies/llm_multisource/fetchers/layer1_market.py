@@ -271,6 +271,85 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
 #  Tencent 腾讯财经 补充数据 (PE/PB/市值/涨跌停价)
 # ============================================================
 
+def fetch_concept_constituents(make_signal) -> list:
+    """概念成分股采集 -- stock_board_concept_cons_em
+
+    Fetches top-20 concept boards and their constituent stocks.
+    Returns empty signal list + attaches _concept_membership data
+    for store_concept_membership() to persist.
+    """
+    import akshare as ak
+    rows = FetchResult()
+    membership_data = []
+    today = datetime.now(BEIJING_TZ).date()
+
+    try:
+        logger.debug("概念成分股: 获取概念列表")
+        df_concepts = ak.stock_board_concept_name_ths()
+        if df_concepts is None or hasattr(df_concepts, 'empty') and df_concepts.empty:
+            return rows
+
+        col_chg = next((c for c in ['涨跌幅', '涨跌幅(%)', 'pct_chg'] if c in df_concepts.columns), None)
+        col_name = next((c for c in ['概念名称', '板块名称', 'name'] if c in df_concepts.columns), None)
+        col_code = next((c for c in ['代码', '板块代码', 'code'] if c in df_concepts.columns), None)
+
+        if not col_name:
+            return rows
+
+        if col_chg:
+            df_concepts[col_chg] = pd.to_numeric(df_concepts[col_chg], errors='coerce')
+            top_concepts = df_concepts.nlargest(20, col_chg)
+        else:
+            top_concepts = df_concepts.head(20)
+
+        for _, concept_row in top_concepts.iterrows():
+            concept_name = str(concept_row.get(col_name, '') or '')
+            concept_code = str(concept_row.get(col_code, '') or '') if col_code else f'CONCEPT_{hash(concept_name) & 0xFFFF:04x}'
+            if not concept_name or concept_name == 'nan':
+                continue
+
+            try:
+                df_cons = ak.stock_board_concept_cons_em(symbol=concept_name)
+                if df_cons is None or (hasattr(df_cons, 'empty') and df_cons.empty):
+                    continue
+
+                col_stock_code = next((c for c in ['代码', '股票代码', 'code'] if c in df_cons.columns), None)
+                col_stock_name = next((c for c in ['名称', '股票名称', 'name'] if c in df_cons.columns), None)
+
+                if not col_stock_code:
+                    continue
+
+                for _, r in df_cons.iterrows():
+                    try:
+                        raw_code = str(r.get(col_stock_code, '') or '')
+                        code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
+                        if not code or len(code) < 6:
+                            continue
+                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        stock_name = str(r.get(col_stock_name, '') or '') if col_stock_name else ''
+
+                        membership_data.append({
+                            'ts_code': ts,
+                            'concept_code': concept_code,
+                            'concept_name': concept_name,
+                            'update_date': today,
+                        })
+                    except Exception:
+                        continue
+
+                time.sleep(0.15)
+            except Exception as e:
+                logger.debug(f"概念成分股 {concept_name} 失败: {e}")
+                continue
+
+    except Exception as e:
+        logger.debug(f"概念成分股采集失败: {e}")
+
+    rows._concept_membership = membership_data
+    logger.info(f"概念成分股: {len(membership_data)} 条映射 (from {len(set(d['concept_name'] for d in membership_data))} 个概念)")
+    return rows
+
+
 def fetch_tencent_supplementary(make_signal, get_db_func=None) -> list:
     """腾讯财经补充数据 -- qt.gtimg.cn
 
@@ -291,8 +370,9 @@ def fetch_tencent_supplementary(make_signal, get_db_func=None) -> list:
         cur.execute("""
             SELECT ts_code FROM daily_quotes
             WHERE trade_date = (SELECT MAX(trade_date) FROM daily_QUOTES)
+              AND volume > 0
             ORDER BY amount DESC NULLS LAST
-            LIMIT 500;
+            LIMIT 3000;
         """)
         codes = [row[0] for row in cur.fetchall()]
         cur.close(); conn.close()

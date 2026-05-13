@@ -16,12 +16,12 @@ SOURCES = [
     ('AKShare-机构调研', 'akshare_jgdy', 'research', 1, 1.1),
     # === Layer 1: Market Data ===
     ('MootDX-实时行情', 'mootdx_quotes', 'market', 1, 1.0),
-    ('MootDX-五档盘口', 'mootdx_orderbook', 'market', 2, 0.7),
     ('MootDX-K线', 'mootdx_kline', 'market', 1, 0.8),
     ('Tencent-行情补充', 'tencent_quotes', 'market', 1, 0.9),
     ('THS-强势股', 'ths_strong_stocks', 'market', 1, 1.1),
     ('THS-概念标签', 'ths_concept_tags', 'concept', 2, 0.8),
     ('THS-概念板块', 'ths_concept_board', 'concept', 2, 0.8),
+    ('THS-概念成分', 'ths_concept_constituents', 'concept', 2, 0.7),
     # === Layer 2: Research Reports ===
     ('东财-盈利预测', 'em_profit_forecast', 'research', 1, 1.2),
     ('THS-盈利预测', 'ths_profit_forecast', 'research', 1, 1.1),

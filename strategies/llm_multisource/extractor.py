@@ -189,7 +189,8 @@ def process_one(row):
             if items:
                 logger.debug(f"raw_id={row['id']}: 容错保留 {len(items)} 个明确 buy 信号")
         elif is_recommendation:
-            items = items_raw
+            items = [it for it in items_raw
+                     if it.get('recommendation_type') in ('buy', 'strong_buy')]
         else:
             items = []
 

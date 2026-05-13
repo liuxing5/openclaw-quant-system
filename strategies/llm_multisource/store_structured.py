@@ -363,6 +363,46 @@ def store_concept_board_quotes(data: list) -> int:
     return upserted
 
 
+def store_concept_membership(data: list) -> int:
+    """Bulk upsert into concept_membership.
+
+    Args:
+        data: list of dicts with ts_code, concept_code, concept_name, update_date.
+    Returns:
+        Number of rows upserted.
+    """
+    if not data:
+        return 0
+
+    conn = get_db()
+    cur = conn.cursor()
+    upserted = 0
+
+    for item in data:
+        try:
+            cur.execute("SAVEPOINT sp_cm;")
+            cur.execute("""
+                INSERT INTO concept_membership
+                    (ts_code, concept_code, concept_name, update_date)
+                VALUES (%(ts_code)s, %(concept_code)s, %(concept_name)s, %(update_date)s)
+                ON CONFLICT (ts_code, concept_code) DO UPDATE SET
+                    concept_name = EXCLUDED.concept_name,
+                    update_date = EXCLUDED.update_date;
+            """, item)
+            cur.execute("RELEASE SAVEPOINT sp_cm;")
+            if cur.rowcount > 0:
+                upserted += 1
+        except Exception as e:
+            logger.debug(f"concept_membership upsert {item.get('ts_code')}: {e}")
+            cur.execute("ROLLBACK TO SAVEPOINT sp_cm;")
+            continue
+
+    conn.commit()
+    cur.close(); conn.close()
+    logger.info(f"concept_membership: upserted {upserted}/{len(data)}")
+    return upserted
+
+
 if __name__ == '__main__':
     """Standalone test: verify table creation and basic operations."""
     logger.info("store_structured.py standalone: checking tables...")

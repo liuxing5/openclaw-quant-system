@@ -83,6 +83,37 @@ def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
             continue
 
     # Attach structured data for store_structured.py to consume
+    # AKShare fallback when mootdx yields no data (e.g. cloud deployment)
+    if not fundamentals and codes:
+        try:
+            import akshare as ak
+            from datetime import datetime, timezone, timedelta
+            beijing_tz = timezone(timedelta(hours=8))
+            today = datetime.now(beijing_tz).date()
+            for ts in codes[:50]:
+                try:
+                    code = ts.split('.')[0]
+                    df = ak.stock_financial_abstract_ths(symbol=code, indicator='按报告期')
+                    if df is not None and not df.empty:
+                        latest = df.iloc[-1] if len(df) > 0 else None
+                        if latest is not None:
+                            fundamentals.append({
+                                'ts_code': ts,
+                                'report_date': str(latest.get('报告期', today)),
+                                'revenue': float(latest.get('营业总收入', 0) or 0),
+                                'net_profit': float(latest.get('净利润', 0) or 0),
+                                'eps': float(latest.get('每股收益', 0) or 0),
+                                'bps': float(latest.get('每股净资产', 0) or 0),
+                            })
+                    time.sleep(0.3)
+                except Exception:
+                    continue
+            logger.info(f"AKShare财务数据(回退): {len(fundamentals)} 条记录")
+        except ImportError:
+            logger.debug("akshare 未安装，无法回退财务数据")
+        except Exception as e:
+            logger.debug(f"AKShare财务数据回退失败: {e}")
+
     rows._fundamentals = fundamentals
 
     logger.info(f"MootDX财务数据: {len(fundamentals)} 条记录 from {len(codes[:200])} 只股票")
