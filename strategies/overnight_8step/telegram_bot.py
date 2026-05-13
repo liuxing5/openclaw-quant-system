@@ -285,17 +285,30 @@ def main():
             health_thread.start()
             print(f"🏥 健康检查端口已开启: {port}", flush=True)
 
-        try:
-            application.run_polling(
-                allowed_updates=Update.ALL_TYPES,
-                poll_interval=3,
-                timeout=10,
-                drop_pending_updates=False,
-            )
-        except Exception as e:
-            print(f"❌ Polling 模式异常: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
+        import time as _time
+        max_retries = 5
+        for retry in range(max_retries):
+            try:
+                application.run_polling(
+                    allowed_updates=Update.ALL_TYPES,
+                    poll_interval=3,
+                    timeout=10,
+                    drop_pending_updates=False,
+                )
+                break
+            except Exception as e:
+                from telegram.error import Conflict
+                if "Conflict" in str(e) or isinstance(e, Conflict):
+                    wait = (retry + 1) * 5
+                    print(f"⚠️ Polling 冲突 (第{retry+1}次)，等待 {wait} 秒后重试...", flush=True)
+                    _time.sleep(wait)
+                else:
+                    print(f"❌ Polling 模式异常: {e}", flush=True)
+                    import traceback
+                    traceback.print_exc()
+                    sys.exit(1)
+        else:
+            print("❌ 已达到最大重试次数，退出", flush=True)
             sys.exit(1)
     elif port and webhook_url:
         # Webhook 模式
