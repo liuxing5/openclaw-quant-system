@@ -305,14 +305,48 @@ async def main():
     # 注册消息处理器
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Render 需要监听端口才能保持服务运行
-    # 使用 polling + 简单的 HTTP 健康检查端点
+    # Render 部署：使用 webhook 模式（更适合 serverless 环境）
     port = int(os.environ.get("PORT", 0))
+    webhook_url = os.environ.get("WEBHOOK_URL", "")
     
-    if port:
-        # 在 Render 上：polling + 健康检查端点
-        print(f"✅ Bot 已启动 (polling 模式)")
+    if port and webhook_url:
+        # Render 生产环境：webhook 模式
+        print(f"✅ Bot 已启动 (webhook 模式)")
+        print(f"🔌 端口: {port}")
+        print(f" Webhook URL: {webhook_url}")
+        
+        # 设置 webhook
+        await application.bot.set_webhook(
+            url=webhook_url,
+            allowed_updates=Update.ALL_TYPES,
+        )
+        print(f"✓ Webhook 已设置")
+        
+        # 启动 webhook 服务器
+        await application.start()
+        await application.updater.start_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=BOT_TOKEN,
+        )
+        print(f"✓ Webhook 服务器已启动")
+        print(f"  访问: {webhook_url}")
+        
+        # 保持运行
+        try:
+            while True:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await application.updater.stop()
+            await application.stop()
+            await application.shutdown()
+    elif port:
+        # Render 本地测试：polling + 健康检查端点
+        print(f"✅ Bot 已启动 (polling 模式 - 测试)")
         print(f"🔌 健康检查端口: {port}")
+        print(f"️  建议设置 WEBHOOK_URL 环境变量以使用 webhook 模式")
         
         # 创建简单的 HTTP 服务器保持端口开放
         async def health_handler(request):
