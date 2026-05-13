@@ -14,13 +14,23 @@ def update_tracking():
     conn = get_db(); cur = conn.cursor()
     
     # 自动迁移：添加缺失的列
-    for col in ['t1_hit_target', 't1_hit_stop', 't5_hit_target', 't5_hit_stop', 't20_hit_target', 't20_hit_stop']:
+    all_cols = [
+        't1_high', 't1_low', 't1_close', 't1_return',
+        't1_hit_target', 't1_hit_stop',
+        't5_high', 't5_low', 't5_close', 't5_return',
+        't5_hit_target', 't5_hit_stop',
+        't20_high', 't20_low', 't20_close', 't20_return',
+        't20_hit_target', 't20_hit_stop',
+    ]
+    for col in all_cols:
         cur.execute("""
             SELECT column_name FROM information_schema.columns
             WHERE table_schema = 'public' AND table_name = 'performance_tracking' AND column_name = %s;
         """, (col,))
         if not cur.fetchone():
-            cur.execute(f"ALTER TABLE performance_tracking ADD COLUMN {col} BOOLEAN;")
+            col_type = 'BOOLEAN' if col.endswith('hit_target') or col.endswith('hit_stop') else \
+                       'FLOAT' if col.endswith('return') else 'NUMERIC(10,3)'
+            cur.execute(f"ALTER TABLE performance_tracking ADD COLUMN {col} {col_type};")
             conn.commit()
     
     # 自动迁移：添加唯一约束
