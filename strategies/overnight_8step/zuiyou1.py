@@ -2745,7 +2745,7 @@ def debug_stock(code: str, cfg: dict = None):
 
     time_weight = get_time_weight(cfg["MODE"])
     est_full_vol = curr_vol / time_weight if time_weight > 0 else curr_vol
-    hist_vols = df["volume"].tolist()
+    hist_vols = df["volume"].tolist()[:-1]  # 排除最后一日(当天baostock数据不完整), 与生产一致
 
     # Step 1: 涨幅
     in_stable = cfg["stable_pct_lo"] <= curr_pct <= cfg["stable_pct_hi"]
