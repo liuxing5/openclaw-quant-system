@@ -344,7 +344,8 @@ async def main():
             )
             print(f"✓ Webhook 已设置")
             
-            # 启动 webhook 服务器
+            # 启动 application 和 webhook 服务器
+            await application.start()
             await application.updater.start_webhook(
                 listen="0.0.0.0",
                 port=port,
