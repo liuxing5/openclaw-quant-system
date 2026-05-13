@@ -285,7 +285,7 @@ async def _managed_polling(app, poll_interval=3, timeout=10, drop_pending=True):
         _p(" 初始化...")
         await app.initialize()
         
-        # 关键修复：在 start() 之前主动跳过所有待处理更新
+        # 关键修复：彻底清除所有待处理更新，防止重启后重复处理
         # 1. 先删除 webhook 并丢弃待处理更新
         try:
             await app.bot.delete_webhook(drop_pending_updates=True)
@@ -293,18 +293,23 @@ async def _managed_polling(app, poll_interval=3, timeout=10, drop_pending=True):
         except Exception as e:
             _p(f"⚠️ 删除 webhook 失败: {e}")
         
-        # 2. 等待让 Telegram 服务端清理旧连接
-        _p("⏳ 等待 15s 让旧连接超时...")
-        await asyncio.sleep(15)
-        
-        # 3. 获取所有待处理更新并跳过
+        # 2. 循环获取并跳过所有待处理更新（可能超过 100 条）
         try:
-            updates = await app.bot.get_updates(limit=100)
-            if updates:
+            total_skipped = 0
+            while True:
+                updates = await app.bot.get_updates(limit=100)
+                if not updates:
+                    break
                 last_id = max(u.update_id for u in updates)
-                _p(f"🔄 发现 {len(updates)} 个待处理更新，最新 update_id={last_id}，跳过所有")
-                # 通过设置 offset 跳过所有旧更新
+                total_skipped += len(updates)
+                _p(f"🔄 跳过 {len(updates)} 个待处理更新 (最新 update_id={last_id})")
+                # 设置 offset 跳过这批更新
                 await app.bot.get_updates(offset=last_id + 1)
+                # 如果返回少于 100 条，说明已经全部获取完毕
+                if len(updates) < 100:
+                    break
+            if total_skipped > 0:
+                _p(f"✅ 共跳过 {total_skipped} 个旧更新")
             else:
                 _p("🔄 无待处理更新")
         except Exception as e:
