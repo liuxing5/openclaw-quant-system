@@ -309,74 +309,109 @@ async def main():
     port = int(os.environ.get("PORT", 0))
     webhook_url = os.environ.get("WEBHOOK_URL", "")
     
+    # 如果在 Render 上运行但没有设置 WEBHOOK_URL，自动构建
+    if port and not webhook_url:
+        # 尝试从 RENDER_EXTERNAL_HOSTNAME 构建
+        render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "")
+        if render_host:
+            webhook_url = f"https://{render_host}/{BOT_TOKEN}"
+            print(f"ℹ️  自动构建 Webhook URL: {webhook_url}")
+        else:
+            print("❌ 错误：在 Render 上运行但未设置 WEBHOOK_URL")
+            print("   请在 Render 环境变量中添加 WEBHOOK_URL")
+            print("   格式：https://your-service.onrender.com/YOUR_BOT_TOKEN")
+            sys.exit(1)
+    
     if port and webhook_url:
         # Render 生产环境：webhook 模式
         print(f"✅ Bot 已启动 (webhook 模式)")
         print(f"🔌 端口: {port}")
-        print(f" Webhook URL: {webhook_url}")
+        print(f"📡 Webhook URL: {webhook_url}")
         
-        # 设置 webhook
-        await application.bot.set_webhook(
-            url=webhook_url,
-            allowed_updates=Update.ALL_TYPES,
-        )
-        print(f"✓ Webhook 已设置")
-        
-        # 启动 webhook 服务器
-        await application.start()
-        await application.updater.start_webhook(
-            listen="0.0.0.0",
-            port=port,
-            url_path=BOT_TOKEN,
-        )
-        print(f"✓ Webhook 服务器已启动")
-        print(f"  访问: {webhook_url}")
-        
-        # 保持运行
         try:
-            while True:
-                await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await application.updater.stop()
-            await application.stop()
-            await application.shutdown()
+            # 先删除旧的 webhook（避免冲突）
+            print("🔄 清理旧的 webhook 设置...")
+            await application.bot.delete_webhook(drop_pending_updates=True)
+            print("✓ 旧 webhook 已删除")
+            
+            # 设置新的 webhook
+            await application.bot.set_webhook(
+                url=webhook_url,
+                allowed_updates=Update.ALL_TYPES,
+            )
+            print(f"✓ Webhook 已设置")
+            
+            # 启动 webhook 服务器
+            await application.start()
+            await application.updater.start_webhook(
+                listen="0.0.0.0",
+                port=port,
+                url_path=BOT_TOKEN,
+            )
+            print(f"✓ Webhook 服务器已启动")
+            print(f"📡 等待 Telegram 推送消息...")
+            
+            # 保持运行
+            try:
+                while True:
+                    await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                await application.updater.stop()
+                await application.stop()
+                await application.shutdown()
+        except Exception as e:
+            print(f"❌ Webhook 启动失败: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
     elif port:
         # Render 本地测试：polling + 健康检查端点
         print(f"✅ Bot 已启动 (polling 模式 - 测试)")
         print(f"🔌 健康检查端口: {port}")
-        print(f"️  建议设置 WEBHOOK_URL 环境变量以使用 webhook 模式")
+        print(f"⚠️  建议设置 WEBHOOK_URL 环境变量以使用 webhook 模式")
         
-        # 创建简单的 HTTP 服务器保持端口开放
-        async def health_handler(request):
-            return web.Response(text="OK")
-        
-        app = web.Application()
-        app.router.add_get("/", health_handler)
-        app.router.add_get("/health", health_handler)
-        
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", port)
-        await site.start()
-        print(f" 健康检查: http://0.0.0.0:{port}/health")
-        
-        # 手动启动 polling（避免事件循环冲突）
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-        
-        # 保持运行
         try:
-            while True:
-                await asyncio.sleep(3600)
-        except asyncio.CancelledError:
-            pass
-        finally:
-            await application.updater.stop()
-            await application.stop()
-            await application.shutdown()
+            # 先删除 webhook（避免冲突）
+            print("🔄 删除 webhook，切换到 polling 模式...")
+            await application.bot.delete_webhook(drop_pending_updates=True)
+            print("✓ Webhook 已删除")
+            
+            # 创建简单的 HTTP 服务器保持端口开放
+            async def health_handler(request):
+                return web.Response(text="OK")
+            
+            app = web.Application()
+            app.router.add_get("/", health_handler)
+            app.router.add_get("/health", health_handler)
+            
+            runner = web.AppRunner(app)
+            await runner.setup()
+            site = web.TCPSite(runner, "0.0.0.0", port)
+            await site.start()
+            print(f" 健康检查: http://0.0.0.0:{port}/health")
+            
+            # 手动启动 polling（避免事件循环冲突）
+            await application.initialize()
+            await application.start()
+            await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+            
+            # 保持运行
+            try:
+                while True:
+                    await asyncio.sleep(3600)
+            except asyncio.CancelledError:
+                pass
+            finally:
+                await application.updater.stop()
+                await application.stop()
+                await application.shutdown()
+        except Exception as e:
+            print(f"❌ Polling 启动失败: {e}")
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
     else:
         # 本地开发：直接 polling
         print("✅ Bot 已启动，等待消息...")
