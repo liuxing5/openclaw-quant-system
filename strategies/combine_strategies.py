@@ -94,11 +94,19 @@ def load_llm_candidates_from_csv(csv_path: str, min_score: int = 5) -> List[Tupl
 
 def normalize_code(code: str) -> str:
     """
-    标准化股票代码格式
-    600xxx -> 600xxx.SH
-    000xxx -> 000xxx.SZ
+    标准化股票代码格式，兼容多种输入
+    sh.600519 / 600519.SH / 600519 → 600519.SH
+    sz.000001 / 000001.SZ / 000001 → 000001.SZ
+    bj.430001 / 430001.BJ / 430001 → 430001.BJ
     """
-    code = code.strip().replace('.SH', '').replace('.SZ', '').replace('.', '')
+    code = code.strip()
+    # 去掉 baostock 前缀 (sh./sz./bj.)
+    for prefix in ('sh.', 'sz.', 'bj.', 'SH.', 'SZ.', 'BJ.'):
+        if code.startswith(prefix):
+            code = code[len(prefix):]
+            break
+    # 去掉 .SH/.SZ/.BJ 后缀
+    code = code.replace('.SH', '').replace('.SZ', '').replace('.BJ', '').replace('.', '')
     if code.startswith(('6', '9')):
         return f"{code}.SH"
     elif code.startswith(('0', '2', '3')):
@@ -244,18 +252,20 @@ def run_resonance_strategy(
     # 合并去重然后按 resonance 结果过滤
     all_results = {}
     for r in stable_results + upper_results:
-        code = r.get('code', '')
+        raw_code = r.get('code', '')
+        code = normalize_code(raw_code)
+        r['code'] = code  # 统一为标准格式
         if code not in all_results or r.get('score', 0) > all_results[code].get('score', 0):
             # 补充 name 和 industry（scan_pool 不返回这些字段）
             if 'name' not in r or not r.get('name'):
-                r['name'] = all_name_map.get(code, '')
+                r['name'] = all_name_map.get(raw_code, all_name_map.get(code, ''))
             if 'industry' not in r:
                 from overnight_8step.zuiyou1 import get_stock_industry
                 industry = get_stock_industry(code)
                 r['industry'] = industry
             all_results[code] = r
 
-    resonance_set = set(final_candidates)
+    resonance_set = {normalize_code(c) for c in final_candidates}
     result = [all_results[code] for code in resonance_set if code in all_results]
     result.sort(key=lambda x: x.get('score', 0), reverse=True)
 
