@@ -2,12 +2,16 @@
 Telegram Bot 交互处理器
 ========================================
 监听 Telegram 消息，处理持仓管理命令和交互按钮。
+
+运行模式：
+  - polling 模式（默认）：bot 主动拉取消息，适合 Render 等 PaaS 平台
+  - webhook 模式：需要设置 WEBHOOK_URL，适合有固定域名的 VPS
+  - 设置 TELEGRAM_POLLING=1 强制使用 polling 模式
 """
 
 import os
 import sys
 import logging
-import asyncio
 from dotenv import load_dotenv
 
 # 加载 .env 文件
@@ -17,7 +21,7 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(__file__))
 
 try:
-    from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram import Update
     from telegram.ext import (
         Application,
         CommandHandler,
@@ -205,36 +209,30 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # 检查运行环境
-    port = int(os.environ.get("PORT", 0))
+    # 检查运行模式
+    use_polling = os.environ.get("TELEGRAM_POLLING", "1") == "1"
     webhook_url = os.environ.get("WEBHOOK_URL", "")
-    render_host = os.environ.get("RENDER_EXTERNAL_HOSTNAME", "")
+    port = int(os.environ.get("PORT", 0))
 
-    # 调试信息
-    print(f"🔍 调试信息:")
-    print(f"   PORT={port}")
-    print(f"   WEBHOOK_URL={'已设置' if webhook_url else '未设置'}")
-    print(f"   RENDER_EXTERNAL_HOSTNAME={render_host if render_host else '未设置'}")
-
-    # 自动构建 webhook URL
-    if port and not webhook_url:
-        if render_host:
-            webhook_url = f"https://{render_host}/{BOT_TOKEN}"
-            print(f"ℹ️  自动构建 Webhook URL: {webhook_url}")
-        else:
-            print("❌ 错误：在 Render 上运行但无法构建 WEBHOOK_URL")
-            print("   请在 Render 环境变量中添加 WEBHOOK_URL")
-            print("   格式：https://your-service.onrender.com/YOUR_BOT_TOKEN")
-            sys.exit(1)
-
-    if port and webhook_url:
-        # Render 生产环境：webhook 模式
+    if use_polling:
+        # Polling 模式（默认，最稳定）
+        print("✅ Bot 已启动 (polling 模式)")
+        print("📡 每 3 秒拉取一次更新")
+        print("💡 如需切换到 webhook 模式，设置 TELEGRAM_POLLING=0 并配置 WEBHOOK_URL")
+        application.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            poll_interval=3,
+            timeout=10,
+            drop_pending_updates=False,
+        )
+    elif port and webhook_url:
+        # Webhook 模式
         print(f"✅ Bot 已启动 (webhook 模式)")
         print(f"🔌 端口: {port}")
         print(f"📡 Webhook URL: {webhook_url}")
 
-        # 先用 Python 删除旧 webhook（不需要 curl）
-        print("🔄 用 Python 删除旧 webhook...")
+        # 先删除旧 webhook
+        print("🔄 删除旧 webhook...")
         try:
             import urllib.request
             delete_url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
@@ -242,9 +240,8 @@ def main():
             result = req.read().decode()
             print(f"   删除结果: {result}")
         except Exception as e:
-            print(f"   ⚠️ 删除旧 webhook 失败（可忽略）: {e}")
+            print(f"   ⚠️ 删除旧 webhook 失败: {e}")
 
-        # 使用 run_webhook（同步方式，内部自动管理事件循环）
         try:
             application.run_webhook(
                 listen="0.0.0.0",
@@ -257,14 +254,13 @@ def main():
             print(f"❌ Webhook 启动失败: {e}")
             import traceback
             traceback.print_exc()
-            print("\n💡 如果 webhook 模式一直失败，可以尝试改用 polling 模式")
-            print("   在 Render 环境变量中删除 WEBHOOK_URL 即可自动切换")
+            print("\n💡 改用 polling 模式：在环境变量中设置 TELEGRAM_POLLING=1")
             sys.exit(1)
     else:
-        # 本地开发：polling 模式
-        print("✅ Bot 已启动 (polling 模式)")
-        print("按 Ctrl+C 停止")
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+        print("❌ 配置不完整")
+        print("  需要设置 TELEGRAM_POLLING=1 使用 polling 模式")
+        print("  或设置 WEBHOOK_URL + PORT 使用 webhook 模式")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
