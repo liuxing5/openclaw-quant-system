@@ -2,11 +2,7 @@
 Telegram Bot 交互处理器
 ========================================
 监听 Telegram 消息，处理持仓管理命令和交互按钮。
-
-运行模式：
-  - polling 模式（默认）：bot 主动拉取消息，适合 Render 等 PaaS 平台
-  - webhook 模式：需要设置 WEBHOOK_URL，适合有固定域名的 VPS
-  - 设置 TELEGRAM_POLLING=1 强制使用 polling 模式
+使用 PID 锁文件确保只有一个实例在 polling。
 """
 
 import os
@@ -14,18 +10,21 @@ import sys
 import logging
 import threading
 import http.server
-from dotenv import load_dotenv
+import time
+import signal
+import atexit
 
-# 加载 .env 文件
-load_dotenv()
-
-# 添加项目路径
+# ⚠️ 必须在任何导入之前设置 PYTHONPATH
 sys.path.insert(0, os.path.dirname(__file__))
+
+from dotenv import load_dotenv
+load_dotenv()
 
 try:
     from telegram import Update
     from telegram.ext import (
         Application,
+        ApplicationBuilder,
         CommandHandler,
         MessageHandler,
         CallbackQueryHandler,
@@ -38,11 +37,8 @@ except ImportError:
     sys.exit(1)
 
 from position_manager import (
-    handle_command,
-    format_positions,
-    add_position,
-    remove_position,
-    get_positions,
+    handle_command, format_positions,
+    add_position, remove_position, get_positions,
 )
 
 # ============================================================
@@ -50,33 +46,9 @@ from position_manager import (
 # ============================================================
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+LOCK_FILE = os.path.join(os.path.dirname(__file__), ".bot_lock")
 
-# 消息去重
-_processed_message_ids = {}
-_MAX_MESSAGE_CACHE = 1000
-_DEDUP_WINDOW_SECONDS = 5
-
-
-def is_duplicate_message(message_id: int) -> bool:
-    """检查消息是否重复"""
-    global _processed_message_ids
-    import time
-    now = time.time()
-
-    if message_id in _processed_message_ids:
-        last_time = _processed_message_ids[message_id]
-        if now - last_time < _DEDUP_WINDOW_SECONDS:
-            return True
-
-    _processed_message_ids[message_id] = now
-
-    if len(_processed_message_ids) > _MAX_MESSAGE_CACHE:
-        cutoff = now - 60
-        _processed_message_ids = {mid: ts for mid, ts in _processed_message_ids.items() if ts > cutoff}
-
-    return False
-
-# 日志配置 - 强制输出到 stdout
+# 日志
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -85,75 +57,101 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def log_print(msg: str):
-    """同时输出到 print 和 logger，确保不被缓冲"""
+def _p(msg):
+    """打印并刷新"""
     print(msg, flush=True)
-    logger.info(msg)
+
+
+# ============================================================
+# PID 锁 —— 确保只有一个实例
+# ============================================================
+def acquire_lock():
+    """获取 PID 锁。如果旧实例仍在运行，等待其退出。"""
+    for attempt in range(60):  # 最多等 60 秒
+        if os.path.exists(LOCK_FILE):
+            try:
+                with open(LOCK_FILE, "r") as f:
+                    old_pid = int(f.read().strip())
+                # 检查旧进程是否还活着
+                try:
+                    os.kill(old_pid, 0)  # signal 0 不杀进程，只检查是否存在
+                    if attempt == 0:
+                        _p(f"⏳ 旧实例 (PID={old_pid}) 仍在运行，等待退出...")
+                    time.sleep(1)
+                    continue
+                except (OSError, ProcessLookupError):
+                    # 旧进程已退出，删除锁文件
+                    _p(f"   旧实例 (PID={old_pid}) 已退出")
+                    os.remove(LOCK_FILE)
+            except (ValueError, FileNotFoundError):
+                pass
+
+        # 写入新 PID
+        with open(LOCK_FILE, "w") as f:
+            f.write(str(os.getpid()))
+        _p(f"🔒 PID 锁已获取 (PID={os.getpid()})")
+
+        # 注册退出时清理
+        atexit.register(release_lock)
+        return True
+
+    _p("❌ 等待旧实例退出超时（60秒）")
+    return False
+
+
+def release_lock():
+    """释放 PID 锁"""
+    try:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
+    except Exception:
+        pass
 
 
 # ============================================================
 # 命令处理
 # ============================================================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"📩 cmd_start 被调用, msg_id={update.message.message_id}, user={update.message.from_user.id}")
-    if is_duplicate_message(update.message.message_id):
-        logger.info("  ⏭ 跳过（重复消息）")
-        return
-    welcome = """👋 欢迎使用 OpenClaw 量化交易系统
-
-📊 功能：
-  • 自动选股推送
-  • 卖出信号提醒
-  • 持仓管理
-
-输入 /help 查看可用命令"""
-    await update.message.reply_text(welcome)
-    logger.info(f"  ✅ 已回复 /start")
+    await update.message.reply_text(
+        "👋 欢迎使用 OpenClaw 量化交易系统\n\n"
+        "📊 功能：\n"
+        "  • 自动选股推送\n"
+        "  • 卖出信号提醒\n"
+        "  • 持仓管理\n\n"
+        "输入 /help 查看可用命令"
+    )
+    logger.info(f"✅ 回复 /start → {update.message.from_user.id}")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"📩 cmd_help 被调用, msg_id={update.message.message_id}, user={update.message.from_user.id}")
-    if is_duplicate_message(update.message.message_id):
-        logger.info("  ⏭ 跳过（重复消息）")
-        return
     reply = handle_command("help")
-    logger.info(f"  回复内容: {reply[:50]}...")
     await update.message.reply_text(reply)
-    logger.info(f"  ✅ 已回复 /help")
+    logger.info(f"✅ 回复 /help → {update.message.from_user.id}")
 
 
 async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_duplicate_message(update.message.message_id):
-        return
     reply = format_positions()
     await update.message.reply_text(reply)
-    logger.info(f"📩 收到 /positions 来自 {update.message.from_user.id}")
+    logger.info(f"✅ 回复 /positions → {update.message.from_user.id}")
 
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_duplicate_message(update.message.message_id):
-        return
     args = " ".join(context.args) if context.args else ""
     reply = handle_command("add", args)
     await update.message.reply_text(reply)
-    logger.info(f"📩 收到 /add {args} 来自 {update.message.from_user.id}")
+    logger.info(f"✅ 回复 /add {args} → {update.message.from_user.id}")
 
 
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_duplicate_message(update.message.message_id):
-        return
     args = " ".join(context.args) if context.args else ""
     reply = handle_command("remove", args)
     await update.message.reply_text(reply)
-    logger.info(f"📩 收到 /remove {args} 来自 {update.message.from_user.id}")
+    logger.info(f"✅ 回复 /remove {args} → {update.message.from_user.id}")
 
 
 async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if is_duplicate_message(update.message.message_id):
-        return
     reply = handle_command("import")
     await update.message.reply_text(reply)
-    logger.info(f"📩 收到 /import 来自 {update.message.from_user.id}")
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -161,181 +159,133 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     data = query.data
     chat_id = query.message.chat_id
-
     if CHAT_ID and str(chat_id) != CHAT_ID:
         await query.edit_message_text("❌ 无权操作")
         return
-
     if data.startswith("buy_"):
         parts = data.split("_")
         if len(parts) >= 4:
-            code = parts[1]
-            price = float(parts[2])
-            path = parts[3]
-            result = add_position(code, price, path)
-            if result["action"] == "added":
-                await query.edit_message_text(f"✅ 已买入: {code}\n成本: ¥{price:.2f}\n路径: {path}")
-            else:
-                await query.edit_message_text(f" 已更新: {code}\n成本: ¥{price:.2f}\n路径: {path}")
-
+            result = add_position(parts[1], float(parts[2]), parts[3])
+            await query.edit_message_text(f"✅ 已买入: {parts[1]}\n成本: ¥{parts[2]}\n路径: {parts[3]}")
     elif data.startswith("sell_"):
         code = data.split("_")[1]
         result = remove_position(code)
-        if result["action"] == "removed":
-            await query.edit_message_text(f"✅ 已卖出: {code}")
-        else:
-            await query.edit_message_text(f" 未找到持仓: {code}")
+        await query.edit_message_text(f"✅ 已卖出: {code}" if result["action"] == "removed" else f"未找到持仓: {code}")
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    message_id = update.message.message_id
-    if is_duplicate_message(message_id):
-        return
-
     text = update.message.text
-    if not text:
+    if not text or not text.startswith("/"):
         return
-
-    if text.startswith("/"):
-        parts = text[1:].split()
-        command = parts[0]
-        args = " ".join(parts[1:]) if len(parts) > 1 else ""
-        reply = handle_command(command, args)
-        await update.message.reply_text(reply)
-
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """全局错误处理——捕获所有未处理的异常"""
-    logger.error(f"❌ 全局异常: {context.error}", exc_info=context.error)
-    print(f"❌ ERROR: {context.error}", flush=True)
+    parts = text[1:].split()
+    reply = handle_command(parts[0], " ".join(parts[1:]) if len(parts) > 1 else "")
+    await update.message.reply_text(reply)
 
 
 # ============================================================
 # 主程序
 # ============================================================
+def build_app():
+    """创建并配置 Application"""
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("positions", cmd_positions))
+    app.add_handler(CommandHandler("list", cmd_positions))
+    app.add_handler(CommandHandler("add", cmd_add))
+    app.add_handler(CommandHandler("remove", cmd_remove))
+    app.add_handler(CommandHandler("del", cmd_remove))
+    app.add_handler(CommandHandler("delete", cmd_remove))
+    app.add_handler(CommandHandler("import", cmd_import))
+    app.add_handler(CallbackQueryHandler(button_callback))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    return app
+
+
+def start_health_server(port):
+    """启动轻量 HTTP 健康检查服务器"""
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.end_headers()
+            self.wfile.write(b"OK")
+        def log_message(self, *args):
+            pass
+    srv = http.server.HTTPServer(("0.0.0.0", port), H)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    _p(f"🏥 健康检查: 0.0.0.0:{port}")
+
+
+def delete_webhook():
+    """删除旧 webhook"""
+    import urllib.request
+    for i in range(3):
+        try:
+            url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+            req = urllib.request.urlopen(urllib.request.Request(url), timeout=10)
+            _p(f"🔄 删除 webhook (第{i+1}次): {req.read().decode()}")
+            return
+        except Exception as e:
+            time.sleep(2)
+
+
+def run_polling_forever(app):
+    """永久 polling 循环 —— 断了就重来"""
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            _p(f"🚀 Polling 启动 (第{attempt}次)...")
+            app.run_polling(
+                allowed_updates=Update.ALL_TYPES,
+                poll_interval=3,
+                timeout=10,
+                drop_pending_updates=True,
+            )
+            _p("Polling 正常退出")
+            break
+        except Exception as e:
+            err = str(e)
+            if "Conflict" in err or "409" in err:
+                wait = attempt * 5
+                _p(f"⚠️ Conflict (第{attempt}次)，等{wait}秒后重试...")
+                time.sleep(wait)
+                # 重建 application（内部状态可能已损坏）
+                app = build_app()
+                delete_webhook()
+            else:
+                _p(f"❌ Polling 异常: {e}")
+
+
 def main():
     if not BOT_TOKEN:
-        print("❌ 请设置 TELEGRAM_BOT_TOKEN 环境变量", flush=True)
+        _p("❌ 请设置 TELEGRAM_BOT_TOKEN")
         sys.exit(1)
 
-    print("=" * 60, flush=True)
-    print("🤖 启动 Telegram Bot...", flush=True)
-    print(f"Bot Token: {BOT_TOKEN[:10]}...{BOT_TOKEN[-4:]}", flush=True)
+    _p("=" * 50)
+    _p("🤖 OpenClaw Telegram Bot")
 
-    # 创建应用
-    application = Application.builder().token(BOT_TOKEN).build()
+    # PID 锁 —— 确保只有一个实例
+    if not acquire_lock():
+        sys.exit(1)
 
-    # 注册命令处理器
-    application.add_handler(CommandHandler("start", cmd_start))
-    application.add_handler(CommandHandler("help", cmd_help))
-    application.add_handler(CommandHandler("positions", cmd_positions))
-    application.add_handler(CommandHandler("list", cmd_positions))
-    application.add_handler(CommandHandler("add", cmd_add))
-    application.add_handler(CommandHandler("remove", cmd_remove))
-    application.add_handler(CommandHandler("del", cmd_remove))
-    application.add_handler(CommandHandler("delete", cmd_remove))
-    application.add_handler(CommandHandler("import", cmd_import))
-    application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_error_handler(error_handler)
-
-    # 检查运行模式
-    use_polling = os.environ.get("TELEGRAM_POLLING", "1") == "1"
-    webhook_url = os.environ.get("WEBHOOK_URL", "")
+    # 环境检查
     port = int(os.environ.get("PORT", 0))
+    webhook_url = os.environ.get("WEBHOOK_URL", "")
+    _p(f"PORT={port}  POLLING={os.environ.get('TELEGRAM_POLLING','1')}")
 
-    print("🔍 调试信息:", flush=True)
-    print(f"   PORT={port}", flush=True)
-    print(f"   TELEGRAM_POLLING={use_polling}", flush=True)
-    print(f"   WEBHOOK_URL={'已设置' if webhook_url else '未设置'}", flush=True)
-    print(f"   PYTHONUNBUFFERED={os.environ.get('PYTHONUNBUFFERED', '未设置')}", flush=True)
+    # 删除旧 webhook
+    delete_webhook()
 
-    if use_polling:
-        # Polling 模式（默认）
-        print("✅ Bot 已启动 (polling 模式)", flush=True)
-        print("📡 每 3 秒拉取一次更新", flush=True)
+    # 健康检查
+    if port:
+        start_health_server(port)
 
-        # 显式删除 webhook，避免与旧实例冲突
-        import time
-        import urllib.request
-        for retry in range(3):
-            try:
-                delete_url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
-                req = urllib.request.urlopen(urllib.request.Request(delete_url), timeout=10)
-                result = req.read().decode()
-                print(f"🔄 删除旧 webhook (第{retry+1}次): {result}", flush=True)
-                break
-            except Exception as e:
-                print(f"⚠️ 删除 webhook 失败 (第{retry+1}次): {e}", flush=True)
-                time.sleep(2)
-
-        # 如果 Render 提供了 PORT，启动一个轻量 HTTP 健康检查服务器
-        if port:
-            class HealthHandler(http.server.BaseHTTPRequestHandler):
-                def do_GET(self):
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/plain")
-                    self.end_headers()
-                    self.wfile.write(b"OK")
-                def log_message(self, format, *args):
-                    pass  # 静默 HTTP 日志
-
-            httpd = http.server.HTTPServer(("0.0.0.0", port), HealthHandler)
-            health_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
-            health_thread.start()
-            print(f"🏥 健康检查端口已开启: {port}", flush=True)
-
-        import time as _time
-
-        # 启动前等待一段时间，确保 Render 旧实例已完全退出
-        safe_wait = 30
-        print(f"⏳ 等待 {safe_wait} 秒确保旧实例已退出...", flush=True)
-        _time.sleep(safe_wait)
-
-        # 永久重试循环：不管什么原因 bot 断了，自动重连
-        retry_num = 0
-        while True:
-            retry_num += 1
-            try:
-                print(f"🚀 启动 polling (第{retry_num}次)...", flush=True)
-                application.run_polling(
-                    allowed_updates=Update.ALL_TYPES,
-                    poll_interval=3,
-                    timeout=10,
-                    drop_pending_updates=False,
-                )
-            except Exception as e:
-                wait_sec = min(retry_num * 10, 120)
-                print(f"⚠️ Polling 异常退出: {e}", flush=True)
-                print(f"⏳ 等待 {wait_sec} 秒后重试...", flush=True)
-                _time.sleep(wait_sec)
-                continue
-            # 正常退出（Ctrl+C 等）
-            break
-    elif port and webhook_url:
-        # Webhook 模式
-        print(f"✅ Bot 已启动 (webhook 模式)", flush=True)
-        print(f"🔌 端口: {port}", flush=True)
-        print(f"📡 Webhook URL: {webhook_url}", flush=True)
-
-        try:
-            application.run_webhook(
-                listen="0.0.0.0",
-                port=port,
-                url_path=BOT_TOKEN,
-                webhook_url=webhook_url,
-                drop_pending_updates=False,
-            )
-        except Exception as e:
-            print(f"❌ Webhook 启动失败: {e}", flush=True)
-            import traceback
-            traceback.print_exc()
-            sys.exit(1)
-    else:
-        print("❌ 配置不完整", flush=True)
-        print("  设置 TELEGRAM_POLLING=1 使用 polling 模式", flush=True)
-        print("  或设置 WEBHOOK_URL + PORT 使用 webhook 模式", flush=True)
-        sys.exit(1)
+    # 创建 app 并运行
+    app = build_app()
+    run_polling_forever(app)
 
 
 if __name__ == "__main__":

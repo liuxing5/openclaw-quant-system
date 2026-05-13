@@ -1,1 +1,0 @@
-web: python strategies/overnight_8step/telegram_bot.py
