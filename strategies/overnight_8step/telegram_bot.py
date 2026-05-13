@@ -233,6 +233,17 @@ def main():
         print(f"🔌 端口: {port}")
         print(f"📡 Webhook URL: {webhook_url}")
 
+        # 先用 Python 删除旧 webhook（不需要 curl）
+        print("🔄 用 Python 删除旧 webhook...")
+        try:
+            import urllib.request
+            delete_url = f"https://api.telegram.org/bot{BOT_TOKEN}/deleteWebhook"
+            req = urllib.request.urlopen(urllib.request.Request(delete_url), timeout=10)
+            result = req.read().decode()
+            print(f"   删除结果: {result}")
+        except Exception as e:
+            print(f"   ⚠️ 删除旧 webhook 失败（可忽略）: {e}")
+
         # 使用 run_webhook（同步方式，内部自动管理事件循环）
         try:
             application.run_webhook(
@@ -240,12 +251,14 @@ def main():
                 port=port,
                 url_path=BOT_TOKEN,
                 webhook_url=webhook_url,
-                drop_pending_updates=True,
+                drop_pending_updates=False,
             )
         except Exception as e:
             print(f"❌ Webhook 启动失败: {e}")
             import traceback
             traceback.print_exc()
+            print("\n💡 如果 webhook 模式一直失败，可以尝试改用 polling 模式")
+            print("   在 Render 环境变量中删除 WEBHOOK_URL 即可自动切换")
             sys.exit(1)
     else:
         # 本地开发：polling 模式
