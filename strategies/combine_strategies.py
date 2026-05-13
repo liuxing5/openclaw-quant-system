@@ -21,7 +21,7 @@ import copy
 import csv
 import sys
 import os
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 
@@ -29,6 +29,8 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 
 from overnight_8step.zuiyou1 import scan_pool, fetch_market_sentiment, CONFIG_STABLE, CONFIG_UPPER
 from resonance_filters.technical_filters import ResonanceFilters, run_resonance_filter
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def load_llm_candidates_from_db(trade_date: date = None, min_score: int = 25) -> List[Tuple[str, str]]:
@@ -51,7 +53,7 @@ def load_llm_candidates_from_db(trade_date: date = None, min_score: int = 25) ->
     if trade_date is None:
         cur.execute("SELECT MAX(snapshot_date) as max_date FROM daily_candidates WHERE source = 'llm_multisource';")
         row = cur.fetchone()
-        trade_date = row['max_date'] if row else date.today()
+        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
 
     cur.execute("""
         SELECT ts_code, stock_name, final_score
@@ -153,7 +155,7 @@ def run_resonance_strategy(
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
         row = cur.fetchone()
-        trade_date = row['max_date'] if row else date.today()
+        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
         cur.close()
         conn.close()
         print(f"\n  最新交易日: {trade_date}")
@@ -231,14 +233,25 @@ def run_resonance_strategy(
     stable_cfg["MODE"] = "post"
     upper_cfg["MODE"] = "post"
 
-    stable_results = scan_pool(stable_cfg, sentiment_score, mood, preloaded=False)
-    upper_results = scan_pool(upper_cfg, sentiment_score, mood, preloaded=True)
+    # scan_pool 返回 6-tuple: (results, reject_stats, name_map, pool_size, real_count, time_weight)
+    stable_results, _, stable_name_map, _, _, _ = scan_pool(stable_cfg, sentiment_score, mood, preloaded=False)
+    upper_results, _, upper_name_map, _, _, _ = scan_pool(upper_cfg, sentiment_score, mood, preloaded=True)
+
+    # 合并名称映射
+    all_name_map = {**stable_name_map, **upper_name_map}
 
     # 合并去重然后按 resonance 结果过滤
     all_results = {}
     for r in stable_results + upper_results:
         code = r.get('code', '')
         if code not in all_results or r.get('score', 0) > all_results[code].get('score', 0):
+            # 补充 name 和 industry（scan_pool 不返回这些字段）
+            if 'name' not in r or not r.get('name'):
+                r['name'] = all_name_map.get(code, '')
+            if 'industry' not in r:
+                from overnight_8step.zuiyou1 import get_stock_industry
+                industry = get_stock_industry(code)
+                r['industry'] = industry
             all_results[code] = r
 
     resonance_set = set(final_candidates)
@@ -248,7 +261,7 @@ def run_resonance_strategy(
     # ========== 输出结果 ==========
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    today = datetime.now().strftime("%Y%m%d")
+    today = datetime.now(BEIJING_TZ).strftime("%Y%m%d")
     out_path = out_dir / f"resonance_{today}.csv"
 
     if result:
@@ -274,7 +287,7 @@ def run_resonance_strategy(
                     item.get('vol_ratio', 0),
                     item.get('turn', 0),
                     item.get('score', 0),
-                    '|'.join(item.get('tags', [])),
+                    item.get('tags', ''),
                     item.get('industry', ''),
                     resonance_info['filters']['ma_20week'].get('passed', False) if resonance_info else False,
                     resonance_info['filters']['ma_bullish'].get('passed', False) if resonance_info else False,

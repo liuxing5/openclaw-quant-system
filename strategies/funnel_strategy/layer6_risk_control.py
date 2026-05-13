@@ -231,7 +231,7 @@ def run_layer6_risk_control(
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
         row = cur.fetchone()
-        trade_date = row['max_date'] if row else date.today()
+        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
         cur.close()
         conn.close()
 

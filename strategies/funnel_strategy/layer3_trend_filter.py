@@ -12,7 +12,7 @@ from __future__ import annotations
 import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import List, Dict, Optional
 
 import pandas as pd
@@ -21,6 +21,8 @@ from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.db.connection import get_db
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 try:
     from tqdm import tqdm
@@ -247,7 +249,7 @@ def run_layer3_trend_filter(
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
         row = cur.fetchone()
-        trade_date = row['max_date'] if row else date.today()
+        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
         cur.close()
         conn.close()
 

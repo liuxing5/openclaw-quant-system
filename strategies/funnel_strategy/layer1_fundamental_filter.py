@@ -18,13 +18,15 @@ from __future__ import annotations
 
 import sys
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import List, Dict, Optional
 
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.db.connection import get_db
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def _load_fundamentals_cache(trade_date: date = None) -> Dict:
@@ -326,7 +328,7 @@ def run_layer1_fundamental_filter(
         return stock_list
 
     if trade_date is None:
-        trade_date = date.today()
+        trade_date = datetime.now(BEIJING_TZ).date()
 
     if verbose:
         print(f"\n{'─'*60}")

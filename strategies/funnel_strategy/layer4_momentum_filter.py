@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import List, Dict, Optional, Tuple
 
 import pandas as pd
@@ -30,6 +30,7 @@ except ImportError:
     HAS_TQDM = False
     tqdm = None
 
+BEIJING_TZ = timezone(timedelta(hours=8))
 LAYER4_WORKERS = min(8, (os.cpu_count() or 4))
 
 # ── 纯 Python 计算（避开 pandas 开销，适合小数据集） ──
@@ -314,7 +315,7 @@ def run_layer4_momentum_filter(
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
         row = cur.fetchone()
-        trade_date = row['max_date'] if row else date.today()
+        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
         cur.close()
         conn.close()
 

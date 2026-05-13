@@ -111,7 +111,7 @@ class FunnelEngine:
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
-            trade_date = row['max_date'] if row else date.today()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
             cur.close()
             conn.close()
 
@@ -261,10 +261,11 @@ class FunnelEngine:
                                    'L3': l3_result, 'L4': l4_result},
             }
 
-        # 合并 L3 trend_bonus 到 L4 结果
+        # 合并 L3 trend_bonus 和 L4 momentum_bonus 到 L4 结果
         l3_bonus_map = {item['ts_code']: item.get('score_bonus', 0) for item in l3_result}
         for item in l4_result:
             item['trend_bonus'] = l3_bonus_map.get(item['ts_code'], 0)
+            item['momentum_bonus'] = item.get('score_bonus', 0)
 
         # ════════════════════════════════════════════════════════
         # Layer 5: 人气精选

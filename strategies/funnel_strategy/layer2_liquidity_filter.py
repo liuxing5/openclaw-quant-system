@@ -13,7 +13,7 @@ from __future__ import annotations
 import sys
 import os
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import List, Dict
 
 import pandas as pd
@@ -22,6 +22,7 @@ from psycopg2.extras import RealDictCursor
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.db.connection import get_db, get_db_fresh
 
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 def _load_liquidity_data(stock_list: List[str], trade_date: date) -> Dict:
     """
@@ -109,7 +110,7 @@ def run_layer2_liquidity_filter(
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
         row = cur.fetchone()
-        trade_date = row['max_date'] if row else date.today()
+        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
         cur.close()
         conn.close()
 

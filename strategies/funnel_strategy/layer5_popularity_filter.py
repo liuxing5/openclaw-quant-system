@@ -12,7 +12,7 @@ from __future__ import annotations
 import sys
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date, timedelta
+from datetime import date, datetime, timezone, timedelta
 from typing import List, Dict
 
 import pandas as pd
@@ -29,6 +29,7 @@ except ImportError:
     HAS_TQDM = False
     tqdm = None
 
+BEIJING_TZ = timezone(timedelta(hours=8))
 LAYER5_WORKERS = min(8, (os.cpu_count() or 4))
 
 
@@ -357,7 +358,7 @@ def run_layer5_popularity_filter(
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
         row = cur.fetchone()
-        trade_date = row['max_date'] if row else date.today()
+        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
         cur.close()
         conn.close()
 
@@ -430,10 +431,8 @@ def run_layer5_popularity_filter(
             futures = {}
             for item in stock_items_filtered:
                 ts_code = item['ts_code']
-                trend_bonus = item.get('trend_bonus', item.get('score_bonus', 0.0))
+                trend_bonus = item.get('trend_bonus', 0.0)
                 momentum_bonus = item.get('momentum_bonus', 0.0)
-                if 'signal_type' in item:
-                    momentum_bonus = item.get('score_bonus', 0.0)
                 futures[executor.submit(
                     _score_single, ts_code, cfg, ohlcv_cache, rank_map,
                     trend_bonus, momentum_bonus, llm_map, concept_map,
@@ -456,10 +455,8 @@ def run_layer5_popularity_filter(
     else:
         for item in stock_items_filtered:
             ts_code = item['ts_code']
-            trend_bonus = item.get('trend_bonus', item.get('score_bonus', 0.0))
+            trend_bonus = item.get('trend_bonus', 0.0)
             momentum_bonus = item.get('momentum_bonus', 0.0)
-            if 'signal_type' in item:
-                momentum_bonus = item.get('score_bonus', 0.0)
 
             pop_result = _score_single(
                 ts_code, cfg, ohlcv_cache, rank_map,

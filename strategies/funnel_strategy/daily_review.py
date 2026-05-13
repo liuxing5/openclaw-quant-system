@@ -79,7 +79,7 @@ class DailyReviewer:
         5. 更新连续失败计数
         """
         if trade_date is None:
-            trade_date = date.today()
+            trade_date = datetime.now(BEIJING_TZ).date()
 
         yesterday = trade_date - timedelta(days=1)
 
@@ -232,12 +232,12 @@ class DailyReviewer:
         # 连续3次失败 → 暂停一天
         if self.state['consecutive_fails'] >= 3 and not self.state['is_suspended']:
             self.state['is_suspended'] = True
-            resume_date = date.today() + timedelta(days=1)
+            resume_date = datetime.now(BEIJING_TZ).date() + timedelta(days=1)
             self.state['suspended_until'] = resume_date.isoformat()
             report['action'] = f'🚫 连续{self.state["consecutive_fails"]}次失败，暂停交易至{resume_date}'
         elif self.state['is_suspended']:
-            suspended_until = date.fromisoformat(self.state['suspended_until']) if self.state['suspended_until'] else date.today()
-            if date.today() >= suspended_until:
+            suspended_until = date.fromisoformat(self.state['suspended_until']) if self.state['suspended_until'] else datetime.now(BEIJING_TZ).date()
+            if datetime.now(BEIJING_TZ).date() >= suspended_until:
                 self.state['is_suspended'] = False
                 self.state['suspended_until'] = None
                 self.state['consecutive_fails'] = 0
