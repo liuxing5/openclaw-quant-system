@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import List, Tuple, Dict, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 from overnight_8step.zuiyou1 import scan_pool, fetch_market_sentiment, CONFIG_STABLE, CONFIG_UPPER
 from resonance_filters.technical_filters import ResonanceFilters, run_resonance_filter
