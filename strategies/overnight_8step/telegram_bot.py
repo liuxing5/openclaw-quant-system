@@ -12,6 +12,8 @@ Telegram Bot 交互处理器
 import os
 import sys
 import logging
+import threading
+import http.server
 from dotenv import load_dotenv
 
 # 加载 .env 文件
@@ -93,7 +95,9 @@ def log_print(msg: str):
 # 命令处理
 # ============================================================
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"📩 cmd_start 被调用, msg_id={update.message.message_id}, user={update.message.from_user.id}")
     if is_duplicate_message(update.message.message_id):
+        logger.info("  ⏭ 跳过（重复消息）")
         return
     welcome = """👋 欢迎使用 OpenClaw 量化交易系统
 
@@ -104,15 +108,18 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 输入 /help 查看可用命令"""
     await update.message.reply_text(welcome)
-    logger.info(f"📩 收到 /start 来自 {update.message.from_user.id}")
+    logger.info(f"  ✅ 已回复 /start")
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"📩 cmd_help 被调用, msg_id={update.message.message_id}, user={update.message.from_user.id}")
     if is_duplicate_message(update.message.message_id):
+        logger.info("  ⏭ 跳过（重复消息）")
         return
     reply = handle_command("help")
+    logger.info(f"  回复内容: {reply[:50]}...")
     await update.message.reply_text(reply)
-    logger.info(f"📩 收到 /help 来自 {update.message.from_user.id}")
+    logger.info(f"  ✅ 已回复 /help")
 
 
 async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -197,6 +204,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(reply)
 
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """全局错误处理——捕获所有未处理的异常"""
+    logger.error(f"❌ 全局异常: {context.error}", exc_info=context.error)
+    print(f"❌ ERROR: {context.error}", flush=True)
+
+
 # ============================================================
 # 主程序
 # ============================================================
@@ -224,6 +237,7 @@ def main():
     application.add_handler(CommandHandler("import", cmd_import))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_error_handler(error_handler)
 
     # 检查运行模式
     use_polling = os.environ.get("TELEGRAM_POLLING", "1") == "1"
@@ -237,10 +251,26 @@ def main():
     print(f"   PYTHONUNBUFFERED={os.environ.get('PYTHONUNBUFFERED', '未设置')}", flush=True)
 
     if use_polling:
-        # Polling 模式（默认，最稳定）
+        # Polling 模式（默认）
         print("✅ Bot 已启动 (polling 模式)", flush=True)
         print("📡 每 3 秒拉取一次更新", flush=True)
-        print("💡 如需 webhook 模式：设置 TELEGRAM_POLLING=0 并配置 WEBHOOK_URL", flush=True)
+
+        # 如果 Render 提供了 PORT，启动一个轻量 HTTP 健康检查服务器
+        if port:
+            class HealthHandler(http.server.BaseHTTPRequestHandler):
+                def do_GET(self):
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain")
+                    self.end_headers()
+                    self.wfile.write(b"OK")
+                def log_message(self, format, *args):
+                    pass  # 静默 HTTP 日志
+
+            httpd = http.server.HTTPServer(("0.0.0.0", port), HealthHandler)
+            health_thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+            health_thread.start()
+            print(f"🏥 健康检查端口已开启: {port}", flush=True)
+
         try:
             application.run_polling(
                 allowed_updates=Update.ALL_TYPES,
