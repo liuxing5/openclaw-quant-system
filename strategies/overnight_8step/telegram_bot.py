@@ -285,10 +285,24 @@ async def _managed_polling(app, poll_interval=3, timeout=10, drop_pending=True):
         _p(" 初始化...")
         await app.initialize()
         
-        # 在 start() 之前删除 webhook 并丢弃待处理更新，防止旧更新被处理
+        # 关键修复：在 start() 之前主动跳过所有待处理更新
+        # delete_webhook 不够可靠，直接 getUpdates 拿到最新 offset 然后丢弃
+        try:
+            updates = await app.bot.get_updates(limit=1)
+            if updates:
+                last_id = max(u.update_id for u in updates)
+                _p(f"🔄 发现待处理更新，最新 update_id={last_id}，跳过所有旧更新")
+                # 通过设置 offset 跳过所有旧更新
+                await app.bot.get_updates(offset=last_id + 1)
+            else:
+                _p("🔄 无待处理更新")
+        except Exception as e:
+            _p(f"⚠️ 跳过待处理更新失败: {e}")
+        
+        # 再删除 webhook 确保 polling 模式
         try:
             await app.bot.delete_webhook(drop_pending_updates=True)
-            _p("🔄 已删除 webhook 并丢弃待处理更新")
+            _p("🔄 已删除 webhook")
         except Exception as e:
             _p(f"⚠️ 删除 webhook 失败: {e}")
         
