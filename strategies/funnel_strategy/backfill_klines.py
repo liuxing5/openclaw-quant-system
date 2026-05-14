@@ -35,9 +35,14 @@ import os
 import time
 from datetime import date, datetime, timedelta, timezone
 
+import socket
+
 import baostock as bs
 import pandas as pd
 from psycopg2.extras import execute_values
+
+# 防止 baostock 网络请求卡死
+socket.setdefaulttimeout(15)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
@@ -131,6 +136,8 @@ def _fetch_stock_history(bs_code: str, start_date: str, end_date: str) -> list:
                 _f(row[8], 0),  # pct_chg (%)
             ))
         return rows
+    except socket.timeout:
+        return []
     except Exception as e:
         return []
 
@@ -226,7 +233,7 @@ def run_backfill(
     batch_buffer = {}
 
     for i, ts_code in enumerate(stocks):
-        if verbose and (i + 1) % 200 == 0:
+        if verbose and (i + 1) % 100 == 0:
             elapsed = time.time() - start_time
             est_total = elapsed / (i + 1) * len(stocks)
             remaining = est_total - elapsed
