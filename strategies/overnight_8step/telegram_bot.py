@@ -94,10 +94,34 @@ def release_lock():
 
 
 # ============================================================
-# 去重：防止同一条消息被处理多次
+# 去重：防止同一条消息被处理多次（持久化到文件，容器重启不丢失）
 # ============================================================
+_PROCESSED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".processed_updates.json")
 _PROCESSED_UPDATES = set()
-_MAX_PROCESSED = 500
+_MAX_PROCESSED = 1000
+
+
+def _load_processed():
+    """从文件加载已处理记录"""
+    global _PROCESSED_UPDATES
+    try:
+        if os.path.exists(_PROCESSED_FILE):
+            with open(_PROCESSED_FILE, "r") as f:
+                data = json.load(f)
+            _PROCESSED_UPDATES = set(tuple(k) for k in data.get("processed", []))
+            _p(f"📂 加载 {len(_PROCESSED_UPDATES)} 条已处理记录")
+    except Exception as e:
+        _p(f"⚠️ 加载去重记录失败: {e}")
+
+
+def _save_processed():
+    """保存已处理记录到文件"""
+    try:
+        data = {"processed": [list(k) for k in _PROCESSED_UPDATES]}
+        with open(_PROCESSED_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
 
 
 def _is_duplicate(update: Update) -> bool:
@@ -110,10 +134,10 @@ def _is_duplicate(update: Update) -> bool:
             return True
         _PROCESSED_UPDATES.add(key)
         if len(_PROCESSED_UPDATES) > _MAX_PROCESSED:
-            # 只保留最近的一半
             items = list(_PROCESSED_UPDATES)
             _PROCESSED_UPDATES.clear()
             _PROCESSED_UPDATES.update(items[-_MAX_PROCESSED // 2:])
+        _save_processed()
     return False
 
 
@@ -349,6 +373,9 @@ def _wait_with_jitter(base_seconds, label=""):
 
 def run_polling_forever():
     """永久 polling —— Conflict 时主动退避，不管什么原因退出都重来"""
+    # 启动时加载持久化去重记录
+    _load_processed()
+    
     attempt = 0
     consecutive_conflicts = 0
     drop_pending = True
