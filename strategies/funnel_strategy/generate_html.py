@@ -470,7 +470,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     llm_cards = ""
     if llm_candidates:
-        for c in llm_candidates:
+        for c in llm_candidates[:10]:
             card = render_candidate_card(c)
             llm_cards += card
     if not llm_cards:
