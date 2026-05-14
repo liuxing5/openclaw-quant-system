@@ -214,12 +214,15 @@ def parse_zuiyou1_results() -> tuple:
         cur = conn.cursor()
         cur.execute("""
             SELECT ts_code, stock_name, final_score, quant_score, llm_score,
-                   sources, logic_tags, entry_low, entry_high, stop_loss, target_1
+                   sources, logic_tags, entry_low, entry_high, stop_loss, target_1,
+                   run_mode
             FROM daily_candidates
             WHERE snapshot_date = %s
               AND source = 'overnight_8step'
-              AND run_mode = 'afternoon'
-            ORDER BY final_score DESC;
+              AND run_mode IN ('afternoon', 'intraday')
+            ORDER BY 
+                CASE run_mode WHEN 'afternoon' THEN 0 WHEN 'intraday' THEN 1 ELSE 2 END,
+                final_score DESC;
         """, (today,))
         rows = cur.fetchall()
         cur.close()
@@ -231,6 +234,14 @@ def parse_zuiyou1_results() -> tuple:
     if not rows:
         print(f"⚠️ 今日({today})无数据库选股记录")
         return None, None
+    
+    # 优先使用 afternoon 模式的数据，如果没有则使用 intraday
+    afternoon_rows = [r for r in rows if r[11] == 'afternoon']
+    if afternoon_rows:
+        rows = afternoon_rows
+        print(f"  使用盘后定稿数据 ({len(rows)} 条)")
+    else:
+        print(f"  使用盘中初筛数据 ({len(rows)} 条)")
     
     stable_best = None
     upper_best = None

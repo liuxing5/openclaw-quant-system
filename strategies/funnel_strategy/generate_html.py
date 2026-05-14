@@ -174,6 +174,36 @@ def load_scan_stats(strategy, snapshot_date=None):
     return row
 
 
+def load_strategy_timestamp(source, snapshot_date=None):
+    """Load the exact created_at timestamp for a strategy's latest data."""
+    if source == 'funnel':
+        if snapshot_date:
+            row = query_one("""
+                SELECT created_at FROM funnel_results WHERE trade_date = %s;
+            """, (snapshot_date,))
+        else:
+            row = query_one("""
+                SELECT created_at FROM funnel_results ORDER BY trade_date DESC LIMIT 1;
+            """)
+    else:
+        if snapshot_date:
+            row = query_one("""
+                SELECT created_at FROM strategy_scans
+                WHERE strategy = %s AND snapshot_date = %s;
+            """, (source, snapshot_date))
+        else:
+            row = query_one("""
+                SELECT created_at FROM strategy_scans
+                WHERE strategy = %s ORDER BY snapshot_date DESC LIMIT 1;
+            """, (source,))
+    if row and row.get('created_at'):
+        ct = row['created_at']
+        if hasattr(ct, 'strftime'):
+            return ct.strftime('%Y-%m-%d %H:%M:%S')
+        return str(ct)
+    return None
+
+
 def generate_unified_html(output_dir=None, trade_date=None):
     if output_dir is None:
         output_dir = Path(__file__).parent / "docs"
@@ -184,10 +214,12 @@ def generate_unified_html(output_dir=None, trade_date=None):
     # ── 加载三策略数据 ──
     funnel = load_funnel_data(trade_date)
     funnel_date = str(funnel['trade_date']) if funnel else None
+    funnel_timestamp = load_strategy_timestamp('funnel', funnel_date)
 
     llm_candidates, llm_date = load_candidates('llm_multisource', trade_date=trade_date, run_mode='morning')
     if not llm_candidates:
         llm_candidates, llm_date = load_candidates('llm_multisource', trade_date=trade_date)
+    llm_timestamp = load_strategy_timestamp('llm_multisource', llm_date)
 
     eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
     # 并行 workflow 竞争：overnight_8step 和 funnel 同时 15:10 触发，
@@ -201,6 +233,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
             if eight_candidates:
                 break
     eight_date_str = str(eight_date) if eight_date else None
+    eight_timestamp = load_strategy_timestamp('overnight_8step', eight_date)
 
     llm_scan = load_scan_stats('llm_multisource', llm_date)
     eight_scan = load_scan_stats('overnight_8step', eight_date)
@@ -266,21 +299,22 @@ def generate_unified_html(output_dir=None, trade_date=None):
             "量比": 0, "均线": 0, "压力": 0, "乖离严重": 0, "得分不足": 0,
         }
         for k, v in stats.items():
-            reject_map[k] = reject_map.get(k, 0) + v
+            if isinstance(v, int):
+                reject_map[k] = reject_map.get(k, 0) + v
 
         sentiment = eight_scan.get('sentiment_score')
         mood = eight_scan.get('mood', '')
         mood_text = f"情绪{mood}({sentiment}分)" if sentiment else ""
 
         step_rules = {
-            "涨幅筛选": "3%≤涨幅≤8%，剔除涨停/跌停",
-            "成交额过滤": "成交额>2亿，保证流动性",
-            "换手率过滤": "换手率3%~15%，活跃度适中",
-            "市值过滤": "流通市值>30亿，剔除小盘股",
-            "量比过滤": "量比>1.5，放量确认",
-            "均线+压力": "5/10/20日均线多头，距压力位>3%",
-            "乖离率过滤": "乖离率<8%，避免追高",
-            "综合评分": "综合评分≥70，量化+情绪加权",
+            "涨幅筛选": "稳健3%~5%，高位6%~9.7%，剔除涨停/跌停",
+            "成交额过滤": "稳健0.5~50亿，高位0.3~30亿，保证流动性",
+            "换手率过滤": "5%~10%，活跃度适中",
+            "市值过滤": "稳健50~500亿，高位30~200亿",
+            "量比过滤": "量比≥1，放量确认",
+            "均线+压力": "MA多头排列 + 无上方压力位",
+            "乖离率过滤": "乖离率≤5%，避免追高",
+            "综合评分": "综合评分≥阈值(85+)，量化+情绪加权",
         }
         step_keys = [
             ("涨幅筛选", ["涨幅不符"]),
@@ -348,6 +382,32 @@ def generate_unified_html(output_dir=None, trade_date=None):
           <span class="step-name">精选标记</span>
           <span class="step-pass">{stats.get('精选标记', '—')}</span>
           <span class="rule-inline">{llm_step_rules['精选标记']}</span>
+        </div>"""
+    else:
+        llm_steps_html = """
+        <div class="step-row">
+          <span class="step-name">多源信号采集</span>
+          <span class="rule-inline">6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">流动性过滤</span>
+          <span class="rule-inline">成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">量化评分</span>
+          <span class="rule-inline">10维量化打分：涨幅/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">估值与财务</span>
+          <span class="rule-inline">PE/PB估值打分；净利润率/毛利率/负债率/现金流质量评估</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">综合评分≥阈值</span>
+          <span class="rule-inline">量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">精选标记</span>
+          <span class="rule-inline">综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只</span>
         </div>"""
 
     # ── 候选卡片渲染 ──
@@ -576,10 +636,33 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <div class="legend-item"><span class="signal-badge">信号</span> 买入信号</div>
   </div>
 
+  <div class="stats-row">
+    <div class="stat-card eight">
+      <div class="sv">{eight_count}</div>
+      <div class="sl">🔮 八步法候选</div>
+    </div>
+    <div class="stat-card funnel">
+      <div class="sv">{funnel_count}</div>
+      <div class="sl">🎯 漏斗最终推荐</div>
+    </div>
+    <div class="stat-card llm">
+      <div class="sv">{llm_count}</div>
+      <div class="sl">🤖 LLM多源候选</div>
+    </div>
+  </div>
+
   <div class="three-col">
+    <!-- ========== 八步法 ========== -->
+    <div class="section">
+      <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
+      {eight_steps_html}
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({eight_count}只)</h3>
+      <div class="cards-grid">{eight_cards}</div>
+    </div>
+
     <!-- ========== 七步漏斗 ========== -->
     <div class="section">
-      <h2>🎯 七步漏斗选股<span class="section-subtitle">大盘环境→防雷→流动性→趋势→动能→人气→风控</span></h2>
+      <h2>🎯 七步漏斗选股<span class="section-subtitle">{funnel_timestamp or funnel_date or '—'}</span></h2>
       {funnel_steps_html}
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 ({funnel_count}只)</h3>
       <div class="cards-grid">{funnel_cards}</div>
@@ -587,18 +670,10 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 
     <!-- ========== LLM多源 ========== -->
     <div class="section">
-      <h2>🤖 LLM多源策略<span class="section-subtitle">{llm_date or '—'}</span></h2>
+      <h2>🤖 LLM多源策略<span class="section-subtitle">{llm_timestamp or llm_date or '—'}</span></h2>
       {llm_steps_html}
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({llm_count}只)</h3>
       <div class="cards-grid">{llm_cards}</div>
-    </div>
-
-    <!-- ========== 八步法 ========== -->
-    <div class="section">
-      <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_date_str or '—'}</span></h2>
-      {eight_steps_html}
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({eight_count}只)</h3>
-      <div class="cards-grid">{eight_cards}</div>
     </div>
   </div>
 
