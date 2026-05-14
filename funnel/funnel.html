@@ -108,7 +108,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 三策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-05-12 | 生成: 2026-05-14 18:02:55
+        报告日期: 2026-05-12 | 生成: 2026-05-14 18:04:58
         <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           <option value="2026-05-14" >2026-05-14</option><option value="2026-05-12" selected>2026-05-12</option>
@@ -128,10 +128,153 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div class="legend-item"><span class="signal-badge">信号</span> 买入信号</div>
   </div>
 
+  <div class="stats-row">
+    <div class="stat-card eight">
+      <div class="sv">4</div>
+      <div class="sl">🔮 八步法候选</div>
+    </div>
+    <div class="stat-card funnel">
+      <div class="sv">4</div>
+      <div class="sl">🎯 漏斗最终推荐</div>
+    </div>
+    <div class="stat-card llm">
+      <div class="sv">30</div>
+      <div class="sl">🤖 LLM多源候选</div>
+    </div>
+  </div>
+
   <div class="three-col">
+    <!-- ========== 八步法 ========== -->
+    <div class="section">
+      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-05-14 00:39:11</span></h2>
+      
+            <div class="step-row">
+              <span class="step-name">涨幅筛选</span>
+              <span class="step-pass">197</span>
+              
+              <span class="rule-inline">稳健3%~5%，高位6%~9.7%，剔除涨停/跌停</span>
+            </div>
+            <div class="step-row">
+              <span class="step-name">成交额过滤</span>
+              <span class="step-pass">152</span>
+              <span class="elim">45</span>
+              <span class="rule-inline">稳健0.5~50亿，高位0.3~30亿，保证流动性</span>
+            </div>
+            <div class="step-row">
+              <span class="step-name">换手率过滤</span>
+              <span class="step-pass">60</span>
+              <span class="elim">92</span>
+              <span class="rule-inline">5%~10%，活跃度适中</span>
+            </div>
+            <div class="step-row">
+              <span class="step-name">市值过滤</span>
+              <span class="step-pass">56</span>
+              <span class="elim">4</span>
+              <span class="rule-inline">稳健50~500亿，高位30~200亿</span>
+            </div>
+            <div class="step-row">
+              <span class="step-name">量比过滤</span>
+              <span class="step-pass">30</span>
+              <span class="elim">26</span>
+              <span class="rule-inline">量比≥1，放量确认</span>
+            </div>
+            <div class="step-row">
+              <span class="step-name">均线+压力</span>
+              <span class="step-pass">27</span>
+              <span class="elim">3</span>
+              <span class="rule-inline">MA多头排列 + 无上方压力位</span>
+            </div>
+            <div class="step-row">
+              <span class="step-name">乖离率过滤</span>
+              <span class="step-pass">26</span>
+              <span class="elim">1</span>
+              <span class="rule-inline">乖离率≤5%，避免追高</span>
+            </div>
+            <div class="step-row">
+              <span class="step-name">综合评分</span>
+              <span class="step-pass">23</span>
+              <span class="elim">3</span>
+              <span class="rule-inline">综合评分≥阈值(85+)，量化+情绪加权</span>
+            </div><div class="step-note"> 情绪高潮(96分)</div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (4只)</h3>
+      <div class="cards-grid">
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">600452.SH</span>
+              <span class="cand-name">涪陵电力</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">139</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">12.37</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">12.18</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">12.86</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603191.SH</span>
+              <span class="cand-name">望变电气</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">133</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">21.32</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">21.00</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">22.19</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">98</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 换手偏高</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603165.SH</span>
+              <span class="cand-name">荣晟环保</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">131</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">19.59</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">19.30</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">20.78</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">115</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手</div>
+        </div>
+        <div class="candidate-card selected">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code">603333.SH</span>
+              <span class="cand-name">尚纬股份</span>
+              <span class="badge-8step">八步法</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">130</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">8.92</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">8.78</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">9.28</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
+        </div></div>
+    </div>
+
     <!-- ========== 七步漏斗 ========== -->
     <div class="section">
-      <h2>🎯 七步漏斗选股<span class="section-subtitle">大盘环境→防雷→流动性→趋势→动能→人气→风控</span></h2>
+      <h2>🎯 七步漏斗选股<span class="section-subtitle">2026-05-12 15:45:06</span></h2>
       
             <div class="step-row">
               <span class="step-icon">📊</span>
@@ -269,6 +412,30 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div class="section">
       <h2>🤖 LLM多源策略<span class="section-subtitle">2026-05-13</span></h2>
       
+        <div class="step-row">
+          <span class="step-name">多源信号采集</span>
+          <span class="rule-inline">6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">流动性过滤</span>
+          <span class="rule-inline">成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">量化评分</span>
+          <span class="rule-inline">10维量化打分：涨幅/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">估值与财务</span>
+          <span class="rule-inline">PE/PB估值打分；净利润率/毛利率/负债率/现金流质量评估</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">综合评分≥阈值</span>
+          <span class="rule-inline">量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">精选标记</span>
+          <span class="rule-inline">综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只</span>
+        </div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (30只)</h3>
       <div class="cards-grid">
         <div class="candidate-card selected">
@@ -810,134 +977,6 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             <div class="metric"><span class="mv">32</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">强势股 · 盈利预测</div>
-        </div></div>
-    </div>
-
-    <!-- ========== 八步法 ========== -->
-    <div class="section">
-      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-05-14</span></h2>
-      
-            <div class="step-row">
-              <span class="step-name">涨幅筛选</span>
-              <span class="step-pass">197</span>
-              
-              <span class="rule-inline">3%≤涨幅≤8%，剔除涨停/跌停</span>
-            </div>
-            <div class="step-row">
-              <span class="step-name">成交额过滤</span>
-              <span class="step-pass">152</span>
-              <span class="elim">45</span>
-              <span class="rule-inline">成交额>2亿，保证流动性</span>
-            </div>
-            <div class="step-row">
-              <span class="step-name">换手率过滤</span>
-              <span class="step-pass">60</span>
-              <span class="elim">92</span>
-              <span class="rule-inline">换手率3%~15%，活跃度适中</span>
-            </div>
-            <div class="step-row">
-              <span class="step-name">市值过滤</span>
-              <span class="step-pass">56</span>
-              <span class="elim">4</span>
-              <span class="rule-inline">流通市值>30亿，剔除小盘股</span>
-            </div>
-            <div class="step-row">
-              <span class="step-name">量比过滤</span>
-              <span class="step-pass">30</span>
-              <span class="elim">26</span>
-              <span class="rule-inline">量比>1.5，放量确认</span>
-            </div>
-            <div class="step-row">
-              <span class="step-name">均线+压力</span>
-              <span class="step-pass">27</span>
-              <span class="elim">3</span>
-              <span class="rule-inline">5/10/20日均线多头，距压力位>3%</span>
-            </div>
-            <div class="step-row">
-              <span class="step-name">乖离率过滤</span>
-              <span class="step-pass">26</span>
-              <span class="elim">1</span>
-              <span class="rule-inline">乖离率<8%，避免追高</span>
-            </div>
-            <div class="step-row">
-              <span class="step-name">综合评分</span>
-              <span class="step-pass">23</span>
-              <span class="elim">3</span>
-              <span class="rule-inline">综合评分≥70，量化+情绪加权</span>
-            </div><div class="step-note"> 情绪高潮(96分)</div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (4只)</h3>
-      <div class="cards-grid">
-        <div class="candidate-card selected">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">600452.SH</span>
-              <span class="cand-name">涪陵电力</span>
-              <span class="badge-8step">八步法</span>
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">139</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">12.37</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">12.18</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">12.86</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
-        </div>
-        <div class="candidate-card selected">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">603191.SH</span>
-              <span class="cand-name">望变电气</span>
-              <span class="badge-8step">八步法</span>
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">133</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">21.32</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">21.00</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">22.19</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">98</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">稳健蓄势 · 黄金放量 · 换手偏高</div>
-        </div>
-        <div class="candidate-card selected">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">603165.SH</span>
-              <span class="cand-name">荣晟环保</span>
-              <span class="badge-8step">八步法</span>
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">131</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">19.59</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">19.30</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">20.78</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">115</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手</div>
-        </div>
-        <div class="candidate-card selected">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">603333.SH</span>
-              <span class="cand-name">尚纬股份</span>
-              <span class="badge-8step">八步法</span>
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">130</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">8.92</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">8.78</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">9.28</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">105</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手</div>
         </div></div>
     </div>
   </div>
