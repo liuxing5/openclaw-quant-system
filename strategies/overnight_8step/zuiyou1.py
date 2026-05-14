@@ -1415,6 +1415,27 @@ def get_realtime_quotes(stock_list: list) -> dict:
 # ============================================================
 #  5. 股票池获取
 # ============================================================
+def get_trading_date_for_snapshot() -> str:
+    """
+    获取选股数据归属的交易日。
+    凌晨运行（09:30前）使用上一个交易日，避免 snapshot_date 变成次日。
+    盘中/盘后使用当天。
+    """
+    now = beijing_now()
+    # 凌晨0:00 ~ 9:30 之前，视为上一交易日的盘后处理
+    if now.hour < 9 or (now.hour == 9 and now.minute < 30):
+        for delta in range(1, 14):
+            day_str = (now - timedelta(days=delta)).strftime("%Y-%m-%d")
+            rs = bs.query_all_stock(day=day_str)
+            rows = []
+            while rs.next():
+                rows.append(rs.get_row_data())
+            if rows:
+                return day_str
+    # 盘中/盘后使用当天
+    return get_latest_trading_day()
+
+
 def get_latest_trading_day() -> str:
     for delta in range(0, 14):
         day_str = (beijing_now() - timedelta(days=delta)).strftime("%Y-%m-%d")
@@ -2012,7 +2033,7 @@ def analyze_ultimate(
 # ============================================================
 #  7. 单池扫描引擎
 # ============================================================
-def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = False) -> List[dict]:
+def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = False, snapshot_date: str = None) -> List[dict]:
     time_weight = get_time_weight(cfg["MODE"])
     pool_name = cfg["POOL"]
     mode = cfg["MODE"]
@@ -2055,7 +2076,7 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
 
     results = []
     total = len(stock_pool)
-    end_d = beijing_now().strftime("%Y-%m-%d")
+    end_d = snapshot_date if snapshot_date else beijing_now().strftime("%Y-%m-%d")
     start_d = (beijing_now() - timedelta(days=45)).strftime("%Y-%m-%d")
 
     reject_stats = {
@@ -2396,11 +2417,11 @@ def main():
     print(f"稳健路径仓位: {CONFIG_STABLE['position_label']}")
     print(f"高位路径仓位: {CONFIG_UPPER['position_label']}")
 
-    end_d = beijing_now().strftime("%Y-%m-%d")
+    end_d = get_trading_date_for_snapshot()
 
-    results_stable, rejects_stable, name_map_stable, stable_pool_size, stable_real_count, stable_tw = scan_pool(CONFIG_STABLE, sentiment_score, mood, preloaded=False)
+    results_stable, rejects_stable, name_map_stable, stable_pool_size, stable_real_count, stable_tw = scan_pool(CONFIG_STABLE, sentiment_score, mood, preloaded=False, snapshot_date=end_d)
 
-    results_upper, rejects_upper, name_map_upper, upper_pool_size, upper_real_count, upper_tw = scan_pool(CONFIG_UPPER, sentiment_score, mood, preloaded=True)
+    results_upper, rejects_upper, name_map_upper, upper_pool_size, upper_real_count, upper_tw = scan_pool(CONFIG_UPPER, sentiment_score, mood, preloaded=True, snapshot_date=end_d)
 
     # 合并名称映射
     all_name_map = {**name_map_stable, **name_map_upper}
