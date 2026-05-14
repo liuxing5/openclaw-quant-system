@@ -94,34 +94,83 @@ def release_lock():
 
 
 # ============================================================
-# 去重：防止同一条消息被处理多次（持久化到文件，容器重启不丢失）
+# 去重：防止同一条消息被处理多次（使用数据库持久化，容器重启不丢失）
 # ============================================================
-_PROCESSED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".processed_updates.json")
 _PROCESSED_UPDATES = set()
 _MAX_PROCESSED = 1000
 
+# 数据库支持
+try:
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+    from core.db.connection import get_db_fresh
+    DB_ENABLED = True
+except Exception:
+    DB_ENABLED = False
+
+
+def _init_dedup_table():
+    """初始化去重表"""
+    if not DB_ENABLED:
+        return
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS telegram_dedup (
+                chat_id BIGINT,
+                message_id BIGINT,
+                processed_at TIMESTAMP DEFAULT NOW(),
+                PRIMARY KEY (chat_id, message_id)
+            );
+        """)
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        _p(f"⚠️ 初始化去重表失败: {e}")
+
 
 def _load_processed():
-    """从文件加载已处理记录"""
+    """从数据库加载最近的去重记录"""
     global _PROCESSED_UPDATES
+    if not DB_ENABLED:
+        return
     try:
-        if os.path.exists(_PROCESSED_FILE):
-            with open(_PROCESSED_FILE, "r") as f:
-                data = json.load(f)
-            _PROCESSED_UPDATES = set(tuple(k) for k in data.get("processed", []))
-            _p(f"📂 加载 {len(_PROCESSED_UPDATES)} 条已处理记录")
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT chat_id, message_id FROM telegram_dedup
+            WHERE processed_at > NOW() - INTERVAL '24 hours'
+            ORDER BY processed_at DESC
+            LIMIT %s;
+        """, (_MAX_PROCESSED,))
+        rows = cur.fetchall()
+        _PROCESSED_UPDATES = set((row[0], row[1]) for row in rows)
+        cur.close()
+        conn.close()
+        _p(f"📂 从数据库加载 {len(_PROCESSED_UPDATES)} 条去重记录")
     except Exception as e:
         _p(f"⚠️ 加载去重记录失败: {e}")
 
 
-def _save_processed():
-    """保存已处理记录到文件"""
+def _save_processed_batch(keys):
+    """批量保存去重记录到数据库"""
+    if not DB_ENABLED or not keys:
+        return
     try:
-        data = {"processed": [list(k) for k in _PROCESSED_UPDATES]}
-        with open(_PROCESSED_FILE, "w") as f:
-            json.dump(data, f)
-    except Exception:
-        pass
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        for chat_id, msg_id in keys:
+            cur.execute("""
+                INSERT INTO telegram_dedup (chat_id, message_id)
+                VALUES (%s, %s)
+                ON CONFLICT DO NOTHING;
+            """, (chat_id, msg_id))
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception as e:
+        _p(f"⚠️ 保存去重记录失败: {e}")
 
 
 def _is_duplicate(update: Update) -> bool:
@@ -137,7 +186,8 @@ def _is_duplicate(update: Update) -> bool:
             items = list(_PROCESSED_UPDATES)
             _PROCESSED_UPDATES.clear()
             _PROCESSED_UPDATES.update(items[-_MAX_PROCESSED // 2:])
-        _save_processed()
+        # 异步保存到数据库（不阻塞）
+        _save_processed_batch([key])
     return False
 
 
@@ -310,26 +360,29 @@ async def _managed_polling(app, poll_interval=3, timeout=10, drop_pending=True):
         await app.initialize()
         
         # 关键修复：彻底清除所有待处理更新，防止重启后重复处理
-        # 1. 先删除 webhook 并丢弃待处理更新
+        # 1. 先删除 webhook（对 polling 模式也清除 pending）
         try:
             await app.bot.delete_webhook(drop_pending_updates=True)
             _p("🔄 已删除 webhook 并丢弃待处理更新")
         except Exception as e:
             _p(f"⚠️ 删除 webhook 失败: {e}")
         
-        # 2. 循环获取并跳过所有待处理更新（可能超过 100 条）
+        # 2. 等待让 Telegram 服务端清理旧连接
+        _p("⏳ 等待 10s 让 Telegram 服务端清理旧连接...")
+        await asyncio.sleep(10)
+        
+        # 3. 循环获取并跳过所有待处理更新
         try:
             total_skipped = 0
-            while True:
+            for _ in range(5):  # 最多重试 5 轮
                 updates = await app.bot.get_updates(limit=100)
                 if not updates:
                     break
                 last_id = max(u.update_id for u in updates)
                 total_skipped += len(updates)
                 _p(f"🔄 跳过 {len(updates)} 个待处理更新 (最新 update_id={last_id})")
-                # 设置 offset 跳过这批更新
+                # 设置 offset 跳过这批更新（标记为已确认）
                 await app.bot.get_updates(offset=last_id + 1)
-                # 如果返回少于 100 条，说明已经全部获取完毕
                 if len(updates) < 100:
                     break
             if total_skipped > 0:
@@ -373,7 +426,8 @@ def _wait_with_jitter(base_seconds, label=""):
 
 def run_polling_forever():
     """永久 polling —— Conflict 时主动退避，不管什么原因退出都重来"""
-    # 启动时加载持久化去重记录
+    # 启动时初始化去重表并加载持久化去重记录
+    _init_dedup_table()
     _load_processed()
     
     attempt = 0
