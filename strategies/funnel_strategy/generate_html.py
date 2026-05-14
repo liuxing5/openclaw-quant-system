@@ -572,7 +572,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 
 /* Candidate cards */
 .cards-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; }}
-.candidate-card {{ background:var(--metric-bg); border-radius:8px; padding:12px; border:1px solid var(--border); transition:transform .15s,box-shadow .15s; }}
+.candidate-card {{ background:var(--metric-bg); border-radius:8px; padding:12px; border:1px solid var(--border); transition:transform .15s,box-shadow .15s; min-height:160px; display:flex; flex-direction:column; justify-content:space-between; }}
 .candidate-card:hover {{ transform:translateY(-2px); box-shadow:var(--shadow); }}
 .candidate-card.selected {{ border-color:var(--sel-border); }}
 .cand-header {{ display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }}
@@ -639,15 +639,15 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
   <div class="stats-row">
     <div class="stat-card eight">
       <div class="sv">{eight_count}</div>
-      <div class="sl">🔮 八步法候选</div>
+      <div class="sl">🔮 八步法</div>
     </div>
     <div class="stat-card funnel">
       <div class="sv">{funnel_count}</div>
-      <div class="sl">🎯 漏斗最终推荐</div>
+      <div class="sl">🎯 漏斗</div>
     </div>
     <div class="stat-card llm">
       <div class="sv">{llm_count}</div>
-      <div class="sl">🤖 LLM多源候选</div>
+      <div class="sl">🤖 LLM多源</div>
     </div>
   </div>
 
