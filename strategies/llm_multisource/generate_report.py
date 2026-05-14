@@ -213,8 +213,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     
                     <div class="metrics">
                         <div class="metric">
-                            <div class="metric-value">{{ "%.0f"|format(c.llm_score) }}</div>
-                            <div class="metric-label">LLM 分</div>
+                            <div class="metric-value">{{ "%.0f"|format(c.llm_boost) }}</div>
+                            <div class="metric-label">LLM 加成</div>
                         </div>
                         <div class="metric">
                             <div class="metric-value">{{ "%.0f"|format(c.quant_score) }}</div>
@@ -286,7 +286,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                     
                     <div class="metrics">
                         <div class="metric">
-                            <div class="metric-value">{{ "%.0f"|format(c.llm_score) }}</div>
+                            <div class="metric-value">{{ "%.0f"|format(c.llm_boost) }}</div>
                             <div class="metric-label">LLM 加成</div>
                         </div>
                         <div class="metric">
@@ -480,6 +480,8 @@ def generate_report():
                     raw_sources = []
             c['source_count'] = len(raw_sources) if isinstance(raw_sources, list) else 0
             c['sources_detail'] = raw_sources if isinstance(raw_sources, list) else []
+            # 计算LLM加成 = final_score - quant_score
+            c['llm_boost'] = max(0, float(c.get('final_score', 0)) - float(c.get('quant_score', 0)))
     else:
         candidates = []
 
@@ -491,6 +493,8 @@ def generate_report():
             ORDER BY final_score DESC;
         """, (step_date,))
         eight_step_picks = cur.fetchall()
+        for c in eight_step_picks:
+            c['llm_boost'] = max(0, float(c.get('final_score', 0)) - float(c.get('quant_score', 0)))
     else:
         eight_step_picks = []
 
@@ -541,7 +545,8 @@ def generate_report():
         d['pub_time'] = format_time(d.get('pub_time'))
         articles_with_time.append(d)
 
-    display_date = str(llm_date or step_date or snapshot_date)
+    # 使用最新的日期作为显示日期（八步法通常比LLM更新）
+    display_date = str(max([d for d in [step_date, llm_date, snapshot_date] if d], default=snapshot_date))
     llm_date_str = str(llm_date) if llm_date else None
     step_date_str = str(step_date) if step_date else None
     

@@ -470,7 +470,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     llm_cards = ""
     if llm_candidates:
-        for c in llm_candidates[:10]:
+        for c in llm_candidates[:5]:
             card = render_candidate_card(c)
             llm_cards += card
     if not llm_cards:
@@ -556,8 +556,8 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 
 /* Three column layout */
 .three-col {{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:start; }}
-.three-col .section {{ margin-bottom:0; display:flex; flex-direction:column; }}
-.three-col .cards-grid {{ flex:0 0 auto; }}
+.three-col .section {{ margin-bottom:0; display:flex; flex-direction:column; min-height:600px; }}
+.three-col .cards-grid {{ flex:1; align-content:start; }}
 @media (max-width:1024px) {{ .three-col {{ grid-template-columns:1fr; }} }}
 
 /* Funnel steps */
@@ -634,21 +634,6 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <div class="legend-item"><span class="badge-8step">八步法</span> 八步法标记</div>
     <div class="legend-item"><span class="llm-badge">LLM+</span> LLM联动加分</div>
     <div class="legend-item"><span class="signal-badge">信号</span> 买入信号</div>
-  </div>
-
-  <div class="stats-row">
-    <div class="stat-card eight">
-      <div class="sv">{eight_count}</div>
-      <div class="sl">🔮 八步法</div>
-    </div>
-    <div class="stat-card funnel">
-      <div class="sv">{funnel_count}</div>
-      <div class="sl">🎯 漏斗</div>
-    </div>
-    <div class="stat-card llm">
-      <div class="sv">{llm_count}</div>
-      <div class="sl">🤖 LLM多源</div>
-    </div>
   </div>
 
   <div class="three-col">
