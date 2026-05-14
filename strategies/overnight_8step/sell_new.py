@@ -85,6 +85,10 @@ except ImportError:
 #    /positions                - 查看持仓
 # ============================================================
 try:
+    # 确保当前目录在 sys.path 中，以便导入同目录模块
+    _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+    if _SCRIPT_DIR not in sys.path:
+        sys.path.insert(0, _SCRIPT_DIR)
     from position_manager import get_positions as load_positions_dynamic
     POSITIONS = load_positions_dynamic()
     if not POSITIONS:
@@ -224,13 +228,19 @@ def get_position_state(state: Dict, code: str, cost: float) -> Dict:
 # ============================================================
 #  获取实时行情（腾讯接口）
 # ============================================================
+def _normalize_code(code: str) -> str:
+    """将股票代码标准化为腾讯接口格式 (如 sh600519, sz002439, bj830799)"""
+    pure = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
+    if pure.startswith(("6", "9")):
+        return "sh" + pure
+    elif pure.startswith(("8", "43")):
+        return "bj" + pure
+    else:
+        return "sz" + pure
+
+
 def get_realtime_data(codes: list) -> dict:
-    code_str = ",".join([
-        ("sh" + (c.replace("sh.", "").replace("sz.", "").replace("bj.", ""))
-         if c.replace("sh.", "").replace("sz.", "").replace("bj.", "").startswith(("6", "9"))
-         else "sz" + c.replace("sh.", "").replace("sz.", "").replace("bj.", "")))
-        for c in codes
-    ])
+    code_str = ",".join([_normalize_code(c) for c in codes])
     url = f"http://qt.gtimg.cn/q={code_str}"
 
     try:
