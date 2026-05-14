@@ -48,8 +48,8 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
 /* Three column layout */
 .three-col { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:start; }
-.three-col .section { margin-bottom:0; display:flex; flex-direction:column; }
-.three-col .cards-grid { flex:0 0 auto; }
+.three-col .section { margin-bottom:0; display:flex; flex-direction:column; min-height:600px; }
+.three-col .cards-grid { flex:1; align-content:start; }
 @media (max-width:1024px) { .three-col { grid-template-columns:1fr; } }
 
 /* Funnel steps */
@@ -108,7 +108,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 三策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-05-12 | 生成: 2026-05-14 21:52:34
+        报告日期: 2026-05-12 | 生成: 2026-05-14 23:45:27
         <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           <option value="2026-05-14" >2026-05-14</option><option value="2026-05-12" selected>2026-05-12</option>
@@ -126,21 +126,6 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div class="legend-item"><span class="badge-8step">八步法</span> 八步法标记</div>
     <div class="legend-item"><span class="llm-badge">LLM+</span> LLM联动加分</div>
     <div class="legend-item"><span class="signal-badge">信号</span> 买入信号</div>
-  </div>
-
-  <div class="stats-row">
-    <div class="stat-card eight">
-      <div class="sv">4</div>
-      <div class="sl">🔮 八步法</div>
-    </div>
-    <div class="stat-card funnel">
-      <div class="sv">4</div>
-      <div class="sl">🎯 漏斗</div>
-    </div>
-    <div class="stat-card llm">
-      <div class="sv">30</div>
-      <div class="sl">🤖 LLM多源</div>
-    </div>
   </div>
 
   <div class="three-col">
@@ -527,96 +512,6 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             <div class="metric"><span class="mv">76</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">业绩 · 盈利预测</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">600487.SH</span>
-              <span class="cand-name">亨通光电</span>
-              
-              <span class="src-badge">7源</span>
-            </div>
-            <span class="cand-score">57</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">74.68</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">73.17</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">79.20</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">70</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">盈利预测 · 题材</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">000034.SZ</span>
-              <span class="cand-name">神州数码</span>
-              
-              <span class="src-badge">4源</span>
-            </div>
-            <span class="cand-score">57</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">42.41</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">41.55</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">44.98</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">80</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">强势股 · 盈利预测</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">600036.SH</span>
-              <span class="cand-name">招商银行</span>
-              
-              <span class="src-badge">2源</span>
-            </div>
-            <span class="cand-score">56</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">37.50</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">36.74</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">39.77</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">77</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">业绩 · 盈利预测</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">600522.SH</span>
-              <span class="cand-name">中天科技</span>
-              
-              <span class="src-badge">7源</span>
-            </div>
-            <span class="cand-score">54</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">43.16</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">42.29</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">45.78</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">62</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">盈利预测 · 题材</div>
-        </div>
-        <div class="candidate-card ">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code">300308.SZ</span>
-              <span class="cand-name">中际旭创</span>
-              
-              <span class="src-badge">12源</span>
-            </div>
-            <span class="cand-score">53</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">1033.46</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">996.74</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">1133.14</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">52</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">事件 · 技术 · 盈利预测</div>
         </div></div>
     </div>
   </div>
