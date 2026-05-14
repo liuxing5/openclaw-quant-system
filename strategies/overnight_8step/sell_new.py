@@ -56,6 +56,7 @@ v2.1 继承特性：
 """
 
 import os
+import sys
 import json
 import requests
 from datetime import datetime, timezone, timedelta
