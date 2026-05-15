@@ -92,22 +92,12 @@ try:
         sys.path.insert(0, _SCRIPT_DIR)
     from position_manager import get_positions as load_positions_dynamic
     POSITIONS = load_positions_dynamic()
+    # 如果动态加载为空，使用空列表（不再硬编码回退，避免 /remove 后仍残留）
     if not POSITIONS:
-        # 如果动态加载为空，使用默认配置
-        POSITIONS = [
-            # {"code": "002439", "cost": 15.30, "path": "稳健", "entry_date": "2026-04-28"},
-            # {"code": "601933", "cost": 4.10},
-            {"code": "002472", "cost": 42.40},
-            {"code": "603319", "cost": 40.04},
-        ]
+        POSITIONS = []
 except ImportError:
-    # 如果 position_manager 不可用，使用硬编码配置
-    POSITIONS = [
-        # {"code": "002439", "cost": 15.30, "path": "稳健", "entry_date": "2026-04-28"},
-        # {"code": "601933", "cost": 4.10},
-        # {"code": "002510", "cost": 7.80},
-        {"code": "603319", "cost": 40.04},
-    ]
+    # 如果 position_manager 不可用，使用空列表
+    POSITIONS = []
 
 CONFIG = {
     "state_file": os.path.join(os.path.dirname(os.path.abspath(__file__)), "sell_state.json"),
@@ -283,7 +273,9 @@ def get_realtime_data(codes: list) -> dict:
         is_limit_up = curr_pct >= limit_threshold
         was_limit_up = high_pct >= limit_threshold
 
-        results[code_raw] = {
+        # 同时存储原始代码和标准化代码（sh.603319）作为 key，
+        # 因为 positions.json 使用标准化格式，而腾讯接口返回原始格式
+        data = {
             "name": name,
             "now": now_price,
             "pre": pre_close,
@@ -299,6 +291,14 @@ def get_realtime_data(codes: list) -> dict:
             "is_limit_up": is_limit_up,
             "was_limit_up": was_limit_up,
         }
+        results[code_raw] = data
+        # 添加标准化 key 映射
+        if code_raw.startswith("sh"):
+            results[f"sh.{code_raw[2:]}"] = data
+        elif code_raw.startswith("sz"):
+            results[f"sz.{code_raw[2:]}"] = data
+        elif code_raw.startswith("bj"):
+            results[f"bj.{code_raw[2:]}"] = data
 
     return results
 
@@ -780,10 +780,9 @@ def run():
     print("=" * 45)
 
     # 每次运行时重新加载持仓（支持盘中通过 Telegram 动态添加）
-    positions = load_positions_dynamic() or POSITIONS
-
+    positions = load_positions_dynamic()
     if not positions:
-        print("\n⚠️ 持仓列表为空，请编辑POSITIONS配置")
+        print("\n⚠️ 持仓列表为空，请通过 Telegram /add 命令添加持仓")
         return
 
     # 加载状态
