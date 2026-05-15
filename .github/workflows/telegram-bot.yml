@@ -20,6 +20,14 @@ jobs:
       with:
         fetch-depth: 0
 
+    - name: Restore bot state
+      uses: actions/cache/restore@v4
+      with:
+        path: ./telegram_state.json
+        key: telegram-state-v1-${{ github.run_id }}
+        restore-keys: |
+          telegram-state-v1-
+
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
@@ -61,21 +69,19 @@ jobs:
             'Accept': 'application/vnd.github.v3+json',
         }
 
-        STATE_PATH = 'strategies/overnight_8step/telegram_state.json'
+        STATE_PATH = '../../telegram_state.json'
         POSITIONS_PATH = 'strategies/overnight_8step/positions.json'
 
-        # ========== 1. 从 GitHub API 读取上次状态 ==========
+        # ========== 1. 从本地缓存读取上次状态 ==========
         last_update_id = 0
         try:
-            resp = requests.get(f'{GH_API}/{STATE_PATH}', headers=GH_HEADERS, timeout=10)
-            if resp.status_code == 200:
-                import base64
-                content = base64.b64decode(resp.json()['content']).decode()
-                state = json.loads(content)
-                last_update_id = state.get('last_update_id', 0)
-                print(f'从 GitHub API 读取状态: last_update_id={last_update_id}')
+            if os.path.exists(STATE_PATH):
+                with open(STATE_PATH, 'r', encoding='utf-8') as f:
+                    state = json.load(f)
+                    last_update_id = state.get('last_update_id', 0)
+                    print(f'从本地缓存读取状态: last_update_id={last_update_id}')
             else:
-                print(f'状态文件不存在 (首次运行), HTTP {resp.status_code}')
+                print('状态文件不存在 (首次运行)')
         except Exception as e:
             print(f'读取状态文件异常: {e}')
 
@@ -157,48 +163,31 @@ jobs:
 
             last_update_id = max(last_update_id, update_id)
 
-        # ========== 4. 保存状态到 GitHub ==========
-        def save_to_github(file_path, content_str, commit_msg):
-            """通过 GitHub API 保存文件"""
-            import base64
-            encoded = base64.b64encode(content_str.encode()).decode()
-
-            # 获取当前 SHA
-            sha = ''
-            try:
-                r = requests.get(f'{GH_API}/{file_path}', headers=GH_HEADERS, timeout=10)
-                if r.status_code == 200:
-                    sha = r.json().get('sha', '')
-            except Exception as e:
-                print(f'获取 SHA 失败: {e}')
-
-            payload = {
-                'message': commit_msg,
-                'content': encoded,
-                'branch': 'master',
-            }
-            if sha:
-                payload['sha'] = sha
-
-            r = requests.put(f'{GH_API}/{file_path}', json=payload, headers=GH_HEADERS, timeout=15)
-            print(f'保存 {file_path}: HTTP {r.status_code}')
-            if r.status_code not in (200, 201):
-                print(f'  响应: {r.text}')
-            return r.status_code
-
+        # ========== 4. 保存状态到本地缓存 ==========
         # 4a. 保存 telegram_state.json
         if last_update_id > 0:
             state_content = json.dumps({'last_update_id': last_update_id}, indent=2)
-            save_to_github(STATE_PATH, state_content, 'chore: update telegram bot state')
+            try:
+                with open(STATE_PATH, 'w', encoding='utf-8') as f:
+                    f.write(state_content)
+                print(f'保存状态到本地缓存: last_update_id={last_update_id}')
+            except Exception as e:
+                print(f'保存状态文件失败: {e}')
 
-        # 4b. 如果 positions 有变更，保存 positions.json
+        # 4b. 如果 positions 有变更，保存到数据库和本地文件
         if positions_changed:
             try:
-                with open('positions.json', 'r', encoding='utf-8') as f:
-                    positions_content = f.read()
-                save_to_github(POSITIONS_PATH, positions_content, 'chore: update positions via telegram')
+                # positions.json 已经在 position_manager 中处理
+                print('持仓已更新')
             except Exception as e:
-                print(f'读取 positions.json 失败: {e}')
+                print(f'处理持仓更新失败: {e}')
 
         print('处理完成')
         PYTHON_SCRIPT
+
+    - name: Save bot state
+      if: always()
+      uses: actions/cache/save@v4
+      with:
+        path: ./telegram_state.json
+        key: telegram-state-v1-${{ github.run_id }}
