@@ -844,6 +844,11 @@ def store_signals(rows):
             inserted += cur.rowcount
         except Exception as e:
             logger.warning(f"batch insert error at offset {i}: {e}")
+            # PostgreSQL 事务已中止，必须回滚才能继续
+            conn.rollback()
+            cur.close()
+            cur = conn.cursor()
+            # 逐行插入失败的批次
             for row in batch:
                 try:
                     cur.execute("""
@@ -852,8 +857,8 @@ def store_signals(rows):
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
                     """, row)
                     inserted += cur.rowcount
-                except Exception:
-                    pass
+                except Exception as e2:
+                    logger.debug(f"单行插入失败: {e2}")
 
     conn.commit()
     cur.close(); conn.close()
