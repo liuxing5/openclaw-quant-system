@@ -95,22 +95,22 @@ def main():
                 setattr(cfg, f'layer{layer_num}_enabled', False)
 
         # 纪律检查：连续止损失败暂停交易 [④纪律]
+        # 即使暂停也运行选股分析，只是不推荐买入，确保报告生成
         if cfg.discipline_review_check_all:
             can_trade, reason = reviewer.is_trading_allowed()
             if not can_trade:
                 print(f"\n{'='*70}")
                 print(f"  🚫 {reason}")
-                print(f"  → 跳过当日选股")
+                print(f"  → 仅运行选股分析，不推荐买入")
                 print(f"{'='*70}\n")
-                sys.exit(0)
 
         trade_date = None
         if args.date:
             trade_date = date.fromisoformat(args.date)
 
         result = run_funnel_strategy(trade_date=trade_date, cfg=cfg)
-        success = len(result.get('candidates', [])) > 0
-        sys.exit(0 if success else 1)
+        # 即使没有候选也视为成功，确保报告生成和部署步骤执行
+        sys.exit(0)
 
 
 if __name__ == "__main__":

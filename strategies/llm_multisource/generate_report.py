@@ -476,7 +476,6 @@ def generate_report():
         """, (llm_date, RUN_MODE))
         row = cur.fetchone()
         if not row or row['cnt'] == 0:
-            from datetime import timedelta
             yesterday = llm_date - timedelta(days=1)
             cur.execute("""
                 SELECT COUNT(*) as cnt FROM daily_candidates
