@@ -85,6 +85,23 @@ def aggregate_today():
     if deleted > 0:
         logger.info(f"将清空 {deleted} 条今天的旧候选数据（提交时机：write_candidates 成功后）")
 
+    # 盘前模式（morning）：如果 extracted_recommendations 中没有足够的新鲜数据，
+    # 回退到使用昨天 afternoon 模式的结果作为今日盘前参考
+    fallback_to_afternoon = False
+    if RUN_MODE == 'morning':
+        yesterday = today - timedelta(days=1)
+        cur.execute("""
+            SELECT COUNT(*) as cnt FROM daily_candidates
+            WHERE snapshot_date = %s AND run_mode = 'afternoon' AND source = %s AND selected = TRUE;
+        """, (yesterday, SOURCE))
+        row = cur.fetchone()
+        afternoon_count = row['cnt'] if row else 0
+        if afternoon_count > 0:
+            logger.info(f"盘前模式：发现昨天 afternoon 有 {afternoon_count} 条选中候选，将作为今日盘前参考")
+            fallback_to_afternoon = True
+        else:
+            logger.info(f"盘前模式：昨天 afternoon 无选中候选，继续正常聚合流程")
+
     cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
     row = cur.fetchone()
     latest_trade_date = row['max_date'] if row else None
@@ -826,6 +843,42 @@ def aggregate_today():
         logger.info(f"盘中模式过滤后剩余 {len(candidates)} 只候选")
 
     qualified = [c for c in candidates if c['final_score'] >= MIN_SELECT_SCORE]
+
+    # 盘前模式回退：如果正常聚合无合格候选，但昨天 afternoon 有选中候选，
+    # 则将昨天的选中候选复制为今天的盘前参考
+    if RUN_MODE == 'morning' and fallback_to_afternoon and not qualified:
+        yesterday = today - timedelta(days=1)
+        cur.execute("""
+            SELECT * FROM daily_candidates
+            WHERE snapshot_date = %s AND run_mode = 'afternoon' AND source = %s AND selected = TRUE
+            ORDER BY final_score DESC;
+        """, (yesterday, SOURCE))
+        afternoon_selected = cur.fetchall()
+        if afternoon_selected:
+            logger.info(f"盘前回退：将昨天 afternoon 的 {len(afternoon_selected)} 条选中候选复制为今日 morning 参考")
+            items = []
+            for c in afternoon_selected:
+                item = dict(c)
+                item['snapshot_date'] = today
+                item['run_mode'] = 'morning'
+                # 添加回退标记
+                if 'logic_tags' not in item or not item['logic_tags']:
+                    item['logic_tags'] = []
+                tags = item['logic_tags']
+                if isinstance(tags, str):
+                    try:
+                        tags = json.loads(tags)
+                    except Exception:
+                        tags = []
+                if '盘前复用' not in tags:
+                    tags.append('盘前复用')
+                item['logic_tags'] = tags
+                items.append(item)
+            n = write_candidates(items, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
+            _persist_llm_scan_stats(today, len(afternoon_selected), len(afternoon_selected), len(afternoon_selected), conn)
+            cur.close(); conn.close()
+            logger.info(f"盘前回退完成，写入 {n} 条记录 (snapshot_date={today})")
+            return
 
     if not qualified:
         logger.warning(f"无候选股达到阈值 {MIN_SELECT_SCORE}")

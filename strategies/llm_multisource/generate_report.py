@@ -464,12 +464,35 @@ def generate_report():
     llm_date = _get_latest_source_date(cur, 'llm_multisource')
     step_date = _get_latest_source_date(cur, 'overnight_8step')
     
+    # 盘前模式回退：如果 morning 没有数据，使用昨天 afternoon 的数据
+    morning_fallback = False
+    if llm_date and RUN_MODE == 'morning':
+        cur.execute("""
+            SELECT COUNT(*) as cnt FROM daily_candidates
+            WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s;
+        """, (llm_date, RUN_MODE))
+        row = cur.fetchone()
+        if not row or row['cnt'] == 0:
+            from datetime import timedelta
+            yesterday = llm_date - timedelta(days=1)
+            cur.execute("""
+                SELECT COUNT(*) as cnt FROM daily_candidates
+                WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = 'afternoon';
+            """, (yesterday,))
+            row2 = cur.fetchone()
+            if row2 and row2['cnt'] > 0:
+                llm_date = yesterday
+                RUN_MODE_FOR_QUERY = 'afternoon'
+                morning_fallback = True
+                logger.info(f"盘前报告回退：使用 {yesterday} afternoon 的 {row2['cnt']} 条数据")
+    
     if llm_date:
+        run_mode_for_query = 'afternoon' if morning_fallback else RUN_MODE
         cur.execute("""
             SELECT * FROM daily_candidates
             WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
             ORDER BY final_score DESC;
-        """, (llm_date, RUN_MODE))
+        """, (llm_date, run_mode_for_query))
         candidates = cur.fetchall()
         for c in candidates:
             raw_sources = c.get('sources', [])
@@ -593,12 +616,32 @@ def generate_text_report():
     llm_date = _get_latest_source_date(cur, 'llm_multisource')
     step_date = _get_latest_source_date(cur, 'overnight_8step')
     
+    # 盘前模式回退：如果 morning 没有数据，使用昨天 afternoon 的数据
+    text_morning_fallback = False
+    if llm_date and RUN_MODE == 'morning':
+        cur.execute("""
+            SELECT COUNT(*) as cnt FROM daily_candidates
+            WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s;
+        """, (llm_date, RUN_MODE))
+        row = cur.fetchone()
+        if not row or row['cnt'] == 0:
+            yesterday = llm_date - timedelta(days=1)
+            cur.execute("""
+                SELECT COUNT(*) as cnt FROM daily_candidates
+                WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = 'afternoon';
+            """, (yesterday,))
+            row2 = cur.fetchone()
+            if row2 and row2['cnt'] > 0:
+                llm_date = yesterday
+                text_morning_fallback = True
+    
     if llm_date:
+        run_mode_for_query = 'afternoon' if text_morning_fallback else RUN_MODE
         cur.execute("""
             SELECT * FROM daily_candidates
             WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
             ORDER BY final_score DESC;
-        """, (llm_date, RUN_MODE))
+        """, (llm_date, run_mode_for_query))
         candidates = cur.fetchall()
     else:
         candidates = []

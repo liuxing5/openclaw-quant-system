@@ -139,6 +139,19 @@ async def push_daily_candidates():
     llm_cands = cur.fetchall()
     logger.info(f"LLM候选: snapshot_date={today}, selected=TRUE, source='llm_multisource', run_mode={RUN_MODE} → {len(llm_cands)} 条")
 
+    # 盘前模式回退：如果 morning 没有候选，尝试使用昨天 afternoon 的选中候选
+    if not llm_cands and RUN_MODE == 'morning':
+        from datetime import timedelta
+        yesterday = today - timedelta(days=1)
+        cur.execute("""
+            SELECT * FROM daily_candidates
+            WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource' AND run_mode='afternoon'
+            ORDER BY final_score DESC;
+        """, (yesterday,))
+        llm_cands = cur.fetchall()
+        if llm_cands:
+            logger.info(f"盘前回退推送：使用昨天 afternoon 的 {len(llm_cands)} 条选中候选")
+
     # 八步法候选由 zuiyou1.py 在 15:10 独立推送（notifyTelegram.py），
     # core pusher 只负责 LLM 多源策略，避免 Telegram 重复推送。
 
