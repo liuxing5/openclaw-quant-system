@@ -1,6 +1,7 @@
 """生成每日推荐报告 - HTML + 文本格式"""
 import os
 import json
+import logging
 from datetime import date, timedelta, datetime, timezone
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -11,6 +12,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
+
+logger = logging.getLogger(__name__)
 
 # 北京时间时区
 BEIJING_TZ = timezone(timedelta(hours=8))
