@@ -43,12 +43,21 @@ MY_TRADES_FILE = os.path.join(LOG_DIR, "my_trades.json")
 ZUIYOU1_FILE = os.path.join(LOG_DIR, "zuiyou1.py")
 
 # 数据库支持
+DB_ENABLED = False
 try:
-    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+    # 尝试多种路径方式确保能找到 core 包
+    project_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
     from core.db.connection import get_db_fresh
     DB_ENABLED = True
-except Exception:
-    DB_ENABLED = False
+except Exception as e:
+    # 尝试直接导入（如果 core 包已在 Python 路径中）
+    try:
+        from core.db.connection import get_db_fresh
+        DB_ENABLED = True
+    except Exception:
+        DB_ENABLED = False
 
 # CSV 字段定义
 FIELDNAMES = [
@@ -208,6 +217,7 @@ def parse_zuiyou1_results() -> tuple:
         return _parse_from_local_file()
     
     today = get_latest_trading_day()
+    print(f"  查询日期: {today}")
     
     try:
         conn = get_db_fresh()
@@ -225,6 +235,7 @@ def parse_zuiyou1_results() -> tuple:
                 final_score DESC;
         """, (today,))
         rows = cur.fetchall()
+        print(f"  查询结果: {len(rows)} 条记录")
         cur.close()
         conn.close()
     except Exception as e:
