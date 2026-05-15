@@ -379,3 +379,19 @@ CREATE TABLE IF NOT EXISTS strategy_scans (
     CONSTRAINT strategy_scans_unique UNIQUE (snapshot_date, strategy)
 );
 CREATE INDEX IF NOT EXISTS idx_strategy_scans_date ON strategy_scans(snapshot_date DESC);
+
+-- Overnight 8-step positions (Telegram /add /remove 管理)
+CREATE TABLE IF NOT EXISTS overnight_positions (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(20) NOT NULL,
+    cost NUMERIC(10,3) NOT NULL,
+    path VARCHAR(20) NOT NULL DEFAULT '稳健',
+    entry_date DATE NOT NULL,
+    limit_up_at_buy BOOLEAN DEFAULT FALSE,
+    mktcap_yi NUMERIC(20,2) DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CONSTRAINT overnight_positions_unique UNIQUE (code, entry_date)
+);
+CREATE INDEX IF NOT EXISTS idx_overnight_code ON overnight_positions(code);
+CREATE INDEX IF NOT EXISTS idx_overnight_active ON overnight_positions(entry_date DESC);

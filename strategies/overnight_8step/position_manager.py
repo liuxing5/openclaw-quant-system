@@ -8,7 +8,7 @@
   ✓ 删除持仓（卖出）
   ✓ 查看当前持仓
   ✓ 从选股结果自动导入
-  ✓ 持久化存储到 positions.json
+  ✓ 持久化存储到 PostgreSQL（主）+ positions.json（本地缓存）
 
 Telegram 命令：
   /positions      - 查看当前持仓
@@ -34,6 +34,15 @@ POSITIONS_FILE = os.path.join(os.path.dirname(__file__), "positions.json")
 DEFAULT_PATH = "稳健"
 VALID_PATHS = ["稳健", "高位"]
 
+# 数据库支持
+try:
+    import sys
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..'))
+    from core.db.connection import get_db_fresh
+    DB_ENABLED = True
+except Exception:
+    DB_ENABLED = False
+
 
 def _normalize_code(code: str) -> str:
     """统一代码格式为 sh.600519 / sz.000001 / bj.430047"""
@@ -57,7 +66,35 @@ def _normalize_code(code: str) -> str:
 # 持仓 CRUD 操作
 # ============================================================
 def load_positions() -> List[Dict]:
-    """加载持仓列表"""
+    """加载持仓列表（优先从数据库，回退到本地文件）"""
+    if DB_ENABLED:
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor()
+            cur.execute("""
+                SELECT code, cost, path, entry_date, limit_up_at_buy, mktcap_yi
+                FROM overnight_positions
+                ORDER BY entry_date DESC;
+            """)
+            rows = cur.fetchall()
+            positions = []
+            for row in rows:
+                positions.append({
+                    "code": row[0],
+                    "cost": float(row[1]),
+                    "path": row[2],
+                    "entry_date": row[3].strftime("%Y-%m-%d") if hasattr(row[3], 'strftime') else str(row[3]),
+                    "limit_up_at_buy": row[4],
+                    "mktcap_yi": float(row[5]) if row[5] else 0.0,
+                })
+            cur.close()
+            conn.close()
+            if positions:
+                return positions
+        except Exception as e:
+            print(f"⚠️ 数据库加载持仓失败: {e}")
+
+    # 回退到本地文件
     if not os.path.exists(POSITIONS_FILE):
         return []
     try:
@@ -69,7 +106,8 @@ def load_positions() -> List[Dict]:
 
 
 def save_positions(positions: List[Dict]) -> None:
-    """保存持仓列表"""
+    """保存持仓列表（同时写入数据库和本地文件）"""
+    # 写入本地文件
     try:
         tmp = POSITIONS_FILE + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -77,6 +115,35 @@ def save_positions(positions: List[Dict]) -> None:
         os.replace(tmp, POSITIONS_FILE)
     except (IOError, OSError) as e:
         print(f"⚠️ 持仓文件写入失败: {e}")
+
+    # 写入数据库
+    if DB_ENABLED:
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor()
+            for p in positions:
+                cur.execute("""
+                    INSERT INTO overnight_positions (code, cost, path, entry_date, limit_up_at_buy, mktcap_yi)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (code, entry_date) DO UPDATE SET
+                        cost = EXCLUDED.cost,
+                        path = EXCLUDED.path,
+                        limit_up_at_buy = EXCLUDED.limit_up_at_buy,
+                        mktcap_yi = EXCLUDED.mktcap_yi,
+                        updated_at = NOW();
+                """, (
+                    p["code"],
+                    p["cost"],
+                    p.get("path", "稳健"),
+                    p.get("entry_date", datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")),
+                    p.get("limit_up_at_buy", False),
+                    p.get("mktcap_yi", 0.0),
+                ))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ 数据库保存持仓失败: {e}")
 
 
 def add_position(code: str, cost: float, path: str = None, entry_date: str = None,
@@ -140,6 +207,19 @@ def remove_position(code: str) -> Dict:
         if p["code"] == code:
             removed = positions.pop(i)
             save_positions(positions)
+
+            # 同时从数据库删除
+            if DB_ENABLED:
+                try:
+                    conn = get_db_fresh()
+                    cur = conn.cursor()
+                    cur.execute("DELETE FROM overnight_positions WHERE code = %s;", (code,))
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                except Exception as e:
+                    print(f"⚠️ 数据库删除持仓失败: {e}")
+
             return {"action": "removed", "position": removed}
     return {"action": "not_found"}
 
@@ -250,7 +330,7 @@ def handle_command(command: str, args: str = "") -> str:
         if result["action"] == "added":
             return f"✅ 已添加持仓: {code} 成本¥{cost:.2f} 路径:{result['position']['path']}"
         else:
-            return f" 已更新持仓: {code} 成本¥{cost:.2f} 路径:{result['position']['path']}"
+            return f"✅ 已更新持仓: {code} 成本¥{cost:.2f} 路径:{result['position']['path']}"
 
     elif command == "remove" or command == "del" or command == "delete":
         code = _normalize_code(args.strip())
