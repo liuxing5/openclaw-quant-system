@@ -224,13 +224,16 @@ def generate_unified_html(output_dir=None, trade_date=None):
     eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
     # 并行 workflow 竞争：overnight_8step 和 funnel 同时 15:10 触发，
     # zuiyou1.py 可能还在写入，最多重试 5 次（每次 15s，共 75s）
-    if not eight_candidates or not eight_date:
+    # 关键修复：即使有昨天的数据，也要等待今天的数据写入
+    beijing_today = get_beijing_date()
+    need_retry = (not eight_candidates or not eight_date) or (eight_date and str(eight_date) < str(beijing_today))
+    if need_retry:
         import time as _time
         for _retry in range(5):
             _time.sleep(15)
-            print(f"  ⏳ overnight_8step 数据为空，15s后重试 ({_retry+1}/5)...")
+            print(f"   overnight_8step 数据未就绪 (当前={eight_date}, 期望>={beijing_today})，15s后重试 ({_retry+1}/5)...")
             eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
-            if eight_candidates:
+            if eight_candidates and eight_date and str(eight_date) >= str(beijing_today):
                 break
     eight_date_str = str(eight_date) if eight_date else None
     eight_timestamp = load_strategy_timestamp('overnight_8step', eight_date)
@@ -555,9 +558,12 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .section-subtitle {{ font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; }}
 
 /* Three column layout */
-.three-col {{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:start; }}
-.three-col .section {{ margin-bottom:0; display:flex; flex-direction:column; min-height:600px; }}
+.three-col {{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:stretch; }}
+.three-col .section {{ margin-bottom:0; display:flex; flex-direction:column; }}
+.three-col .section > h2 {{ flex-shrink:0; }}
+.three-col .section > h3 {{ flex-shrink:0; margin-top:auto; }}
 .three-col .cards-grid {{ flex:1; align-content:start; }}
+.three-col .candidate-card {{ align-self:stretch; }}
 @media (max-width:1024px) {{ .three-col {{ grid-template-columns:1fr; }} }}
 
 /* Funnel steps */

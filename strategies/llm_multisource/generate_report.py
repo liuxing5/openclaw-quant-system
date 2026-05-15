@@ -101,9 +101,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         .card { background: var(--card-bg); border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid var(--border); transition: background 0.3s, border-color 0.3s; }
         .card h2 { color: var(--text); margin-bottom: 14px; border-bottom: 2px solid var(--header-border); padding-bottom: 8px; font-size: 1.1rem; }
         .stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
-        .stock-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; transition: transform 0.2s, box-shadow 0.2s; background: var(--card-bg); }
+        .stock-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; transition: transform 0.2s, box-shadow 0.2s; background: var(--card-bg); display: flex; flex-direction: column; height: 100%; }
         .stock-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--hover-shadow); }
         .stock-card.selected { border-color: var(--selected-border); background: var(--selected-bg); }
+        .stock-card .sources { margin-top: auto; }
         .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px; }
         .stock-code { font-size: 16px; font-weight: bold; color: var(--text); }
         .stock-name { color: var(--text-secondary); margin-left: 6px; font-size: 0.9rem; }
