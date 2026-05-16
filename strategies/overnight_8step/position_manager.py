@@ -69,6 +69,7 @@ def _normalize_code(code: str) -> str:
 def load_positions() -> List[Dict]:
     """加载持仓列表（优先从数据库，回退到本地文件）"""
     if DB_ENABLED:
+        conn = None
         try:
             conn = get_db_fresh()
             cur = conn.cursor()
@@ -89,11 +90,13 @@ def load_positions() -> List[Dict]:
                     "mktcap_yi": float(row[5]) if row[5] else 0.0,
                 })
             cur.close()
-            conn.close()
             if positions:
                 return positions
         except Exception as e:
             print(f"⚠️ 数据库加载持仓失败: {e}")
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     # 回退到本地文件
     if not os.path.exists(POSITIONS_FILE):
@@ -119,6 +122,7 @@ def save_positions(positions: List[Dict]) -> None:
 
     # 写入数据库
     if DB_ENABLED:
+        conn = None
         try:
             conn = get_db_fresh()
             cur = conn.cursor()
@@ -142,9 +146,11 @@ def save_positions(positions: List[Dict]) -> None:
                 ))
             conn.commit()
             cur.close()
-            conn.close()
         except Exception as e:
             print(f"⚠️ 数据库保存持仓失败: {e}")
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
 
 def add_position(code: str, cost: float, path: str = None, entry_date: str = None,
@@ -211,15 +217,18 @@ def remove_position(code: str) -> Dict:
 
             # 同时从数据库删除
             if DB_ENABLED:
+                conn = None
                 try:
                     conn = get_db_fresh()
                     cur = conn.cursor()
                     cur.execute("DELETE FROM overnight_positions WHERE code = %s;", (code,))
                     conn.commit()
                     cur.close()
-                    conn.close()
                 except Exception as e:
                     print(f"⚠️ 数据库删除持仓失败: {e}")
+                finally:
+                    if conn and not conn.closed:
+                        conn.close()
 
             return {"action": "removed", "position": removed}
     return {"action": "not_found"}
@@ -352,13 +361,16 @@ def handle_command(command: str, args: str = "") -> str:
         return """📖 持仓管理命令
 
 /positions 或 /list    - 查看当前持仓
-/add <代码> <成本> [路径]  - 添加持仓
+/add <代码> <成本> [路径]  - 添加持仓 + 记录买入
 /remove <代码>         - 删除持仓
+/sell <代码> <价格> [数量] - 记录卖出 + 移除持仓
+/trades [代码]        - 查看最近交易记录
 /import               - 从选股结果导入
 /help                 - 显示此帮助
 
 路径选项: 稳健(默认) / 高位
-例: /add 601933 4.10 稳健"""
+例: /add 601933 4.10 稳健
+例: /sell 601933 4.80 1000"""
 
     else:
         return f"❌ 未知命令: /{command}\n输入 /help 查看可用命令"
@@ -377,6 +389,7 @@ def record_buy(code: str, price: float, quantity: Optional[float] = None,
     amount = price * quantity if quantity else None
 
     def _do():
+        conn = None
         try:
             conn = get_db_fresh()
             cur = conn.cursor()
@@ -387,9 +400,11 @@ def record_buy(code: str, price: float, quantity: Optional[float] = None,
             """, (code, stock_name, 'buy', price, quantity, amount, path, trade_time, source, notes))
             conn.commit()
             cur.close()
-            conn.close()
         except Exception as e:
             print(f"⚠️ record_buy 写入失败: {e}")
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     threading.Thread(target=_do, daemon=True).start()
     return f"✅ 买入记录已保存: {code} ¥{price:.2f}"
@@ -406,6 +421,7 @@ def record_sell(code: str, price: float, quantity: Optional[float] = None,
     amount = price * quantity if quantity else None
 
     def _do():
+        conn = None
         try:
             conn = get_db_fresh()
             cur = conn.cursor()
@@ -416,9 +432,11 @@ def record_sell(code: str, price: float, quantity: Optional[float] = None,
             """, (code, stock_name, 'sell', price, quantity, amount, path, profit_pct, trade_time, source, notes))
             conn.commit()
             cur.close()
-            conn.close()
         except Exception as e:
             print(f"⚠️ record_sell 写入失败: {e}")
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     threading.Thread(target=_do, daemon=True).start()
     return f"✅ 卖出记录已保存: {code} ¥{price:.2f}"
@@ -427,6 +445,7 @@ def record_sell(code: str, price: float, quantity: Optional[float] = None,
 def get_trade_history(code: Optional[str] = None, limit: int = 20) -> List[Dict]:
     if not DB_ENABLED:
         return []
+    conn = None
     try:
         conn = get_db_fresh()
         cur = conn.cursor()
@@ -450,7 +469,6 @@ def get_trade_history(code: Optional[str] = None, limit: int = 20) -> List[Dict]
             """, (limit,))
         rows = cur.fetchall()
         cur.close()
-        conn.close()
         return [
             {
                 "id": r[0], "code": r[1], "stock_name": r[2], "trade_type": r[3],
@@ -465,6 +483,9 @@ def get_trade_history(code: Optional[str] = None, limit: int = 20) -> List[Dict]
     except Exception as e:
         print(f"⚠️ 查询交易记录失败: {e}")
         return []
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 # ============================================================

@@ -318,8 +318,8 @@ def get_limit_pct(code: str) -> float:
 
 def _get_yesterday_vol_baostock(code: str) -> float:
     """用 baostock 获取昨日成交量(手)，用于盘前封板强度评估"""
+    import baostock as bs
     try:
-        import baostock as bs
         lg = bs.login()
         if lg.error_code != '0':
             return 0
@@ -336,12 +336,15 @@ def _get_yesterday_vol_baostock(code: str) -> float:
             rows = rs.get_data()
             if not rows.empty and len(rows) >= 1:
                 result = float(rows.iloc[-1]["volume"]) / 100 if rows.iloc[-1]["volume"] else 0
-                bs.logout()
-                return result  # 股→手，与腾讯p[6]单位一致
-        bs.logout()
+                return result
         return 0
     except Exception:
         return 0
+    finally:
+        try:
+            bs.logout()
+        except Exception:
+            pass
 
 
 def evaluate_limit_strength(

@@ -28,6 +28,7 @@ from position_manager import (
     handle_command, format_positions,
     add_position, remove_position, get_positions,
     record_buy, record_sell, get_trade_history,
+    _normalize_code,
 )
 
 # ============================================================
@@ -113,6 +114,7 @@ def _init_dedup_table():
     """初始化去重表"""
     if not DB_ENABLED:
         return
+    conn = None
     try:
         conn = get_db_fresh()
         cur = conn.cursor()
@@ -126,9 +128,11 @@ def _init_dedup_table():
         """)
         conn.commit()
         cur.close()
-        conn.close()
     except Exception as e:
         _p(f"⚠️ 初始化去重表失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def _load_processed():
@@ -136,6 +140,7 @@ def _load_processed():
     global _PROCESSED_UPDATES
     if not DB_ENABLED:
         return
+    conn = None
     try:
         conn = get_db_fresh()
         cur = conn.cursor()
@@ -148,16 +153,19 @@ def _load_processed():
         rows = cur.fetchall()
         _PROCESSED_UPDATES = set((row[0], row[1]) for row in rows)
         cur.close()
-        conn.close()
         _p(f"📂 从数据库加载 {len(_PROCESSED_UPDATES)} 条去重记录")
     except Exception as e:
         _p(f"⚠️ 加载去重记录失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def _save_processed_batch(keys):
     """批量保存去重记录到数据库"""
     if not DB_ENABLED or not keys:
         return
+    conn = None
     try:
         conn = get_db_fresh()
         cur = conn.cursor()
@@ -169,9 +177,11 @@ def _save_processed_batch(keys):
             """, (chat_id, msg_id))
         conn.commit()
         cur.close()
-        conn.close()
     except Exception as e:
         _p(f"⚠️ 保存去重记录失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def _is_duplicate(update: Update) -> bool:
@@ -246,9 +256,10 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(parts) >= 2 and "✅" in reply:
         try:
             code = parts[0]
+            normalized = _normalize_code(code)
             price = float(parts[1])
             path = parts[2] if len(parts) > 2 else None
-            record_buy(code, price, path=path, source="telegram")
+            record_buy(normalized, price, path=path, source="telegram")
         except (ValueError, IndexError):
             pass
     await update.message.reply_text(reply)
@@ -298,17 +309,20 @@ async def cmd_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     positions = get_positions()
-    pos_info = next((p for p in positions if p["code"] == code or p["code"].endswith(code.replace("sh.", "").replace("sz.", "").replace("bj.", ""))), None)
+    normalized_code = _normalize_code(code)
+    pos_info = next((p for p in positions if p["code"] == normalized_code), None)
     path = pos_info.get("path", None) if pos_info else None
     profit_pct = None
     if pos_info and pos_info.get("cost") and price:
         profit_pct = round((price - pos_info["cost"]) / pos_info["cost"] * 100, 2)
 
-    result = record_sell(code, price, quantity, profit_pct=profit_pct, path=path, source="telegram")
+    result = record_sell(normalized_code, price, quantity, profit_pct=profit_pct, path=path, source="telegram")
 
-    remove_result = remove_position(code)
+    remove_result = remove_position(normalized_code)
     if remove_result["action"] == "removed":
-        result += f"\n✅ 已从持仓移除: {code}"
+        result += f"\n✅ 已从持仓移除: {normalized_code}"
+    else:
+        result += f"\n⚠️ 持仓中未找到: {normalized_code}（卖出记录已保存）"
 
     await update.message.reply_text(result)
 

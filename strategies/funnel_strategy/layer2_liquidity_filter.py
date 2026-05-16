@@ -33,6 +33,7 @@ def _load_liquidity_data(stock_list: List[str], trade_date: date) -> Dict:
         return {}
 
     cache = {}
+    conn = None
     try:
         conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -51,9 +52,11 @@ def _load_liquidity_data(stock_list: List[str], trade_date: date) -> Dict:
                 'total_market_cap': float(r['total_market_cap']) if r['total_market_cap'] else 0,
             }
         cur.close()
-        conn.close()
     except Exception as e:
         print(f"  ⚠️ Layer2 流动性数据加载失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
     return cache
 
 
@@ -64,6 +67,7 @@ def _load_20d_avg_amount(stock_list: List[str], trade_date: date) -> Dict[str, f
 
     start_date = trade_date - timedelta(days=40)
     cache = {}
+    conn = None
     try:
         conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -76,7 +80,6 @@ def _load_20d_avg_amount(stock_list: List[str], trade_date: date) -> Dict[str, f
         """, (start_date, trade_date, stock_list))
         rows = cur.fetchall()
         cur.close()
-        conn.close()
 
         df = pd.DataFrame(rows, columns=['ts_code', 'amount'])
         df['amount'] = pd.to_numeric(df['amount'], errors='coerce')
@@ -86,6 +89,9 @@ def _load_20d_avg_amount(stock_list: List[str], trade_date: date) -> Dict[str, f
                 cache[ts_code] = float(amounts.mean())
     except Exception as e:
         print(f"  ⚠️ Layer2 均量计算失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
     return cache
 
 

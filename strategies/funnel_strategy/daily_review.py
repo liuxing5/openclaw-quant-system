@@ -107,55 +107,56 @@ class DailyReviewer:
                 print(f"  ⚠️ {report['action']}")
             return report
 
-        cur = conn.cursor(cursor_factory=RealDictCursor)
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        # 从 funnel_results 读昨日漏斗推荐（JSON candidates 列）
-        cur.execute("""
-            SELECT candidates
-            FROM funnel_results
-            WHERE trade_date = %s
-            ORDER BY trade_date DESC
-            LIMIT 1;
-        """, (yesterday,))
+            # 从 funnel_results 读昨日漏斗推荐（JSON candidates 列）
+            cur.execute("""
+                SELECT candidates
+                FROM funnel_results
+                WHERE trade_date = %s
+                ORDER BY trade_date DESC
+                LIMIT 1;
+            """, (yesterday,))
 
-        row = cur.fetchone()
-        picks_raw = json.loads(row['candidates']) if row and row.get('candidates') else []
-        # 映射漏斗字段到 review 期望的字段名
-        picks = []
-        for c in picks_raw:
-            entry_price = c.get('entry_price', 0)
-            picks.append({
-                'ts_code': c.get('ts_code', ''),
-                'stock_name': c.get('stock_name', ''),
-                'entry_price': entry_price,
-                'entry_low': round(entry_price * 0.99, 2) if entry_price else None,
-                'entry_high': round(entry_price * 1.01, 2) if entry_price else None,
-                'stop_loss': c.get('stop_loss'),
-                'target_1': c.get('target_price'),
-                'target_2': None,
-                'final_score': c.get('score', 0),
-            })
+            row = cur.fetchone()
+            picks_raw = json.loads(row['candidates']) if row and row.get('candidates') else []
+            # 映射漏斗字段到 review 期望的字段名
+            picks = []
+            for c in picks_raw:
+                entry_price = c.get('entry_price', 0)
+                picks.append({
+                    'ts_code': c.get('ts_code', ''),
+                    'stock_name': c.get('stock_name', ''),
+                    'entry_price': entry_price,
+                    'entry_low': round(entry_price * 0.99, 2) if entry_price else None,
+                    'entry_high': round(entry_price * 1.01, 2) if entry_price else None,
+                    'stop_loss': c.get('stop_loss'),
+                    'target_1': c.get('target_price'),
+                    'target_2': None,
+                    'final_score': c.get('score', 0),
+                })
 
-        if not picks:
-            report['action'] = '昨日无漏斗推荐，无需复盘'
-            if verbose:
-                print(f"  ℹ️ {report['action']}")
+            if not picks:
+                report['action'] = '昨日无漏斗推荐，无需复盘'
+                if verbose:
+                    print(f"  ℹ️ {report['action']}")
+                return report
+
+            report['candidates_reviewed'] = len(picks)
+
+            # 读取今日行情
+            codes = [p['ts_code'] for p in picks]
+            cur.execute("""
+                SELECT ts_code, open, high, low, close, pct_chg
+                FROM daily_quotes
+                WHERE ts_code = ANY(%s) AND trade_date = %s;
+            """, (codes, trade_date))
+            quotes = {q['ts_code']: q for q in cur.fetchall()}
             cur.close()
-            conn.close()
-            return report
-
-        report['candidates_reviewed'] = len(picks)
-
-        # 读取今日行情
-        codes = [p['ts_code'] for p in picks]
-        cur.execute("""
-            SELECT ts_code, open, high, low, close, pct_chg
-            FROM daily_quotes
-            WHERE ts_code = ANY(%s) AND trade_date = %s;
-        """, (codes, trade_date))
-        quotes = {q['ts_code']: q for q in cur.fetchall()}
-        cur.close()
-        conn.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
         if verbose:
             print(f"\n  昨日推荐: {len(picks)} 只")

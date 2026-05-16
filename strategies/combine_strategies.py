@@ -48,29 +48,35 @@ def load_llm_candidates_from_db(trade_date: date = None, min_score: int = 25) ->
     from core.db.connection import get_db
     from psycopg2.extras import RealDictCursor
 
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
-    if trade_date is None:
-        cur.execute("SELECT MAX(snapshot_date) as max_date FROM daily_candidates WHERE source = 'llm_multisource';")
-        row = cur.fetchone()
-        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+        if trade_date is None:
+            cur.execute("SELECT MAX(snapshot_date) as max_date FROM daily_candidates WHERE source = 'llm_multisource';")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
 
-    cur.execute("""
-        SELECT ts_code, stock_name, final_score
-        FROM daily_candidates
-        WHERE snapshot_date = %s
-          AND source = 'llm_multisource'
-          AND selected = TRUE
-          AND final_score >= %s
-        ORDER BY final_score DESC;
-    """, (trade_date, min_score))
+        cur.execute("""
+            SELECT ts_code, stock_name, final_score
+            FROM daily_candidates
+            WHERE snapshot_date = %s
+              AND source = 'llm_multisource'
+              AND selected = TRUE
+              AND final_score >= %s
+            ORDER BY final_score DESC;
+        """, (trade_date, min_score))
 
-    candidates = [(row['ts_code'], row['stock_name']) for row in cur.fetchall()]
-    cur.close()
-    conn.close()
-
-    return candidates
+        candidates = [(row['ts_code'], row['stock_name']) for row in cur.fetchall()]
+        cur.close()
+        return candidates
+    except Exception as e:
+        print(f"⚠️ 加载LLM候选失败: {e}")
+        return []
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def load_llm_candidates_from_csv(csv_path: str, min_score: int = 5) -> List[Tuple[str, str]]:
@@ -164,13 +170,17 @@ def run_resonance_strategy(
     if trade_date is None:
         from core.db.connection import get_db
         from psycopg2.extras import RealDictCursor
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
-        row = cur.fetchone()
-        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
-        cur.close()
-        conn.close()
+        conn = None
+        try:
+            conn = get_db()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+            cur.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
         print(f"\n  最新交易日: {trade_date}")
 
     # ========== 第1层：5策略共振过滤 ==========

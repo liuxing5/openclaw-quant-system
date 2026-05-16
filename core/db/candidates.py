@@ -145,11 +145,10 @@ def _write_candidates_once(
                 conn.rollback()
             except Exception:
                 pass
-            try:
-                conn.close()
-            except Exception:
-                pass
         raise
+    finally:
+        if own_conn and conn and not conn.closed:
+            conn.close()
 
 
 def write_candidates(

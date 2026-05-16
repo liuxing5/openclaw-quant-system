@@ -125,124 +125,124 @@ async def push_daily_candidates():
     
     conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
     
-    can_push, reason = check_market_state(cur, today)
-    if not can_push:
-        await bot.send_message(CHAT_ID, f"⚠️ <b>{today}</b>\n{reason}", parse_mode=ParseMode.HTML)
-        cur.close(); conn.close()
-        return
-    
-    cur.execute("""
-        SELECT * FROM daily_candidates
-        WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource' AND run_mode=%s
-        ORDER BY final_score DESC;
-    """, (today, RUN_MODE))
-    llm_cands = cur.fetchall()
-    logger.info(f"LLM候选: snapshot_date={today}, selected=TRUE, source='llm_multisource', run_mode={RUN_MODE} → {len(llm_cands)} 条")
-
-    # 盘前模式回退：如果 morning 没有候选，尝试使用昨天 afternoon 的选中候选
-    if not llm_cands and RUN_MODE == 'morning':
-        from datetime import timedelta
-        yesterday = today - timedelta(days=1)
+    try:
+        can_push, reason = check_market_state(cur, today)
+        if not can_push:
+            await bot.send_message(CHAT_ID, f"⚠️ <b>{today}</b>\n{reason}", parse_mode=ParseMode.HTML)
+            return
+        
         cur.execute("""
             SELECT * FROM daily_candidates
-            WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource' AND run_mode='afternoon'
+            WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource' AND run_mode=%s
             ORDER BY final_score DESC;
-        """, (yesterday,))
+        """, (today, RUN_MODE))
         llm_cands = cur.fetchall()
-        if llm_cands:
-            logger.info(f"盘前回退推送：使用昨天 afternoon 的 {len(llm_cands)} 条选中候选")
+        logger.info(f"LLM候选: snapshot_date={today}, selected=TRUE, source='llm_multisource', run_mode={RUN_MODE} → {len(llm_cands)} 条")
 
-    # 八步法候选由 zuiyou1.py 在 15:10 独立推送（notifyTelegram.py），
-    # core pusher 只负责 LLM 多源策略，避免 Telegram 重复推送。
+        # 盘前模式回退：如果 morning 没有候选，尝试使用昨天 afternoon 的选中候选
+        if not llm_cands and RUN_MODE == 'morning':
+            from datetime import timedelta
+            yesterday = today - timedelta(days=1)
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date=%s AND selected=TRUE AND source='llm_multisource' AND run_mode='afternoon'
+                ORDER BY final_score DESC;
+            """, (yesterday,))
+            llm_cands = cur.fetchall()
+            if llm_cands:
+                logger.info(f"盘前回退推送：使用昨天 afternoon 的 {len(llm_cands)} 条选中候选")
 
-    if not llm_cands:
-        cur.execute("""
-            SELECT COUNT(*) as cnt FROM daily_candidates
-            WHERE snapshot_date=%s;
-        """, (today,))
-        row = cur.fetchone()
-        total = row['cnt'] if hasattr(row, 'keys') else row[0]
-        msg = (f"🤖 <b>{today}</b> LLM 多源策略 {'盘前参考' if RUN_MODE == 'morning' else '盘后复盘'}\n\n"
-               f"{'今日' if RUN_MODE == 'morning' else '明日'}无符合条件的 LLM 推荐\n"
-               f"（共分析 {total} 只候选股，均未达到阈值）\n\n"
-               f"建议: 空仓观望 或 持有现有仓位")
-        await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
-        cur.close(); conn.close()
-        return
-    
-    mode_labels = {
-        'morning': ('盘前参考', '今日'),
-        'intraday': ('盘中速递', '当前'),
-        'afternoon': ('盘后复盘', '明日'),
-    }
-    header, target = mode_labels.get(RUN_MODE, ('盘后复盘', '明日'))
-    
-    cur.execute("""
-        SELECT source_name, COUNT(*) as cnt
-        FROM raw_signals
-        WHERE fetch_time >= %s
-        GROUP BY source_name
-        ORDER BY cnt DESC;
-    """, (today,))
-    source_stats = {row['source_name']: row['cnt'] for row in cur.fetchall()}
-    
-    all_sources = [
-        'AKShare-龙虎榜',
-        'AKShare-涨停板',
-        'AKShare-个股研报',
-        'AKShare-财经新闻',
-        'AKShare-机构调研',
-        'AKShare-热点概念',
-    ]
-    
-    total_cands = len(llm_cands)
-    stats_lines = []
-    stats_lines.append(f"🤖 <b>{today}</b> LLM 多源策略 {header}")
-    stats_lines.append(f"共 {total_cands} 只\n")
-    stats_lines.append("数据采集统计：")
-    for src in all_sources:
-        cnt = source_stats.get(src, 0)
-        stats_lines.append(f"  {src}: {cnt} 条")
-    stats_lines.append("")
-    
-    lines = stats_lines
+        # 八步法候选由 zuiyou1.py 在 15:10 独立推送（notifyTelegram.py），
+        # core pusher 只负责 LLM 多源策略，避免 Telegram 重复推送。
 
-    def _append_candidates(cands, emoji, label):
-        if not cands:
+        if not llm_cands:
+            cur.execute("""
+                SELECT COUNT(*) as cnt FROM daily_candidates
+                WHERE snapshot_date=%s;
+            """, (today,))
+            row = cur.fetchone()
+            total = row['cnt'] if hasattr(row, 'keys') else row[0]
+            msg = (f"🤖 <b>{today}</b> LLM 多源策略 {'盘前参考' if RUN_MODE == 'morning' else '盘后复盘'}\n\n"
+                   f"{'今日' if RUN_MODE == 'morning' else '明日'}无符合条件的 LLM 推荐\n"
+                   f"（共分析 {total} 只候选股，均未达到阈值）\n\n"
+                   f"建议: 空仓观望 或 持有现有仓位")
+            await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
             return
-        lines.append(f"{emoji} <b>{label}</b> ({len(cands)} 只)")
-        for c in cands:
-            c = dict(c)
-            sources = c.get('sources') or []
-            if isinstance(sources, str):
-                sources = json.loads(sources)
-            src_names = ', '.join(set(s.get('source','') for s in sources[:5]))
-            
-            entry_low = c['entry_low'] if c['entry_low'] else '—'
-            entry_high = c['entry_high'] if c['entry_high'] else '—'
-            stop_loss = c['stop_loss'] if c['stop_loss'] else '—'
-            target_1 = c['target_1'] if c['target_1'] else '—'
-            target_2 = c['target_2'] if c['target_2'] else '—'
-            position_pct = (c['position_pct'] or 0) * 100
-            logic_tags = ', '.join(c.get('logic_tags') or [])
-            
-            lines.append(f"🎯 <b>{fmt_html(c['stock_name'] or '')}</b> <code>{fmt_html(c['ts_code'])}</code>")
-            lines.append(f"综合分: <b>{c['final_score']:.1f}</b> | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
-            lines.append(f"入场: {fmt_html(str(entry_low))}-{fmt_html(str(entry_high))}  止损: {fmt_html(str(stop_loss))}")
-            lines.append(f"目标: {fmt_html(str(target_1))}/{fmt_html(str(target_2))}  仓位: {fmt_html(f'{position_pct:.0f}')}%")
-            lines.append(f"逻辑: {fmt_html(logic_tags)} | 源: {fmt_html(src_names)}")
-            lines.append("")
 
-    _append_candidates(llm_cands, "🤖", "LLM 多源策略")
-    
-    msg = '\n'.join(lines)
-    
-    try:
-        await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        logger.error(f"push failed: {e}")
-    
-    cur.close(); conn.close()
+        mode_labels = {
+            'morning': ('盘前参考', '今日'),
+            'intraday': ('盘中速递', '当前'),
+            'afternoon': ('盘后复盘', '明日'),
+        }
+        header, target = mode_labels.get(RUN_MODE, ('盘后复盘', '明日'))
+        
+        cur.execute("""
+            SELECT source_name, COUNT(*) as cnt
+            FROM raw_signals
+            WHERE fetch_time >= %s
+            GROUP BY source_name
+            ORDER BY cnt DESC;
+        """, (today,))
+        source_stats = {row['source_name']: row['cnt'] for row in cur.fetchall()}
+        
+        all_sources = [
+            'AKShare-龙虎榜',
+            'AKShare-涨停板',
+            'AKShare-个股研报',
+            'AKShare-财经新闻',
+            'AKShare-机构调研',
+            'AKShare-热点概念',
+        ]
+        
+        total_cands = len(llm_cands)
+        stats_lines = []
+        stats_lines.append(f"🤖 <b>{today}</b> LLM 多源策略 {header}")
+        stats_lines.append(f"共 {total_cands} 只\n")
+        stats_lines.append("数据采集统计：")
+        for src in all_sources:
+            cnt = source_stats.get(src, 0)
+            stats_lines.append(f"  {src}: {cnt} 条")
+        stats_lines.append("")
+        
+        lines = stats_lines
+
+        def _append_candidates(cands, emoji, label):
+            if not cands:
+                return
+            lines.append(f"{emoji} <b>{label}</b> ({len(cands)} 只)")
+            for c in cands:
+                c = dict(c)
+                sources = c.get('sources') or []
+                if isinstance(sources, str):
+                    sources = json.loads(sources)
+                src_names = ', '.join(set(s.get('source','') for s in sources[:5]))
+                
+                entry_low = c['entry_low'] if c['entry_low'] else '—'
+                entry_high = c['entry_high'] if c['entry_high'] else '—'
+                stop_loss = c['stop_loss'] if c['stop_loss'] else '—'
+                target_1 = c['target_1'] if c['target_1'] else '—'
+                target_2 = c['target_2'] if c['target_2'] else '—'
+                position_pct = (c['position_pct'] or 0) * 100
+                logic_tags = ', '.join(c.get('logic_tags') or [])
+                
+                lines.append(f"🎯 <b>{fmt_html(c['stock_name'] or '')}</b> <code>{fmt_html(c['ts_code'])}</code>")
+                lines.append(f"综合分: <b>{c['final_score']:.1f}</b> | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+                lines.append(f"入场: {fmt_html(str(entry_low))}-{fmt_html(str(entry_high))}  止损: {fmt_html(str(stop_loss))}")
+                lines.append(f"目标: {fmt_html(str(target_1))}/{fmt_html(str(target_2))}  仓位: {fmt_html(f'{position_pct:.0f}')}%")
+                lines.append(f"逻辑: {fmt_html(logic_tags)} | 源: {fmt_html(src_names)}")
+                lines.append("")
+
+        _append_candidates(llm_cands, "🤖", "LLM 多源策略")
+        
+        msg = '\n'.join(lines)
+        
+        try:
+            await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
+        except Exception as e:
+            logger.error(f"push failed: {e}")
+    finally:
+        cur.close()
+        conn.close()
 
 
 if __name__ == '__main__':

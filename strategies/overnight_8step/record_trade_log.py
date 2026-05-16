@@ -237,10 +237,12 @@ def parse_zuiyou1_results() -> tuple:
         rows = cur.fetchall()
         print(f"  查询结果: {len(rows)} 条记录")
         cur.close()
-        conn.close()
     except Exception as e:
         print(f"⚠️ 数据库查询失败: {e}，回退到本地文件模式")
         return _parse_from_local_file()
+    finally:
+        if conn and not conn.closed:
+            conn.close()
     
     if not rows:
         print(f"⚠️ 今日({today})无数据库选股记录")

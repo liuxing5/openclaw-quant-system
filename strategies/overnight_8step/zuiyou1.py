@@ -408,6 +408,7 @@ def _persist_scan_stats(snapshot_date, reject_stats: dict, total_scanned: int, t
     """将八步法扫描统计写入 strategy_scans 表，供 HTML 报告渲染过滤漏斗"""
     if not DB_ENABLED:
         return
+    conn = None
     try:
         from core.db.connection import get_db_fresh
         conn = get_db_fresh()
@@ -430,10 +431,12 @@ def _persist_scan_stats(snapshot_date, reject_stats: dict, total_scanned: int, t
         ))
         conn.commit()
         cur.close()
-        conn.close()
         print(f"  ✓ 扫描统计已写入 strategy_scans")
     except Exception as e:
         print(f"  ⚠️ 扫描统计写入失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def _persist_zero_result_audit(snapshot_date, reject_stats: dict, sentiment_score: int, mood: str) -> int:
@@ -503,11 +506,8 @@ def _read_intraday_picks(snapshot_date) -> set:
         print(f"⚠️ 读取 intraday 快照失败: {e}")
         return set()
     finally:
-        if conn:
-            try:
-                conn.close()
-            except Exception:
-                pass
+        if conn and not conn.closed:
+            conn.close()
 
 # ============================================================
 #  LLM候选池整合（v1.5+）
@@ -588,7 +588,6 @@ def get_llm_candidates_from_supabase(
 
         rows = cur.fetchall()
         cur.close()
-        conn.close()
 
         for row in rows:
             ts_code = row[0]
@@ -613,11 +612,8 @@ def get_llm_candidates_from_supabase(
         print(f"⚠️ LLM候选池读取失败: {e}")
         return {}
     finally:
-        if conn is not None:
-            try: cur.close()
-            except Exception: pass
-            try: conn.close()
-            except Exception: pass
+        if conn and not conn.closed:
+            conn.close()
 
 
 def is_llm_candidate(code: str) -> tuple:
@@ -791,10 +787,8 @@ def load_new_indicators(trade_date: str = None):
     except Exception as e:
         print(f"⚠️ 新增指标加载失败: {e}")
     finally:
-        try: cur.close()
-        except Exception: pass
-        try: conn.close()
-        except Exception: pass
+        if conn and not conn.closed:
+            conn.close()
 
 
 def get_strong_rank_bonus(ts_code: str) -> float:

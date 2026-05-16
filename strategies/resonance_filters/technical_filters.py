@@ -605,27 +605,35 @@ def run_resonance_filter(trade_date: date = None,
       通过过滤的股票列表
     """
     if trade_date is None:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
-        row = cur.fetchone()
-        trade_date = row['max_date'] if row else date.today()
-        cur.close()
-        conn.close()
+        conn = None
+        try:
+            conn = get_db()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else date.today()
+            cur.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     if stock_list is None:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("""
-            SELECT DISTINCT ts_code
-            FROM daily_quotes
-            WHERE trade_date = %s
-              AND amount > 1e8
-            ORDER BY ts_code;
-        """, (trade_date,))
-        stock_list = [row['ts_code'] for row in cur.fetchall()]
-        cur.close()
-        conn.close()
+        conn = None
+        try:
+            conn = get_db()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("""
+                SELECT DISTINCT ts_code
+                FROM daily_quotes
+                WHERE trade_date = %s
+                  AND amount > 1e8
+                ORDER BY ts_code;
+            """, (trade_date,))
+            stock_list = [row['ts_code'] for row in cur.fetchall()]
+            cur.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     filters = ResonanceFilters()
     try:

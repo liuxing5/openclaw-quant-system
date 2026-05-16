@@ -64,7 +64,7 @@ def load_universe(trade_date: date, min_amount: float = 1e8) -> List[str]:
         traceback.print_exc()
         return []
     finally:
-        if conn:
+        if conn and not conn.closed:
             conn.close()
 
 
@@ -112,13 +112,17 @@ class FunnelEngine:
         cfg = self.cfg
 
         if trade_date is None:
-            conn = get_db()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
-            row = cur.fetchone()
-            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
-            cur.close()
-            conn.close()
+            conn = None
+            try:
+                conn = get_db()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+                row = cur.fetchone()
+                trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+                cur.close()
+            finally:
+                if conn and not conn.closed:
+                    conn.close()
 
         t_total_start = time.perf_counter()
         timestamp = datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
@@ -407,6 +411,7 @@ class FunnelEngine:
         elapsed_seconds: float,
     ):
         """将漏斗结果保存到数据库"""
+        conn = None
         try:
             conn = get_db()
             cur = conn.cursor()
@@ -480,10 +485,12 @@ class FunnelEngine:
             ))
             conn.commit()
             cur.close()
-            conn.close()
             print(f"  ✓ 结果已保存到数据库 (funnel_results)")
         except Exception as e:
             print(f"  ⚠️ 保存数据库失败: {e}")
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     def _print_funnel_summary(self):
         """打印漏斗统计"""
