@@ -395,3 +395,24 @@ CREATE TABLE IF NOT EXISTS overnight_positions (
 );
 CREATE INDEX IF NOT EXISTS idx_overnight_code ON overnight_positions(code);
 CREATE INDEX IF NOT EXISTS idx_overnight_active ON overnight_positions(entry_date DESC);
+
+-- Trade records (buy/sell log for review and analysis)
+CREATE TABLE IF NOT EXISTS trade_records (
+    id BIGSERIAL PRIMARY KEY,
+    code VARCHAR(20) NOT NULL,
+    stock_name VARCHAR(50),
+    trade_type VARCHAR(10) NOT NULL,
+    price DECIMAL(10,3) NOT NULL,
+    quantity DECIMAL(10,2),
+    amount DECIMAL(20,2),
+    path VARCHAR(20),
+    profit_pct FLOAT,
+    trade_time TIMESTAMPTZ NOT NULL,
+    source VARCHAR(30),
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_trade_code ON trade_records(code, trade_time DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_type ON trade_records(trade_type, trade_time DESC);
+CREATE INDEX IF NOT EXISTS idx_trade_time ON trade_records(trade_time DESC);

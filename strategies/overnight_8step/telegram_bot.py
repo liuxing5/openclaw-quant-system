@@ -27,6 +27,7 @@ except ImportError:
 from position_manager import (
     handle_command, format_positions,
     add_position, remove_position, get_positions,
+    record_buy, record_sell, get_trade_history,
 )
 
 # ============================================================
@@ -241,6 +242,15 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = " ".join(context.args) if context.args else ""
     _p(f"📩 cmd_add args='{args}' from={update.message.from_user.id}")
     reply = handle_command("add", args)
+    parts = args.strip().split()
+    if len(parts) >= 2 and "✅" in reply:
+        try:
+            code = parts[0]
+            price = float(parts[1])
+            path = parts[2] if len(parts) > 2 else None
+            record_buy(code, price, path=path, source="telegram")
+        except (ValueError, IndexError):
+            pass
     await update.message.reply_text(reply)
 
 
@@ -259,6 +269,73 @@ async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _p(f"📩 cmd_import from={update.message.from_user.id}")
     reply = handle_command("import")
     await update.message.reply_text(reply)
+
+
+async def cmd_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
+    if CHAT_ID and str(update.message.chat_id) != CHAT_ID:
+        await update.message.reply_text("❌ 无权操作")
+        return
+    args = " ".join(context.args) if context.args else ""
+    _p(f"📩 cmd_sell args='{args}' from={update.message.from_user.id}")
+    parts = args.strip().split()
+    if len(parts) < 2:
+        await update.message.reply_text("❌ 用法: /sell <代码> <价格> [数量]\n例: /sell 601933 4.50 1000")
+        return
+    code = parts[0]
+    try:
+        price = float(parts[1])
+    except ValueError:
+        await update.message.reply_text("❌ 价格必须是数字")
+        return
+    quantity = None
+    if len(parts) > 2:
+        try:
+            quantity = float(parts[2])
+        except ValueError:
+            await update.message.reply_text("❌ 数量必须是数字")
+            return
+
+    positions = get_positions()
+    pos_info = next((p for p in positions if p["code"] == code or p["code"].endswith(code.replace("sh.", "").replace("sz.", "").replace("bj.", ""))), None)
+    path = pos_info.get("path", None) if pos_info else None
+    profit_pct = None
+    if pos_info and pos_info.get("cost") and price:
+        profit_pct = round((price - pos_info["cost"]) / pos_info["cost"] * 100, 2)
+
+    result = record_sell(code, price, quantity, profit_pct=profit_pct, path=path, source="telegram")
+
+    remove_result = remove_position(code)
+    if remove_result["action"] == "removed":
+        result += f"\n✅ 已从持仓移除: {code}"
+
+    await update.message.reply_text(result)
+
+
+async def cmd_trades(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _is_duplicate(update):
+        return
+    if CHAT_ID and str(update.message.chat_id) != CHAT_ID:
+        await update.message.reply_text("❌ 无权操作")
+        return
+    _p(f"📩 cmd_trades from={update.message.from_user.id}")
+    code = None
+    if context.args:
+        code = context.args[0]
+    trades = get_trade_history(code=code, limit=10)
+    if not trades:
+        await update.message.reply_text("📭 暂无交易记录" + (f" ({code})" if code else ""))
+        return
+    lines = ["📋 最近交易记录:"]
+    for t in trades:
+        emoji = "🟢" if t["trade_type"] == "buy" else "🔴"
+        profit_str = f" 盈亏:{t['profit_pct']:+.2f}%" if t["profit_pct"] is not None else ""
+        lines.append(
+            f"{emoji} {t['trade_time'][:16]} {t['code']} {t['stock_name'] or ''} "
+            f"{t['trade_type']} ¥{t['price']:.2f}{profit_str}"
+        )
+    await update.message.reply_text("\n".join(lines))
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -303,6 +380,8 @@ def build_app():
     app.add_handler(CommandHandler("del", cmd_remove))
     app.add_handler(CommandHandler("delete", cmd_remove))
     app.add_handler(CommandHandler("import", cmd_import))
+    app.add_handler(CommandHandler("sell", cmd_sell))
+    app.add_handler(CommandHandler("trades", cmd_trades))
     app.add_handler(CallbackQueryHandler(button_callback))
 
     # 兜底：捕获所有未被处理的更新（放在最后）

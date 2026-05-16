@@ -21,6 +21,7 @@ Telegram 命令：
 import os
 import re
 import json
+import threading
 from datetime import datetime, timezone, timedelta
 
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -361,6 +362,109 @@ def handle_command(command: str, args: str = "") -> str:
 
     else:
         return f"❌ 未知命令: /{command}\n输入 /help 查看可用命令"
+
+
+# ============================================================
+# 交易记录数据库写入
+# ============================================================
+def record_buy(code: str, price: float, quantity: Optional[float] = None,
+               path: Optional[str] = None, source: Optional[str] = None,
+               notes: Optional[str] = None, stock_name: Optional[str] = None) -> str:
+    if not DB_ENABLED:
+        return "⚠️ 数据库未启用，买入记录未保存"
+    code = _normalize_code(code)
+    trade_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    amount = price * quantity if quantity else None
+
+    def _do():
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO trade_records
+                (code, stock_name, trade_type, price, quantity, amount, path, trade_time, source, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (code, stock_name, 'buy', price, quantity, amount, path, trade_time, source, notes))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ record_buy 写入失败: {e}")
+
+    threading.Thread(target=_do, daemon=True).start()
+    return f"✅ 买入记录已保存: {code} ¥{price:.2f}"
+
+
+def record_sell(code: str, price: float, quantity: Optional[float] = None,
+                profit_pct: Optional[float] = None, path: Optional[str] = None,
+                source: Optional[str] = None, notes: Optional[str] = None,
+                stock_name: Optional[str] = None) -> str:
+    if not DB_ENABLED:
+        return "⚠️ 数据库未启用，卖出记录未保存"
+    code = _normalize_code(code)
+    trade_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    amount = price * quantity if quantity else None
+
+    def _do():
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO trade_records
+                (code, stock_name, trade_type, price, quantity, amount, path, profit_pct, trade_time, source, notes)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (code, stock_name, 'sell', price, quantity, amount, path, profit_pct, trade_time, source, notes))
+            conn.commit()
+            cur.close()
+            conn.close()
+        except Exception as e:
+            print(f"⚠️ record_sell 写入失败: {e}")
+
+    threading.Thread(target=_do, daemon=True).start()
+    return f"✅ 卖出记录已保存: {code} ¥{price:.2f}"
+
+
+def get_trade_history(code: Optional[str] = None, limit: int = 20) -> List[Dict]:
+    if not DB_ENABLED:
+        return []
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        if code:
+            code = _normalize_code(code)
+            cur.execute("""
+                SELECT id, code, stock_name, trade_type, price, quantity, amount,
+                       path, profit_pct, trade_time, source, notes
+                FROM trade_records
+                WHERE code = %s
+                ORDER BY trade_time DESC
+                LIMIT %s
+            """, (code, limit))
+        else:
+            cur.execute("""
+                SELECT id, code, stock_name, trade_type, price, quantity, amount,
+                       path, profit_pct, trade_time, source, notes
+                FROM trade_records
+                ORDER BY trade_time DESC
+                LIMIT %s
+            """, (limit,))
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [
+            {
+                "id": r[0], "code": r[1], "stock_name": r[2], "trade_type": r[3],
+                "price": float(r[4]) if r[4] else 0,
+                "quantity": float(r[5]) if r[5] else None,
+                "amount": float(r[6]) if r[6] else None,
+                "path": r[7], "profit_pct": r[8],
+                "trade_time": str(r[9]), "source": r[10], "notes": r[11],
+            }
+            for r in rows
+        ]
+    except Exception as e:
+        print(f"⚠️ 查询交易记录失败: {e}")
+        return []
 
 
 # ============================================================

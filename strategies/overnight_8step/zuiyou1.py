@@ -2526,6 +2526,26 @@ def main():
         print(msg)
         print(msg, file=sys.stderr)
 
+    if is_post_time and len(stable_picks) + len(upper_picks) > 0:
+        try:
+            from position_manager import record_buy as _record_buy_candidate
+            for _, row in pd.concat([stable_picks, upper_picks]).iterrows():
+                ts_code = baostock_to_standard(row['code'])
+                price = float(row.get('price', 0) or 0)
+                if price <= 0:
+                    continue
+                path = row.get('path', '稳健')
+                _record_buy_candidate(
+                    code=ts_code,
+                    price=price,
+                    path=path,
+                    source='zuiyou1',
+                    notes=f"选股候选 run_mode={persist_run_mode} score={row.get('score', 0):.1f}",
+                    stock_name=all_name_map.get(row['code'], ''),
+                )
+        except Exception as e:
+            print(f"  ⚠️ 买入候选记录写入失败: {e}")
+
     # 15:10 盘后定稿时计算与 14:30 的 diff
     diff_summary = ""
     if is_post_time:
