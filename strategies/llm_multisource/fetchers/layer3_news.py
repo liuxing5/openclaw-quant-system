@@ -1,7 +1,9 @@
 """Layer 3: News sources -- CLS (财联社) telegraph via akshare"""
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from loguru import logger
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def fetch_cls_telegraph(make_signal) -> list:

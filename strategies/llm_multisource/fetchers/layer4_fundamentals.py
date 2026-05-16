@@ -6,13 +6,6 @@ from . import FetchResult
 
 
 def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
-    """MootDX财务数据 -- client.finance() + client.info()
-
-    Fetches 37 financial fields per quarterly report for top-200 stocks.
-    Stores to stock_fundamentals table.
-    Returns make_signal() tuples for stocks with notable fundamentals.
-    Rate-limited: 0.2s between requests.
-    """
     rows = FetchResult()
 
     try:
@@ -29,9 +22,10 @@ def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
         return rows
 
     if codes is None:
+        conn = None
         try:
-            from core.db.connection import get_db
-            conn = get_db()
+            from core.db.connection import get_db_fresh
+            conn = get_db_fresh()
             cur = conn.cursor()
             cur.execute("""
                 SELECT ts_code FROM daily_quotes
@@ -40,14 +34,17 @@ def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
                 LIMIT 200;
             """)
             codes = [row[0] for row in cur.fetchall()]
-            cur.close(); conn.close()
+            cur.close()
         except Exception:
             return rows
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     if not codes:
         return rows
 
-    fundamentals = []  # structured data for stock_fundamentals table
+    fundamentals = []
 
     for ts in codes[:200]:
         try:
@@ -57,7 +54,6 @@ def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
             code, market = parts
             mkt = 1 if market == 'SH' else 0
 
-            # client.finance() returns financial data
             try:
                 fin = client.finance(symbol=code)
                 if fin is not None and hasattr(fin, 'empty') and not fin.empty:
@@ -82,8 +78,6 @@ def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
         except Exception:
             continue
 
-    # Attach structured data for store_structured.py to consume
-    # AKShare fallback when mootdx yields no data (e.g. cloud deployment)
     if not fundamentals and codes:
         try:
             import akshare as ak

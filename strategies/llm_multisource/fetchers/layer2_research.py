@@ -5,12 +5,6 @@ from loguru import logger
 
 
 def fetch_em_profit_forecast(make_signal) -> list:
-    """东财盈利预测 -- stock_profit_forecast_em(symbol='')
-
-    Fetches full market consensus EPS forecasts (2600+ stocks).
-    Returns make_signal() tuples with source='东财-盈利预测', tier=1.
-    Content: EPS forecasts 2025-2028 + buy/hold/sell ratings.
-    """
     import akshare as ak
     rows = []
 
@@ -27,7 +21,6 @@ def fetch_em_profit_forecast(make_signal) -> list:
         col_buy = next((c for c in df.columns if '买入' in c), None)
         col_hold = next((c for c in df.columns if '增持' in c), None)
 
-        # EPS columns: 2025预测每股收益, 2026预测每股收益, etc.
         eps_cols = [c for c in df.columns if '预测每股收益' in c]
 
         if not col_code:
@@ -77,20 +70,15 @@ def fetch_em_profit_forecast(make_signal) -> list:
 
 
 def fetch_ths_profit_forecast(make_signal) -> list:
-    """同花顺盈利预测 -- stock_profit_forecast_ths(symbol, indicator='预测年报每股收益')
-
-    Iterates over top-30 stocks from daily_quotes by market cap.
-    Returns make_signal() tuples with source='THS-盈利预测', tier=1.
-    Rate-limited: 0.3s between requests.
-    """
     import akshare as ak
-    import psycopg2
     rows = []
 
-    # Get top-30 stocks by market cap from daily_quotes
+    from core.db.connection import get_db_fresh
+
+    codes = []
+    conn = None
     try:
-        from core.db.connection import get_db
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor()
         cur.execute("""
             SELECT ts_code FROM daily_quotes
@@ -99,30 +87,34 @@ def fetch_ths_profit_forecast(make_signal) -> list:
             LIMIT 30;
         """)
         codes = [row[0] for row in cur.fetchall()]
-        cur.close(); conn.close()
+        cur.close()
     except Exception as e:
         logger.debug(f"THS预测: 无法获取top30股票列表: {e}")
-        return rows
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
     if not codes:
         logger.info("THS预测: 无股票列表")
         return rows
 
-    # Batch lookup stock names to avoid per-stock DB connections
     name_map = {}
+    conn = None
     try:
-        from core.db.connection import get_db as get_db2
-        conn2 = get_db2()
-        cur2 = conn2.cursor()
-        cur2.execute(
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute(
             "SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s)",
             (codes,)
         )
-        for row in cur2.fetchall():
+        for row in cur.fetchall():
             name_map[row[0]] = row[1] or ''
-        cur2.close(); conn2.close()
+        cur.close()
     except Exception:
         pass
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
     for ts_code in codes:
         try:
@@ -141,7 +133,6 @@ def fetch_ths_profit_forecast(make_signal) -> list:
             if not col_year or not col_mean:
                 continue
 
-            # Only take the nearest year forecast
             first = df.iloc[0]
             year = str(first.get(col_year, ''))
             mean_eps = float(first.get(col_mean, 0) or 0)

@@ -102,18 +102,21 @@ def diagnose(symbol: str, name: str):
 def main():
     bs.login()
 
-    # 重点诊断你说"卡 L1"的几只
-    targets = [
-        ("002460", "赣锋锂业"),
-        ("002709", "天赐材料"),
-        ("300390", "天华超净"),
-        ("603259", "药明康德"),
-        ("300661", "圣邦股份"),
-    ]
-    for code, name in targets:
-        diagnose(code, name)
-
-    bs.logout()
+    try:
+        targets = [
+            ("002460", "赣锋锂业"),
+            ("002709", "天赐材料"),
+            ("300390", "天华超净"),
+            ("603259", "药明康德"),
+            ("300661", "圣邦股份"),
+        ]
+        for code, name in targets:
+            diagnose(code, name)
+    finally:
+        try:
+            bs.logout()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

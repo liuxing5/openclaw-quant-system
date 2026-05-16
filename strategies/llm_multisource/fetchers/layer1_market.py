@@ -350,7 +350,7 @@ def fetch_concept_constituents(make_signal) -> list:
     return rows
 
 
-def fetch_tencent_supplementary(make_signal, get_db_func=None) -> list:
+def fetch_tencent_supplementary(make_signal) -> list:
     """腾讯财经补充数据 -- qt.gtimg.cn
 
     Fetches PE, PB, market cap, limit up/down prices.
@@ -359,26 +359,29 @@ def fetch_tencent_supplementary(make_signal, get_db_func=None) -> list:
     Pattern: same as zuiyou1.py get_realtime_quotes() but extracts extra fields.
     """
     rows = FetchResult()
-    tencent_data = []  # structured data for daily_quotes update
+    tencent_data = []
 
-    # Get stock list from daily_quotes
+    from core.db.connection import get_db_fresh
+    codes = []
+    conn = None
     try:
-        if get_db_func is None:
-            from core.db.connection import get_db as get_db_func
-        conn = get_db_func()
+        conn = get_db_fresh()
         cur = conn.cursor()
         cur.execute("""
             SELECT ts_code FROM daily_quotes
-            WHERE trade_date = (SELECT MAX(trade_date) FROM daily_QUOTES)
+            WHERE trade_date = (SELECT MAX(trade_date) FROM daily_quotes)
               AND volume > 0
             ORDER BY amount DESC NULLS LAST
             LIMIT 3000;
         """)
         codes = [row[0] for row in cur.fetchall()]
-        cur.close(); conn.close()
+        cur.close()
     except Exception as e:
         logger.debug(f"Tencent: 无法获取股票列表: {e}")
         return rows
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
     if not codes:
         return rows
@@ -665,10 +668,10 @@ def fetch_mootdx_realtime(make_signal, codes=None) -> list:
     try:
         import pandas as pd
         if codes is None:
-            # Get top-200 from daily_quotes
+            from core.db.connection import get_db_fresh
+            conn = None
             try:
-                from core.db.connection import get_db
-                conn = get_db()
+                conn = get_db_fresh()
                 cur = conn.cursor()
                 cur.execute("""
                     SELECT ts_code FROM daily_quotes
@@ -677,9 +680,12 @@ def fetch_mootdx_realtime(make_signal, codes=None) -> list:
                     LIMIT 200;
                 """)
                 codes = [row[0] for row in cur.fetchall()]
-                cur.close(); conn.close()
+                cur.close()
             except Exception:
                 return rows
+            finally:
+                if conn and not conn.closed:
+                    conn.close()
 
         if not codes:
             return rows
@@ -746,9 +752,10 @@ def fetch_mootdx_orderbook(make_signal, codes=None) -> list:
 
     try:
         if codes is None:
+            from core.db.connection import get_db_fresh
+            conn = None
             try:
-                from core.db.connection import get_db
-                conn = get_db()
+                conn = get_db_fresh()
                 cur = conn.cursor()
                 cur.execute("""
                     SELECT ts_code FROM daily_quotes
@@ -757,9 +764,12 @@ def fetch_mootdx_orderbook(make_signal, codes=None) -> list:
                     LIMIT 50;
                 """)
                 codes = [row[0] for row in cur.fetchall()]
-                cur.close(); conn.close()
+                cur.close()
             except Exception:
                 return rows
+            finally:
+                if conn and not conn.closed:
+                    conn.close()
 
         if not codes:
             return rows
@@ -820,9 +830,10 @@ def fetch_mootdx_kline(make_signal, codes=None, frequency='d') -> list:
 
     try:
         if codes is None:
+            from core.db.connection import get_db_fresh
+            conn = None
             try:
-                from core.db.connection import get_db
-                conn = get_db()
+                conn = get_db_fresh()
                 cur = conn.cursor()
                 cur.execute("""
                     SELECT ts_code FROM daily_quotes
@@ -831,9 +842,12 @@ def fetch_mootdx_kline(make_signal, codes=None, frequency='d') -> list:
                     LIMIT 50;
                 """)
                 codes = [row[0] for row in cur.fetchall()]
-                cur.close(); conn.close()
+                cur.close()
             except Exception:
                 return rows
+            finally:
+                if conn and not conn.closed:
+                    conn.close()
 
         if not codes:
             return rows
