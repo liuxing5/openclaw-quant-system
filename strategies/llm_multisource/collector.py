@@ -791,83 +791,77 @@ def store_signals(rows):
         conn = get_db_fresh()
         cur = conn.cursor()
 
-    # 预加载 feed_sources 映射
-    cur.execute("SELECT id, name FROM feed_sources;")
-    source_map = {row[1]: row[0] for row in cur.fetchall()}
+        cur.execute("SELECT id, name FROM feed_sources;")
+        source_map = {row[1]: row[0] for row in cur.fetchall()}
 
-    # 发现未知数据源，自动注册到 feed_sources
-    seen_sources = set(row[1] for row in rows)
-    new_sources = seen_sources - set(source_map.keys())
-    if new_sources:
-        for src in new_sources:
-            route = 'auto_' + src.lower().replace('-', '_').replace(' ', '_')[:40]
-            cur.execute("""
-                INSERT INTO feed_sources (name, route, category, tier, weight, poll_interval_sec)
-                VALUES (%s, %s, 'auto', 2, 1.0, 86400)
-                ON CONFLICT (name) DO NOTHING
-                RETURNING id;
-            """, (src, route))
-            new_id = cur.fetchone()
-            if new_id:
-                source_map[src] = new_id[0]
-            else:
-                cur.execute("SELECT id FROM feed_sources WHERE name = %s;", (src,))
-                row2 = cur.fetchone()
-                if row2:
-                    source_map[src] = row2[0]
+        seen_sources = set(row[1] for row in rows)
+        new_sources = seen_sources - set(source_map.keys())
+        if new_sources:
+            for src in new_sources:
+                route = 'auto_' + src.lower().replace('-', '_').replace(' ', '_')[:40]
+                cur.execute("""
+                    INSERT INTO feed_sources (name, route, category, tier, weight, poll_interval_sec)
+                    VALUES (%s, %s, 'auto', 2, 1.0, 86400)
+                    ON CONFLICT (name) DO NOTHING
+                    RETURNING id;
+                """, (src, route))
+                new_id = cur.fetchone()
+                if new_id:
+                    source_map[src] = new_id[0]
+                else:
+                    cur.execute("SELECT id FROM feed_sources WHERE name = %s;", (src,))
+                    row2 = cur.fetchone()
+                    if row2:
+                        source_map[src] = row2[0]
+            conn.commit()
+            logger.warning(f"自动注册 {len(new_sources)} 个新数据源: {list(new_sources)}")
+
+        rows_with_id = []
+        for row in rows:
+            source_name = row[1]
+            source_id = source_map.get(source_name)
+            if source_id is None:
+                logger.warning(f"数据源 '{source_name}' 无法注册，source_id 设为 NULL")
+            rows_with_id.append((source_id,) + row[1:])
+
+        hashes = [row[-1] for row in rows_with_id]
+        cur.execute("SELECT content_hash FROM raw_signals WHERE content_hash = ANY(%s);", (hashes,))
+        existing = set(r[0] for r in cur.fetchall())
+        new_rows = [r for r in rows_with_id if r[-1] not in existing]
+
+        inserted = 0
+        batch_size = 50
+        for i in range(0, len(new_rows), batch_size):
+            batch = new_rows[i:i + batch_size]
+            try:
+                execute_values(
+                    cur,
+                    """INSERT INTO raw_signals
+                    (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
+                    VALUES %s""",
+                    batch,
+                    page_size=batch_size,
+                )
+                inserted += cur.rowcount
+            except Exception as e:
+                logger.warning(f"batch insert error at offset {i}: {e}")
+                conn.rollback()
+                cur.close()
+                cur = conn.cursor()
+                for row in batch:
+                    try:
+                        cur.execute("""
+                            INSERT INTO raw_signals
+                            (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+                        """, row)
+                        inserted += cur.rowcount
+                    except Exception as e2:
+                        logger.debug(f"单行插入失败: {e2}")
+
         conn.commit()
-        logger.warning(f"自动注册 {len(new_sources)} 个新数据源: {list(new_sources)}")
-
-    # 替换 source_id 占位符
-    rows_with_id = []
-    for row in rows:
-        source_name = row[1]
-        source_id = source_map.get(source_name)
-        if source_id is None:
-            logger.warning(f"数据源 '{source_name}' 无法注册，source_id 设为 NULL")
-        rows_with_id.append((source_id,) + row[1:])
-
-    # 预过滤已存在的 content_hash，避免大量 ON CONFLICT 检查导致索引超时
-    hashes = [row[-1] for row in rows_with_id]
-    cur.execute("SELECT content_hash FROM raw_signals WHERE content_hash = ANY(%s);", (hashes,))
-    existing = set(r[0] for r in cur.fetchall())
-    new_rows = [r for r in rows_with_id if r[-1] not in existing]
-
-    inserted = 0
-    batch_size = 50
-    for i in range(0, len(new_rows), batch_size):
-        batch = new_rows[i:i + batch_size]
-        try:
-            execute_values(
-                cur,
-                """INSERT INTO raw_signals
-                (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
-                VALUES %s""",
-                batch,
-                page_size=batch_size,
-            )
-            inserted += cur.rowcount
-        except Exception as e:
-            logger.warning(f"batch insert error at offset {i}: {e}")
-            # PostgreSQL 事务已中止，必须回滚才能继续
-            conn.rollback()
-            cur.close()
-            cur = conn.cursor()
-            # 逐行插入失败的批次
-            for row in batch:
-                try:
-                    cur.execute("""
-                        INSERT INTO raw_signals
-                        (source_id, source_name, source_tier, title, content, url, pub_time, fetch_time, content_hash)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s);
-                    """, row)
-                    inserted += cur.rowcount
-                except Exception as e2:
-                    logger.debug(f"单行插入失败: {e2}")
-
-    conn.commit()
-    cur.close()
-    return inserted
+        cur.close()
+        return inserted
     except Exception as e:
         logger.error(f"store_signals 失败: {e}")
         return 0

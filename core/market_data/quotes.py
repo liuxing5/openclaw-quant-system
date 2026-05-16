@@ -379,7 +379,7 @@ def fetch_lhb_today():
     except Exception as e:
         try:
             err_msg = str(e)
-        except:
+        except Exception:
             err_msg = repr(e)
         logger.warning(f"lhb skipped: {err_msg}")
         return

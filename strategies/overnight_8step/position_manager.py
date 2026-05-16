@@ -55,7 +55,9 @@ def _normalize_code(code: str) -> str:
     if len(digits) < 6:
         return code.strip()
     code6 = digits[:6]
-    if code6.startswith(('6', '68', '688', '9')):
+    if code6.startswith(('688', '689')):
+        return f"sh.{code6}"
+    elif code6.startswith(('6', '9')):
         return f"sh.{code6}"
     elif code6.startswith(('8', '4')):
         return f"bj.{code6}"
@@ -126,16 +128,11 @@ def save_positions(positions: List[Dict]) -> None:
         try:
             conn = get_db_fresh()
             cur = conn.cursor()
+            cur.execute("DELETE FROM overnight_positions;")
             for p in positions:
                 cur.execute("""
                     INSERT INTO overnight_positions (code, cost, path, entry_date, limit_up_at_buy, mktcap_yi)
                     VALUES (%s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (code, entry_date) DO UPDATE SET
-                        cost = EXCLUDED.cost,
-                        path = EXCLUDED.path,
-                        limit_up_at_buy = EXCLUDED.limit_up_at_buy,
-                        mktcap_yi = EXCLUDED.mktcap_yi,
-                        updated_at = NOW();
                 """, (
                     p["code"],
                     p["cost"],
@@ -386,7 +383,7 @@ def record_buy(code: str, price: float, quantity: Optional[float] = None,
         return "⚠️ 数据库未启用，买入记录未保存"
     code = _normalize_code(code)
     trade_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    amount = price * quantity if quantity else None
+    amount = price * quantity if price and quantity else None
 
     def _do():
         conn = None
@@ -418,7 +415,7 @@ def record_sell(code: str, price: float, quantity: Optional[float] = None,
         return "⚠️ 数据库未启用，卖出记录未保存"
     code = _normalize_code(code)
     trade_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    amount = price * quantity if quantity else None
+    amount = price * quantity if price and quantity else None
 
     def _do():
         conn = None

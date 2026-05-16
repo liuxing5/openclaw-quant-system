@@ -219,9 +219,11 @@ def get_position_state(state: Dict, code: str, cost: float) -> Dict:
 def _normalize_code(code: str) -> str:
     """将股票代码标准化为腾讯接口格式 (如 sh600519, sz002439, bj830799)"""
     pure = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
-    if pure.startswith(("6", "9")):
+    if pure.startswith(("688", "689")):
         return "sh" + pure
-    elif pure.startswith(("8", "43")):
+    elif pure.startswith(("6", "9")):
+        return "sh" + pure
+    elif pure.startswith(("8", "4")):
         return "bj" + pure
     else:
         return "sz" + pure
@@ -532,7 +534,7 @@ def decide_sell(
     open_pct = info["open_pct"]
     curr_pct = info["curr_pct"]
 
-    profit_pct = (now - cost) / cost * 100
+    profit_pct = (now - cost) / cost * 100 if cost > 0 else 0
 
     # 更新最高盈利点
     high_water = state_rec.get("high_water", 0.0)

@@ -322,7 +322,7 @@ async def cmd_sell(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pos_info = next((p for p in positions if p["code"] == normalized_code), None)
     path = pos_info.get("path", None) if pos_info else None
     profit_pct = None
-    if pos_info and pos_info.get("cost") and price:
+    if pos_info and pos_info.get("cost") and price and pos_info["cost"] > 0:
         profit_pct = round((price - pos_info["cost"]) / pos_info["cost"] * 100, 2)
 
     result = record_sell(normalized_code, price, quantity, profit_pct=profit_pct, path=path, source="telegram")
@@ -373,7 +373,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data.startswith("buy_"):
         parts = data.split("_")
         if len(parts) >= 4:
-            add_position(parts[1], float(parts[2]), parts[3])
+            try:
+                buy_price = float(parts[2])
+            except ValueError:
+                await query.edit_message_text(f"❌ 无效价格: {parts[2]}")
+                return
+            add_position(parts[1], buy_price, parts[3])
             await query.edit_message_text(f"✅ 已买入: {parts[1]}")
     elif data.startswith("sell_"):
         code = data.split("_")[1]
