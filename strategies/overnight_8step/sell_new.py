@@ -89,13 +89,12 @@ try:
     _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
     if _SCRIPT_DIR not in sys.path:
         sys.path.insert(0, _SCRIPT_DIR)
-    from position_manager import get_positions as load_positions_dynamic, record_sell as _record_sell_db
+    from position_manager import get_positions as load_positions_dynamic
     POSITIONS = load_positions_dynamic()
     if not POSITIONS:
         POSITIONS = []
 except ImportError:
     POSITIONS = []
-    _record_sell_db = None
 
 CONFIG = {
     "state_file": os.path.join(os.path.dirname(os.path.abspath(__file__)), "sell_state.json"),
@@ -901,20 +900,6 @@ def run():
                         notified_codes[action_key] = now.strftime("%H:%M:%S")
                     except Exception as e:
                         print(f"  ⚠️ 推送失败 {row['code']}: {e}")
-
-                    if _record_sell_db is not None:
-                        try:
-                            _record_sell_db(
-                                code=row["code"],
-                                price=row["now"],
-                                profit_pct=row["profit_pct"],
-                                path=row.get("path"),
-                                source="sell_new",
-                                notes=f"{row['action']} | {row['reason']}",
-                                stock_name=row.get("name"),
-                            )
-                        except Exception as e:
-                            print(f"  ⚠️ 卖出记录写入失败 {row['code']}: {e}")
             
             state["_notified_today"] = notified_codes
             save_state(state)
