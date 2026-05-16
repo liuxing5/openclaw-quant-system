@@ -46,7 +46,7 @@ socket.setdefaulttimeout(15)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from core.db.connection import get_db, db_configured
+from core.db.connection import get_db_fresh, db_configured
 from core.utils.ts_code import standard_to_baostock
 from core.utils.trading_calendar import is_trading_day as _is_trading_day
 from dotenv import load_dotenv
@@ -67,18 +67,25 @@ def _get_target_stocks() -> list:
     使用 stock_basic_info 而非 daily_quotes 以避免鸡生蛋问题：
     daily_quotes 可能只有少量股票，导致回填覆盖不全。
     """
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT ts_code
-        FROM stock_basic_info
-        WHERE is_active = TRUE
-        ORDER BY ts_code
-    """)
-    codes = [r[0] for r in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return codes
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT ts_code
+            FROM stock_basic_info
+            WHERE is_active = TRUE
+            ORDER BY ts_code
+        """)
+        codes = [r[0] for r in cur.fetchall()]
+        cur.close()
+        return codes
+    except Exception as e:
+        print(f"⚠️ 获取股票列表失败: {e}")
+        return []
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def _fetch_stock_history(bs_code: str, start_date: str, end_date: str) -> list:
@@ -143,16 +150,16 @@ def _fetch_stock_history(bs_code: str, start_date: str, end_date: str) -> list:
 
 
 def _insert_batch(ts_code: str, rows: list) -> int:
-    """批量写入 daily_quotes（ON CONFLICT 跳过已有记录）"""
     if not rows:
         return 0
 
-    conn = get_db()
-    cur = conn.cursor()
-
-    values = [(ts_code,) + r for r in rows]
-
+    conn = None
     try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+
+        values = [(ts_code,) + r for r in rows]
+
         execute_values(cur, """
             INSERT INTO daily_quotes (
                 ts_code, trade_date, open, high, low, close,
@@ -162,14 +169,19 @@ def _insert_batch(ts_code: str, rows: list) -> int:
         """, values, page_size=500)
         inserted = cur.rowcount
         conn.commit()
+        cur.close()
         return inserted
     except Exception as e:
-        conn.rollback()
+        if conn:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
         print(f"  ⚠️ {ts_code} 写入失败: {e}")
         return 0
     finally:
-        cur.close()
-        conn.close()
+        if conn and not conn.closed:
+            conn.close()
 
 
 def run_backfill(

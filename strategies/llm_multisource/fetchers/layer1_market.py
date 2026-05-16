@@ -1,3 +1,4 @@
+from core.utils.ts_code import pure_to_ts_code
 """Layer 1: Market Data -- Tencent qt.gtimg, THS strong stocks/concepts, mootdx"""
 import re
 import time
@@ -55,7 +56,7 @@ def fetch_ths_strong_stocks_structured(make_signal) -> list:
                         continue
 
                     name = str(r.get(col_name, '') or '') if col_name else ''
-                    ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                    ts = pure_to_ts_code(code)
                     days = int(r.get(col_days, 0) or 0) if col_days else 0
                     chg = float(r.get(col_chg, 0) or 0) if col_chg else 0
                     turnover = float(r.get(col_turnover, 0) or 0) if col_turnover else 0
@@ -146,7 +147,7 @@ def fetch_concept_board_quotes(make_signal) -> list:
                 lead_name = str(r.get(col_lead_stock, '') or '') if col_lead_stock else ''
                 lead_code_raw = str(r.get(col_lead_code, '') or '') if col_lead_code else ''
                 lead_code = re.sub(r'[^0-9]', '', lead_code_raw).zfill(6) if lead_code_raw else ''
-                lead_ts = f"{lead_code}.SH" if lead_code.startswith(('6', '688')) else f"{lead_code}.SZ" if lead_code else ''
+                lead_ts = pure_to_ts_code(lead_code) if lead_code else ''
 
                 concept_data.append({
                     'trade_date': today,
@@ -223,7 +224,7 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
                     continue
 
                 name = str(r.get(col_name, '') or '') if col_name else ''
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                ts = pure_to_ts_code(code)
                 agency = str(r.get(col_agency, '') or '') if col_agency else ''
                 rating = str(r.get(col_rating, '') or '') if col_rating else ''
 
@@ -325,7 +326,7 @@ def fetch_concept_constituents(make_signal) -> list:
                         code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
                         if not code or len(code) < 6:
                             continue
-                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        ts = pure_to_ts_code(code)
                         stock_name = str(r.get(col_stock_name, '') or '') if col_stock_name else ''
 
                         membership_data.append({
@@ -447,7 +448,7 @@ def fetch_tencent_supplementary(make_signal) -> list:
                     large_order_net = float(p[51] or 0) if len(p) > 51 and p[51] else 0
                     main_force_net = float(p[52] or 0) * 10000 if len(p) > 52 and p[52] else 0  # 万 -> 元
 
-                    ts_code = f"{code6}.SH" if code6.startswith(('6', '688')) else f"{code6}.SZ"
+                    ts_code = pure_to_ts_code(code6)
 
                     tencent_data.append({
                         'ts_code': ts_code,
@@ -536,7 +537,7 @@ def fetch_ths_strong_stocks(make_signal) -> list:
                         continue
 
                     name = str(r.get(col_name, '') or '') if col_name else ''
-                    ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                    ts = pure_to_ts_code(code)
                     days = int(r.get(col_days, 0) or 0) if col_days else 0
                     chg = float(r.get(col_chg, 0) or 0) if col_chg else 0
                     turnover = float(r.get(col_turnover, 0) or 0) if col_turnover else 0

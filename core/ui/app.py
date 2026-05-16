@@ -6,7 +6,7 @@ import streamlit as st
 from datetime import date, datetime
 import json
 
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 from core.utils.env import load_project_env
 
 load_project_env()
@@ -16,10 +16,14 @@ st.set_page_config(page_title="AI 股票推荐系统", layout="wide", page_icon=
 
 @st.cache_data(ttl=60)
 def query_df(sql, params=None):
-    conn = get_db()
-    df = pd.read_sql(sql, conn, params=params)
-    conn.close()
-    return df
+    conn = None
+    try:
+        conn = get_db_fresh()
+        df = pd.read_sql(sql, conn, params=params)
+        return df
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 st.sidebar.title("📊 AI 股票推荐")

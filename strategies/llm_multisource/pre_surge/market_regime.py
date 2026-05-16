@@ -76,7 +76,7 @@ def check_market_regime(loader: DataLoader = None,
         x = pd.Series(range(len(recent)))
         y = recent["close"].astype(float).reset_index(drop=True)
         # 简单斜率: 250 日累计涨幅
-        slope_pct = (y.iloc[-1] - y.iloc[0]) / y.iloc[0]
+        slope_pct = (y.iloc[-1] - y.iloc[0]) / y.iloc[0] if y.iloc[0] > 0 else 0.0
         if slope_pct < -0.10:
             d2_score = 5
             d2_text = f"下跌趋势 (250日 {slope_pct:+.1%})"

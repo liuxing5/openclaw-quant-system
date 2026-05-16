@@ -315,7 +315,7 @@ except ImportError:
 import sys as _sys
 _sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 try:
-    from core.db.connection import db_configured, get_db
+    from core.db.connection import db_configured, get_db_fresh as get_db
     from core.db.candidates import write_candidates
     from core.utils.ts_code import baostock_to_standard
     from core.utils.env import load_project_env

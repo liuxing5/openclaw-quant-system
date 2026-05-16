@@ -23,19 +23,15 @@ import pandas as pd
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def _fetch_market_breadth(trade_date=None) -> Tuple[int, int]:
-    """
-    从 daily_quotes 数据库统计两市上涨/下跌家数。
-    返回 (上涨家数, 下跌家数)。
-    数据库不可用时返回(0, 0)，由上层决定是否降级。
-    """
+    conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         if trade_date is None:
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
@@ -50,11 +46,13 @@ def _fetch_market_breadth(trade_date=None) -> Tuple[int, int]:
         """, (trade_date,))
         row = cur.fetchone()
         cur.close()
-        conn.close()
         if row:
             return int(row['advancers'] or 0), int(row['decliners'] or 0)
     except Exception as e:
         print(f"  ⚠️ Layer0 市场广度查询失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
     return 0, 0
 
 
@@ -100,13 +98,17 @@ def check_market_environment(
 
     # 0. 解析交易日期
     if trade_date is None:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
-        row = cur.fetchone()
-        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
-        cur.close()
-        conn.close()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+            cur.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     # 1. 获取上涨家数（从数据库直接统计）
     advancers, decliners = _fetch_market_breadth(trade_date)
@@ -120,30 +122,36 @@ def check_market_environment(
               f"要求上涨≥{min_advancers}")
 
     # 2. 获取指数行情并计算EMA
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-        SELECT trade_date, close as market_close
-        FROM daily_quotes
-        WHERE ts_code = %s AND trade_date >= %s AND trade_date <= %s
-          AND close > 0
-        ORDER BY trade_date ASC;
-    """, (index_code, trade_date - timedelta(days=50), trade_date))
-    rows = cur.fetchall()
-
-    # 指数数据不可用时，降级为全市场均价
-    if not rows:
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
-            SELECT trade_date, AVG(close) as market_close
+            SELECT trade_date, close as market_close
             FROM daily_quotes
-            WHERE trade_date >= %s AND trade_date <= %s
+            WHERE ts_code = %s AND trade_date >= %s AND trade_date <= %s
               AND close > 0
-            GROUP BY trade_date
             ORDER BY trade_date ASC;
-        """, (trade_date - timedelta(days=50), trade_date))
+        """, (index_code, trade_date - timedelta(days=50), trade_date))
         rows = cur.fetchall()
-    cur.close()
-    conn.close()
+
+        if not rows:
+            cur.execute("""
+                SELECT trade_date, AVG(close) as market_close
+                FROM daily_quotes
+                WHERE trade_date >= %s AND trade_date <= %s
+                  AND close > 0
+                GROUP BY trade_date
+                ORDER BY trade_date ASC;
+            """, (trade_date - timedelta(days=50), trade_date))
+            rows = cur.fetchall()
+        cur.close()
+    except Exception as e:
+        print(f"  ⚠️ Layer0 指数行情查询失败: {e}")
+        rows = []
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
     index_above_ema = False
     index_close = 0.0

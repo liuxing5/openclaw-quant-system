@@ -45,12 +45,12 @@ def load_llm_candidates_from_db(trade_date: date = None, min_score: int = 25) ->
     返回：
       [(ts_code, stock_name), ...]
     """
-    from core.db.connection import get_db
+    from core.db.connection import get_db_fresh
     from psycopg2.extras import RealDictCursor
 
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         if trade_date is None:
@@ -168,11 +168,11 @@ def run_resonance_strategy(
 
     # 获取最新交易日
     if trade_date is None:
-        from core.db.connection import get_db
+        from core.db.connection import get_db_fresh
         from psycopg2.extras import RealDictCursor
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()

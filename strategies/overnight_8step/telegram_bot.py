@@ -249,6 +249,9 @@ async def cmd_positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _is_duplicate(update):
         return
+    if CHAT_ID and str(update.message.chat_id) != CHAT_ID:
+        await update.message.reply_text("❌ 无权操作")
+        return
     args = " ".join(context.args) if context.args else ""
     _p(f"📩 cmd_add args='{args}' from={update.message.from_user.id}")
     reply = handle_command("add", args)
@@ -268,6 +271,9 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _is_duplicate(update):
         return
+    if CHAT_ID and str(update.message.chat_id) != CHAT_ID:
+        await update.message.reply_text("❌ 无权操作")
+        return
     args = " ".join(context.args) if context.args else ""
     _p(f"📩 cmd_remove args='{args}' from={update.message.from_user.id}")
     reply = handle_command("remove", args)
@@ -276,6 +282,9 @@ async def cmd_remove(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if _is_duplicate(update):
+        return
+    if CHAT_ID and str(update.message.chat_id) != CHAT_ID:
+        await update.message.reply_text("❌ 无权操作")
         return
     _p(f"📩 cmd_import from={update.message.from_user.id}")
     reply = handle_command("import")

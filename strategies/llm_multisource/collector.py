@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
+from core.db.connection import get_db_fresh
 
 # Multi-layer fetchers
 from strategies.llm_multisource.fetchers.layer3_news import fetch_cls_telegraph
@@ -45,6 +46,19 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 def get_beijing_date():
     """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
     return datetime.now(BEIJING_TZ).date()
+
+
+def _to_ts_code(code: str) -> str:
+    """纯数字代码 → tushare ts_code（含北交所）"""
+    if not code:
+        return ''
+    pure = code.lstrip('0') or code
+    if pure.startswith(('6', '688')):
+        return f"{code}.SH"
+    elif pure.startswith(('8', '4')):
+        return f"{code}.BJ"
+    else:
+        return f"{code}.SZ"
 
 
 def is_trading_day(d):
@@ -87,17 +101,6 @@ def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=1):
                 return []
         return result[0] or []
     return []
-
-
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'),
-        port=int(os.getenv('POSTGRES_PORT') or '5432'),
-        user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'),
-        dbname=os.getenv('POSTGRES_DB'),
-        sslmode='require',
-    )
 
 
 def make_signal(source, title, content, url='', pub_time=None, tier=2):
@@ -251,7 +254,7 @@ def fetch_akshare_lhb():
                         if not code or code == 'nan' or len(code) < 4:
                             continue
                         name = r.get(col_name, '') or '' if col_name else ''
-                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        ts = _to_ts_code(code)
                         net = r.get(col_net, 0) or 0 if col_net else 0
                         reason = r.get(col_reason, '') or '' if col_reason else ''
                         rows.append(make_signal(
@@ -284,7 +287,7 @@ def fetch_akshare_lhb():
                         if not code or code == 'nan' or len(code) < 4:
                             continue
                         name = r.get(col_name, '') or '' if col_name else ''
-                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        ts = _to_ts_code(code)
                         net = r.get(col_net, 0) or 0 if col_net else 0
                         rows.append(make_signal(
                             source='AKShare-龙虎榜', tier=1,
@@ -315,7 +318,7 @@ def fetch_akshare_lhb():
                         if not code or code == 'nan' or len(code) < 4:
                             continue
                         name = r.get(col_name, '') or '' if col_name else ''
-                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        ts = _to_ts_code(code)
                         rows.append(make_signal(
                             source='AKShare-龙虎榜', tier=1,
                             title=f"龙虎榜: {name} {ts} 机构关注",
@@ -370,7 +373,7 @@ def fetch_akshare_zt_pool():
             for _, r in df.iterrows():
                 code = str(r.get('代码', '')).zfill(6)
                 name = r.get('名称', '')
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                ts = _to_ts_code(code)
                 rows.append(make_signal(
                     source='AKShare-涨停板', tier=1,
                     title=f"涨停: {name} {ts} 连板{r.get('连板数', 1)}",
@@ -391,7 +394,7 @@ def fetch_akshare_zt_pool():
             for _, r in df.iterrows():
                 code = str(r.get('代码', '')).zfill(6)
                 name = r.get('名称', '')
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                ts = _to_ts_code(code)
                 rows.append(make_signal(
                     source='AKShare-涨停板', tier=1,
                     title=f"涨停: {name} {ts} 连板{r.get('连板数', 1)}",
@@ -411,7 +414,7 @@ def fetch_akshare_zt_pool():
             for _, r in df.iterrows():
                 code = str(r.get('代码', '')).zfill(6)
                 name = r.get('名称', '')
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                ts = _to_ts_code(code)
                 rows.append(make_signal(
                     source='AKShare-涨停板', tier=1,
                     title=f"涨停: {name} {ts} 强势涨停",
@@ -431,7 +434,7 @@ def fetch_akshare_zt_pool():
             for _, r in df.iterrows():
                 code = str(r.get('代码', '')).zfill(6)
                 name = r.get('名称', '')
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                ts = _to_ts_code(code)
                 rows.append(make_signal(
                     source='AKShare-涨停板', tier=1,
                     title=f"涨停: {name} {ts} 次新涨停",
@@ -549,7 +552,7 @@ def fetch_akshare_concept_hot():
                     raw_code = str(r.get(col_code, '') or '') if col_code else ''
                     code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
                     if code and code != 'nan' and len(code) >= 4 and reason:
-                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        ts = _to_ts_code(code)
                         rows.append(make_signal(
                             source='AKShare-热点概念', tier=2,
                             title=f"个股异动: {name} {ts} {reason}",
@@ -585,7 +588,7 @@ def fetch_akshare_concept_hot():
                                     code = re.sub(r'[^0-9]', '', raw_code).zfill(6)
                                     stock_name = r.get(col_stock_name, '')
                                     if code and code != 'nan' and len(code) >= 4:
-                                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                                        ts = _to_ts_code(code)
                                         rows.append(make_signal(
                                             source='AKShare-热点概念', tier=2,
                                             title=f"热门概念成分: {concept_name} - {stock_name} {ts}",
@@ -631,7 +634,7 @@ def fetch_akshare_research():
                         if not code or code == 'nan' or len(code) < 6:
                             continue
                         name = r.get(col_name, '') or '' if col_name else ''
-                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        ts = _to_ts_code(code)
                         rating = r.get(col_rating, '') or '' if col_rating else ''
                         org = r.get(col_org, '') or '' if col_org else ''
                         target_price = r.get(col_target, '') or '' if col_target else ''
@@ -722,7 +725,7 @@ def fetch_akshare_jgdy():
                             continue
                         name = r.get(col_name, '') or '' if col_name else ''
                         count = r.get(col_count, 0) or 0 if col_count else 0
-                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        ts = _to_ts_code(code)
                         rows.append(make_signal(
                             source='AKShare-机构调研', tier=1,
                             title=f"机构调研: {name} {ts} - {count}家",
@@ -760,7 +763,7 @@ def fetch_akshare_jgdy():
                                 continue
                             name = r.get(col_name, '') or '' if col_name else ''
                             count = r.get(col_count, 0) or 0 if col_count else 0
-                            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                            ts = _to_ts_code(code)
                             rows.append(make_signal(
                                 source='AKShare-机构调研', tier=1,
                                 title=f"机构调研: {name} {ts} - {count}家",
@@ -781,10 +784,12 @@ def fetch_akshare_jgdy():
 
 
 def store_signals(rows):
-    """批量入库（去重靠 content_hash，自动关联 source_id）"""
     if not rows:
         return 0
-    conn = get_db(); cur = conn.cursor()
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
 
     # 预加载 feed_sources 映射
     cur.execute("SELECT id, name FROM feed_sources;")
@@ -861,8 +866,14 @@ def store_signals(rows):
                     logger.debug(f"单行插入失败: {e2}")
 
     conn.commit()
-    cur.close(); conn.close()
+    cur.close()
     return inserted
+    except Exception as e:
+        logger.error(f"store_signals 失败: {e}")
+        return 0
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def main():
@@ -993,12 +1004,11 @@ def main():
 
 
 def update_source_status(total_inserted):
-    """更新 feed_sources 的成功/失败状态"""
     if total_inserted > 0:
-        conn = get_db()
-        cur = conn.cursor()
+        conn = None
         try:
-            # 获取今天采集的数据源
+            conn = get_db_fresh()
+            cur = conn.cursor()
             cur.execute("""
                 SELECT DISTINCT source_name FROM raw_signals
                 WHERE fetch_time >= %s;
@@ -1016,13 +1026,18 @@ def update_source_status(total_inserted):
                 """, (source_name,))
 
             conn.commit()
+            cur.close()
             logger.info(f"更新 {len(active_sources)} 个数据源状态为成功")
         except Exception as e:
             logger.error(f"更新数据源状态失败: {e}")
-            conn.rollback()
+            if conn:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
         finally:
-            cur.close()
-            conn.close()
+            if conn and not conn.closed:
+                conn.close()
     else:
         logger.warning("无新数据入库，不更新数据源状态")
 

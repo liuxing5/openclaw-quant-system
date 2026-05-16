@@ -1,3 +1,4 @@
+from core.utils.ts_code import pure_to_ts_code
 """Layer 2: Research Reports -- 东财/THS profit forecasts"""
 import re
 import time
@@ -35,7 +36,7 @@ def fetch_em_profit_forecast(make_signal) -> list:
                     continue
 
                 name = str(r.get(col_name, '') or '') if col_name else ''
-                ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                ts = pure_to_ts_code(code)
 
                 report_count = int(r.get(col_reports, 0) or 0)
                 buy_count = int(r.get(col_buy, 0) or 0) if col_buy else 0

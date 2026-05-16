@@ -8,8 +8,9 @@ import pandas as pd
 from psycopg2.extras import execute_values
 from loguru import logger
 
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 from core.utils.env import load_project_env
+from core.utils.ts_code import pure_to_ts_code
 from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
 
 load_project_env()
@@ -60,8 +61,15 @@ def ensure_market_tables():
         update_date DATE, PRIMARY KEY (ts_code, concept_code)
     );
     """
-    conn = get_db(); cur = conn.cursor()
-    cur.execute(sql); conn.commit(); cur.close(); conn.close()
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute(sql); conn.commit()
+        cur.close()
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def fetch_with_akshare_full():
@@ -121,7 +129,7 @@ def fetch_with_akshare_full():
         if not code or not (code.startswith(('6', '688', '000', '001', '002', '003', '300', '301'))):
             skipped_prefix += 1
             continue
-        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+        ts = pure_to_ts_code(code)
 
         if is_em:
             latest = r.get('最新价')
@@ -340,18 +348,26 @@ def fetch_daily_quotes_today():
         logger.error("所有数据源均失败")
         return
 
-    conn = get_db(); cur = conn.cursor()
-    execute_values(cur, """
-        INSERT INTO daily_quotes VALUES %s
-        ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-            open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
-            close=EXCLUDED.close, volume=EXCLUDED.volume,
-            amount=EXCLUDED.amount, pct_chg=EXCLUDED.pct_chg,
-            turnover_rate=EXCLUDED.turnover_rate;
-    """, rows)
-    conn.commit()
-    logger.info(f"daily_quotes 入库: {len(rows)} 条")
-    cur.close(); conn.close()
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        execute_values(cur, """
+            INSERT INTO daily_quotes VALUES %s
+            ON CONFLICT (ts_code, trade_date) DO UPDATE SET
+                open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
+                close=EXCLUDED.close, volume=EXCLUDED.volume,
+                amount=EXCLUDED.amount, pct_chg=EXCLUDED.pct_chg,
+                turnover_rate=EXCLUDED.turnover_rate;
+        """, rows)
+        conn.commit()
+        logger.info(f"daily_quotes 入库: {len(rows)} 条")
+        cur.close()
+    except Exception as e:
+        logger.error(f"daily_quotes 入库失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def fetch_lhb_today():
@@ -386,7 +402,7 @@ def fetch_lhb_today():
             code = str(r.get(col_code, '') or '').zfill(6)
             if not code or code == 'nan' or len(code) < 4:
                 continue
-            ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+            ts = pure_to_ts_code(code)
             name = r.get(col_name, '') or '' if col_name else ''
             reason = r.get(col_reason, '') or '' if col_reason else ''
             net = r.get(col_net, 0) or 0 if col_net else 0
@@ -396,15 +412,23 @@ def fetch_lhb_today():
             continue
     if not rows:
         return
-    conn = get_db(); cur = conn.cursor()
-    execute_values(cur, """
-        INSERT INTO lhb_detail (trade_date, ts_code, stock_name, reason, buy_amt, sell_amt, net_amt, is_inst)
-        VALUES %s
-        ON CONFLICT ON CONSTRAINT lhb_unique DO NOTHING;
-    """, rows)
-    conn.commit()
-    logger.info(f"lhb: {len(rows)} rows")
-    cur.close(); conn.close()
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        execute_values(cur, """
+            INSERT INTO lhb_detail (trade_date, ts_code, stock_name, reason, buy_amt, sell_amt, net_amt, is_inst)
+            VALUES %s
+            ON CONFLICT ON CONSTRAINT lhb_unique DO NOTHING;
+        """, rows)
+        conn.commit()
+        logger.info(f"lhb: {len(rows)} rows")
+        cur.close()
+    except Exception as e:
+        logger.error(f"lhb 入库失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def fetch_hsgt_top10():
@@ -418,18 +442,26 @@ def fetch_hsgt_top10():
     rows = []
     for _, r in df.iterrows():
         code = str(r.get('代码','')).zfill(6)
-        ts = code + ('.SH' if code.startswith('6') else '.SZ')
+        ts = pure_to_ts_code(code)
         rows.append((ts, get_beijing_date(), 0, r.get('今日持股市值',0), 0))
     if rows:
-        conn = get_db(); cur = conn.cursor()
-        execute_values(cur, """
-            INSERT INTO hsgt_individual VALUES %s
-            ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-            hold_market_cap=EXCLUDED.hold_market_cap;
-        """, rows)
-        conn.commit()
-        logger.info(f"hsgt: {len(rows)} rows")
-        cur.close(); conn.close()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor()
+            execute_values(cur, """
+                INSERT INTO hsgt_individual VALUES %s
+                ON CONFLICT (ts_code, trade_date) DO UPDATE SET
+                hold_market_cap=EXCLUDED.hold_market_cap;
+            """, rows)
+            conn.commit()
+            logger.info(f"hsgt: {len(rows)} rows")
+            cur.close()
+        except Exception as e:
+            logger.error(f"hsgt 入库失败: {e}")
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
 
 if __name__ == '__main__':

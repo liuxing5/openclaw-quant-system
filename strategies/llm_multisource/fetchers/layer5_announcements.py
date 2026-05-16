@@ -1,3 +1,4 @@
+from core.utils.ts_code import pure_to_ts_code
 """Layer 5: Announcements -- 巨潮 cninfo + mootdx"""
 import re
 import time
@@ -61,7 +62,7 @@ def fetch_cninfo_announcements(make_signal) -> list:
 
                     ts = ''
                     if code and len(code) >= 6 and code != 'nan':
-                        ts = code + ('.SH' if code.startswith(('6', '688')) else '.SZ')
+                        ts = pure_to_ts_code(code)
 
                     content = f"公告: {title}"
                     if ts:

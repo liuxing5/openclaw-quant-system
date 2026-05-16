@@ -20,7 +20,7 @@ import numpy as np
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -218,11 +218,12 @@ def _check_single(
 
 def check_trend_structure(ts_code: str, trade_date: date, cfg, verbose: bool = False) -> dict:
     """单股趋势结构检查（兼容接口，内部用batch load）"""
-    conn = get_db()
+    conn = get_db_fresh()
     try:
         cache = _batch_load_history([ts_code], trade_date, conn, days=300)
     finally:
-        conn.close()
+        if conn and not conn.closed:
+            conn.close()
     return _check_single(ts_code, cfg, cache)
 
 
@@ -245,13 +246,17 @@ def run_layer3_trend_filter(
         return [{'ts_code': c} for c in stock_list]
 
     if trade_date is None:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
-        row = cur.fetchone()
-        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
-        cur.close()
-        conn.close()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+            cur.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     n_total = len(stock_list)
 
@@ -263,13 +268,14 @@ def run_layer3_trend_filter(
               f"股价>EMA{cfg.layer3_ema_fast}  结构: {cfg.layer3_trend_structure_modes}")
 
     # ── 阶段1: 批量加载 OHLCV（1 次 SQL）──
-    conn = get_db()
+    conn = get_db_fresh()
     try:
         if verbose:
             print(f"  ⏳ 批量加载K线数据 ({n_total} 只)...")
         ohlcv_cache = _batch_load_history(stock_list, trade_date, conn, days=300)
     finally:
-        conn.close()
+        if conn and not conn.closed:
+            conn.close()
 
     if verbose:
         print(f"  ✓ 数据加载完成: {len(ohlcv_cache)}/{n_total} 只有效K线")

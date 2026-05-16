@@ -410,7 +410,6 @@ def test_baostock_industry_shareholder():
         lg = bs.login()
         print(f"✅ Baostock 登录: error_code={lg.error_code}")
         
-        # 测试行业分类
         try:
             rs = bs.query_stock_industry(code='sh.600519')
             if rs.error_code == '0':
@@ -491,6 +490,10 @@ def test_baostock_industry_shareholder():
         return False
     except Exception as e:
         print(f"❌ Baostock测试失败: {e}")
+        try:
+            bs.logout()
+        except Exception:
+            pass
         return False
 
 # ============================================================

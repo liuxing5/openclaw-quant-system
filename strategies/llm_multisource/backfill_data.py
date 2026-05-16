@@ -13,7 +13,7 @@ from datetime import date, timedelta, datetime, timezone
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 from core.utils.trading_calendar import is_trading_day
 from strategies.llm_multisource.fetchers.layer1_market import (
     fetch_tencent_supplementary,

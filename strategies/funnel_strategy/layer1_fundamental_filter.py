@@ -24,16 +24,16 @@ from typing import List, Dict, Optional
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def _load_fundamentals_cache(trade_date: date = None) -> Dict:
-    """加载财务数据缓存：每只股票最新季报"""
     cache = {}
+    conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT DISTINCT ON (ts_code)
@@ -74,17 +74,19 @@ def _load_fundamentals_cache(trade_date: date = None) -> Dict:
                 'listing_date': r['listing_date'],
             }
         cur.close()
-        conn.close()
     except Exception as e:
         print(f"  ⚠️ Layer1 财务数据加载失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
     return cache
 
 
 def _load_st_basic_info() -> Dict:
-    """加载ST标记和上市日期"""
     cache = {}
+    conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT ts_code, stock_name, list_date, is_st, is_active
@@ -98,17 +100,19 @@ def _load_st_basic_info() -> Dict:
                 'is_active': r['is_active'] if r['is_active'] is not None else True,
             }
         cur.close()
-        conn.close()
     except Exception as e:
         print(f"  ⚠️ Layer1 ST信息加载失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
     return cache
 
 
 def _load_reduction_announcements(trade_date: date, lookback_days: int = 60) -> set:
-    """加载近N天有减持公告的股票代码集合"""
     reduction_codes = set()
+    conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         since = trade_date - timedelta(days=lookback_days)
         cur.execute("""
@@ -121,9 +125,11 @@ def _load_reduction_announcements(trade_date: date, lookback_days: int = 60) -> 
         for r in cur.fetchall():
             reduction_codes.add(r['ts_code'])
         cur.close()
-        conn.close()
     except Exception:
         pass
+    finally:
+        if conn and not conn.closed:
+            conn.close()
     return reduction_codes
 
 

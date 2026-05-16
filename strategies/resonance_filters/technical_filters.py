@@ -26,7 +26,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 
 class ResonanceFilters:
@@ -51,7 +51,7 @@ class ResonanceFilters:
 
     def _get_conn(self):
         if self.db_conn is None:
-            return get_db()
+            return get_db_fresh()
         return self.db_conn
 
     def _load_history(self, ts_code: str, trade_date: date, days: int = 300) -> Optional[pd.DataFrame]:
@@ -607,7 +607,7 @@ def run_resonance_filter(trade_date: date = None,
     if trade_date is None:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -620,7 +620,7 @@ def run_resonance_filter(trade_date: date = None,
     if stock_list is None:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
                 SELECT DISTINCT ts_code

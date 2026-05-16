@@ -21,7 +21,7 @@ import numpy as np
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 try:
     from tqdm import tqdm
@@ -314,13 +314,17 @@ def run_layer4_momentum_filter(
         return [{'ts_code': c} for c in stock_list]
 
     if trade_date is None:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
-        row = cur.fetchone()
-        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
-        cur.close()
-        conn.close()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+            cur.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     n_total = len(stock_list)
 
@@ -334,14 +338,15 @@ def run_layer4_momentum_filter(
               f" 强势接力{'✅' if cfg.layer4_enable_strong_relay else '⏭️'}")
 
     # ── 阶段1: 批量加载 + 预计算指标 ──
-    db_conn = get_db()
+    db_conn = get_db_fresh()
     try:
         if verbose:
             print(f"  ⏳ 批量加载K线 + 预计算指标 ({n_total} 只)...")
         ohlcv_cache, precomputed = _batch_load_and_precompute(
             stock_list, trade_date, db_conn, cfg, days=30)
     finally:
-        db_conn.close()
+        if db_conn and not db_conn.closed:
+            db_conn.close()
 
     n_loaded = len(ohlcv_cache)
     if verbose:

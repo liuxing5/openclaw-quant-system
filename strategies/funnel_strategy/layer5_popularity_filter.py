@@ -20,7 +20,7 @@ import numpy as np
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 try:
     from tqdm import tqdm
@@ -326,12 +326,13 @@ def compute_popularity_score(
     trend_bonus: float = 0.0,
     momentum_bonus: float = 0.0,
 ) -> dict:
-    """单股综合评分（兼容接口，内部用batch load）"""
-    conn = get_db()
+    conn = None
     try:
+        conn = get_db_fresh()
         cache = _batch_load_ohlcv([ts_code], trade_date, conn, days=30)
     finally:
-        conn.close()
+        if conn and not conn.closed:
+            conn.close()
     return _score_single(ts_code, cfg, cache, rank_map, trend_bonus, momentum_bonus)
 
 
@@ -355,13 +356,17 @@ def run_layer5_popularity_filter(
         return stock_items
 
     if trade_date is None:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
-        row = cur.fetchone()
-        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
-        cur.close()
-        conn.close()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+            cur.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     n_total = len(stock_items)
 
@@ -379,9 +384,10 @@ def run_layer5_popularity_filter(
                   f"  精选+{cfg.layer5_llm_selected_bonus}"
                   f"  概念共振+{cfg.layer5_llm_concept_bonus}")
 
-    # ── 阶段1: 加载人气排名 + LLM候选 + 概念 + 估值 + 批量加载OHLCV ──
     stock_list_all = [item['ts_code'] for item in stock_items]
-    db_conn = get_db()
+    db_conn = None
+    try:
+        db_conn = get_db_fresh()
     try:
         if verbose:
             llm_note = " + LLM候选 + 概念" if cfg.layer5_llm_bonus_enabled else ""
@@ -392,7 +398,8 @@ def run_layer5_popularity_filter(
         val_map = _load_valuation_data(stock_list_all, trade_date, db_conn)
         ohlcv_cache = _batch_load_ohlcv(stock_list_all, trade_date, db_conn, days=10)
     finally:
-        db_conn.close()
+        if db_conn and not db_conn.closed:
+            db_conn.close()
 
     if verbose:
         llm_info = f", LLM候选{len(llm_map)}只, 概念{len(concept_map)}只" if cfg.layer5_llm_bonus_enabled else ""

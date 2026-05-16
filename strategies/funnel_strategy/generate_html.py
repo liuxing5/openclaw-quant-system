@@ -20,7 +20,7 @@ for _env_path in [Path('.env'), Path('strategies/llm_multisource/.env')]:
         load_dotenv(_env_path)
         break
 
-from core.db.connection import get_db_fresh, get_db
+from core.db.connection import get_db_fresh
 from core.utils.env import load_project_env
 from psycopg2.extras import RealDictCursor
 
@@ -35,12 +35,15 @@ def get_beijing_date():
 
 def query_dicts(sql, params=None):
     conn = get_db_fresh(use_dict_cursor=True)
-    cur = conn.cursor()
-    cur.execute(sql, params)
-    rows = [dict(r) for r in cur.fetchall()]
-    cur.close()
-    conn.close()
-    return rows
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        return rows
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def query_one(sql, params=None):
@@ -116,40 +119,44 @@ def load_funnel_data(trade_date=None):
 
 def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False):
     conn = get_db_fresh(use_dict_cursor=True)
-    cur = conn.cursor()
-    
-    if trade_date:
-        latest = trade_date
-    else:
-        ref_date = get_beijing_date()
-        cur.execute("""
-            SELECT MAX(snapshot_date) AS max_date
-            FROM daily_candidates
-            WHERE source = %s AND snapshot_date >= %s::date - 7
-              AND ts_code NOT LIKE '%%.AUDIT';
-        """, (source, ref_date))
-        row = cur.fetchone()
-        if not row or not row['max_date']:
-            cur.close(); conn.close()
-            return [], None
-        latest = row['max_date']
-    
-    if run_mode:
-        cur.execute("""
-            SELECT * FROM daily_candidates
-            WHERE snapshot_date = %s AND source = %s AND run_mode = %s
-            ORDER BY final_score DESC;
-        """, (latest, source, run_mode))
-    else:
-        cur.execute("""
-            SELECT * FROM daily_candidates
-            WHERE snapshot_date = %s AND source = %s AND ts_code NOT LIKE '%%.AUDIT'
-            ORDER BY final_score DESC;
-        """, (latest, source))
+    try:
+        cur = conn.cursor()
 
-    candidates = [dict(r) for r in cur.fetchall()]
-    cur.close(); conn.close()
-    return candidates, latest
+        if trade_date:
+            latest = trade_date
+        else:
+            ref_date = get_beijing_date()
+            cur.execute("""
+                SELECT MAX(snapshot_date) AS max_date
+                FROM daily_candidates
+                WHERE source = %s AND snapshot_date >= %s::date - 7
+                  AND ts_code NOT LIKE '%%.AUDIT';
+            """, (source, ref_date))
+            row = cur.fetchone()
+            if not row or not row['max_date']:
+                cur.close()
+                return [], None
+            latest = row['max_date']
+
+        if run_mode:
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date = %s AND source = %s AND run_mode = %s
+                ORDER BY final_score DESC;
+            """, (latest, source, run_mode))
+        else:
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date = %s AND source = %s AND ts_code NOT LIKE '%%.AUDIT'
+                ORDER BY final_score DESC;
+            """, (latest, source))
+
+        candidates = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        return candidates, latest
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def load_scan_stats(strategy, snapshot_date=None):

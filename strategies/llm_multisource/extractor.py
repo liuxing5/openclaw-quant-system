@@ -1,18 +1,21 @@
 """LLM 信号提取 - 消费 raw_signals -> 写入 extracted_recommendations"""
 import os
+import sys
 import json
 import time
 import argparse
 import threading
 import concurrent.futures
 from openai import OpenAI
-import psycopg2
 from psycopg2.extras import RealDictCursor
 from loguru import logger
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+sys.path.insert(0, os.path.join(BASE_DIR, '..', '..'))
+from core.db.connection import get_db_fresh
 
 PRIMARY_API_KEY = os.getenv('LLM_API_KEY') or os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
 PRIMARY_BASE_URL = os.getenv('LLM_BASE_URL') or os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
@@ -67,100 +70,114 @@ def call_llm(prompt: str) -> dict:
     return {}
 
 
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'),
-        port=int(os.getenv('POSTGRES_PORT') or '5432'),
-        user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'),
-        dbname=os.getenv('POSTGRES_DB'),
-        sslmode='require',
-    )
-
-
 def fetch_pending(limit=20):
-    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
-    limit_int = int(limit)
-    cur.execute("""
-        SELECT r.id, r.title, r.content, r.pub_time,
-               r.source_name, r.source_tier,
-               CASE
-                   WHEN POSITION('新闻' IN r.source_name) > 0
-                     OR POSITION('快讯' IN r.source_name) > 0
-                     OR POSITION('电报' IN r.source_name) > 0 THEN 'news'
-                   WHEN POSITION('研报' IN r.source_name) > 0
-                     OR POSITION('调研' IN r.source_name) > 0 THEN 'research'
-                   WHEN POSITION('涨停' IN r.source_name) > 0
-                     OR POSITION('龙虎榜' IN r.source_name) > 0 THEN 'lhb'
-                   WHEN POSITION('概念' IN r.source_name) > 0 THEN 'concept'
-                   ELSE 'news'
-               END AS category
-        FROM raw_signals r
-        WHERE NOT EXISTS (
-            SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id=r.id
-        )
-        AND r.source_name NOT IN ('AKShare-龙虎榜', 'AKShare-涨停板', 'AKShare-机构调研')
-        AND (
-            r.title ~ '[0-9]{6}'
-            OR r.content ~ '[0-9]{6}'
-            OR EXISTS (
-                SELECT 1 FROM stock_basic_info sb
-                WHERE LENGTH(sb.stock_name) >= 2
-                  AND (POSITION(sb.stock_name IN r.title) > 0
-                       OR POSITION(sb.stock_name IN r.content) > 0)
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        limit_int = int(limit)
+        cur.execute("""
+            SELECT r.id, r.title, r.content, r.pub_time,
+                   r.source_name, r.source_tier,
+                   CASE
+                       WHEN POSITION('新闻' IN r.source_name) > 0
+                         OR POSITION('快讯' IN r.source_name) > 0
+                         OR POSITION('电报' IN r.source_name) > 0 THEN 'news'
+                       WHEN POSITION('研报' IN r.source_name) > 0
+                         OR POSITION('调研' IN r.source_name) > 0 THEN 'research'
+                       WHEN POSITION('涨停' IN r.source_name) > 0
+                         OR POSITION('龙虎榜' IN r.source_name) > 0 THEN 'lhb'
+                       WHEN POSITION('概念' IN r.source_name) > 0 THEN 'concept'
+                       ELSE 'news'
+                   END AS category
+            FROM raw_signals r
+            WHERE NOT EXISTS (
+                SELECT 1 FROM extracted_recommendations e WHERE e.raw_signal_id=r.id
             )
-        )
-        AND r.fetch_time > NOW() - INTERVAL '48 hours'
-        ORDER BY r.source_tier ASC, r.fetch_time DESC
-        LIMIT %s;
-    """, (limit_int,))
-    rows = cur.fetchall()
-    cur.close(); conn.close()
-    return rows
+            AND r.source_name NOT IN ('AKShare-龙虎榜', 'AKShare-涨停板', 'AKShare-机构调研')
+            AND (
+                r.title ~ '[0-9]{6}'
+                OR r.content ~ '[0-9]{6}'
+                OR EXISTS (
+                    SELECT 1 FROM stock_basic_info sb
+                    WHERE LENGTH(sb.stock_name) >= 2
+                      AND (POSITION(sb.stock_name IN r.title) > 0
+                           OR POSITION(sb.stock_name IN r.content) > 0)
+                )
+            )
+            AND r.fetch_time > NOW() - INTERVAL '48 hours'
+            ORDER BY r.source_tier ASC, r.fetch_time DESC
+            LIMIT %s;
+        """, (limit_int,))
+        rows = cur.fetchall()
+        cur.close()
+        return rows
+    except Exception as e:
+        logger.error(f"fetch_pending 失败: {e}")
+        return []
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def store_extraction(raw_id: int, source_name: str, pub_time, items: list):
     if not items:
         return
-    conn = get_db(); cur = conn.cursor()
-    stored = 0
-    for it in items:
-        ts_code = it.get('ts_code')
-        if not ts_code:
-            logger.warning(f"跳过无 ts_code 的结果: {it.get('stock_name', 'unknown')}")
-            continue
-        cur.execute("""
-            INSERT INTO extracted_recommendations
-            (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
-             strength, logic_category, logic_summary, target_price, stop_loss,
-             time_horizon, raw_excerpt, confidence, pub_time)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
-        """, (
-            raw_id, source_name,
-            ts_code, it.get('stock_name'),
-            it.get('recommendation_type'), it.get('strength'),
-            it.get('logic_category'), it.get('logic_summary'),
-            it.get('target_price'), it.get('stop_loss'),
-            it.get('time_horizon'), it.get('raw_excerpt'),
-            it.get('confidence'), pub_time,
-        ))
-        stored += 1
-    conn.commit()
-    cur.close(); conn.close()
-    return stored
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        stored = 0
+        for it in items:
+            ts_code = it.get('ts_code')
+            if not ts_code:
+                logger.warning(f"跳过无 ts_code 的结果: {it.get('stock_name', 'unknown')}")
+                continue
+            cur.execute("""
+                INSERT INTO extracted_recommendations
+                (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
+                 strength, logic_category, logic_summary, target_price, stop_loss,
+                 time_horizon, raw_excerpt, confidence, pub_time)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s);
+            """, (
+                raw_id, source_name,
+                ts_code, it.get('stock_name'),
+                it.get('recommendation_type'), it.get('strength'),
+                it.get('logic_category'), it.get('logic_summary'),
+                it.get('target_price'), it.get('stop_loss'),
+                it.get('time_horizon'), it.get('raw_excerpt'),
+                it.get('confidence'), pub_time,
+            ))
+            stored += 1
+        conn.commit()
+        cur.close()
+        return stored
+    except Exception as e:
+        logger.error(f"store_extraction 失败: {e}")
+        return 0
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def mark_signal_processed(raw_id, source_name, pub_time):
-    """标记信号已处理，避免 LLM 空返回导致无限重试循环"""
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO extracted_recommendations
-        (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
-         strength, logic_summary, pub_time)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s);
-    """, (raw_id, source_name, 'SKIP', 'SKIP', 'skip', 0, 'llm_no_result', pub_time))
-    conn.commit()
-    cur.close(); conn.close()
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO extracted_recommendations
+            (raw_signal_id, source_name, ts_code, stock_name, recommendation_type,
+             strength, logic_summary, pub_time)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s);
+        """, (raw_id, source_name, 'SKIP', 'SKIP', 'skip', 0, 'llm_no_result', pub_time))
+        conn.commit()
+        cur.close()
+    except Exception as e:
+        logger.error(f"mark_signal_processed 失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def process_one(row):

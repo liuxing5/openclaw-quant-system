@@ -1,15 +1,18 @@
 """生成每日推荐报告 - HTML + 文本格式"""
 import os
+import sys
 import json
 import logging
 from datetime import date, timedelta, datetime, timezone
-import psycopg2
 from psycopg2.extras import RealDictCursor
 from jinja2 import Template
 from dotenv import load_dotenv
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
+
+sys.path.insert(0, os.path.join(BASE_DIR, '..', '..'))
+from core.db.connection import get_db_fresh
 
 RUN_MODE = os.getenv('RUN_MODE', 'morning')
 
@@ -20,19 +23,7 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def get_beijing_date():
-    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
     return datetime.now(BEIJING_TZ).date()
-
-
-def get_db():
-    return psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'),
-        port=int(os.getenv('POSTGRES_PORT') or '5432'),
-        user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'),
-        dbname=os.getenv('POSTGRES_DB'),
-        sslmode='require',
-    )
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -462,7 +453,10 @@ def _get_latest_source_date(cur, source, lookback_days=7):
 
 
 def generate_report():
-    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
     snapshot_date = _get_report_snapshot_date(cur)
     
     llm_date = _get_latest_source_date(cur, 'llm_multisource')
@@ -555,7 +549,7 @@ def generate_report():
     """)
     history_dates = [str(r['snapshot_date']) for r in cur.fetchall()]
     
-    cur.close(); conn.close()
+    cur.close()
     
     def format_time(t):
         if t is None:
@@ -610,10 +604,18 @@ def generate_report():
     print(f"Report generated: {output_dir}/index.html")
     print(f"  LLM候选: {len(candidates)} 只 (snapshot_date={llm_date})")
     print(f"  八步法候选: {len(eight_step_picks)} 只 (snapshot_date={step_date})")
+    except Exception as e:
+        logger.error(f"generate_report 失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def generate_text_report():
-    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
     snapshot_date = _get_report_snapshot_date(cur)
     
     llm_date = _get_latest_source_date(cur, 'llm_multisource')
@@ -669,7 +671,7 @@ def generate_text_report():
     """, (snapshot_date - timedelta(days=2),))
     source_stats = cur.fetchall()
     
-    cur.close(); conn.close()
+    cur.close()
     
     mode_text = "盘后复盘" if RUN_MODE == 'afternoon' else "盘前参考"
     display_date = str(llm_date or step_date or snapshot_date)
@@ -718,6 +720,12 @@ def generate_text_report():
             lines.append("")
     
     return "\n".join(lines)
+    except Exception as e:
+        logger.error(f"generate_text_report 失败: {e}")
+        return ""
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 if __name__ == '__main__':

@@ -266,11 +266,11 @@ class WalkForwardBacktester:
         eq = equity["equity"]
         ret = eq.pct_change().dropna()
 
-        total_return = eq.iloc[-1] / eq.iloc[0] - 1
+        total_return = eq.iloc[-1] / eq.iloc[0] - 1 if eq.iloc[0] > 0 else 0.0
         years = max((equity.index[-1] - equity.index[0]).days / 365.25, 1 / 365.25)
         cagr = (1 + total_return) ** (1 / years) - 1
         vol = ret.std() * np.sqrt(252)
-        sharpe = (ret.mean() * 252) / (ret.std() * np.sqrt(252)) if ret.std() > 0 else 0
+        sharpe = (ret.mean() * 252) / vol if vol > 0 else 0
 
         rolling_max = eq.cummax()
         drawdown = (eq - rolling_max) / rolling_max

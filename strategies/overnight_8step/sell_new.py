@@ -317,19 +317,23 @@ def get_limit_pct(code: str) -> float:
 
 
 def _get_yesterday_vol_baostock(code: str) -> float:
-    """用 baostock 获取昨日成交量(手)，用于盘前封板强度评估"""
     import baostock as bs
     try:
         lg = bs.login()
         if lg.error_code != '0':
             return 0
         pure = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
-        bs_code = f"sh.{pure}" if (pure.startswith("6") or pure.startswith("9")) else f"sz.{pure}"
+        if pure.startswith(("6", "9")):
+            bs_code = f"sh.{pure}"
+        elif pure.startswith(("8", "4")):
+            bs_code = f"bj.{pure}"
+        else:
+            bs_code = f"sz.{pure}"
         today = get_beijing_time()
-        end_date = (today - timedelta(days=5)).strftime("%Y-%m-%d")
-        start_date = today.strftime("%Y-%m-%d")
+        start_date = (today - timedelta(days=5)).strftime("%Y-%m-%d")
+        end_date = today.strftime("%Y-%m-%d")
         rs = bs.query_history_k_data_plus(
-            bs_code, "date,volume", start_date=end_date, end_date=start_date,
+            bs_code, "date,volume", start_date=start_date, end_date=end_date,
             frequency="d", adjustflag="3",
         )
         if rs.error_code == '0':

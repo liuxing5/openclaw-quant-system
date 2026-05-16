@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
 sys.path.insert(0, os.path.join(BASE_DIR, '../..'))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 
 def sync():
@@ -42,6 +42,9 @@ def sync():
         elif code.startswith(('0', '00', '30', '301')):
             ts_code = code + '.SZ'
             market = 'SZ'
+        elif code.startswith(('8', '4')):
+            ts_code = code + '.BJ'
+            market = 'BJ'
         else:
             continue
         name = str(r['name']).strip()
@@ -50,7 +53,7 @@ def sync():
 
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor()
         execute_values(cur, """
             INSERT INTO stock_basic_info (ts_code, stock_name, market, list_date, is_st, is_active)

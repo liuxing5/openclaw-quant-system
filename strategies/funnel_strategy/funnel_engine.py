@@ -37,7 +37,7 @@ from .layer4_momentum_filter import run_layer4_momentum_filter
 from .layer5_popularity_filter import run_layer5_popularity_filter
 from .layer6_risk_control import run_layer6_risk_control
 
-from core.db.connection import get_db, close_db_session
+from core.db.connection import get_db_fresh, close_db_session
 from psycopg2.extras import RealDictCursor
 
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -47,7 +47,7 @@ def load_universe(trade_date: date, min_amount: float = 1e8) -> List[str]:
     """从 daily_quotes 加载全市场初筛股票池（日成交额>1亿）"""
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT DISTINCT ts_code
@@ -114,7 +114,7 @@ class FunnelEngine:
         if trade_date is None:
             conn = None
             try:
-                conn = get_db()
+                conn = get_db_fresh()
                 cur = conn.cursor(cursor_factory=RealDictCursor)
                 cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
                 row = cur.fetchone()
@@ -413,7 +413,7 @@ class FunnelEngine:
         """将漏斗结果保存到数据库"""
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor()
 
             s = self._stats

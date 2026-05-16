@@ -3,10 +3,11 @@ import json
 import os, sys, math
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from datetime import date, timedelta, datetime, timezone
+import pandas as pd
 from psycopg2.extras import RealDictCursor
 from loguru import logger
 
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 from core.db.candidates import write_candidates
 from core.utils.env import load_project_env
 from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
@@ -62,7 +63,6 @@ def calc_price_levels(close, ts_code):
 def aggregate_today():
     today = get_beijing_date()
     
-    # 非交易日跳过
     if not is_trading_day(today):
         logger.warning(f"{today} 非交易日，跳过候选生成")
         return
@@ -70,7 +70,10 @@ def aggregate_today():
     cutoff = today - timedelta(days=2)
     logger.info(f"=== 开始聚合，today={today}, cutoff={cutoff}, RUN_MODE={RUN_MODE} ===")
 
-    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
 
     # 跑前清空当天同 run_mode 同 source 的旧数据，避免重复
     # 注意：故意不在此处 commit。DELETE 与后续 write_candidates 的 INSERT 必须
@@ -107,7 +110,7 @@ def aggregate_today():
     latest_trade_date = row['max_date'] if row else None
     if not latest_trade_date:
         logger.error("daily_quotes 表为空，无法获取行情数据")
-        cur.close(); conn.close()
+        cur.close()
         return
     logger.info(f"数据库最新交易日: {latest_trade_date}，使用此日期加载行情")
 
@@ -324,6 +327,9 @@ def aggregate_today():
             amplitude = q.get('amplitude') or 0
             volume_ratio = q.get('volume_ratio') or 0
             commission_ratio = q.get('commission_ratio') or 0
+
+            if pd.isna(close_price) or close_price <= 0:
+                continue
             large_order_net = q.get('large_order_net') or 0
             main_force_net = q.get('main_force_net') or 0
 
@@ -876,7 +882,7 @@ def aggregate_today():
                 items.append(item)
             n = write_candidates(items, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
             _persist_llm_scan_stats(today, len(afternoon_selected), len(afternoon_selected), len(afternoon_selected), conn)
-            cur.close(); conn.close()
+            cur.close()
             logger.info(f"盘前回退完成，写入 {n} 条记录 (snapshot_date={today})")
             return
 
@@ -890,7 +896,7 @@ def aggregate_today():
             if levels:
                 c.update(levels)
         n = write_candidates(observation, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
-        cur.close(); conn.close()
+        cur.close()
         logger.info(f"写入 {n} 条观察记录到 daily_candidates (snapshot_date={today})")
         return
 
@@ -912,8 +918,13 @@ def aggregate_today():
 
     n = write_candidates(items, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
     _persist_llm_scan_stats(today, len(candidates), len(qualified), len(selected_list), conn)
-    cur.close(); conn.close()
+    cur.close()
     logger.info(f"候选池生成完毕，snapshot_date={today}，共写入 {n} 条记录")
+    except Exception as e:
+        logger.error(f"aggregate_today 失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def _persist_llm_scan_stats(snapshot_date, total_candidates, total_qualified, total_selected, conn):

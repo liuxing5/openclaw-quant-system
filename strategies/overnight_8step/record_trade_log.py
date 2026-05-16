@@ -153,8 +153,8 @@ def fetch_historical_daily(code: str, target_date: str) -> Optional[dict]:
     腾讯实时接口只返回当前价格，不能用于历史 T+1 数据回填。
     baostock volume 为股，转为手以与腾讯接口单位一致。
     """
+    import baostock as bs
     try:
-        import baostock as bs
         lg = bs.login()
         if lg.error_code != '0':
             return None
@@ -167,7 +167,6 @@ def fetch_historical_daily(code: str, target_date: str) -> Optional[dict]:
         else:
             bs_code = f"sz.{pure}"
 
-        # 拉取前后几天确保覆盖目标日期
         from datetime import datetime as _dt
         dt = _dt.strptime(target_date, "%Y-%m-%d")
         start = (dt - timedelta(days=3)).strftime("%Y-%m-%d")
@@ -179,19 +178,16 @@ def fetch_historical_daily(code: str, target_date: str) -> Optional[dict]:
             frequency="d", adjustflag="3",
         )
         if rs.error_code != '0':
-            bs.logout()
             return None
 
         rows = rs.get_data()
-        bs.logout()
 
         if rows.empty:
             return None
 
-        # 找目标日期
         for _, r in rows.iterrows():
             if r["date"] == target_date:
-                vol = float(r["volume"]) / 100 if r["volume"] else 0  # 股→手
+                vol = float(r["volume"]) / 100 if r["volume"] else 0
                 return {
                     "name": "",
                     "pre_close": float(r["preclose"]) if r["preclose"] else 0,
@@ -205,6 +201,11 @@ def fetch_historical_daily(code: str, target_date: str) -> Optional[dict]:
         return None
     except Exception:
         return None
+    finally:
+        try:
+            bs.logout()
+        except Exception:
+            pass
 
 
 def parse_zuiyou1_results() -> tuple:

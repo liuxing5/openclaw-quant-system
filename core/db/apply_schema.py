@@ -6,7 +6,7 @@ import os
 import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 from core.utils.env import load_project_env
 
 load_project_env()
@@ -17,7 +17,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 def apply_schema():
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         conn.autocommit = True
         cur = conn.cursor()
         

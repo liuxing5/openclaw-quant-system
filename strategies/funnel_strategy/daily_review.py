@@ -17,8 +17,12 @@ from typing import Dict, List, Optional
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 from psycopg2.extras import RealDictCursor
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -27,8 +31,9 @@ REVIEW_STATE_FILE = os.path.join(os.path.dirname(__file__), 'funnel_review_state
 
 def _ensure_db():
     try:
-        return get_db()
-    except Exception:
+        return get_db_fresh()
+    except Exception as e:
+        logger.error(f"数据库连接失败: {e}")
         return None
 
 

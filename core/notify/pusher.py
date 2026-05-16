@@ -10,7 +10,7 @@ from telegram.constants import ParseMode
 from telegram.request import HTTPXRequest
 from loguru import logger
 
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 from core.utils.env import load_project_env
 from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
 
@@ -123,9 +123,9 @@ async def push_daily_candidates():
         logger.warning(f"{today} 非交易日，跳过推送")
         return
     
-    conn = get_db(); cur = conn.cursor(cursor_factory=RealDictCursor)
-    
+    conn = None; cur = None
     try:
+        conn = get_db_fresh(); cur = conn.cursor(cursor_factory=RealDictCursor)
         can_push, reason = check_market_state(cur, today)
         if not can_push:
             await bot.send_message(CHAT_ID, f"⚠️ <b>{today}</b>\n{reason}", parse_mode=ParseMode.HTML)
@@ -241,8 +241,10 @@ async def push_daily_candidates():
         except Exception as e:
             logger.error(f"push failed: {e}")
     finally:
-        cur.close()
-        conn.close()
+        if cur:
+            cur.close()
+        if conn and not conn.closed:
+            conn.close()
 
 
 if __name__ == '__main__':

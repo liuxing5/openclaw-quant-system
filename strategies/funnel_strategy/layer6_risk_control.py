@@ -20,7 +20,7 @@ import numpy as np
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -51,8 +51,9 @@ def _calc_atr(df: pd.DataFrame, period: int = 20) -> float:
 
 def _load_history(ts_code: str, trade_date: date, days: int = 60) -> Optional[pd.DataFrame]:
     start_date = trade_date - timedelta(days=days)
+    conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT trade_date, open, high, low, close, volume
@@ -62,7 +63,6 @@ def _load_history(ts_code: str, trade_date: date, days: int = 60) -> Optional[pd
         """, (ts_code, start_date, trade_date))
         rows = cur.fetchall()
         cur.close()
-        conn.close()
 
         if not rows:
             return None
@@ -75,6 +75,9 @@ def _load_history(ts_code: str, trade_date: date, days: int = 60) -> Optional[pd
         return df
     except Exception:
         return None
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def check_time_window(cfg) -> dict:
@@ -227,13 +230,17 @@ def run_layer6_risk_control(
         return stock_items
 
     if trade_date is None:
-        conn = get_db()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
-        row = cur.fetchone()
-        trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
-        cur.close()
-        conn.close()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+            cur.close()
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
     # 时段检查
     time_check = check_time_window(cfg)
@@ -251,11 +258,13 @@ def run_layer6_risk_control(
 
     # 批量加载历史数据 + 收盘价
     stock_codes = [item['ts_code'] for item in stock_items]
-    db_conn = get_db()
+    db_conn = None
     try:
+        db_conn = get_db_fresh()
         ohlcv_cache = _batch_load_history(stock_codes, trade_date, db_conn, days=60, verbose=verbose)
     finally:
-        db_conn.close()
+        if db_conn and not db_conn.closed:
+            db_conn.close()
 
     for item in stock_items:
         ts_code = item['ts_code']
