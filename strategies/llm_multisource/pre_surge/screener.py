@@ -230,7 +230,7 @@ class PreMainUptrendScreener:
         ma60 = df["close"].rolling(60).mean().iloc[-1]
         if pd.isna(ma60):
             return sig.fail("L9", "60MA 缺失")
-        above_ma60 = (last["close"] - ma60) / ma60
+        above_ma60 = (last["close"] - ma60) / ma60 if ma60 > 0 else 0
         if above_ma60 > c.above_ma60_max:
             return sig.fail("L9", f"已高于 60MA {above_ma60:.1%}")
         sig.ok("L9", f"高于 60MA {above_ma60:.1%}")

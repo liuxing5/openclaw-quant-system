@@ -66,6 +66,14 @@ def get_db_fresh(use_dict_cursor: bool = False):
     return conn
 
 
+def _get_cursor(conn, **kwargs):
+    """Create a cursor, respecting cursor_factory if set on the connection."""
+    factory = getattr(conn, 'cursor_factory', None)
+    if factory and 'cursor_factory' not in kwargs:
+        kwargs['cursor_factory'] = factory
+    return conn.cursor(**kwargs)
+
+
 def close_db_session():
     """Close the underlying session connection (call at shutdown)."""
     global _session_conn

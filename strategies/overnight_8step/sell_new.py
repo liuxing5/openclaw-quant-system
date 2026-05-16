@@ -95,6 +95,7 @@ try:
         POSITIONS = []
 except ImportError:
     POSITIONS = []
+    load_positions_dynamic = None
 
 CONFIG = {
     "state_file": os.path.join(os.path.dirname(os.path.abspath(__file__)), "sell_state.json"),
@@ -223,7 +224,7 @@ def _normalize_code(code: str) -> str:
         return "sh" + pure
     elif pure.startswith(("6", "9")):
         return "sh" + pure
-    elif pure.startswith(("8", "4")):
+    elif pure.startswith(("8", "43")):
         return "bj" + pure
     else:
         return "sz" + pure
@@ -327,7 +328,7 @@ def _get_yesterday_vol_baostock(code: str) -> float:
         pure = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
         if pure.startswith(("6", "9")):
             bs_code = f"sh.{pure}"
-        elif pure.startswith(("8", "4")):
+        elif pure.startswith(("8", "43")):
             bs_code = f"bj.{pure}"
         else:
             bs_code = f"sz.{pure}"
@@ -341,8 +342,9 @@ def _get_yesterday_vol_baostock(code: str) -> float:
         if rs.error_code == '0':
             rows = rs.get_data()
             if not rows.empty and len(rows) >= 1:
-                result = float(rows.iloc[-1]["volume"]) / 100 if rows.iloc[-1]["volume"] else 0
-                return result
+                vol_val = rows.iloc[-1]["volume"]
+                if vol_val and str(vol_val) != 'nan':
+                    return float(vol_val) / 100
         return 0
     except Exception:
         return 0
@@ -491,7 +493,7 @@ def log_limit_strength(
 ):
     """追加封板强度评估记录到 CSV，5天后可用 Excel 分析准确率"""
     header = "date,code,name,path,mktcap_yi,ratio,level,label,action,actual_next_result"
-    row = f"{date_str},{code},{name},{path},{mktcap_yi:.1f},{ratio:.2f},{level},{label},{action},{actual_next_result}"
+    row = f'{date_str},{code},"{name}",{path},{mktcap_yi:.1f},{ratio:.2f},{level},{label},{action},{actual_next_result}'
 
     file_exists = os.path.exists(_LIMIT_STRENGTH_LOG_FILE)
     try:
@@ -786,7 +788,10 @@ def run():
     print("=" * 45)
 
     # 每次运行时重新加载持仓（支持盘中通过 Telegram 动态添加）
-    positions = load_positions_dynamic()
+    if load_positions_dynamic is None:
+        positions = POSITIONS
+    else:
+        positions = load_positions_dynamic()
     if not positions:
         print("\n⚠️ 持仓列表为空，请通过 Telegram /add 命令添加持仓")
         return

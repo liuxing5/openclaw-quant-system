@@ -36,7 +36,7 @@ class Position:
             self.high_water_mark = price
 
     def unrealized_pnl_pct(self, current_price: float) -> float:
-        return (current_price - self.entry_price) / self.entry_price
+        return (current_price - self.entry_price) / self.entry_price if self.entry_price > 0 else 0
 
 
 @dataclass
@@ -69,7 +69,7 @@ class Exitor:
         # E2 移动止盈
         gain = position.unrealized_pnl_pct(current_price)
         if gain >= self.cfg.trailing_activate_pct:
-            giveback = (position.high_water_mark - current_price) / position.high_water_mark
+            giveback = (position.high_water_mark - current_price) / position.high_water_mark if position.high_water_mark > 0 else 0
             if giveback >= self.cfg.trailing_giveback_pct:
                 return ExitDecision(True,
                     f"E2 移动止盈 高点回撤 {giveback:.1%}")

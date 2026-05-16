@@ -53,9 +53,11 @@ def _to_ts_code(code: str) -> str:
     if not code:
         return ''
     pure = code.lstrip('0') or code
-    if pure.startswith(('6', '688')):
+    if pure.startswith(('688', '689')):
         return f"{code}.SH"
-    elif pure.startswith(('8', '4')):
+    elif pure.startswith(('6', '9')):
+        return f"{code}.SH"
+    elif pure.startswith(('8', '43')):
         return f"{code}.BJ"
     else:
         return f"{code}.SZ"
@@ -104,11 +106,13 @@ def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=1):
 
 
 def make_signal(source, title, content, url='', pub_time=None, tier=2):
-    """构造 raw_signal 入库行"""
-    h = hashlib.md5(f"{source}|{title}|{content[:200]}".encode('utf-8')).hexdigest()
+    _title = (title or '')
+    _content = (content or '')
+    _url = (url or '')
+    h = hashlib.md5(f"{source}|{_title}|{_content[:200]}".encode('utf-8')).hexdigest()
     return (
-        None, source, tier, title[:1000],
-        (content or '')[:5000], url[:500],
+        None, source, tier, _title[:1000],
+        _content[:5000], _url[:500],
         pub_time if pub_time is not None and not pd.isna(pub_time) else datetime.now(BEIJING_TZ), datetime.now(BEIJING_TZ), h,
     )
 
@@ -256,11 +260,15 @@ def fetch_akshare_lhb():
                         name = r.get(col_name, '') or '' if col_name else ''
                         ts = _to_ts_code(code)
                         net = r.get(col_net, 0) or 0 if col_net else 0
+                        try:
+                            net_val = float(net)
+                        except (ValueError, TypeError):
+                            net_val = 0
                         reason = r.get(col_reason, '') or '' if col_reason else ''
                         rows.append(make_signal(
                             source='AKShare-龙虎榜', tier=1,
-                            title=f"龙虎榜: {name} {ts} 净买入{net/1e8:.2f}亿",
-                            content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net} 元",
+                            title=f"龙虎榜: {name} {ts} 净买入{net_val/1e8:.2f}亿",
+                            content=f"代码 {code} {name} 上榜原因: {reason} 龙虎榜净买额 {net_val} 元",
                         ))
                     except Exception:
                         continue

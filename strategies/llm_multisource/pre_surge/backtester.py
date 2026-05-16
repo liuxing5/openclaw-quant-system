@@ -273,8 +273,9 @@ class WalkForwardBacktester:
         sharpe = (ret.mean() * 252) / vol if vol > 0 else 0
 
         rolling_max = eq.cummax()
+        rolling_max = rolling_max.replace(0, np.nan)
         drawdown = (eq - rolling_max) / rolling_max
-        max_dd = drawdown.min()
+        max_dd = float(drawdown.min()) if drawdown.notna().any() else 0.0
 
         # 交易统计
         sells = trades[trades["action"] == "SELL"] if not trades.empty else pd.DataFrame()

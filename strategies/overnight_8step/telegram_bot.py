@@ -378,12 +378,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             except ValueError:
                 await query.edit_message_text(f"❌ 无效价格: {parts[2]}")
                 return
-            add_position(parts[1], buy_price, parts[3])
-            await query.edit_message_text(f"✅ 已买入: {parts[1]}")
+            normalized = _normalize_code(parts[1])
+            add_position(normalized, buy_price, parts[3])
+            await query.edit_message_text(f"✅ 已买入: {normalized}")
     elif data.startswith("sell_"):
-        code = data.split("_")[1]
-        remove_position(code)
-        await query.edit_message_text(f"✅ 已卖出: {code}")
+        parts = data.split("_")
+        if len(parts) >= 2 and parts[1]:
+            normalized = _normalize_code(parts[1])
+            remove_position(normalized)
+            await query.edit_message_text(f"✅ 已卖出: {normalized}")
+        else:
+            await query.edit_message_text("❌ 无效卖出指令")
 
 
 # ============================================================

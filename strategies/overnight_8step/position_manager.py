@@ -53,13 +53,13 @@ def _normalize_code(code: str) -> str:
     c = c.replace('.', '')
     digits = re.sub(r'[^0-9]', '', c)
     if len(digits) < 6:
-        return code.strip()
+        return code.strip().lower()
     code6 = digits[:6]
     if code6.startswith(('688', '689')):
         return f"sh.{code6}"
     elif code6.startswith(('6', '9')):
         return f"sh.{code6}"
-    elif code6.startswith(('8', '4')):
+    elif code6.startswith(('8', '43')):
         return f"bj.{code6}"
     else:
         return f"sz.{code6}"
@@ -85,11 +85,11 @@ def load_positions() -> List[Dict]:
             for row in rows:
                 positions.append({
                     "code": row[0],
-                    "cost": float(row[1]),
-                    "path": row[2],
+                    "cost": float(row[1]) if row[1] is not None else 0.0,
+                    "path": row[2] or DEFAULT_PATH,
                     "entry_date": row[3].strftime("%Y-%m-%d") if hasattr(row[3], 'strftime') else str(row[3]),
-                    "limit_up_at_buy": row[4],
-                    "mktcap_yi": float(row[5]) if row[5] else 0.0,
+                    "limit_up_at_buy": bool(row[4]) if row[4] is not None else False,
+                    "mktcap_yi": float(row[5]) if row[5] is not None else 0.0,
                 })
             cur.close()
             if positions:
@@ -167,6 +167,8 @@ def add_position(code: str, cost: float, path: str = None, entry_date: str = Non
         新持仓记录
     """
     code = _normalize_code(code)
+    if cost < 0:
+        cost = 0.0
     if path is None:
         path = DEFAULT_PATH
     if path not in VALID_PATHS:
@@ -247,8 +249,9 @@ def format_positions(positions: List[Dict] = None) -> str:
     lines = ["📊 当前持仓", "=" * 40]
     for p in positions:
         path_icon = "🛡️" if p.get("path") == "稳健" else "🚀"
+        cost = p.get('cost', 0) or 0
         lines.append(
-            f"{path_icon} {p['code']}  成本¥{p['cost']:.2f}  "
+            f"{path_icon} {p['code']}  成本¥{cost:.2f}  "
             f"路径:{p.get('path', '稳健')}  "
             f"入场:{p.get('entry_date', '?')}"
         )
@@ -281,10 +284,10 @@ def import_from_picks(picks: List[Dict], path: str = None) -> Dict:
     skipped = []
 
     for pick in picks:
-        code = pick.get("code", "")
+        code = _normalize_code(pick.get("code", ""))
         price = pick.get("price", 0)
 
-        if code in existing_codes:
+        if not code or code in existing_codes:
             skipped.append(code)
             continue
 

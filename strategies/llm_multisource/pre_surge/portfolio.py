@@ -62,6 +62,8 @@ class RiskManager:
         """
         if entry_price <= stop_price:
             return 0
+        if entry_price <= 0:
+            return 0
         equity = account.total_value({})  # 现金口径已足够保守
         risk_dollar = equity * self.cfg.risk_per_trade
         per_share_risk = entry_price - stop_price

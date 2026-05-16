@@ -51,9 +51,8 @@ def atr(high: pd.Series, low: pd.Series, close: pd.Series, n: int = 14) -> pd.Se
 # 量比
 # ============================================================
 def volume_ratio(volume: pd.Series, n: int = 20) -> pd.Series:
-    """当日成交量 / 前 N 日均量"""
     avg = volume.rolling(n, min_periods=n).mean()
-    return volume / avg
+    return volume / avg.replace(0, float('nan'))
 
 
 # ============================================================
@@ -105,7 +104,7 @@ def find_unfilled_gaps(df: pd.DataFrame,
         today_open = window.loc[i, "open"]
         if today_low <= prev_high:
             continue
-        gap_pct = (today_open - prev_high) / prev_high
+        gap_pct = (today_open - prev_high) / prev_high if prev_high > 0 else 0
         vr = vol_ratio.iloc[i] if pd.notna(vol_ratio.iloc[i]) else 0
         if gap_pct < min_gap_pct or vr < min_volume_ratio:
             continue
