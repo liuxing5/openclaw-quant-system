@@ -157,6 +157,12 @@ class FunnelEngine:
                 print(f"  ❌ Layer 0 大盘风控未通过: {market_env['reason']}")
                 print(f"  → 当日不荐股，流程终止")
                 print(f"{'='*70}\n")
+                self._save_to_db(
+                    trade_date=trade_date,
+                    market_env=market_env,
+                    candidates=[],
+                    elapsed_seconds=time.perf_counter() - t_total_start,
+                )
                 return {
                     'timestamp': timestamp,
                     'trade_date': str(trade_date),
@@ -205,6 +211,8 @@ class FunnelEngine:
 
         if not l1_result:
             print("\n❌ Layer 1 无标的通过防雷筛选")
+            self._save_to_db(trade_date=trade_date, market_env=market_env,
+                             candidates=[], elapsed_seconds=time.perf_counter() - t_total_start)
             return {
                 'timestamp': timestamp, 'trade_date': str(trade_date),
                 'market_env': market_env, 'stats': self._stats,
@@ -223,6 +231,8 @@ class FunnelEngine:
 
         if not l2_result:
             print("\n❌ Layer 2 无标的通过流动性筛选")
+            self._save_to_db(trade_date=trade_date, market_env=market_env,
+                             candidates=[], elapsed_seconds=time.perf_counter() - t_total_start)
             return {
                 'timestamp': timestamp, 'trade_date': str(trade_date),
                 'market_env': market_env, 'stats': self._stats,
@@ -242,6 +252,8 @@ class FunnelEngine:
 
         if not l3_result:
             print("\n❌ Layer 3 无标的通过趋势过滤")
+            self._save_to_db(trade_date=trade_date, market_env=market_env,
+                             candidates=[], elapsed_seconds=time.perf_counter() - t_total_start)
             return {
                 'timestamp': timestamp, 'trade_date': str(trade_date),
                 'market_env': market_env, 'stats': self._stats,
@@ -288,6 +300,8 @@ class FunnelEngine:
 
         if not l5_result:
             print("\n❌ Layer 5 无标的通过人气评分")
+            self._save_to_db(trade_date=trade_date, market_env=market_env,
+                             candidates=[], elapsed_seconds=time.perf_counter() - t_total_start)
             return {
                 'timestamp': timestamp, 'trade_date': str(trade_date),
                 'market_env': market_env, 'stats': self._stats,
