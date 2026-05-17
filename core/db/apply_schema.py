@@ -24,37 +24,31 @@ def apply_schema():
         with open(os.path.join(BASE_DIR, 'schema.sql'), 'r', encoding='utf-8') as f:
             content = f.read()
         
-        # Split by semicolon but keep comments and empty lines separate
         statements = []
         current_stmt = []
         
         for line in content.split('\n'):
-            # Skip empty lines and comments
             if not line.strip() or line.strip().startswith('--'):
                 continue
             
             current_stmt.append(line)
             
             if ';' in line:
-                # Remove the semicolon and add to statements
                 stmt = '\n'.join(current_stmt).replace(';', '').strip()
                 if stmt:
                     statements.append(stmt)
                 current_stmt = []
         
-        # Add any remaining statement
         if current_stmt:
             stmt = '\n'.join(current_stmt).strip()
             if stmt:
                 statements.append(stmt)
         
-        # Execute each statement
         for i, stmt in enumerate(statements):
             try:
                 cur.execute(stmt)
                 print(f"✓ Executed statement {i+1}")
             except Exception as e:
-                # Handle common errors gracefully
                 error_msg = str(e).lower()
                 if 'already exists' in error_msg or 'duplicate' in error_msg:
                     print(f"⚠️ Statement {i+1} skipped (already exists)")
@@ -62,6 +56,25 @@ def apply_schema():
                     print(f"⚠️ Statement {i+1} skipped (column already handled)")
                 else:
                     print(f"❌ Statement {i+1} failed: {e}")
+        
+        migrations_dir = os.path.join(BASE_DIR, 'migrations')
+        if os.path.isdir(migrations_dir):
+            migration_files = sorted(f for f in os.listdir(migrations_dir) if f.endswith('.sql'))
+            for mf in migration_files:
+                mf_path = os.path.join(migrations_dir, mf)
+                with open(mf_path, 'r', encoding='utf-8') as f:
+                    mcontent = f.read().strip()
+                if not mcontent:
+                    continue
+                try:
+                    cur.execute(mcontent)
+                    print(f"✓ Migration {mf} applied")
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if 'already exists' in error_msg or 'does not exist' in error_msg or 'already the type' in error_msg:
+                        print(f"⚠️ Migration {mf} skipped ({e})")
+                    else:
+                        print(f"❌ Migration {mf} failed: {e}")
         
         cur.close()
         print("\nSchema applied successfully")
