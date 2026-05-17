@@ -108,6 +108,45 @@ def fetch_mootdx_fundamentals(make_signal, codes=None) -> list:
         except Exception as e:
             logger.debug(f"AKShare财务数据回退失败: {e}")
 
+    if not fundamentals and codes:
+        import os
+        token = os.getenv('TUSHARE_TOKEN')
+        if token:
+            try:
+                import tushare as ts
+                ts.set_token(token)
+                pro = ts.pro_api()
+                for ts_code in codes[:200]:
+                    try:
+                        df = pro.fina_indicator(
+                            ts_code=ts_code,
+                            fields='ts_code,ann_date,end_date,roe,netprofit_margin,grossprofit_margin,debt_to_assets,op_yoy,or_yoy'
+                        )
+                        if df is None or df.empty:
+                            continue
+                        latest = df.iloc[0]
+                        end_date = str(latest.get('end_date', ''))
+                        if not end_date or len(end_date) < 8:
+                            continue
+                        report_date = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+                        fundamentals.append({
+                            'ts_code': ts_code,
+                            'report_date': report_date,
+                            'net_margin': latest.get('netprofit_margin'),
+                            'gross_margin': latest.get('grossprofit_margin'),
+                            'debt_ratio': latest.get('debt_to_assets'),
+                            'revenue_yoy': latest.get('or_yoy'),
+                            'profit_yoy': latest.get('op_yoy'),
+                        })
+                        time.sleep(0.15)
+                    except Exception:
+                        continue
+                logger.info(f"Tushare财务数据(回退): {len(fundamentals)} 条记录")
+            except ImportError:
+                logger.debug("tushare 未安装，跳过财务数据回退")
+            except Exception as e:
+                logger.debug(f"Tushare财务数据回退失败: {e}")
+
     rows._fundamentals = fundamentals
 
     logger.info(f"MootDX财务数据: {len(fundamentals)} 条记录 from {len(codes[:200])} 只股票")

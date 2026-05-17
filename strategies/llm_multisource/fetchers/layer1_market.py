@@ -101,7 +101,7 @@ def fetch_ths_strong_stocks_structured(make_signal) -> list:
 # ============================================================
 
 def fetch_concept_board_quotes(make_signal) -> list:
-    """同花顺概念板块行情 -- stock_board_concept_name_ths
+    """概念板块行情 -- 优先东财实时接口，回退同花顺K线计算涨跌幅
 
     Returns make_signal() for top concepts + attaches _concept_board_quotes data.
     """
@@ -112,63 +112,129 @@ def fetch_concept_board_quotes(make_signal) -> list:
     today = datetime.now(BEIJING_TZ).date()
 
     try:
-        logger.debug("概念板块行情: stock_board_concept_name_ths")
-        df = ak.stock_board_concept_name_ths()
-        if df is None or not hasattr(df, 'empty') or df.empty:
-            return rows
+        df = None
+        source = ''
 
-        col_name = next((c for c in ['概念名称', '板块名称', 'name'] if c in df.columns), None)
-        col_chg = next((c for c in ['涨跌幅', '涨跌幅(%)', 'pct_chg'] if c in df.columns), None)
-        col_code = next((c for c in ['代码', '板块代码', 'code'] if c in df.columns), None)
-        col_turnover = next((c for c in ['换手率', 'turnover'] if c in df.columns), None)
-        col_stock_count = next((c for c in ['公司家数', '股票数量', 'stock_count'] if c in df.columns), None)
-        col_lead_stock = next((c for c in ['领涨股票', 'lead_stock'] if c in df.columns), None)
-        col_lead_code = next((c for c in ['领涨股票代码', 'lead_stock_code'] if c in df.columns), None)
+        try:
+            logger.debug("概念板块行情: stock_board_concept_name_em")
+            df = ak.stock_board_concept_name_em()
+            source = 'em'
+        except Exception as e:
+            logger.debug(f"东财概念接口失败: {e}")
 
-        if not col_name:
-            return rows
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            col_name = next((c for c in ['板块名称', '概念名称', 'name'] if c in df.columns), None)
+            col_chg = next((c for c in ['涨跌幅', '涨跌幅(%)', 'pct_chg', 'change_pct'] if c in df.columns), None)
+            col_code = next((c for c in ['代码', '板块代码', 'code'] if c in df.columns), None)
+            col_turnover = next((c for c in ['换手率', 'turnover'] if c in df.columns), None)
+            col_stock_count = next((c for c in ['公司家数', '股票数量', 'stock_count'] if c in df.columns), None)
+            col_lead_stock = next((c for c in ['领涨股票', 'lead_stock'] if c in df.columns), None)
+            col_lead_code = next((c for c in ['领涨股票代码', 'lead_stock_code'] if c in df.columns), None)
 
-        if col_chg:
-            df[col_chg] = pd.to_numeric(df[col_chg], errors='coerce')
-            df_sorted = df.sort_values(col_chg, ascending=False)
-        else:
-            df_sorted = df
+            if col_chg:
+                df[col_chg] = pd.to_numeric(df[col_chg], errors='coerce')
+                df_sorted = df.sort_values(col_chg, ascending=False)
+            else:
+                df_sorted = df
 
-        for pos, (_, r) in enumerate(df_sorted.head(50).iterrows(), 1):
-            try:
-                concept = str(r.get(col_name, '') or '')
-                if not concept or concept == 'nan':
+            for pos, (_, r) in enumerate(df_sorted.head(50).iterrows(), 1):
+                try:
+                    concept = str(r.get(col_name, '') or '')
+                    if not concept or concept == 'nan':
+                        continue
+                    chg = float(r.get(col_chg, 0) or 0) if col_chg else 0
+                    concept_code = str(r.get(col_code, '') or '') if col_code else ''
+                    turnover = float(r.get(col_turnover, 0) or 0) if col_turnover else 0
+                    stock_count = int(r.get(col_stock_count, 0) or 0) if col_stock_count else 0
+                    lead_name = str(r.get(col_lead_stock, '') or '') if col_lead_stock else ''
+                    lead_code_raw = str(r.get(col_lead_code, '') or '') if col_lead_code else ''
+                    lead_code = re.sub(r'[^0-9]', '', lead_code_raw).zfill(6) if lead_code_raw else ''
+                    lead_ts = pure_to_ts_code(lead_code) if lead_code else ''
+
+                    concept_data.append({
+                        'trade_date': today,
+                        'concept_code': concept_code or f"CONCEPT_{pos:04d}",
+                        'concept_name': concept,
+                        'pct_chg': chg,
+                        'turnover_rate': turnover,
+                        'lead_stock_code': lead_ts,
+                        'lead_stock_name': lead_name,
+                        'stock_count': stock_count,
+                    })
+
+                    if pos <= 10:
+                        rows.append(make_signal(
+                            source='EM-概念板块', tier=2,
+                            title=f"概念: {concept} 涨{chg:.2f}%",
+                            content=f"概念板块 {concept} 涨跌幅:{chg:.2f}% 换手率:{turnover:.2f}% "
+                                   f"领涨:{lead_name}({lead_ts}) 家数:{stock_count}",
+                        ))
+                except Exception:
                     continue
+        else:
+            logger.debug("东财概念接口无数据，回退同花顺K线计算")
 
-                chg = float(r.get(col_chg, 0) or 0) if col_chg else 0
-                concept_code = str(r.get(col_code, '') or '') if col_code else ''
-                turnover = float(r.get(col_turnover, 0) or 0) if col_turnover else 0
-                stock_count = int(r.get(col_stock_count, 0) or 0) if col_stock_count else 0
-                lead_name = str(r.get(col_lead_stock, '') or '') if col_lead_stock else ''
-                lead_code_raw = str(r.get(col_lead_code, '') or '') if col_lead_code else ''
-                lead_code = re.sub(r'[^0-9]', '', lead_code_raw).zfill(6) if lead_code_raw else ''
-                lead_ts = pure_to_ts_code(lead_code) if lead_code else ''
+        if not concept_data:
+            logger.debug("概念板块行情: stock_board_concept_name_ths + index_ths")
+            df_list = ak.stock_board_concept_name_ths()
+            if df_list is None or not hasattr(df_list, 'empty') or df_list.empty:
+                rows._concept_board_quotes = concept_data
+                return rows
 
-                concept_data.append({
-                    'trade_date': today,
-                    'concept_code': concept_code or f"CONCEPT_{pos:04d}",
-                    'concept_name': concept,
-                    'pct_chg': chg,
-                    'turnover_rate': turnover,
-                    'lead_stock_code': lead_ts,
-                    'lead_stock_name': lead_name,
-                    'stock_count': stock_count,
-                })
+            col_name_ths = next((c for c in ['概念名称', '板块名称', 'name'] if c in df_list.columns), None)
+            col_code_ths = next((c for c in ['代码', '板块代码', 'code'] if c in df_list.columns), None)
+            if not col_name_ths:
+                rows._concept_board_quotes = concept_data
+                return rows
 
-                if pos <= 10:
-                    rows.append(make_signal(
-                        source='THS-概念板块', tier=2,
-                        title=f"概念: {concept} 涨{chg:.2f}%",
-                        content=f"概念板块 {concept} 涨跌幅:{chg:.2f}% 换手率:{turnover:.2f}% "
-                               f"领涨:{lead_name}({lead_ts}) 家数:{stock_count}",
-                    ))
-            except Exception:
-                continue
+            top_concepts = df_list.head(50)
+            for pos, (_, r) in enumerate(top_concepts.iterrows(), 1):
+                try:
+                    concept = str(r.get(col_name_ths, '') or '')
+                    concept_code = str(r.get(col_code_ths, '') or '') if col_code_ths else ''
+                    if not concept or concept == 'nan':
+                        continue
+
+                    chg = 0.0
+                    turnover = 0.0
+                    try:
+                        end_str = today.strftime('%Y%m%d')
+                        start_str = (today - timedelta(days=7)).strftime('%Y%m%d')
+                        df_k = ak.stock_board_concept_index_ths(
+                            symbol=concept, start_date=start_str, end_date=end_str
+                        )
+                        if df_k is not None and hasattr(df_k, 'empty') and not df_k.empty and len(df_k) >= 2:
+                            df_k['收盘价'] = pd.to_numeric(df_k['收盘价'], errors='coerce')
+                            latest_close = df_k['收盘价'].iloc[-1]
+                            prev_close = df_k['收盘价'].iloc[-2]
+                            if prev_close and prev_close > 0:
+                                chg = round((latest_close - prev_close) / prev_close * 100, 2)
+                            if '成交额' in df_k.columns:
+                                latest_amt = pd.to_numeric(df_k['成交额'], errors='coerce').iloc[-1]
+                                if pd.notna(latest_amt) and latest_amt > 0:
+                                    turnover = round(float(latest_amt) / 1e8, 2)
+                    except Exception:
+                        pass
+
+                    concept_data.append({
+                        'trade_date': today,
+                        'concept_code': concept_code or f"CONCEPT_{pos:04d}",
+                        'concept_name': concept,
+                        'pct_chg': chg,
+                        'turnover_rate': turnover,
+                        'lead_stock_code': '',
+                        'lead_stock_name': '',
+                        'stock_count': 0,
+                    })
+
+                    if pos <= 10 and chg != 0:
+                        rows.append(make_signal(
+                            source='THS-概念板块', tier=2,
+                            title=f"概念: {concept} 涨{chg:.2f}%",
+                            content=f"概念板块 {concept} 涨跌幅:{chg:.2f}%",
+                        ))
+                except Exception:
+                    continue
 
     except Exception as e:
         logger.debug(f"概念板块行情失败: {e}")
@@ -273,7 +339,7 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
 # ============================================================
 
 def fetch_concept_constituents(make_signal) -> list:
-    """概念成分股采集 -- stock_board_concept_cons_em
+    """概念成分股采集 -- 优先东财接口，回退同花顺接口
 
     Fetches top-20 concept boards and their constituent stocks.
     Returns empty signal list + attaches _concept_membership data
@@ -285,22 +351,36 @@ def fetch_concept_constituents(make_signal) -> list:
     today = datetime.now(BEIJING_TZ).date()
 
     try:
-        logger.debug("概念成分股: 获取概念列表")
-        df_concepts = ak.stock_board_concept_name_ths()
-        if df_concepts is None or hasattr(df_concepts, 'empty') and df_concepts.empty:
-            return rows
+        df_concepts = None
+        try:
+            logger.debug("概念成分股: stock_board_concept_name_em")
+            df_concepts = ak.stock_board_concept_name_em()
+        except Exception as e:
+            logger.debug(f"东财概念列表失败: {e}")
 
-        col_chg = next((c for c in ['涨跌幅', '涨跌幅(%)', 'pct_chg'] if c in df_concepts.columns), None)
-        col_name = next((c for c in ['概念名称', '板块名称', 'name'] if c in df_concepts.columns), None)
-        col_code = next((c for c in ['代码', '板块代码', 'code'] if c in df_concepts.columns), None)
+        if df_concepts is not None and hasattr(df_concepts, 'empty') and not df_concepts.empty:
+            col_name = next((c for c in ['板块名称', '概念名称', 'name'] if c in df_concepts.columns), None)
+            col_code = next((c for c in ['代码', '板块代码', 'code'] if c in df_concepts.columns), None)
+            col_chg = next((c for c in ['涨跌幅', '涨跌幅(%)', 'pct_chg', 'change_pct'] if c in df_concepts.columns), None)
 
-        if not col_name:
-            return rows
+            if not col_name:
+                df_concepts = None
 
-        if col_chg:
-            df_concepts[col_chg] = pd.to_numeric(df_concepts[col_chg], errors='coerce')
-            top_concepts = df_concepts.nlargest(20, col_chg)
-        else:
+            if col_chg:
+                df_concepts[col_chg] = pd.to_numeric(df_concepts[col_chg], errors='coerce')
+                top_concepts = df_concepts.nlargest(20, col_chg)
+            else:
+                top_concepts = df_concepts.head(20) if df_concepts is not None else pd.DataFrame()
+
+        if df_concepts is None or (hasattr(df_concepts, 'empty') and df_concepts.empty):
+            logger.debug("概念成分股: 回退 stock_board_concept_name_ths")
+            df_concepts = ak.stock_board_concept_name_ths()
+            if df_concepts is None or (hasattr(df_concepts, 'empty') and df_concepts.empty):
+                return rows
+            col_name = next((c for c in ['概念名称', '板块名称', 'name'] if c in df_concepts.columns), None)
+            col_code = next((c for c in ['代码', '板块代码', 'code'] if c in df_concepts.columns), None)
+            if not col_name:
+                return rows
             top_concepts = df_concepts.head(20)
 
         for _, concept_row in top_concepts.iterrows():
@@ -310,7 +390,18 @@ def fetch_concept_constituents(make_signal) -> list:
                 continue
 
             try:
-                df_cons = ak.stock_board_concept_cons_em(symbol=concept_name)
+                df_cons = None
+                try:
+                    df_cons = ak.stock_board_concept_cons_em(symbol=concept_name)
+                except Exception:
+                    pass
+
+                if df_cons is None or (hasattr(df_cons, 'empty') and df_cons.empty):
+                    try:
+                        df_cons = ak.stock_board_concept_info_ths(symbol=concept_name)
+                    except Exception:
+                        pass
+
                 if df_cons is None or (hasattr(df_cons, 'empty') and df_cons.empty):
                     continue
 

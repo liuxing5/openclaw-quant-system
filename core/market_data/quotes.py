@@ -355,18 +355,171 @@ def fetch_daily_quotes_today():
         conn = get_db_fresh()
         cur = conn.cursor()
         execute_values(cur, """
-            INSERT INTO daily_quotes VALUES %s
+            INSERT INTO daily_quotes (ts_code, trade_date, open, high, low, close, volume, amount, pct_chg, turnover_rate)
+            VALUES %s
             ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-                open=EXCLUDED.open, high=EXCLUDED.high, low=EXCLUDED.low,
-                close=EXCLUDED.close, volume=EXCLUDED.volume,
-                amount=EXCLUDED.amount, pct_chg=EXCLUDED.pct_chg,
-                turnover_rate=EXCLUDED.turnover_rate;
+                open=COALESCE(EXCLUDED.open, daily_quotes.open),
+                high=COALESCE(EXCLUDED.high, daily_quotes.high),
+                low=COALESCE(EXCLUDED.low, daily_quotes.low),
+                close=COALESCE(EXCLUDED.close, daily_quotes.close),
+                volume=COALESCE(EXCLUDED.volume, daily_quotes.volume),
+                amount=COALESCE(EXCLUDED.amount, daily_quotes.amount),
+                pct_chg=COALESCE(EXCLUDED.pct_chg, daily_quotes.pct_chg),
+                turnover_rate=COALESCE(EXCLUDED.turnover_rate, daily_quotes.turnover_rate);
         """, rows)
         conn.commit()
         logger.info(f"daily_quotes 入库: {len(rows)} 条")
         cur.close()
     except Exception as e:
         logger.error(f"daily_quotes 入库失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
+
+    _supplement_with_tushare_daily_basic()
+
+
+def _supplement_with_tushare_daily_basic():
+    """用 Tushare daily_basic 补充 turnover_rate/volume_ratio/pe/pb 等字段"""
+    token = os.getenv('TUSHARE_TOKEN')
+    if not token:
+        logger.debug("TUSHARE_TOKEN 未设置，跳过 daily_basic 补充")
+        return
+
+    try:
+        import tushare as ts
+    except ImportError:
+        logger.debug("tushare 未安装，跳过 daily_basic 补充")
+        return
+
+    today = get_beijing_date()
+    date_str = today.strftime('%Y%m%d')
+
+    try:
+        ts.set_token(token)
+        pro = ts.pro_api()
+        df = pro.daily_basic(trade_date=date_str,
+                             fields='ts_code,trade_date,turnover_rate,volume_ratio,pe,pb')
+    except Exception as e:
+        logger.warning(f"Tushare daily_basic 补充失败: {e}")
+        return
+
+    if df is None or df.empty:
+        logger.debug("Tushare daily_basic 返回空数据")
+        return
+
+    logger.info(f"Tushare daily_basic 返回 {len(df)} 条，补充 turnover_rate/volume_ratio/PE/PB")
+
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        updated = 0
+        for _, r in df.iterrows():
+            ts_code = r.get('ts_code')
+            tr = r.get('turnover_rate')
+            vr = r.get('volume_ratio')
+            pe = r.get('pe')
+            pb = r.get('pb')
+            if not ts_code:
+                continue
+            try:
+                cur.execute("""
+                    UPDATE daily_quotes SET
+                        turnover_rate = COALESCE(%s, turnover_rate),
+                        volume_ratio = COALESCE(%s, volume_ratio),
+                        pe_ratio = COALESCE(%s, pe_ratio),
+                        pb_ratio = COALESCE(%s, pb_ratio)
+                    WHERE ts_code = %s AND trade_date = %s
+                      AND (turnover_rate IS NULL OR volume_ratio IS NULL
+                           OR pe_ratio IS NULL OR pb_ratio IS NULL);
+                """, (tr, vr, pe, pb, ts_code, today))
+                if cur.rowcount > 0:
+                    updated += cur.rowcount
+            except Exception:
+                pass
+        conn.commit()
+        cur.close()
+        logger.info(f"Tushare daily_basic 补充: {updated} 条更新")
+    except Exception as e:
+        logger.warning(f"Tushare daily_basic 入库失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
+
+
+def _compute_volume_ratio_sql():
+    """用SQL计算回填 volume_ratio = 今日成交量 / 过去5日平均成交量"""
+    today = get_beijing_date()
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE daily_quotes dq
+            SET volume_ratio = CASE
+                WHEN avg_vol > 0 THEN ROUND(dq.volume::numeric / avg_vol, 2)
+                ELSE NULL
+            END
+            FROM (
+                SELECT ts_code, AVG(volume) as avg_vol
+                FROM daily_quotes
+                WHERE trade_date < %s
+                  AND trade_date >= %s - INTERVAL '10 days'
+                  AND volume IS NOT NULL AND volume > 0
+                GROUP BY ts_code
+                HAVING COUNT(*) >= 3
+            ) sub
+            WHERE dq.ts_code = sub.ts_code
+              AND dq.trade_date = %s
+              AND dq.volume IS NOT NULL AND dq.volume > 0
+              AND dq.volume_ratio IS NULL;
+        """, (today, today, today))
+        updated = cur.rowcount
+        conn.commit()
+        cur.close()
+        if updated > 0:
+            logger.info(f"SQL计算 volume_ratio: {updated} 条")
+    except Exception as e:
+        logger.warning(f"SQL计算 volume_ratio 失败: {e}")
+    finally:
+        if conn and not conn.closed:
+            conn.close()
+
+
+def _compute_amplitude_sql():
+    """用SQL计算回填 amplitude = (最高-最低)/昨收 * 100"""
+    today = get_beijing_date()
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        cur.execute("""
+            UPDATE daily_quotes dq
+            SET amplitude = CASE
+                WHEN prev_close > 0 THEN ROUND((dq.high - dq.low) / prev_close * 100, 2)
+                ELSE NULL
+            END
+            FROM (
+                SELECT ts_code, close as prev_close
+                FROM daily_quotes
+                WHERE trade_date = (
+                    SELECT MAX(trade_date) FROM daily_quotes
+                    WHERE trade_date < %s
+                )
+            ) sub
+            WHERE dq.ts_code = sub.ts_code
+              AND dq.trade_date = %s
+              AND dq.high IS NOT NULL AND dq.low IS NOT NULL
+              AND dq.amplitude IS NULL;
+        """, (today, today))
+        updated = cur.rowcount
+        conn.commit()
+        cur.close()
+        if updated > 0:
+            logger.info(f"SQL计算 amplitude: {updated} 条")
+    except Exception as e:
+        logger.warning(f"SQL计算 amplitude 失败: {e}")
     finally:
         if conn and not conn.closed:
             conn.close()
@@ -444,20 +597,32 @@ def fetch_hsgt_top10():
     if df is None or (hasattr(df, 'empty') and df.empty):
         logger.info("hsgt: 无数据")
         return
+    col_code = next((c for c in ['代码', '股票代码', 'code'] if c in df.columns), None)
+    col_mktcap = next((c for c in ['今日持股市值', '持股市值', '持有市值', 'hold_market_cap'] if c in df.columns), None)
+    col_shares = next((c for c in ['今日持股数量', '持股数量', '持股', 'hold_shares'] if c in df.columns), None)
+    col_net = next((c for c in ['今日增仓', '增仓', '净买入', 'net_buy'] if c in df.columns), None)
     rows = []
     for _, r in df.iterrows():
-        code = str(r.get('代码','')).zfill(6)
+        code = str(r.get(col_code, '') or '').zfill(6) if col_code else ''
+        if not code or code == '000000':
+            continue
         ts = pure_to_ts_code(code)
-        rows.append((ts, get_beijing_date(), 0, r.get('今日持股市值',0), 0))
+        mktcap = float(r.get(col_mktcap, 0) or 0) if col_mktcap else 0
+        shares = int(float(r.get(col_shares, 0) or 0)) if col_shares else 0
+        net = float(r.get(col_net, 0) or 0) if col_net else 0
+        rows.append((ts, get_beijing_date(), shares, mktcap, net))
     if rows:
         conn = None
         try:
             conn = get_db_fresh()
             cur = conn.cursor()
             execute_values(cur, """
-                INSERT INTO hsgt_individual VALUES %s
+                INSERT INTO hsgt_individual (ts_code, trade_date, hold_shares, hold_market_cap, net_buy_amount)
+                VALUES %s
                 ON CONFLICT (ts_code, trade_date) DO UPDATE SET
-                hold_market_cap=EXCLUDED.hold_market_cap;
+                hold_shares=COALESCE(EXCLUDED.hold_shares, hsgt_individual.hold_shares),
+                hold_market_cap=COALESCE(EXCLUDED.hold_market_cap, hsgt_individual.hold_market_cap),
+                net_buy_amount=COALESCE(EXCLUDED.net_buy_amount, hsgt_individual.net_buy_amount);
             """, rows)
             conn.commit()
             logger.info(f"hsgt: {len(rows)} rows")
@@ -486,3 +651,6 @@ if __name__ == '__main__':
         f1.result()
         f2.result()
         f3.result()
+
+    _compute_volume_ratio_sql()
+    _compute_amplitude_sql()
