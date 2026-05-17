@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS funnel_results (
     id BIGSERIAL PRIMARY KEY,
     trade_date DATE NOT NULL,
     total_stocks INT,
-    layer0_pass BOOLEAN,
+    layer0_pass INT,
     layer0_max_position FLOAT,
     layer1_pass INT,
     layer2_pass INT,

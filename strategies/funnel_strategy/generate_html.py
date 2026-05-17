@@ -272,7 +272,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         steps_data = [
             ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
             ("L0 大盘风控", "🌤️", total, 0,
-             "✅满仓" if funnel['layer0_pass'] else "⚠️半仓", "#fff3e0"),
+             "✅满仓" if funnel['layer0_pass'] else "⚠️限仓", "#fff3e0"),
             ("L1 硬性防雷", "⚡", funnel['layer1_pass'], total - funnel['layer1_pass'],
              LAYER_RULES['L1'], "#fce4ec"),
             ("L2 流动性", "💧", funnel['layer2_pass'], funnel['layer1_pass'] - funnel['layer2_pass'],

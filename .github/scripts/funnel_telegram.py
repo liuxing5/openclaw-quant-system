@@ -47,14 +47,19 @@ def build_message() -> str:
         position_text = f"满仓({int(row.get('layer0_max_position', 1) * 100)}%)"
     else:
         position_emoji = "⚠️"
-        position_text = f"半仓({int(row.get('layer0_max_position', 0.5) * 100)}%)"
+        position_text = f"限仓({int(row.get('layer0_max_position', 0.5) * 100)}%)"
 
     msg = f"🎯 七步漏斗选股 — {date_str}\n\n"
 
     # 市场环境
     msg += "📊 市场环境\n"
     msg += f"  上涨 {row['market_advancers']}  |  下跌 {row['market_decliners']}\n"
-    msg += f"  指数 {row['market_index_close']}  |  20EMA {row['market_index_ema']}\n"
+    index_close = row['market_index_close']
+    index_ema = row['market_index_ema']
+    if index_close is not None and index_close > 0 and index_close < 200:
+        msg += f"  广度占比 {index_close}%  |  20EMA {index_ema}%\n"
+    else:
+        msg += f"  指数 {index_close}  |  20EMA {index_ema}\n"
     msg += f"  {position_emoji} 仓位: {position_text}\n\n"
 
     # 漏斗过滤过程
@@ -82,7 +87,7 @@ def build_message() -> str:
             target = c.get('target_price', 0)
             plr = c.get('profit_loss_ratio', 0)
             signal = c.get('signal_type', '')
-            signal_short = {'demand_absorption': '需求吸收', 'strong_relay': '强势接力'}.get(signal, signal)
+            signal_short = {'demand_absorption': '需求吸收', 'strong_relay': '强势接力', 'pullback_bounce': '回踩反弹'}.get(signal, signal)
 
             msg += f"  {i+1}. {code} 评{score} 入{entry:.2f} 止{stop:.2f} 目{target:.2f} {plr:.1f}:1"
             if signal_short:

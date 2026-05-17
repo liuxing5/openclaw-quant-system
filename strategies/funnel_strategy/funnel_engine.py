@@ -80,7 +80,7 @@ class FunnelEngine:
                 print(f"  - {e}")
 
         self._stats = {
-            'layer0_pass': False,
+            'layer0_pass': 0,
             'layer0_max_position': 1.0,
             'input_count': 0,
             'layer1_pass': 0,
@@ -148,7 +148,7 @@ class FunnelEngine:
                 partial_cap=cfg.layer0_partial_cap,
                 verbose=cfg.verbose,
             )
-            self._stats['layer0_pass'] = market_env['passed']
+            self._stats['layer0_pass'] = 1 if market_env['passed'] else 0
             self._stats['layer0_max_position'] = market_env['max_position_pct']
             print(f"  ⏱️  Layer 0 耗时: {time.perf_counter() - t0:.1f}s")
 

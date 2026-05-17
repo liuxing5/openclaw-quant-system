@@ -19,8 +19,9 @@ class FunnelConfig:
     # ================================================================
     layer0_enabled: bool = True
     layer0_min_advancers: int = 2500          # 两市上涨≥此数才荐股
-    layer0_index_code: str = '000001.SH'       # 全A指数（上证综指为参考）
-    layer0_index_ema_period: int = 20           # 指数20EMA
+    layer0_use_breadth_ema: bool = True        # 使用市场广度EMA替代指数EMA
+    layer0_index_code: str = '000001.SH'       # 指数代码（仅breadth_ema=False时使用）
+    layer0_index_ema_period: int = 20           # 广度/指数EMA周期
     layer0_partial_cap: float = 0.50            # 未通过时仓位≤50%
 
     # ================================================================
@@ -79,6 +80,8 @@ class FunnelConfig:
     # K线形态识别 [⑤价格行为]
     layer4_enable_demand_absorption: bool = True   # 需求吸收K线
     layer4_enable_strong_relay: bool = True         # 强势接力（一进二改良）
+    layer4_enable_pullback_bounce: bool = True      # 回踩反弹（EMA12附近阳线反弹）
+    layer4_pullback_bounce_vol_ratio_min: float = 1.2  # 回踩反弹最低量比
     layer4_volume_ratio_min: float = 1.5            # 最小量比 [③八步法]
     layer4_volume_ratio_max: float = 3.0            # 最大量比
     layer4_max_bias_pct: float = 6.0                # 最大乖离率% [③八步法]
@@ -90,9 +93,9 @@ class FunnelConfig:
     # Layer 5: 人气精选 [③隔夜八步法/⑥人气榜]
     # ================================================================
     layer5_enabled: bool = True
-    layer5_min_composite_score: int = 80            # 综合评分≥80 [③八步法]
-    layer5_pct_range_low: float = 3.0               # 涨幅下限 [③八步法]
-    layer5_pct_range_high: float = 5.0              # 涨幅上限 [③八步法]
+    layer5_min_composite_score: int = 70            # 综合评分≥70 [③八步法]
+    layer5_pct_range_low: float = 2.0               # 涨幅下限 [③八步法]
+    layer5_pct_range_high: float = 6.0              # 涨幅上限 [③八步法]
     layer5_bonus_popularity_rank: float = 5.0       # 人气榜≤100加分 [⑥人气榜]
     layer5_popularity_rank_threshold: int = 100      # 人气榜排名阈值
     # P1: 估值天花板（价值投资约束）
@@ -106,6 +109,9 @@ class FunnelConfig:
     layer6_entry_after_time: str = '14:30'          # 买入时段 [③八步法]
     layer6_atr_period: int = 20                     # ATR计算周期 [⑦海龟]
     layer6_initial_stop_atr: float = 1.0            # 初始止损=入场价-1ATR [⑦海龟]
+    layer6_structural_stop_enabled: bool = True      # 启用结构性止损（近5日低点）
+    layer6_structural_stop_buffer_pct: float = 0.5   # 结构性止损缓冲（近低-0.5%）
+    layer6_max_stop_loss_pct: float = 8.0            # 最大止损幅度%（超过则拒绝）
     layer6_trailing_ref: str = 'ema12'              # 移动止盈参考 (ema12/vwap) [②均线]
     layer6_min_profit_loss_ratio: float = 2.0       # 盈亏比≥2:1 [⑦海龟]
     layer6_target_atr_mult: float = 2.0             # 盈利目标=入场+2ATR
@@ -183,6 +189,12 @@ class FunnelConfig:
             errors.append("layer5_pct_range_low 必须 < layer5_pct_range_high")
         if self.layer6_min_profit_loss_ratio < 1.0:
             errors.append("盈亏比 必须 >= 1.0")
+        if self.layer6_structural_stop_buffer_pct < 0:
+            errors.append("layer6_structural_stop_buffer_pct 必须 >= 0")
+        if self.layer6_max_stop_loss_pct <= 0:
+            errors.append("layer6_max_stop_loss_pct 必须 > 0")
+        if self.layer4_pullback_bounce_vol_ratio_min < 0:
+            errors.append("layer4_pullback_bounce_vol_ratio_min 必须 >= 0")
         return errors
 
 

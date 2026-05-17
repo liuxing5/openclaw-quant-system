@@ -157,6 +157,7 @@ def compute_risk_params(
         'atr': float,
         'atr_pct': float,
         'stop_loss': float,
+        'stop_loss_type': str,       # 'atr' 或 'structural'
         'stop_loss_pct': float,
         'trailing_ref': float,
         'target_price': float,
@@ -168,6 +169,7 @@ def compute_risk_params(
         'atr': 0.0,
         'atr_pct': 0.0,
         'stop_loss': 0.0,
+        'stop_loss_type': 'atr',
         'stop_loss_pct': 0.0,
         'trailing_ref': 0.0,
         'target_price': 0.0,
@@ -189,10 +191,36 @@ def compute_risk_params(
     result['atr'] = round(atr, 3)
     result['atr_pct'] = round(atr / entry_price * 100, 2)
 
-    # 初始止损 = 入场价 - 1ATR
-    stop_loss = entry_price - atr * cfg.layer6_initial_stop_atr
+    # ATR止损 = 入场价 - N*ATR
+    atr_stop = entry_price - atr * cfg.layer6_initial_stop_atr
+
+    # 结构性止损 = 近5日最低价 - 缓冲
+    structural_stop = atr_stop
+    if getattr(cfg, 'layer6_structural_stop_enabled', False) and len(df) >= 5:
+        recent_low = float(df['low'].iloc[-5:].min())
+        buffer_pct = getattr(cfg, 'layer6_structural_stop_buffer_pct', 0.5) / 100.0
+        structural_stop = recent_low * (1 - buffer_pct)
+
+    # 取更严格的止损（离入场价更近的）
+    stop_loss = max(atr_stop, structural_stop)
+    stop_type = 'structural' if stop_loss == structural_stop and structural_stop != atr_stop else 'atr'
+
+    # 止损幅度过大则拒绝
+    max_stop_pct = getattr(cfg, 'layer6_max_stop_loss_pct', 8.0)
+    stop_loss_pct_val = (entry_price - stop_loss) / entry_price * 100
+    if stop_loss_pct_val > max_stop_pct:
+        result['stop_loss'] = round(stop_loss, 2)
+        result['stop_loss_type'] = stop_type
+        result['stop_loss_pct'] = round(stop_loss_pct_val, 2)
+        result['trailing_ref'] = entry_price
+        result['target_price'] = entry_price
+        result['profit_loss_ratio'] = 0.0
+        result['passed'] = False
+        return result
+
     result['stop_loss'] = round(stop_loss, 2)
-    result['stop_loss_pct'] = round((entry_price - stop_loss) / entry_price * 100, 2)
+    result['stop_loss_type'] = stop_type
+    result['stop_loss_pct'] = round(stop_loss_pct_val, 2)
 
     # 移动止盈参考价 (EMA12)
     ema12 = _calc_ema(df['close'], 12)
@@ -202,7 +230,7 @@ def compute_risk_params(
     target_price = entry_price + atr * cfg.layer6_target_atr_mult
     result['target_price'] = round(target_price, 2)
 
-    # 盈亏比
+    # 盈亏比（现在会因为结构性止损而变化）
     risk = entry_price - stop_loss
     reward = target_price - entry_price
     result['profit_loss_ratio'] = round(reward / risk, 2) if risk > 0 else 0.0
@@ -254,7 +282,7 @@ def run_layer6_risk_control(
               f"盈亏比≥{cfg.layer6_min_profit_loss_ratio}:1")
 
     passed = []
-    reject_stats = {'盈亏比不足': 0, 'ATR异常': 0}
+    reject_stats = {'盈亏比不足': 0, 'ATR异常': 0, '止损幅度过大': 0}
 
     # 批量加载历史数据 + 收盘价
     stock_codes = [item['ts_code'] for item in stock_items]
@@ -282,6 +310,7 @@ def run_layer6_risk_control(
         item['atr'] = risk['atr']
         item['atr_pct'] = risk['atr_pct']
         item['stop_loss'] = risk['stop_loss']
+        item['stop_loss_type'] = risk['stop_loss_type']
         item['stop_loss_pct'] = risk['stop_loss_pct']
         item['trailing_ref'] = risk['trailing_ref']
         item['target_price'] = risk['target_price']
@@ -292,6 +321,8 @@ def run_layer6_risk_control(
         if not risk['passed']:
             if risk['atr'] <= 0:
                 reject_stats['ATR异常'] += 1
+            elif risk['stop_loss_pct'] > getattr(cfg, 'layer6_max_stop_loss_pct', 8.0):
+                reject_stats['止损幅度过大'] += 1
             else:
                 reject_stats['盈亏比不足'] += 1
             continue
