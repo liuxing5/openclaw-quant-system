@@ -248,8 +248,23 @@ def _check_single(
     limit_pct = _get_limit_pct(ts_code)
     signal_found = False
 
+    if getattr(cfg, 'layer4_enable_pullback_bounce', False):
+        ema12 = pre['ema12']
+        if ema12 > 0:
+            low_near_ema = abs(today['low'] - ema12) / ema12 <= 0.03
+            close_above_ema = today['close'] > ema12
+            bullish_candle = today['close'] > today['open']
+            body_size = abs(today['close'] - today['open'])
+            total_range = today['high'] - today['low']
+            solid_body = total_range > 0 and body_size / total_range >= 0.3
+            pullback_vr_min = getattr(cfg, 'layer4_pullback_bounce_vol_ratio_min', 1.0)
+            vol_ok = vol_ratio >= pullback_vr_min
+            if low_near_ema and close_above_ema and bullish_candle and solid_body and vol_ok:
+                result['signal_type'] = 'pullback_bounce'
+                result['score_bonus'] += 6.0
+                signal_found = True
+
     if cfg.layer4_enable_demand_absorption:
-        # EMA12 附近的锤子/刺透 + 放量
         ema12 = pre['ema12']
         close_to_ema = abs(today['close'] - ema12) / ema12 if ema12 > 0 else 1.0
         if close_to_ema <= 0.03:
@@ -259,8 +274,11 @@ def _check_single(
                 vols = [r['volume'] for r in rows]
                 avg_vol_5 = sum(vols[-6:-1]) / 5.0 if len(vols) >= 6 else sum(vols[:-1]) / (len(vols) - 1)
                 if avg_vol_5 > 0 and today['volume'] > avg_vol_5 * 1.2:
-                    result['signal_type'] = 'demand_absorption'
-                    result['score_bonus'] += 5.0
+                    if signal_found:
+                        result['score_bonus'] += 2.0
+                    else:
+                        result['signal_type'] = 'demand_absorption'
+                        result['score_bonus'] += 5.0
                     signal_found = True
 
     if cfg.layer4_enable_strong_relay:
@@ -278,25 +296,6 @@ def _check_single(
                         result['signal_type'] = 'strong_relay'
                         result['score_bonus'] += 8.0
                     signal_found = True
-
-    if getattr(cfg, 'layer4_enable_pullback_bounce', False):
-        ema12 = pre['ema12']
-        if ema12 > 0:
-            low_near_ema = abs(today['low'] - ema12) / ema12 <= 0.02
-            close_above_ema = today['close'] > ema12
-            bullish_candle = today['close'] > today['open']
-            body_size = abs(today['close'] - today['open'])
-            total_range = today['high'] - today['low']
-            solid_body = total_range > 0 and body_size / total_range >= 0.4
-            pullback_vr_min = getattr(cfg, 'layer4_pullback_bounce_vol_ratio_min', 1.2)
-            vol_ok = vol_ratio >= pullback_vr_min
-            if low_near_ema and close_above_ema and bullish_candle and solid_body and vol_ok:
-                if signal_found:
-                    result['score_bonus'] += 2.0
-                else:
-                    result['signal_type'] = 'pullback_bounce'
-                    result['score_bonus'] += 6.0
-                signal_found = True
 
     if not signal_found:
         result['reject_reason'] = '无买入信号(K线形态不符)'

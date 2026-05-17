@@ -226,16 +226,18 @@ def compute_risk_params(
     ema12 = _calc_ema(df['close'], 12)
     result['trailing_ref'] = round(ema12.iloc[-1], 2) if len(ema12) > 0 else entry_price
 
-    # 目标价 = 入场价 + 2ATR
-    target_price = entry_price + atr * cfg.layer6_target_atr_mult
+    # 目标价 = 风险定价法：根据实际止损反推
+    risk_amount = entry_price - stop_loss
+    min_ratio = cfg.layer6_min_profit_loss_ratio
+    target_from_ratio = entry_price + risk_amount * min_ratio
+    target_from_atr = entry_price + atr * cfg.layer6_target_atr_mult
+    target_price = max(target_from_ratio, target_from_atr)
     result['target_price'] = round(target_price, 2)
 
-    # 盈亏比（现在会因为结构性止损而变化）
-    risk = entry_price - stop_loss
     reward = target_price - entry_price
-    result['profit_loss_ratio'] = round(reward / risk, 2) if risk > 0 else 0.0
+    result['profit_loss_ratio'] = round(reward / risk_amount, 2) if risk_amount > 0 else 0.0
 
-    result['passed'] = result['profit_loss_ratio'] >= cfg.layer6_min_profit_loss_ratio
+    result['passed'] = result['profit_loss_ratio'] >= min_ratio
 
     return result
 
