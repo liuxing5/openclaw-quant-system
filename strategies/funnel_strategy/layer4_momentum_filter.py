@@ -119,7 +119,8 @@ def _batch_load_and_precompute(
         _raw_vr = group['volume_ratio'].iloc[-1]
         today_vol_ratio = float(_raw_vr) if pd.notna(_raw_vr) else 0.0
 
-        # EMA12
+        # EMA5 + EMA12
+        ema5 = _fast_ema_last(close_arr, 5)
         ema12 = _fast_ema_last(close_arr, 12)
         bias_pct = (today_close - ema12) / ema12 * 100.0 if ema12 > 0 and pd.notna(today_close) else 999.0
 
@@ -137,6 +138,7 @@ def _batch_load_and_precompute(
             avg_vol_20 = float(volume_arr[-21:-1].mean()) if n >= 21 else float(volume_arr[:-1].mean())
 
         precomputed[ts_code] = {
+            'ema5': ema5,
             'ema12': ema12,
             'bias_pct': bias_pct,
             'vol_ratio': vol_ratio,
@@ -250,9 +252,11 @@ def _check_single(
 
     if getattr(cfg, 'layer4_enable_pullback_bounce', False):
         ema12 = pre['ema12']
-        if ema12 > 0:
-            low_near_ema = abs(today['low'] - ema12) / ema12 <= 0.03
-            close_above_ema = today['close'] > ema12
+        ema5 = pre.get('ema5', 0)
+        ref_ema = ema5 if ema5 > 0 else ema12
+        if ref_ema > 0:
+            low_near_ema = abs(today['low'] - ref_ema) / ref_ema <= 0.03
+            close_above_ema = today['close'] > ref_ema
             bullish_candle = today['close'] > today['open']
             body_size = abs(today['close'] - today['open'])
             total_range = today['high'] - today['low']

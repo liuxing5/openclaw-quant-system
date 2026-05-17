@@ -191,19 +191,26 @@ def compute_risk_params(
     result['atr'] = round(atr, 3)
     result['atr_pct'] = round(atr / entry_price * 100, 2)
 
-    # ATR止损 = 入场价 - N*ATR
+    # ATR止损 = 入场价 - N*ATR（作为最小止损距离下限，防噪声触发）
     atr_stop = entry_price - atr * cfg.layer6_initial_stop_atr
 
-    # 结构性止损 = 近5日最低价 - 缓冲
+    # 结构性止损 = 近5日最低价 - 缓冲（反映真实支撑位风险）
     structural_stop = atr_stop
     if getattr(cfg, 'layer6_structural_stop_enabled', False) and len(df) >= 5:
         recent_low = float(df['low'].iloc[-5:].min())
         buffer_pct = getattr(cfg, 'layer6_structural_stop_buffer_pct', 0.5) / 100.0
         structural_stop = recent_low * (1 - buffer_pct)
 
-    # 取更严格的止损（离入场价更近的）
-    stop_loss = max(atr_stop, structural_stop)
-    stop_type = 'structural' if stop_loss == structural_stop and structural_stop != atr_stop else 'atr'
+    # 以结构性止损为主，ATR止损为最小距离下限
+    if structural_stop >= entry_price:
+        stop_loss = atr_stop
+        stop_type = 'atr'
+    elif structural_stop > atr_stop:
+        stop_loss = structural_stop
+        stop_type = 'structural'
+    else:
+        stop_loss = structural_stop
+        stop_type = 'structural'
 
     # 止损幅度过大则拒绝
     max_stop_pct = getattr(cfg, 'layer6_max_stop_loss_pct', 8.0)

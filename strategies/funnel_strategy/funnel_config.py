@@ -80,7 +80,7 @@ class FunnelConfig:
     # K线形态识别 [⑤价格行为]
     layer4_enable_demand_absorption: bool = True   # 需求吸收K线
     layer4_enable_strong_relay: bool = True         # 强势接力（一进二改良）
-    layer4_enable_pullback_bounce: bool = True      # 回踩反弹（EMA12附近阳线反弹）
+    layer4_enable_pullback_bounce: bool = True      # 回踩反弹（EMA5附近阳线反弹）
     layer4_pullback_bounce_vol_ratio_min: float = 1.0   # 回踩反弹最低量比
     layer4_volume_ratio_min: float = 1.5            # 最小量比 [③八步法]
     layer4_volume_ratio_max: float = 3.0            # 最大量比
