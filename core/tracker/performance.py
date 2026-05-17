@@ -83,7 +83,7 @@ def update_tracking():
                 if not r:
                     continue
                 high, low, close = r[0], r[1], r[2]
-                if avg_entry == 0:
+                if not avg_entry or close is None:
                     continue
                 ret = (float(close) - float(avg_entry)) / float(avg_entry)
 
@@ -110,6 +110,11 @@ def update_tracking():
         cur.close()
     except Exception as e:
         logger.error(f"复盘更新失败: {e}")
+        try:
+            if 'cur' in dir() and cur:
+                cur.close()
+        except Exception:
+            pass
     finally:
         if conn and not conn.closed:
             conn.close()

@@ -47,7 +47,11 @@ except Exception:
 
 def _normalize_code(code: str) -> str:
     """统一代码格式为 sh.600519 / sz.000001 / bj.430047"""
+    if not code:
+        return ""
     c = code.strip().lower()
+    if not c:
+        return ""
     c = re.sub(r'^(sh|sz|bj)\.?', '', c)
     c = re.sub(r'\.(sh|sz|bj)$', '', c)
     c = c.replace('.', '')
@@ -92,8 +96,7 @@ def load_positions() -> List[Dict]:
                     "mktcap_yi": float(row[5]) if row[5] is not None else 0.0,
                 })
             cur.close()
-            if positions:
-                return positions
+            return positions
         except Exception as e:
             print(f"⚠️ 数据库加载持仓失败: {e}")
         finally:
@@ -167,7 +170,7 @@ def add_position(code: str, cost: float, path: str = None, entry_date: str = Non
         新持仓记录
     """
     code = _normalize_code(code)
-    if cost < 0:
+    if cost <= 0:
         cost = 0.0
     if path is None:
         path = DEFAULT_PATH
@@ -213,22 +216,6 @@ def remove_position(code: str) -> Dict:
         if p["code"] == code:
             removed = positions.pop(i)
             save_positions(positions)
-
-            # 同时从数据库删除
-            if DB_ENABLED:
-                conn = None
-                try:
-                    conn = get_db_fresh()
-                    cur = conn.cursor()
-                    cur.execute("DELETE FROM overnight_positions WHERE code = %s;", (code,))
-                    conn.commit()
-                    cur.close()
-                except Exception as e:
-                    print(f"⚠️ 数据库删除持仓失败: {e}")
-                finally:
-                    if conn and not conn.closed:
-                        conn.close()
-
             return {"action": "removed", "position": removed}
     return {"action": "not_found"}
 
@@ -337,10 +324,11 @@ def handle_command(command: str, args: str = "") -> str:
         path = parts[2] if len(parts) > 2 else None
 
         result = add_position(code, cost, path)
+        actual_cost = result['position']['cost']
         if result["action"] == "added":
-            return f"✅ 已添加持仓: {code} 成本¥{cost:.2f} 路径:{result['position']['path']}"
+            return f"✅ 已添加持仓: {code} 成本¥{actual_cost:.2f} 路径:{result['position']['path']}"
         else:
-            return f"✅ 已更新持仓: {code} 成本¥{cost:.2f} 路径:{result['position']['path']}"
+            return f"✅ 已更新持仓: {code} 成本¥{actual_cost:.2f} 路径:{result['position']['path']}"
 
     elif command == "remove" or command == "del" or command == "delete":
         code = _normalize_code(args.strip())
@@ -386,7 +374,7 @@ def record_buy(code: str, price: float, quantity: Optional[float] = None,
         return "⚠️ 数据库未启用，买入记录未保存"
     code = _normalize_code(code)
     trade_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    amount = price * quantity if price and quantity else None
+    amount = price * quantity if price is not None and quantity is not None else None
 
     def _do():
         conn = None
@@ -418,7 +406,7 @@ def record_sell(code: str, price: float, quantity: Optional[float] = None,
         return "⚠️ 数据库未启用，卖出记录未保存"
     code = _normalize_code(code)
     trade_time = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    amount = price * quantity if price and quantity else None
+    amount = price * quantity if price is not None and quantity is not None else None
 
     def _do():
         conn = None

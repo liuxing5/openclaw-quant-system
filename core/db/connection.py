@@ -29,6 +29,7 @@ class _NoCloseConnection:
 
     def __init__(self, real_conn):
         self._conn = real_conn
+        self.cursor_factory = None
 
     def __getattr__(self, name):
         return getattr(self._conn, name)
@@ -39,6 +40,12 @@ class _NoCloseConnection:
     @property
     def closed(self):
         return self._conn.closed
+
+    def cursor(self, **kwargs):
+        factory = self.cursor_factory
+        if factory and 'cursor_factory' not in kwargs:
+            kwargs['cursor_factory'] = factory
+        return self._conn.cursor(**kwargs)
 
 
 def get_db(use_dict_cursor: bool = False):

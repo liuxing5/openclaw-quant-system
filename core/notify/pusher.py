@@ -42,6 +42,7 @@ MIN_SELECT_SCORE = 45
 def fmt_md_v2(text: str) -> str:
     """Markdown V2 转义"""
     if not text: return ''
+    text = text.replace('\\', '\\\\')
     for ch in r'_*[]()~`>#+-=|{}.!':
         text = text.replace(ch, f'\\{ch}')
     return text
@@ -90,12 +91,15 @@ def build_message(c: dict) -> str:
     target_2 = c['target_2'] if c['target_2'] else '—'
     position_pct = (c['position_pct'] or 0) * 100
     logic_tags = ', '.join(c.get('logic_tags') or [])
+    final_score = c.get('final_score') or 0
+    llm_score = c.get('llm_score') or 0
+    quant_score = c.get('quant_score') or 0
     
     msg = f"""🎯 <b>候选</b> <code>{fmt_html(c['ts_code'])}</code> {fmt_html(c['stock_name'] or '')}
 ━━━━━━━━━━━━━━
-综合分: <b>{c['final_score']:.1f}</b> / 100
+综合分: <b>{final_score:.1f}</b> / 100
 共识度: {c['source_diversity']} 源 / {c['mention_count']} 次提及
-LLM: {c['llm_score']:.0f}  量化: {c['quant_score']:.0f}
+LLM: {llm_score:.0f}  量化: {quant_score:.0f}
 
 入场: {fmt_html(str(entry_low))} - {fmt_html(str(entry_high))}
 止损: {fmt_html(str(stop_loss))}
@@ -224,9 +228,12 @@ async def push_daily_candidates():
                 target_2 = c['target_2'] if c['target_2'] else '—'
                 position_pct = (c['position_pct'] or 0) * 100
                 logic_tags = ', '.join(c.get('logic_tags') or [])
+                final_score = c.get('final_score') or 0
+                llm_score = c.get('llm_score') or 0
+                quant_score = c.get('quant_score') or 0
                 
                 lines.append(f"🎯 <b>{fmt_html(c['stock_name'] or '')}</b> <code>{fmt_html(c['ts_code'])}</code>")
-                lines.append(f"综合分: <b>{c['final_score']:.1f}</b> | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+                lines.append(f"综合分: <b>{final_score:.1f}</b> | LLM:{llm_score:.0f} 量化:{quant_score:.0f}")
                 lines.append(f"入场: {fmt_html(str(entry_low))}-{fmt_html(str(entry_high))}  止损: {fmt_html(str(stop_loss))}")
                 lines.append(f"目标: {fmt_html(str(target_1))}/{fmt_html(str(target_2))}  仓位: {fmt_html(f'{position_pct:.0f}')}%")
                 lines.append(f"逻辑: {fmt_html(logic_tags)} | 源: {fmt_html(src_names)}")

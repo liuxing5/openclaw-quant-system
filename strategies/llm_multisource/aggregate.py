@@ -600,6 +600,8 @@ def aggregate_today():
                         continue
 
                 close_price = float(q['close']) if q['close'] is not None else None
+                if close_price is None or close_price <= 0:
+                    continue
                 pct_chg = q['pct_chg'] or 0
                 turnover = q['turnover_rate'] or 0
                 amount = q['amount'] or 0
@@ -943,6 +945,7 @@ def _persist_llm_scan_stats(snapshot_date, total_candidates, total_qualified, to
             snapshot_date, SOURCE, total_candidates, total_selected,
             json.dumps(filter_stats, ensure_ascii=False),
         ))
+        conn.commit()
         cur.close()
     except Exception as e:
         logger.warning(f"扫描统计写入失败: {e}")

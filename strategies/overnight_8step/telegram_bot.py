@@ -380,11 +380,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
             normalized = _normalize_code(parts[1])
             add_position(normalized, buy_price, parts[3])
+            record_buy(normalized, buy_price, path=parts[3], source="telegram_button")
             await query.edit_message_text(f"✅ 已买入: {normalized}")
     elif data.startswith("sell_"):
         parts = data.split("_")
         if len(parts) >= 2 and parts[1]:
             normalized = _normalize_code(parts[1])
+            positions = get_positions()
+            pos_info = next((p for p in positions if p["code"] == normalized), None)
+            path = pos_info.get("path") if pos_info else None
+            record_sell(normalized, 0, path=path, source="telegram_button")
             remove_position(normalized)
             await query.edit_message_text(f"✅ 已卖出: {normalized}")
         else:

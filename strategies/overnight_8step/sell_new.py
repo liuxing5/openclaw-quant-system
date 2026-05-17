@@ -57,6 +57,7 @@ v2.1 继承特性：
 
 import os
 import sys
+import re
 import json
 import requests
 from datetime import datetime, timezone, timedelta
@@ -219,15 +220,26 @@ def get_position_state(state: Dict, code: str, cost: float) -> Dict:
 # ============================================================
 def _normalize_code(code: str) -> str:
     """将股票代码标准化为腾讯接口格式 (如 sh600519, sz002439, bj830799)"""
-    pure = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
-    if pure.startswith(("688", "689")):
-        return "sh" + pure
-    elif pure.startswith(("6", "9")):
-        return "sh" + pure
-    elif pure.startswith(("8", "43")):
-        return "bj" + pure
+    if not code:
+        return ""
+    c = code.strip().lower()
+    if not c:
+        return ""
+    c = re.sub(r'^(sh|sz|bj)\.?', '', c)
+    c = re.sub(r'\.(sh|sz|bj)$', '', c)
+    c = c.replace('.', '')
+    digits = re.sub(r'[^0-9]', '', c)
+    if len(digits) < 6:
+        return code.strip().lower()
+    code6 = digits[:6]
+    if code6.startswith(('688', '689')):
+        return "sh" + code6
+    elif code6.startswith(('6', '9')):
+        return "sh" + code6
+    elif code6.startswith(('8', '43')):
+        return "bj" + code6
     else:
-        return "sz" + pure
+        return "sz" + code6
 
 
 def get_realtime_data(codes: list) -> dict:

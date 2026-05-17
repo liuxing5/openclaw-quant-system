@@ -263,12 +263,14 @@ def fetch_with_tushare():
 
     rows = []
     for _, r in df.iterrows():
+        vol_raw = r.get('vol')
+        amt_raw = r.get('amount')
         rows.append((
             r.get('ts_code'),
             pd.to_datetime(r.get('trade_date')).date(),
             r.get('open'), r.get('high'), r.get('low'), r.get('close'),
-            r.get('vol') * 100 if r.get('vol') else None,
-            r.get('amount') * 1000 if r.get('amount') else None,
+            int(vol_raw * 100) if pd.notna(vol_raw) and vol_raw else None,
+            amt_raw * 1000 if pd.notna(amt_raw) and amt_raw else None,
             r.get('pct_chg'), None,
         ))
 
@@ -301,7 +303,7 @@ def fetch_with_yfinance():
             latest = hist.iloc[-1]
             prev = hist.iloc[-2] if len(hist) > 1 else latest
 
-            pct_chg = ((latest['Close'] - prev['Close']) / prev['Close'] * 100) if prev['Close'] != 0 else 0
+            pct_chg = ((latest['Close'] - prev['Close']) / prev['Close'] * 100) if prev['Close'] > 0 else 0.0
 
             rows.append((
                 code.replace('.SS', '.SH').replace('.SZ', '.SZ'),
@@ -438,6 +440,9 @@ def fetch_hsgt_top10():
         df = ak.stock_hsgt_hold_stock_em(market='北向', indicator='今日排行')
     except Exception as e:
         logger.warning(f"hsgt skipped: {e}")
+        return
+    if df is None or (hasattr(df, 'empty') and df.empty):
+        logger.info("hsgt: 无数据")
         return
     rows = []
     for _, r in df.iterrows():

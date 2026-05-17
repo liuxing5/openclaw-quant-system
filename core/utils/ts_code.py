@@ -15,13 +15,16 @@ def pure_to_ts_code(code: str) -> str:
     """
     if not code:
         return ''
-    pure = code.lstrip('0') or code
-    if pure.startswith(('6', '688')):
-        return f"{code}.SH"
-    elif pure.startswith(('8', '4')):
-        return f"{code}.BJ"
-    else:
+    digits = ''.join(c for c in code if c.isdigit())
+    if len(digits) < 6:
         return f"{code}.SZ"
+    code6 = digits[:6]
+    if code6.startswith(('6', '9')):
+        return f"{code6}.SH"
+    elif code6.startswith(('8', '4')):
+        return f"{code6}.BJ"
+    else:
+        return f"{code6}.SZ"
 
 
 def baostock_to_standard(code: str) -> str:

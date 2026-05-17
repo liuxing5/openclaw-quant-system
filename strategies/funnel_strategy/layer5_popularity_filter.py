@@ -388,7 +388,6 @@ def run_layer5_popularity_filter(
     db_conn = None
     try:
         db_conn = get_db_fresh()
-    try:
         if verbose:
             llm_note = " + LLM候选 + 概念" if cfg.layer5_llm_bonus_enabled else ""
             print(f"  ⏳ 加载人气排名{llm_note} + 估值 + 批量K线 ({n_total} 只)...")

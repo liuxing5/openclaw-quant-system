@@ -140,11 +140,12 @@ def update_report():
     
     # 更新最后更新日期（用正则替换任意日期）
     import re
-    new_content = re.sub(
-        r"\*\*最后更新\*\*:\s*\S+",
-        f"**最后更新**: {date}",
-        new_content,
-    )
+    if re.search(r"\*\*最后更新\*\*:\s*\S+", new_content):
+        new_content = re.sub(
+            r"\*\*最后更新\*\*:\s*\S+",
+            f"**最后更新**: {date}",
+            new_content,
+        )
     else:
         # 在生成时间后添加最后更新
         new_content = new_content.replace(
