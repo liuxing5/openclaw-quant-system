@@ -240,12 +240,13 @@ if os.path.exists(_LEGACY_CACHE_FILE) and not os.path.exists(_INDUSTRY_CACHE_FIL
         pass
 
 def preload_industries(stock_pool: list):
-    """启动时一次性查询所有股票行业，缓存到本地文件，7天更新一次
+    """启动时一次性查询所有股票行业，缓存到本地文件，3天更新一次
     v1.5.1: 增加临时文件原子写入，避免并发写入损坏文件。
+    v1.7: 缓存周期从7天缩短至3天，确保新上市公司及时纳入。
     """
     if os.path.exists(_INDUSTRY_CACHE_FILE):
         mtime = os.path.getmtime(_INDUSTRY_CACHE_FILE)
-        if time.time() - mtime < 7 * 86400:
+        if time.time() - mtime < 3 * 86400:
             try:
                 with open(_INDUSTRY_CACHE_FILE, "r", encoding="utf-8") as f:
                     _industry_cache.update(json.load(f))
@@ -1013,7 +1014,7 @@ CONFIG_STABLE = {
     "turn_max": 10.0,
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
-    "score_threshold": 78,
+    "score_threshold": 85,
     "sentiment_cold": 40,      # 情绪评分阈值：冷淡
     "sentiment_normal": 55,    # 情绪评分阈值：正常
     "sentiment_hot": 70,       # 情绪评分阈值：活跃
@@ -1042,7 +1043,7 @@ CONFIG_UPPER = {
     "turn_max": 10.0,
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
-    "score_threshold": 78,
+    "score_threshold": 85,
     "sentiment_cold": 40,      # 情绪评分阈值：冷淡
     "sentiment_normal": 55,    # 情绪评分阈值：正常
     "sentiment_hot": 70,       # 情绪评分阈值：活跃
@@ -1922,85 +1923,90 @@ def analyze_ultimate(
         tags.append("🤖LLM")
 
     # --- 新增指标加成（v1.6+）---
-    # 振幅评分：3%-8%为活跃区间，加分
+    # v1.7: 新增加成项总上限30分，防止评分膨胀稀释核心8步法逻辑
+    _bonus_pool = 0.0
+    _BONUS_POOL_CAP = 30.0
+
     amplitude = real_info.get('amplitude', 0) if real_info else 0
     if 3 <= amplitude <= 8:
-        score += 10 * (1 - abs(amplitude - 5.5) / 2.5)
+        _bonus_pool += 10 * (1 - abs(amplitude - 5.5) / 2.5)
         tags.append("振幅活跃")
     elif amplitude > 8:
-        score += 5
+        _bonus_pool += 5
         tags.append("振幅偏大")
 
-    # 量比确认：腾讯瞬时量比作为辅助验证（B部分已做主力评分，此处仅微调±3）
     volume_ratio = real_info.get('volume_ratio', 0) if real_info else 0
     if volume_ratio > 1.5:
-        score += min(3, (volume_ratio - 1.5) * 2)
+        _bonus_pool += min(3, (volume_ratio - 1.5) * 2)
         tags.append("放量确认")
     elif volume_ratio < 0.8:
         score -= 3
         tags.append("缩量↓")
 
-    # 委比评分：委比>0表示买盘强，加分
     commission_ratio = real_info.get('commission_ratio', 0) if real_info else 0
     if commission_ratio > 0:
-        score += min(10, commission_ratio / 10)
+        _bonus_pool += min(10, commission_ratio / 10)
         tags.append("买盘强劲")
     elif commission_ratio < -20:
         score -= 5
         tags.append("卖压大↓")
 
-    # 大单净量评分：大单净量>0表示主力买入
     large_order_net = real_info.get('large_order_net', 0) if real_info else 0
     if large_order_net > 0:
-        score += min(15, large_order_net * 5)
+        _bonus_pool += min(15, large_order_net * 5)
         tags.append("大单净流入")
     elif large_order_net < -5:
         score -= 10
         tags.append("大单净流出↓")
 
-    # 主力资金净流入评分
     main_force_net = real_info.get('main_force_net', 0) if real_info else 0
     if main_force_net > 0:
-        score += min(10, main_force_net / 1e6 * 2)
+        _bonus_pool += min(10, main_force_net / 1e6 * 2)
         tags.append("主力流入")
     elif main_force_net < -1e7:
         score -= 5
         tags.append("主力流出↓")
 
-    # 强势股加分
     ts_code = baostock_to_standard(code) if 'baostock_to_standard' in globals() else code
     strong_bonus = get_strong_rank_bonus(ts_code)
     if strong_bonus > 0:
-        score += strong_bonus
+        _bonus_pool += strong_bonus
         tags.append(f"强势股+{strong_bonus:.0f}")
 
-    # 机构预期加分
     earnings_bonus = get_earnings_bonus(ts_code)
     if earnings_bonus > 0:
-        score += earnings_bonus
+        _bonus_pool += earnings_bonus
         tags.append(f"机构预期+{earnings_bonus:.0f}")
 
-    # 概念板块加分
     concept_bonus = get_concept_bonus(ts_code)
     if concept_bonus > 0:
-        score += concept_bonus
+        _bonus_pool += concept_bonus
         tags.append(f"热门概念+{concept_bonus:.0f}")
 
-    # PE/PB估值加分
     val_bonus, val_tags = get_valuation_bonus(ts_code)
-    if val_bonus != 0:
+    if val_bonus > 0:
+        _bonus_pool += val_bonus
+        tags.extend(val_tags)
+    elif val_bonus < 0:
         score += val_bonus
         tags.extend(val_tags)
 
-    # 财务质量加分
     fin_bonus, fin_tags = get_fundamentals_bonus(ts_code)
-    if fin_bonus != 0:
+    if fin_bonus > 0:
+        _bonus_pool += fin_bonus
+        tags.extend(fin_tags)
+    elif fin_bonus < 0:
         score += fin_bonus
         tags.extend(fin_tags)
 
+    capped_bonus = min(_bonus_pool, _BONUS_POOL_CAP)
+    if _bonus_pool > _BONUS_POOL_CAP:
+        tags.append(f"加成封顶({_bonus_pool:.0f}→{_BONUS_POOL_CAP:.0f})")
+    score += capped_bonus
+
     # --- 最终判定 ---
-    # v1.6.3: 评分上限150分（v1.6新增PE/PB/财务/振幅等加成后120分不足区分）
-    score = min(score, 150)
+    # v1.7: 评分上限120分，阈值提升至85（防止加成项稀释核心8步法）
+    score = min(score, 120)
     if score < cfg["score_threshold"]:
         if reject_stats is not None:
             reject_stats["得分不足"] += 1

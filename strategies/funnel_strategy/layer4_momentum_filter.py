@@ -122,6 +122,7 @@ def _batch_load_and_precompute(
         # EMA5 + EMA12
         ema5 = _fast_ema_last(close_arr, 5)
         ema12 = _fast_ema_last(close_arr, 12)
+        ema26 = _fast_ema_last(close_arr, 26)
         bias_pct = (today_close - ema12) / ema12 * 100.0 if ema12 > 0 and pd.notna(today_close) else 999.0
 
         # 量比（后备计算）
@@ -140,6 +141,7 @@ def _batch_load_and_precompute(
         precomputed[ts_code] = {
             'ema5': ema5,
             'ema12': ema12,
+            'ema26': ema26,
             'bias_pct': bias_pct,
             'vol_ratio': vol_ratio,
             'boll_upper': boll_upper,
@@ -300,6 +302,17 @@ def _check_single(
                         result['signal_type'] = 'strong_relay'
                         result['score_bonus'] += 8.0
                     signal_found = True
+
+    if not signal_found:
+        ema12 = pre['ema12']
+        ema26 = pre.get('ema26', 0)
+        if ema12 > 0 and ema26 > 0 and ema12 > ema26:
+            close_above_ema12 = today['close'] > ema12
+            bullish_candle = today['close'] > today['open']
+            if close_above_ema12 and bullish_candle and vol_ratio >= cfg.layer4_volume_ratio_min:
+                result['signal_type'] = 'trend_continuation'
+                result['score_bonus'] += 3.0
+                signal_found = True
 
     if not signal_found:
         result['reject_reason'] = '无买入信号(K线形态不符)'

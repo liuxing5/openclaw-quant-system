@@ -132,6 +132,7 @@ def run_resonance_strategy(
     enable_bollinger: bool = True,
     llm_min_score: int = 25,
     use_db: bool = True,
+    combine_mode: str = "strict",
 ) -> List[Dict]:
     """
     运行5策略共振 + LLM多源 + 八步法整合策略
@@ -146,6 +147,10 @@ def run_resonance_strategy(
       enable_bollinger: 是否启用布林带过滤
       llm_min_score: LLM最低分数阈值
       use_db: 是否从数据库加载LLM候选
+      combine_mode: 组合模式
+        - "strict": 三层全交集（共振∩LLM∩八步法）
+        - "two_of_three": 任两层交集即可
+        - "resonance_plus_one": 共振 + 任一其他层
     
     返回：
       最终入选标的列表
@@ -219,19 +224,33 @@ def run_resonance_strategy(
         print("  ⚠️ 未提供LLM候选输入，跳过LLM层（直接使用共振结果）")
 
     if llm_candidates:
-        # 标准化代码格式
         llm_codes = set(normalize_code(code) for code, _ in llm_candidates)
-        # 取共振和LLM的交集
-        intersection = [code for code in resonance_codes if code in llm_codes]
+        intersection_rl = [code for code in resonance_codes if code in llm_codes]
         print(f"  共振候选: {len(resonance_codes)} 只")
         print(f"  LLM候选: {len(llm_codes)} 只")
-        print(f"  交集: {len(intersection)} 只")
+        print(f"  共振∩LLM: {len(intersection_rl)} 只")
 
-        if not intersection:
-            print("  ⚠️ 共振和LLM无交集，使用共振结果继续")
+        if combine_mode == "strict":
+            if not intersection_rl:
+                print("  ⚠️ 共振和LLM无交集，使用共振结果继续")
+                final_candidates = resonance_codes
+            else:
+                final_candidates = intersection_rl
+        elif combine_mode == "two_of_three":
+            if intersection_rl:
+                final_candidates = intersection_rl
+            else:
+                final_candidates = resonance_codes
+            print(f"  组合模式=two_of_three: 使用共振结果({len(final_candidates)}只)")
+        elif combine_mode == "resonance_plus_one":
             final_candidates = resonance_codes
+            print(f"  组合模式=resonance_plus_one: 以共振为基础({len(final_candidates)}只)")
         else:
-            final_candidates = intersection
+            if not intersection_rl:
+                print("  ⚠️ 共振和LLM无交集，使用共振结果继续")
+                final_candidates = resonance_codes
+            else:
+                final_candidates = intersection_rl
     else:
         final_candidates = resonance_codes
 
@@ -279,7 +298,29 @@ def run_resonance_strategy(
             all_results[code] = r
 
     resonance_set = {normalize_code(c) for c in final_candidates}
-    result = [all_results[code] for code in resonance_set if code in all_results]
+    eight_step_codes = set(all_results.keys())
+    intersection_re = [code for code in resonance_set if code in eight_step_codes]
+
+    if combine_mode == "strict":
+        result = [all_results[code] for code in intersection_re]
+    elif combine_mode == "two_of_three":
+        llm_set = set(normalize_code(code) for code, _ in llm_candidates) if llm_candidates else set()
+        two_of_three_codes = set()
+        for code in resonance_set | eight_step_codes | llm_set:
+            hits = sum([code in resonance_set, code in eight_step_codes, code in llm_set])
+            if hits >= 2:
+                two_of_three_codes.add(code)
+        result = [all_results[code] for code in two_of_three_codes if code in all_results]
+    elif combine_mode == "resonance_plus_one":
+        llm_set = set(normalize_code(code) for code, _ in llm_candidates) if llm_candidates else set()
+        rp1_codes = set()
+        for code in resonance_set:
+            if code in eight_step_codes or code in llm_set:
+                rp1_codes.add(code)
+        result = [all_results[code] for code in rp1_codes if code in all_results]
+    else:
+        result = [all_results[code] for code in intersection_re]
+
     result.sort(key=lambda x: x.get('score', 0), reverse=True)
 
     # ========== 输出结果 ==========
@@ -387,6 +428,9 @@ if __name__ == "__main__":
                         help="禁用布林带过滤")
     parser.add_argument("--llm-score", type=int, default=25,
                         help="LLM最低分数阈值（默认25）")
+    parser.add_argument("--combine-mode", type=str, default="strict",
+                        choices=["strict", "two_of_three", "resonance_plus_one"],
+                        help="组合模式: strict=三层全交集, two_of_three=任两层交集, resonance_plus_one=共振+任一层")
     args = parser.parse_args()
 
     trade_date = datetime.strptime(args.date, "%Y-%m-%d").date() if args.date else None
@@ -400,6 +444,7 @@ if __name__ == "__main__":
         enable_annual_line=not args.no_annual,
         enable_bollinger=not args.no_bollinger,
         llm_min_score=args.llm_score,
+        combine_mode=args.combine_mode,
     )
 
     if not results:

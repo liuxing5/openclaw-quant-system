@@ -10,6 +10,28 @@ from core.utils.env import load_project_env
 load_project_env()
 
 
+def _get_trading_dates(conn, start_date: date, end_date: date) -> list:
+    """从 daily_quotes 表获取交易日历（去重排序）"""
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT DISTINCT trade_date FROM daily_quotes
+            WHERE trade_date >= %s AND trade_date <= %s
+            ORDER BY trade_date;
+        """, (start_date, end_date))
+        return [row[0] for row in cur.fetchall()]
+    finally:
+        cur.close()
+
+
+def _nth_trading_day_after(trading_dates: list, base_date: date, n: int) -> date:
+    """返回 base_date 之后的第 N 个交易日（N=1 表示 T+1）"""
+    future = [d for d in trading_dates if d > base_date]
+    if len(future) >= n:
+        return future[n - 1]
+    return None
+
+
 def update_tracking():
     conn = None
     try:
@@ -67,12 +89,14 @@ def update_tracking():
               AND c.snapshot_date >= %s;
         """, (date.today() - timedelta(days=30),))
 
+        trading_dates = _get_trading_dates(conn, date.today() - timedelta(days=60), date.today())
+
         for cand_id, ts, snap_date, _source, avg_entry, t1, sl in cur.fetchall():
             if not avg_entry:
                 continue
             for offset, col in [(1, 't1'), (5, 't5'), (20, 't20')]:
-                check_date = snap_date + timedelta(days=offset)
-                if check_date > date.today():
+                check_date = _nth_trading_day_after(trading_dates, snap_date, offset)
+                if check_date is None or check_date > date.today():
                     continue
                 cur.execute("""
                     SELECT high, low, close FROM daily_quotes

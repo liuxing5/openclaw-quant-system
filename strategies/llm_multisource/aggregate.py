@@ -795,7 +795,9 @@ def aggregate_today():
                         elif cashflow_ratio < 0.5:
                             quant_score -= 5
 
-                final = quant_score * 0.8
+                quant_score = max(0, quant_score)
+                quant_n = min(quant_score / 100.0, 1.0)
+                final = quant_n * 100 * 0.9
 
                 candidates.append({
                     'ts_code': ts_code, 'stock_name': name_cache.get(ts_code, ''),
