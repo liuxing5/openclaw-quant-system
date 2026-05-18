@@ -457,153 +457,150 @@ def generate_report():
     try:
         conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
-    snapshot_date = _get_report_snapshot_date(cur)
-    
-    llm_date = _get_latest_source_date(cur, 'llm_multisource')
-    step_date = _get_latest_source_date(cur, 'overnight_8step')
-    
-    # 盘前模式回退：如果 morning 没有数据，使用昨天 afternoon 的数据
-    morning_fallback = False
-    if llm_date and RUN_MODE == 'morning':
-        cur.execute("""
-            SELECT COUNT(*) as cnt FROM daily_candidates
-            WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s;
-        """, (llm_date, RUN_MODE))
-        row = cur.fetchone()
-        if not row or row['cnt'] == 0:
-            yesterday = llm_date - timedelta(days=1)
+        snapshot_date = _get_report_snapshot_date(cur)
+        
+        llm_date = _get_latest_source_date(cur, 'llm_multisource')
+        step_date = _get_latest_source_date(cur, 'overnight_8step')
+        
+        morning_fallback = False
+        if llm_date and RUN_MODE == 'morning':
             cur.execute("""
                 SELECT COUNT(*) as cnt FROM daily_candidates
-                WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = 'afternoon';
-            """, (yesterday,))
-            row2 = cur.fetchone()
-            if row2 and row2['cnt'] > 0:
-                llm_date = yesterday
-                RUN_MODE_FOR_QUERY = 'afternoon'
-                morning_fallback = True
-                logger.info(f"盘前报告回退：使用 {yesterday} afternoon 的 {row2['cnt']} 条数据")
-    
-    if llm_date:
-        run_mode_for_query = 'afternoon' if morning_fallback else RUN_MODE
+                WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s;
+            """, (llm_date, RUN_MODE))
+            row = cur.fetchone()
+            if not row or row['cnt'] == 0:
+                yesterday = llm_date - timedelta(days=1)
+                cur.execute("""
+                    SELECT COUNT(*) as cnt FROM daily_candidates
+                    WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = 'afternoon';
+                """, (yesterday,))
+                row2 = cur.fetchone()
+                if row2 and row2['cnt'] > 0:
+                    llm_date = yesterday
+                    RUN_MODE_FOR_QUERY = 'afternoon'
+                    morning_fallback = True
+                    logger.info(f"盘前报告回退：使用 {yesterday} afternoon 的 {row2['cnt']} 条数据")
+        
+        if llm_date:
+            run_mode_for_query = 'afternoon' if morning_fallback else RUN_MODE
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
+                ORDER BY final_score DESC;
+            """, (llm_date, run_mode_for_query))
+            candidates = cur.fetchall()
+            for c in candidates:
+                raw_sources = c.get('sources', [])
+                if isinstance(raw_sources, str):
+                    try:
+                        raw_sources = json.loads(raw_sources)
+                    except Exception:
+                        raw_sources = []
+                c['source_count'] = len(raw_sources) if isinstance(raw_sources, list) else 0
+                c['sources_detail'] = raw_sources if isinstance(raw_sources, list) else []
+                c['llm_boost'] = max(0, float(c.get('final_score', 0)) - float(c.get('quant_score', 0)))
+        else:
+            candidates = []
+
+        if step_date:
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date = %s AND source = 'overnight_8step'
+                    AND ts_code NOT LIKE '%%.AUDIT'
+                ORDER BY final_score DESC;
+            """, (step_date,))
+            eight_step_picks = cur.fetchall()
+            for c in eight_step_picks:
+                c['llm_boost'] = max(0, float(c.get('final_score', 0)) - float(c.get('quant_score', 0)))
+        else:
+            eight_step_picks = []
+
         cur.execute("""
-            SELECT * FROM daily_candidates
-            WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
-            ORDER BY final_score DESC;
-        """, (llm_date, run_mode_for_query))
-        candidates = cur.fetchall()
-        for c in candidates:
-            raw_sources = c.get('sources', [])
-            if isinstance(raw_sources, str):
-                try:
-                    raw_sources = json.loads(raw_sources)
-                except Exception:
-                    raw_sources = []
-            c['source_count'] = len(raw_sources) if isinstance(raw_sources, list) else 0
-            c['sources_detail'] = raw_sources if isinstance(raw_sources, list) else []
-            # 计算LLM加成 = final_score - quant_score
-            c['llm_boost'] = max(0, float(c.get('final_score', 0)) - float(c.get('quant_score', 0)))
-    else:
-        candidates = []
-
-    if step_date:
+            SELECT source_name, COUNT(*) as signal_count, source_tier,
+                   CASE source_tier
+                       WHEN 1 THEN '⭐ 核心'
+                       WHEN 2 THEN '⭐⭐ 重要'
+                       WHEN 3 THEN '⭐⭐⭐ 辅助'
+                       ELSE '其他'
+                   END as tier_label,
+                   MAX(fetch_time) as latest_time
+            FROM raw_signals
+            WHERE fetch_time >= %s
+            GROUP BY source_name, source_tier
+            ORDER BY signal_count DESC;
+        """, (snapshot_date - timedelta(days=2),))
+        source_stats = cur.fetchall()
+        
         cur.execute("""
-            SELECT * FROM daily_candidates
-            WHERE snapshot_date = %s AND source = 'overnight_8step'
-                AND ts_code NOT LIKE '%%.AUDIT'
-            ORDER BY final_score DESC;
-        """, (step_date,))
-        eight_step_picks = cur.fetchall()
-        for c in eight_step_picks:
-            c['llm_boost'] = max(0, float(c.get('final_score', 0)) - float(c.get('quant_score', 0)))
-    else:
-        eight_step_picks = []
+            SELECT title, url, pub_time, source_name
+            FROM raw_signals
+            WHERE pub_time IS NOT NULL AND url IS NOT NULL AND url != ''
+            ORDER BY pub_time DESC LIMIT 200;
+        """)
+        all_articles = cur.fetchall()
+        
+        cur.execute("""
+            SELECT DISTINCT snapshot_date FROM daily_candidates
+            WHERE source IN ('llm_multisource', 'overnight_8step')
+            ORDER BY snapshot_date DESC LIMIT 10;
+        """)
+        history_dates = [str(r['snapshot_date']) for r in cur.fetchall()]
+        
+        cur.close()
+        
+        def format_time(t):
+            if t is None:
+                return '—'
+            s = str(t).replace('+00:00', '').replace('+00', '')
+            if '.' in s:
+                s = s[:s.index('.')]
+            return s
 
-    cur.execute("""
-        SELECT source_name, COUNT(*) as signal_count, source_tier,
-               CASE source_tier
-                   WHEN 1 THEN '⭐ 核心'
-                   WHEN 2 THEN '⭐⭐ 重要'
-                   WHEN 3 THEN '⭐⭐⭐ 辅助'
-                   ELSE '其他'
-               END as tier_label,
-               MAX(fetch_time) as latest_time
-        FROM raw_signals
-        WHERE fetch_time >= %s
-        GROUP BY source_name, source_tier
-        ORDER BY signal_count DESC;
-    """, (snapshot_date - timedelta(days=2),))
-    source_stats = cur.fetchall()
-    
-    cur.execute("""
-        SELECT title, url, pub_time, source_name
-        FROM raw_signals
-        WHERE pub_time IS NOT NULL AND url IS NOT NULL AND url != ''
-        ORDER BY pub_time DESC LIMIT 200;
-    """)
-    all_articles = cur.fetchall()
-    
-    cur.execute("""
-        SELECT DISTINCT snapshot_date FROM daily_candidates
-        WHERE source IN ('llm_multisource', 'overnight_8step')
-        ORDER BY snapshot_date DESC LIMIT 10;
-    """)
-    history_dates = [str(r['snapshot_date']) for r in cur.fetchall()]
-    
-    cur.close()
-    
-    def format_time(t):
-        if t is None:
-            return '—'
-        s = str(t).replace('+00:00', '').replace('+00', '')
-        if '.' in s:
-            s = s[:s.index('.')]
-        return s
+        articles_with_time = []
+        for a in all_articles:
+            d = dict(a)
+            d['pub_time'] = format_time(d.get('pub_time'))
+            articles_with_time.append(d)
 
-    articles_with_time = []
-    for a in all_articles:
-        d = dict(a)
-        d['pub_time'] = format_time(d.get('pub_time'))
-        articles_with_time.append(d)
-
-    # 使用最新的日期作为显示日期（八步法通常比LLM更新）
-    display_date = str(max([d for d in [step_date, llm_date, snapshot_date] if d], default=snapshot_date))
-    llm_date_str = str(llm_date) if llm_date else None
-    step_date_str = str(step_date) if step_date else None
-    
-    PAGE_SIZE = 10
-    total_articles = len(articles_with_time)
-    total_pages = (total_articles + PAGE_SIZE - 1) // PAGE_SIZE if total_articles else 1
-    
-    template = Template(HTML_TEMPLATE)
-    html = template.render(
-        date=display_date,
-        generated_at=datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S'),
-        candidates=[dict(c) for c in candidates],
-        eight_step_picks=[dict(c) for c in eight_step_picks],
-        source_stats=[dict(s) for s in source_stats],
-        articles=articles_with_time,
-        history_dates=history_dates,
-        run_mode=RUN_MODE,
-        llm_date=llm_date_str,
-        step_date=step_date_str,
-        page_size=PAGE_SIZE,
-        total_pages=total_pages,
-        total_articles=total_articles,
-    )
-    
-    output_dir = os.path.join(BASE_DIR, 'docs', display_date)
-    os.makedirs(output_dir, exist_ok=True)
-    with open(os.path.join(output_dir, 'index.html'), 'w', encoding='utf-8') as f:
-        f.write(html)
-    
-    latest_dir = os.path.join(BASE_DIR, 'docs', 'latest')
-    os.makedirs(latest_dir, exist_ok=True)
-    with open(os.path.join(latest_dir, 'index.html'), 'w', encoding='utf-8') as f:
-        f.write(html)
-    
-    print(f"Report generated: {output_dir}/index.html")
-    print(f"  LLM候选: {len(candidates)} 只 (snapshot_date={llm_date})")
-    print(f"  八步法候选: {len(eight_step_picks)} 只 (snapshot_date={step_date})")
+        display_date = str(max([d for d in [step_date, llm_date, snapshot_date] if d], default=snapshot_date))
+        llm_date_str = str(llm_date) if llm_date else None
+        step_date_str = str(step_date) if step_date else None
+        
+        PAGE_SIZE = 10
+        total_articles = len(articles_with_time)
+        total_pages = (total_articles + PAGE_SIZE - 1) // PAGE_SIZE if total_articles else 1
+        
+        template = Template(HTML_TEMPLATE)
+        html = template.render(
+            date=display_date,
+            generated_at=datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S'),
+            candidates=[dict(c) for c in candidates],
+            eight_step_picks=[dict(c) for c in eight_step_picks],
+            source_stats=[dict(s) for s in source_stats],
+            articles=articles_with_time,
+            history_dates=history_dates,
+            run_mode=RUN_MODE,
+            llm_date=llm_date_str,
+            step_date=step_date_str,
+            page_size=PAGE_SIZE,
+            total_pages=total_pages,
+            total_articles=total_articles,
+        )
+        
+        output_dir = os.path.join(BASE_DIR, 'docs', display_date)
+        os.makedirs(output_dir, exist_ok=True)
+        with open(os.path.join(output_dir, 'index.html'), 'w', encoding='utf-8') as f:
+            f.write(html)
+        
+        latest_dir = os.path.join(BASE_DIR, 'docs', 'latest')
+        os.makedirs(latest_dir, exist_ok=True)
+        with open(os.path.join(latest_dir, 'index.html'), 'w', encoding='utf-8') as f:
+            f.write(html)
+        
+        print(f"Report generated: {output_dir}/index.html")
+        print(f"  LLM候选: {len(candidates)} 只 (snapshot_date={llm_date})")
+        print(f"  八步法候选: {len(eight_step_picks)} 只 (snapshot_date={step_date})")
     except Exception as e:
         logger.error(f"generate_report 失败: {e}")
     finally:
@@ -616,110 +613,109 @@ def generate_text_report():
     try:
         conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
-    snapshot_date = _get_report_snapshot_date(cur)
-    
-    llm_date = _get_latest_source_date(cur, 'llm_multisource')
-    step_date = _get_latest_source_date(cur, 'overnight_8step')
-    
-    # 盘前模式回退：如果 morning 没有数据，使用昨天 afternoon 的数据
-    text_morning_fallback = False
-    if llm_date and RUN_MODE == 'morning':
-        cur.execute("""
-            SELECT COUNT(*) as cnt FROM daily_candidates
-            WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s;
-        """, (llm_date, RUN_MODE))
-        row = cur.fetchone()
-        if not row or row['cnt'] == 0:
-            yesterday = llm_date - timedelta(days=1)
+        snapshot_date = _get_report_snapshot_date(cur)
+        
+        llm_date = _get_latest_source_date(cur, 'llm_multisource')
+        step_date = _get_latest_source_date(cur, 'overnight_8step')
+        
+        text_morning_fallback = False
+        if llm_date and RUN_MODE == 'morning':
             cur.execute("""
                 SELECT COUNT(*) as cnt FROM daily_candidates
-                WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = 'afternoon';
-            """, (yesterday,))
-            row2 = cur.fetchone()
-            if row2 and row2['cnt'] > 0:
-                llm_date = yesterday
-                text_morning_fallback = True
-    
-    if llm_date:
-        run_mode_for_query = 'afternoon' if text_morning_fallback else RUN_MODE
+                WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s;
+            """, (llm_date, RUN_MODE))
+            row = cur.fetchone()
+            if not row or row['cnt'] == 0:
+                yesterday = llm_date - timedelta(days=1)
+                cur.execute("""
+                    SELECT COUNT(*) as cnt FROM daily_candidates
+                    WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = 'afternoon';
+                """, (yesterday,))
+                row2 = cur.fetchone()
+                if row2 and row2['cnt'] > 0:
+                    llm_date = yesterday
+                    text_morning_fallback = True
+        
+        if llm_date:
+            run_mode_for_query = 'afternoon' if text_morning_fallback else RUN_MODE
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
+                ORDER BY final_score DESC;
+            """, (llm_date, run_mode_for_query))
+            candidates = cur.fetchall()
+        else:
+            candidates = []
+        
+        if step_date:
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date = %s AND source = 'overnight_8step'
+                    AND ts_code NOT LIKE '%%.AUDIT'
+                ORDER BY final_score DESC;
+            """, (step_date,))
+            eight_step_picks = cur.fetchall()
+        else:
+            eight_step_picks = []
+        
         cur.execute("""
-            SELECT * FROM daily_candidates
-            WHERE snapshot_date = %s AND source = 'llm_multisource' AND run_mode = %s
-            ORDER BY final_score DESC;
-        """, (llm_date, run_mode_for_query))
-        candidates = cur.fetchall()
-    else:
-        candidates = []
-    
-    if step_date:
-        cur.execute("""
-            SELECT * FROM daily_candidates
-            WHERE snapshot_date = %s AND source = 'overnight_8step'
-                AND ts_code NOT LIKE '%%.AUDIT'
-            ORDER BY final_score DESC;
-        """, (step_date,))
-        eight_step_picks = cur.fetchall()
-    else:
-        eight_step_picks = []
-    
-    cur.execute("""
-        SELECT source_name, COUNT(*) as signal_count
-        FROM raw_signals
-        WHERE fetch_time >= %s
-        GROUP BY source_name
-        ORDER BY signal_count DESC;
-    """, (snapshot_date - timedelta(days=2),))
-    source_stats = cur.fetchall()
-    
-    cur.close()
-    
-    mode_text = "盘后复盘" if RUN_MODE == 'afternoon' else "盘前参考"
-    display_date = str(llm_date or step_date or snapshot_date)
-    lines = []
-    lines.append(f"{display_date} {mode_text}")
-    lines.append("")
-    lines.append("数据采集开始：")
-    
-    for s in source_stats:
-        lines.append(f"  {s['source_name']}: {s['signal_count']} 条")
-    
-    lines.append("")
-    if candidates:
-        lines.append(f"共 {len(candidates)} 只 LLM 候选 ({llm_date})")
-    if eight_step_picks:
-        lines.append(f"共 {len(eight_step_picks)} 只八步法候选 ({step_date})")
-    lines.append("")
-    
-    if candidates:
-        lines.append("🤖 LLM 多源策略:")
-        for c in candidates:
-            prefix = "🎯 " if c.get('selected') else "  "
-            lines.append(f"{prefix}{c['stock_name']} {c['ts_code']}")
-            lines.append(f"  综合分: {c['final_score']:.1f} | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
-            if c.get('entry_low') and c.get('entry_high'):
-                lines.append(f"  入场: {c['entry_low']:.3f}-{c['entry_high']:.3f}  止损: {c['stop_loss']:.3f}")
-            if c.get('target_1') and c.get('target_2'):
-                lines.append(f"  目标: {c['target_1']:.3f}/{c['target_2']:.3f}  仓位: {c['position_pct']*100:.0f}%")
-            if c.get('logic_tags'):
-                tags = c['logic_tags'] if isinstance(c['logic_tags'], list) else []
-                lines.append(f"  逻辑: {', '.join(tags)}")
-            lines.append("")
-    
-    if eight_step_picks:
-        lines.append("🔮 八步法候选:")
-        for c in eight_step_picks:
-            lines.append(f"🎯 {c['stock_name']} {c['ts_code']}")
-            lines.append(f"  综合分: {c['final_score']:.1f} | LLM加成:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
-            if c.get('entry_low') and c.get('entry_high'):
-                lines.append(f"  入场: {c['entry_low']:.3f}-{c['entry_high']:.3f}  止损: {c['stop_loss']:.3f}")
-            if c.get('target_1') and c.get('target_2'):
-                lines.append(f"  目标: {c['target_1']:.3f}/{c['target_2']:.3f}  仓位: {c['position_pct']*100:.0f}%")
-            if c.get('logic_tags'):
-                tags = c['logic_tags'] if isinstance(c['logic_tags'], list) else []
-                lines.append(f"  逻辑: {', '.join(tags)}")
-            lines.append("")
-    
-    return "\n".join(lines)
+            SELECT source_name, COUNT(*) as signal_count
+            FROM raw_signals
+            WHERE fetch_time >= %s
+            GROUP BY source_name
+            ORDER BY signal_count DESC;
+        """, (snapshot_date - timedelta(days=2),))
+        source_stats = cur.fetchall()
+        
+        cur.close()
+        
+        mode_text = "盘后复盘" if RUN_MODE == 'afternoon' else "盘前参考"
+        display_date = str(llm_date or step_date or snapshot_date)
+        lines = []
+        lines.append(f"{display_date} {mode_text}")
+        lines.append("")
+        lines.append("数据采集开始：")
+        
+        for s in source_stats:
+            lines.append(f"  {s['source_name']}: {s['signal_count']} 条")
+        
+        lines.append("")
+        if candidates:
+            lines.append(f"共 {len(candidates)} 只 LLM 候选 ({llm_date})")
+        if eight_step_picks:
+            lines.append(f"共 {len(eight_step_picks)} 只八步法候选 ({step_date})")
+        lines.append("")
+        
+        if candidates:
+            lines.append("🤖 LLM 多源策略:")
+            for c in candidates:
+                prefix = "🎯 " if c.get('selected') else "  "
+                lines.append(f"{prefix}{c['stock_name']} {c['ts_code']}")
+                lines.append(f"  综合分: {c['final_score']:.1f} | LLM:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+                if c.get('entry_low') and c.get('entry_high'):
+                    lines.append(f"  入场: {c['entry_low']:.3f}-{c['entry_high']:.3f}  止损: {c['stop_loss']:.3f}")
+                if c.get('target_1') and c.get('target_2'):
+                    lines.append(f"  目标: {c['target_1']:.3f}/{c['target_2']:.3f}  仓位: {c['position_pct']*100:.0f}%")
+                if c.get('logic_tags'):
+                    tags = c['logic_tags'] if isinstance(c['logic_tags'], list) else []
+                    lines.append(f"  逻辑: {', '.join(tags)}")
+                lines.append("")
+        
+        if eight_step_picks:
+            lines.append("🔮 八步法候选:")
+            for c in eight_step_picks:
+                lines.append(f"🎯 {c['stock_name']} {c['ts_code']}")
+                lines.append(f"  综合分: {c['final_score']:.1f} | LLM加成:{c['llm_score']:.0f} 量化:{c['quant_score']:.0f}")
+                if c.get('entry_low') and c.get('entry_high'):
+                    lines.append(f"  入场: {c['entry_low']:.3f}-{c['entry_high']:.3f}  止损: {c['stop_loss']:.3f}")
+                if c.get('target_1') and c.get('target_2'):
+                    lines.append(f"  目标: {c['target_1']:.3f}/{c['target_2']:.3f}  仓位: {c['position_pct']*100:.0f}%")
+                if c.get('logic_tags'):
+                    tags = c['logic_tags'] if isinstance(c['logic_tags'], list) else []
+                    lines.append(f"  逻辑: {', '.join(tags)}")
+                lines.append("")
+        
+        return "\n".join(lines)
     except Exception as e:
         logger.error(f"generate_text_report 失败: {e}")
         return ""
