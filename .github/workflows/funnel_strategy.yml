@@ -9,6 +9,10 @@ on:
       - '.github/workflows/funnel_strategy.yml'
   schedule:
     - cron: '45 7 * * 1-5'  # UTC 7:45 = 北京时间 15:45 (晚于 LLM盘后 15min，确保daily_candidates数据就绪)
+  workflow_run:
+    workflows: ["llm_multisource"]
+    types: [completed]
+    branches: [master]
   workflow_dispatch:
     inputs:
       date:
@@ -22,6 +26,7 @@ jobs:
   funnel:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
 
     env:
       POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}

@@ -56,6 +56,21 @@ def load_universe(trade_date: date, min_amount: float = 1e8) -> List[str]:
             ORDER BY ts_code;
         """, (trade_date, min_amount))
         codes = [row['ts_code'] for row in cur.fetchall()]
+        
+        if not codes:
+            cur.execute("""
+                SELECT DISTINCT ts_code
+                FROM daily_quotes
+                WHERE trade_date = (
+                    SELECT MAX(trade_date) FROM daily_quotes
+                    WHERE trade_date <= %s AND amount > %s
+                ) AND amount > %s
+                ORDER BY ts_code;
+            """, (trade_date, min_amount, min_amount))
+            codes = [row['ts_code'] for row in cur.fetchall()]
+            if codes:
+                print(f"  ⚠️ {trade_date} 无行情数据，回退到最近有数据的交易日")
+        
         cur.close()
         return codes
     except Exception as e:

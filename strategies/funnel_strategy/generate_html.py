@@ -276,27 +276,30 @@ def generate_unified_html(output_dir=None, trade_date=None):
     funnel_steps_html = ""
     if funnel:
         total = funnel['total_stocks']
-        steps_data = [
-            ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
-            ("L0 大盘风控", "🌤️", total, 0,
-             "✅满仓" if funnel['layer0_pass'] else "⚠️限仓", "#fff3e0"),
-            ("L1 硬性防雷", "⚡", funnel['layer1_pass'], total - funnel['layer1_pass'],
-             LAYER_RULES['L1'], "#fce4ec"),
-            ("L2 流动性", "💧", funnel['layer2_pass'], funnel['layer1_pass'] - funnel['layer2_pass'],
-             LAYER_RULES['L2'], "#f3e5f5"),
-            ("L3 趋势结构", "📈", funnel['layer3_pass'], funnel['layer2_pass'] - funnel['layer3_pass'],
-             LAYER_RULES['L3'], "#e8eaf6"),
-            ("L4 动能信号", "🚀", funnel['layer4_pass'], funnel['layer3_pass'] - funnel['layer4_pass'],
-             LAYER_RULES['L4'], "#e0f2f1"),
-            ("L5 人气精选", "🔥", funnel['layer5_pass'], funnel['layer4_pass'] - funnel['layer5_pass'],
-             LAYER_RULES['L5'], "#fff8e1"),
-            ("L6 刚性风控", "🎯", funnel['layer6_pass'], funnel['layer5_pass'] - funnel['layer6_pass'],
-             LAYER_RULES['L6'], "#e8f5e9"),
-        ]
-        for name, icon, cnt, elim, rule, color in steps_data:
-            elim_html = f'<span class="elim">{elim}</span>' if elim else ''
-            rule_html = f'<span class="rule-inline">{rule}</span>' if rule and len(rule) < 50 else ''
-            funnel_steps_html += f"""
+        if total == 0:
+            funnel_steps_html = '<div class="no-data">漏斗策略运行时行情数据未就绪，各层统计为空<br><small>（daily_quotes 在收盘后才写入，漏斗策略需在数据就绪后运行）</small></div>'
+        else:
+            steps_data = [
+                ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
+                ("L0 大盘风控", "🌤️", funnel['layer0_pass'], 0,
+                 "✅满仓" if funnel['layer0_pass'] else "⚠️限仓", "#fff3e0"),
+                ("L1 硬性防雷", "⚡", funnel['layer1_pass'], total - funnel['layer1_pass'],
+                 LAYER_RULES['L1'], "#fce4ec"),
+                ("L2 流动性", "💧", funnel['layer2_pass'], funnel['layer1_pass'] - funnel['layer2_pass'],
+                 LAYER_RULES['L2'], "#f3e5f5"),
+                ("L3 趋势结构", "📈", funnel['layer3_pass'], funnel['layer2_pass'] - funnel['layer3_pass'],
+                 LAYER_RULES['L3'], "#e8eaf6"),
+                ("L4 动能信号", "🚀", funnel['layer4_pass'], funnel['layer3_pass'] - funnel['layer4_pass'],
+                 LAYER_RULES['L4'], "#e0f2f1"),
+                ("L5 人气精选", "🔥", funnel['layer5_pass'], funnel['layer4_pass'] - funnel['layer5_pass'],
+                 LAYER_RULES['L5'], "#fff8e1"),
+                ("L6 刚性风控", "🎯", funnel['layer6_pass'], funnel['layer5_pass'] - funnel['layer6_pass'],
+                 LAYER_RULES['L6'], "#e8f5e9"),
+            ]
+            for name, icon, cnt, elim, rule, color in steps_data:
+                elim_html = f'<span class="elim">{elim}</span>' if elim else ''
+                rule_html = f'<span class="rule-inline">{rule}</span>' if rule and len(rule) < 50 else ''
+                funnel_steps_html += f"""
             <div class="step-row">
               <span class="step-icon">{icon}</span>
               <span class="step-name">{name}</span>
