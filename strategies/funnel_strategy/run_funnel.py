@@ -1,8 +1,15 @@
 """
 实盘运行入口 — 七步漏斗选股策略
 ================================
+信号链路：
+  Day T 收盘后(15:10): 漏斗策略运行 → 写入 daily_candidates (辅助数据)
+  Day T+1 14:30: 八步法读取昨日漏斗结果 → 生成买入信号
+  Day T+2 09:30: 卖出系统读取昨日漏斗结果 → 辅助卖出决策
+
+注意：漏斗策略只在收盘后运行，产出次日辅助数据。
+
 Usage:
-  # 完整七步漏斗
+  # 完整七步漏斗（15:10后运行）
   python -m strategies.funnel_strategy.run_funnel
 
   # 指定日期 + 输出目录
@@ -41,6 +48,14 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 
 
 def main():
+    now_beijing = datetime.now(BEIJING_TZ)
+    hour_min = now_beijing.hour * 100 + now_beijing.minute
+    if hour_min < 1510:
+        print(f"⚠️ 当前时间 {now_beijing.strftime('%H:%M')} 早于 15:10")
+        print(f"⚠️ 漏斗策略应在收盘后运行，产出次日辅助数据")
+        print(f"⚠️ 如确需运行，请使用 --force 参数")
+        if '--force' not in sys.argv:
+            return
     parser = argparse.ArgumentParser(
         description="七步漏斗选股策略 v1.0",
         formatter_class=argparse.RawDescriptionHelpFormatter,

@@ -1,18 +1,27 @@
 """
-策略整合器 — 5策略共振 + LLM多源 + 八步法
+策略整合器 — 八步法核心 + LLM/漏斗辅助
 ================================================
-三层筛选架构：
-  第1层：5策略共振过滤（20周线/均线多头/MACD/布林/年线）
-  第2层：LLM多源策略（新闻资讯/研报/公告/龙虎榜）
-  第3层：隔夜八步法（量价精选）
+信号链路（严格遵循）：
 
-运行时间：
-  盘后：15:10+  CONFIG["MODE"] = "post"
+  Day T 收盘后(15:10):
+    LLM策略 + 漏斗策略 → 各自写入 daily_candidates (辅助数据)
 
-止损铁律：
-  稳健路径：次日09:35未维持昨收+1%，直接出局
-  高位路径：次日竞价弱于昨收，集合竞价结束即清仓
-  全局止损：亏损超2.5%无条件止损
+  Day T+1 14:30:
+    八步法实时获取市场真实数据，辅助读取昨日LLM+漏斗结果 → 生成买入信号
+
+  Day T+1 14:50:
+    执行买入（只给出推荐，手动买）
+
+  Day T+1 收盘后(15:10):
+    LLM策略 + 漏斗策略 → 写入今日辅助数据
+
+  Day T+2 09:30:
+    八步法卖出系统读取昨日LLM+漏斗结果 → 辅助卖出决策（给出推荐，手动卖）
+
+核心原则：
+  - 八步法是唯一的核心决策策略
+  - LLM和漏斗是辅助输入，提供加成/预过滤放宽，不做独立筛选
+  - 共振过滤是八步法内部的技术指标确认，不是独立策略层
 """
 from __future__ import annotations
 
@@ -28,90 +37,23 @@ from typing import List, Tuple, Dict, Optional
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
-from overnight_8step.zuiyou1 import scan_pool, fetch_market_sentiment, CONFIG_STABLE, CONFIG_UPPER
+from overnight_8step.zuiyou1 import (
+    scan_pool, fetch_market_sentiment, CONFIG_STABLE, CONFIG_UPPER,
+    get_llm_candidates_from_supabase, get_funnel_candidates_from_db,
+    is_llm_candidate, is_funnel_candidate,
+    get_llm_boost_score, get_funnel_boost_score,
+)
 from resonance_filters.technical_filters import ResonanceFilters, run_resonance_filter
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 
-def load_llm_candidates_from_db(trade_date: date = None, min_score: int = 25) -> List[Tuple[str, str]]:
-    """
-    从数据库加载LLM多源策略候选标的
-    
-    参数：
-      trade_date: 交易日期（默认最新）
-      min_score: 最低分数阈值
-    
-    返回：
-      [(ts_code, stock_name), ...]
-    """
-    from core.db.connection import get_db_fresh
-    from psycopg2.extras import RealDictCursor
-
-    conn = None
-    try:
-        conn = get_db_fresh()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        if trade_date is None:
-            cur.execute("SELECT MAX(snapshot_date) as max_date FROM daily_candidates WHERE source = 'llm_multisource';")
-            row = cur.fetchone()
-            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
-
-        cur.execute("""
-            SELECT ts_code, stock_name, final_score
-            FROM daily_candidates
-            WHERE snapshot_date = %s
-              AND source = 'llm_multisource'
-              AND selected = TRUE
-              AND final_score >= %s
-            ORDER BY final_score DESC;
-        """, (trade_date, min_score))
-
-        candidates = [(row['ts_code'], row['stock_name']) for row in cur.fetchall()]
-        cur.close()
-        return candidates
-    except Exception as e:
-        print(f"⚠️ 加载LLM候选失败: {e}")
-        return []
-    finally:
-        if conn and not conn.closed:
-            conn.close()
-
-
-def load_llm_candidates_from_csv(csv_path: str, min_score: int = 5) -> List[Tuple[str, str]]:
-    """从CSV文件加载LLM候选标的"""
-    candidates = []
-    try:
-        with open(csv_path, 'r', encoding='utf-8-sig') as f:
-            reader = csv.DictReader(f)
-            for row in reader:
-                score = float(row.get('score', row.get('final_score', 0)))
-                if score >= min_score:
-                    code = row.get('symbol', row.get('ts_code', ''))
-                    name = row.get('name', row.get('stock_name', ''))
-                    if code:
-                        candidates.append((code, name))
-        print(f"✓ 从 {csv_path} 加载 {len(candidates)} 只LLM候选标的")
-    except Exception as e:
-        print(f"✗ 加载候选文件失败: {e}")
-    return candidates
-
-
 def normalize_code(code: str) -> str:
-    """
-    标准化股票代码格式，兼容多种输入
-    sh.600519 / 600519.SH / 600519 → 600519.SH
-    sz.000001 / 000001.SZ / 000001 → 000001.SZ
-    bj.430001 / 430001.BJ / 430001 → 430001.BJ
-    """
     code = code.strip()
-    # 去掉 baostock 前缀 (sh./sz./bj.)
     for prefix in ('sh.', 'sz.', 'bj.', 'SH.', 'SZ.', 'BJ.'):
         if code.startswith(prefix):
             code = code[len(prefix):]
             break
-    # 去掉 .SH/.SZ/.BJ 后缀
     code = code.replace('.SH', '').replace('.SZ', '').replace('.BJ', '').replace('.', '')
     if code.startswith(('6', '9')):
         return f"{code}.SH"
@@ -122,36 +64,86 @@ def normalize_code(code: str) -> str:
     return f"{code}.SH"
 
 
-def run_resonance_strategy(
-    llm_input: str = None,
+def load_auxiliary_data(trade_date: date = None) -> Dict:
+    """
+    从数据库加载LLM和漏斗策略的辅助数据（前一交易日收盘后产出）
+
+    返回:
+      {
+        'llm': {ts_code: {final_score, llm_score, ...}},
+        'funnel': {ts_code: {final_score, ...}},
+        'llm_count': int,
+        'funnel_count': int,
+      }
+    """
+    from core.db.connection import get_db_fresh
+    from psycopg2.extras import RealDictCursor
+
+    result = {'llm': {}, 'funnel': {}, 'llm_count': 0, 'funnel_count': 0}
+
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        if trade_date is None:
+            cur.execute("SELECT MAX(snapshot_date) as max_date FROM daily_candidates;")
+            row = cur.fetchone()
+            trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+
+        cur.execute("""
+            SELECT ts_code, stock_name, final_score, llm_score, quant_score,
+                   source_diversity, logic_tags
+            FROM daily_candidates
+            WHERE snapshot_date = %s
+              AND source = 'llm_multisource'
+              AND selected = TRUE
+            ORDER BY final_score DESC;
+        """, (trade_date,))
+        for row in cur.fetchall():
+            result['llm'][row['ts_code']] = dict(row)
+
+        cur.execute("""
+            SELECT ts_code, stock_name, final_score
+            FROM daily_candidates
+            WHERE snapshot_date = %s
+              AND source = 'funnel_strategy'
+              AND selected = TRUE
+            ORDER BY final_score DESC;
+        """, (trade_date,))
+        for row in cur.fetchall():
+            result['funnel'][row['ts_code']] = dict(row)
+
+        cur.close()
+        result['llm_count'] = len(result['llm'])
+        result['funnel_count'] = len(result['funnel'])
+        return result
+    except Exception as e:
+        print(f"⚠️ 加载辅助数据失败: {e}")
+        return result
+    finally:
+        if conn and not conn.closed:
+            conn.close()
+
+
+def run_combined_strategy(
     output_dir: str = "./results",
     trade_date: date = None,
     min_pass_count: int = 3,
     require_core: bool = True,
     enable_annual_line: bool = True,
     enable_bollinger: bool = True,
-    llm_min_score: int = 25,
-    use_db: bool = True,
-    combine_mode: str = "strict",
+    enable_resonance: bool = True,
 ) -> List[Dict]:
     """
-    运行5策略共振 + LLM多源 + 八步法整合策略
-    
-    参数：
-      llm_input: LLM候选文件路径（CSV）或 'db' 表示从数据库加载
-      output_dir: 输出目录
-      trade_date: 交易日期
-      min_pass_count: 最少通过的共振策略数量
-      require_core: 是否要求核心3策略必须全部通过
-      enable_annual_line: 是否启用年线过滤
-      enable_bollinger: 是否启用布林带过滤
-      llm_min_score: LLM最低分数阈值
-      use_db: 是否从数据库加载LLM候选
-      combine_mode: 组合模式
-        - "strict": 三层全交集（共振∩LLM∩八步法）
-        - "two_of_three": 任两层交集即可
-        - "resonance_plus_one": 共振 + 任一其他层
-    
+    运行八步法核心策略 + LLM/漏斗辅助
+
+    信号链路：
+      1. 加载前一交易日LLM+漏斗辅助数据（收盘后产出）
+      2. 运行八步法核心扫描（14:30实时数据），LLM/漏斗作为加成/预过滤放宽
+      3. 可选：共振过滤作为技术指标确认
+      4. 输出买入推荐
+
     返回：
       最终入选标的列表
     """
@@ -159,19 +151,17 @@ def run_resonance_strategy(
         from overnight_8step.zuiyou1 import get_stock_industry
     except ImportError:
         get_stock_industry = None
+
     print("=" * 70)
-    print("  策略整合器 — 5策略共振 + LLM多源 + 八步法")
+    print("  策略整合器 — 八步法核心 + LLM/漏斗辅助")
     print("=" * 70)
     print(f"  运行时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print(f"  核心策略: 20周线 + 均线多头 + MACD金叉")
-    if enable_bollinger:
-        print(f"  增强策略: 布林上轨")
-    if enable_annual_line:
-        print(f"  增强策略: 年线")
-    print(f"  最少通过: {min_pass_count}/{3 + int(enable_bollinger) + int(enable_annual_line)}")
+    print(f"  核心策略: 隔夜八步法（量价精选）")
+    print(f"  辅助数据: LLM多源 + 漏斗七层（前一交易日收盘后产出）")
+    if enable_resonance:
+        print(f"  技术确认: 5策略共振过滤")
     print("=" * 70)
 
-    # 获取最新交易日
     if trade_date is None:
         from core.db.connection import get_db_fresh
         from psycopg2.extras import RealDictCursor
@@ -188,108 +178,45 @@ def run_resonance_strategy(
                 conn.close()
         print(f"\n  最新交易日: {trade_date}")
 
-    # ========== 第1层：5策略共振过滤 ==========
+    # ========== Step 1: 加载辅助数据 ==========
     print(f"\n{'='*70}")
-    print(f"  [Layer 1/3] 5策略共振过滤")
+    print(f"  [Step 1/3] 加载LLM+漏斗辅助数据（前一交易日收盘后产出）")
     print(f"{'='*70}")
 
-    resonance_results = run_resonance_filter(
-        trade_date=trade_date,
-        min_pass_count=min_pass_count,
-        require_core=require_core,
-        enable_annual_line=enable_annual_line,
-        enable_bollinger=enable_bollinger,
-        verbose=True
-    )
+    aux_data = load_auxiliary_data(trade_date)
+    print(f"  🤖 LLM辅助: {aux_data['llm_count']} 只")
+    print(f"  🔽 漏斗辅助: {aux_data['funnel_count']} 只")
 
-    if not resonance_results:
-        print("✗ 没有股票通过共振过滤")
-        return []
+    llm_codes = set(normalize_code(c) for c in aux_data['llm'].keys())
+    funnel_codes = set(normalize_code(c) for c in aux_data['funnel'].keys())
+    aux_overlap = llm_codes & funnel_codes
+    if aux_overlap:
+        print(f"  🔗 LLM∩漏斗: {len(aux_overlap)} 只（双重辅助，信号更强）")
 
-    resonance_codes = [normalize_code(r['ts_code']) for r in resonance_results]
-    print(f"✓ 共振过滤通过: {len(resonance_codes)} 只")
-
-    # ========== 第2层：LLM多源策略 ==========
+    # ========== Step 2: 八步法核心扫描 ==========
     print(f"\n{'='*70}")
-    print(f"  [Layer 2/3] LLM多源策略筛选")
+    print(f"  [Step 2/3] 八步法核心扫描（LLM/漏斗作为辅助加成）")
     print(f"{'='*70}")
 
-    llm_candidates = []
-    if llm_input and llm_input.lower() == 'db':
-        llm_candidates = load_llm_candidates_from_db(trade_date, min_score=llm_min_score)
-        print(f"✓ 从数据库加载LLM候选: {len(llm_candidates)} 只")
-    elif llm_input and Path(llm_input).exists():
-        llm_candidates = load_llm_candidates_from_csv(llm_input, min_score=llm_min_score)
-    else:
-        print("  ⚠️ 未提供LLM候选输入，跳过LLM层（直接使用共振结果）")
-
-    if llm_candidates:
-        llm_codes = set(normalize_code(code) for code, _ in llm_candidates)
-        intersection_rl = [code for code in resonance_codes if code in llm_codes]
-        print(f"  共振候选: {len(resonance_codes)} 只")
-        print(f"  LLM候选: {len(llm_codes)} 只")
-        print(f"  共振∩LLM: {len(intersection_rl)} 只")
-
-        if combine_mode == "strict":
-            if not intersection_rl:
-                print("  ⚠️ 共振和LLM无交集，使用共振结果继续")
-                final_candidates = resonance_codes
-            else:
-                final_candidates = intersection_rl
-        elif combine_mode == "two_of_three":
-            if intersection_rl:
-                final_candidates = intersection_rl
-            else:
-                final_candidates = resonance_codes
-            print(f"  组合模式=two_of_three: 使用共振结果({len(final_candidates)}只)")
-        elif combine_mode == "resonance_plus_one":
-            final_candidates = resonance_codes
-            print(f"  组合模式=resonance_plus_one: 以共振为基础({len(final_candidates)}只)")
-        else:
-            if not intersection_rl:
-                print("  ⚠️ 共振和LLM无交集，使用共振结果继续")
-                final_candidates = resonance_codes
-            else:
-                final_candidates = intersection_rl
-    else:
-        final_candidates = resonance_codes
-
-    if not final_candidates:
-        print("✗ 没有候选标的进入八步法筛选")
-        return []
-
-    print(f"\n✓ 进入八步法筛选: {len(final_candidates)} 只")
-
-    # ========== 第3层：隔夜八步法 ==========
-    print(f"\n{'='*70}")
-    print(f"  [Layer 3/3] 隔夜八步法精选")
-    print(f"{'='*70}")
-
-    # 获取市场情绪 (returns Tuple[int, str])
     sentiment_score, mood = fetch_market_sentiment()
     print(f"  市场情绪评分: {sentiment_score}  |  情绪: {mood}")
 
-    # 运行八步法扫描：用 stable + upper 双池扫描，然后按 resonance 结果过滤
     stable_cfg = copy.deepcopy(CONFIG_STABLE)
     upper_cfg = copy.deepcopy(CONFIG_UPPER)
     stable_cfg["MODE"] = "post"
     upper_cfg["MODE"] = "post"
 
-    # scan_pool 返回 6-tuple: (results, reject_stats, name_map, pool_size, real_count, time_weight)
     stable_results, _, stable_name_map, _, _, _ = scan_pool(stable_cfg, sentiment_score, mood, preloaded=False)
     upper_results, _, upper_name_map, _, _, _ = scan_pool(upper_cfg, sentiment_score, mood, preloaded=True)
 
-    # 合并名称映射
     all_name_map = {**stable_name_map, **upper_name_map}
 
-    # 合并去重然后按 resonance 结果过滤
     all_results = {}
     for r in stable_results + upper_results:
         raw_code = r.get('code', '')
         code = normalize_code(raw_code)
-        r['code'] = code  # 统一为标准格式
+        r['code'] = code
         if code not in all_results or r.get('score', 0) > all_results[code].get('score', 0):
-            # 补充 name 和 industry（scan_pool 不返回这些字段）
             if 'name' not in r or not r.get('name'):
                 lookup_key = raw_code.replace('.', '')
                 r['name'] = all_name_map.get(lookup_key, all_name_map.get(code, ''))
@@ -297,54 +224,91 @@ def run_resonance_strategy(
                 r['industry'] = get_stock_industry(raw_code)
             all_results[code] = r
 
-    resonance_set = {normalize_code(c) for c in final_candidates}
     eight_step_codes = set(all_results.keys())
-    intersection_re = [code for code in resonance_set if code in eight_step_codes]
+    print(f"  八步法入选: {len(eight_step_codes)} 只")
 
-    if combine_mode == "strict":
-        result = [all_results[code] for code in intersection_re]
-    elif combine_mode == "two_of_three":
-        llm_set = set(normalize_code(code) for code, _ in llm_candidates) if llm_candidates else set()
-        two_of_three_codes = set()
-        for code in resonance_set | eight_step_codes | llm_set:
-            hits = sum([code in resonance_set, code in eight_step_codes, code in llm_set])
-            if hits >= 2:
-                two_of_three_codes.add(code)
-        result = [all_results[code] for code in two_of_three_codes if code in all_results]
-    elif combine_mode == "resonance_plus_one":
-        llm_set = set(normalize_code(code) for code, _ in llm_candidates) if llm_candidates else set()
-        rp1_codes = set()
-        for code in resonance_set:
-            if code in eight_step_codes or code in llm_set:
-                rp1_codes.add(code)
-        result = [all_results[code] for code in rp1_codes if code in all_results]
+    # 标注辅助来源
+    for code, item in all_results.items():
+        aux_sources = []
+        if code in llm_codes:
+            aux_sources.append("🤖LLM")
+        if code in funnel_codes:
+            aux_sources.append("🔽漏斗")
+        if code in aux_overlap:
+            aux_sources.append("🔗双重辅助")
+        if aux_sources:
+            item['aux_sources'] = aux_sources
+        else:
+            item['aux_sources'] = []
+
+    # ========== Step 3: 共振过滤（可选技术确认） ==========
+    if enable_resonance:
+        print(f"\n{'='*70}")
+        print(f"  [Step 3/3] 共振过滤（技术指标确认）")
+        print(f"{'='*70}")
+
+        resonance_results = run_resonance_filter(
+            trade_date=trade_date,
+            min_pass_count=min_pass_count,
+            require_core=require_core,
+            enable_annual_line=enable_annual_line,
+            enable_bollinger=enable_bollinger,
+            verbose=True
+        )
+
+        if resonance_results:
+            resonance_codes = set(normalize_code(r['ts_code']) for r in resonance_results)
+            resonance_map = {normalize_code(r['ts_code']): r for r in resonance_results}
+            print(f"  共振过滤通过: {len(resonance_codes)} 只")
+
+            both = eight_step_codes & resonance_codes
+            only_8step = eight_step_codes - resonance_codes
+            only_resonance = resonance_codes - eight_step_codes
+
+            print(f"  八步法∩共振: {len(both)} 只")
+            print(f"  仅八步法: {len(only_8step)} 只")
+            print(f"  仅共振: {len(only_resonance)} 只")
+
+            # 八步法是核心，共振只是辅助确认
+            # 八步法入选但共振未通过的，仍然保留但降低优先级
+            for code in both:
+                all_results[code]['resonance_confirmed'] = True
+                all_results[code]['resonance_info'] = resonance_map.get(code)
+            for code in only_8step:
+                all_results[code]['resonance_confirmed'] = False
+                all_results[code]['resonance_info'] = None
+        else:
+            print("  ⚠️ 没有股票通过共振过滤，八步法结果不受影响")
+            for code in eight_step_codes:
+                all_results[code]['resonance_confirmed'] = False
+                all_results[code]['resonance_info'] = None
     else:
-        result = [all_results[code] for code in intersection_re]
+        for code in eight_step_codes:
+            all_results[code]['resonance_confirmed'] = None
+            all_results[code]['resonance_info'] = None
 
-    result.sort(key=lambda x: x.get('score', 0), reverse=True)
+    # ========== 排序：共振确认 > 双重辅助 > 单辅助 > 纯八步法 ==========
+    def sort_key(item):
+        resonance_bonus = 1000 if item.get('resonance_confirmed') else 0
+        aux_bonus = len(item.get('aux_sources', [])) * 100
+        return resonance_bonus + aux_bonus + item.get('score', 0)
+
+    result = sorted(all_results.values(), key=sort_key, reverse=True)
 
     # ========== 输出结果 ==========
     out_dir = Path(output_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     today = datetime.now(BEIJING_TZ).strftime("%Y%m%d")
-    out_path = out_dir / f"resonance_{today}.csv"
+    out_path = out_dir / f"combined_{today}.csv"
 
     if result:
-        # 构建共振结果字典，O(1)查找替代O(n²)线性扫描
-        resonance_map = {normalize_code(r['ts_code']): r for r in resonance_results}
-
-        # 写入CSV
         with open(out_path, 'w', newline='', encoding='utf-8-sig') as f:
             writer = csv.writer(f)
             writer.writerow([
-                'code', 'name', 'pct', 'vol_ratio', 'turn', 'score', 'tags', 'industry',
-                'ma_20week', 'ma_bullish', 'macd', 'bollinger', 'annual_line',
-                'passed_count', 'total_count'
+                'code', 'name', 'pct', 'vol_ratio', 'turn', 'score', 'tags',
+                'industry', 'aux_sources', 'resonance_confirmed',
             ])
             for item in result:
-                code = item.get('code', '')
-                resonance_info = resonance_map.get(code)
-
                 writer.writerow([
                     item.get('code', ''),
                     item.get('name', ''),
@@ -352,53 +316,29 @@ def run_resonance_strategy(
                     item.get('vol_ratio', 0),
                     item.get('turn', 0),
                     item.get('score', 0),
-                    item.get('tags', ''),
+                    ' | '.join(item.get('tags', [])),
                     item.get('industry', ''),
-                    resonance_info['filters']['ma_20week'].get('passed', False) if resonance_info else False,
-                    resonance_info['filters']['ma_bullish'].get('passed', False) if resonance_info else False,
-                    resonance_info['filters']['macd'].get('passed', False) if resonance_info else False,
-                    resonance_info['filters'].get('bollinger', {}).get('passed', False) if resonance_info else False,
-                    resonance_info['filters'].get('annual_line', {}).get('passed', False) if resonance_info else False,
-                    resonance_info['passed_count'] if resonance_info else 0,
-                    resonance_info['total_count'] if resonance_info else 0,
+                    ' | '.join(item.get('aux_sources', [])),
+                    item.get('resonance_confirmed', ''),
                 ])
 
         print(f"\n{'='*70}")
-        print(f"  ✅ 整合筛选完成!")
+        print(f"  ✅ 策略整合完成!")
         print(f"  输出文件: {out_path}")
         print(f"  入选标的: {len(result)} 只")
         print(f"{'='*70}")
 
-        # 打印详细结果
         print("\n--- 入选标的详情 ---")
         for item in result:
-            code = item.get('code', '')
-            resonance_info = resonance_map.get(code)
-
-            print(f"\n  {item['code']} {item['name']}")
+            aux_str = ' '.join(item.get('aux_sources', []))
+            resonance_str = "✅共振确认" if item.get('resonance_confirmed') else ""
+            print(f"\n  {item['code']} {item['name']}  {aux_str} {resonance_str}")
             print(f"    涨幅: {item['pct']:.2f}%  量比: {item['vol_ratio']:.2f}  换手: {item['turn']:.2f}%")
             print(f"    评分: {item['score']}  标签: {' | '.join(item.get('tags', []))}")
 
-            if resonance_info:
-                print(f"    共振策略: {resonance_info['passed_count']}/{resonance_info['total_count']} 通过")
-                if 'ma_20week' in resonance_info['filters']:
-                    f = resonance_info['filters']['ma_20week']
-                    print(f"      20周线: {'✅' if f.get('passed') else '✗'} (MA100={f.get('ma_100')}, 偏离={f.get('bias_pct')}%)")
-                if 'ma_bullish' in resonance_info['filters']:
-                    f = resonance_info['filters']['ma_bullish']
-                    print(f"      均线多头: {'✅' if f.get('passed') else '✗'} (MA5={f.get('ma_5')}, MA10={f.get('ma_10')}, MA20={f.get('ma_20')})")
-                if 'macd' in resonance_info['filters']:
-                    f = resonance_info['filters']['macd']
-                    print(f"      MACD: {'✅' if f.get('passed') else '✗'} (DIF={f.get('dif')}, DEA={f.get('dea')}, HIST={f.get('hist')})")
-                if 'bollinger' in resonance_info['filters']:
-                    f = resonance_info['filters']['bollinger']
-                    print(f"      布林上轨: {'✅' if f.get('passed') else '✗'} (突破={f.get('breakout_pct')}%, 量比={f.get('volume_ratio')})")
-                if 'annual_line' in resonance_info['filters']:
-                    f = resonance_info['filters']['annual_line']
-                    print(f"      年线: {'✅' if f.get('passed') else '✗'} (MA250={f.get('ma_250')}, 偏离={f.get('bias_pct')}%)")
-
         print(f"\n{'='*70}")
         print(f"  💡 操作指引")
+        print(f"  买入时间: 14:50（14:30信号确认后10分钟）")
         print(f"  稳健路径：次日09:35未维持昨收+1%，直接出局")
         print(f"  高位路径：次日竞价弱于昨收，集合竞价结束即清仓")
         print(f"  全局止损：亏损超2.5%无条件止损")
@@ -406,14 +346,23 @@ def run_resonance_strategy(
 
         return result
     else:
-        print("\n✗ 没有通过三重筛选的标的")
+        print("\n✗ 没有通过八步法筛选的标的")
         return []
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="5策略共振 + LLM多源 + 八步法整合策略")
-    parser.add_argument("--input", "-i", type=str, default=None,
-                        help="LLM策略扫描结果CSV路径，或 'db' 表示从数据库加载")
+    parser = argparse.ArgumentParser(
+        description="八步法核心 + LLM/漏斗辅助 策略整合器",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+信号链路：
+  Day T 15:10:  LLM+漏斗产出辅助数据
+  Day T+1 14:30: 八步法读取辅助数据+实时行情 → 买入信号
+  Day T+1 14:50: 手动买入
+  Day T+1 15:10: LLM+漏斗产出新辅助数据
+  Day T+2 09:30: 八步法卖出系统读取辅助数据 → 卖出信号
+        """
+    )
     parser.add_argument("--output", "-o", type=str, default="./results",
                         help="输出目录")
     parser.add_argument("--date", "-d", type=str, default=None,
@@ -426,25 +375,20 @@ if __name__ == "__main__":
                         help="禁用年线过滤")
     parser.add_argument("--no-bollinger", action="store_true",
                         help="禁用布林带过滤")
-    parser.add_argument("--llm-score", type=int, default=25,
-                        help="LLM最低分数阈值（默认25）")
-    parser.add_argument("--combine-mode", type=str, default="strict",
-                        choices=["strict", "two_of_three", "resonance_plus_one"],
-                        help="组合模式: strict=三层全交集, two_of_three=任两层交集, resonance_plus_one=共振+任一层")
+    parser.add_argument("--no-resonance", action="store_true",
+                        help="禁用共振过滤（仅八步法+辅助）")
     args = parser.parse_args()
 
     trade_date = datetime.strptime(args.date, "%Y-%m-%d").date() if args.date else None
 
-    results = run_resonance_strategy(
-        llm_input=args.input,
+    results = run_combined_strategy(
         output_dir=args.output,
         trade_date=trade_date,
         min_pass_count=args.min_pass,
         require_core=not args.no_core,
         enable_annual_line=not args.no_annual,
         enable_bollinger=not args.no_bollinger,
-        llm_min_score=args.llm_score,
-        combine_mode=args.combine_mode,
+        enable_resonance=not args.no_resonance,
     )
 
     if not results:

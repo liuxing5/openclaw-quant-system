@@ -1,7 +1,12 @@
 """
-自动卖出系统 v2.1（sell_new.py）
+自动卖出系统 v2.2（sell_new.py）
 ========================================
-基于v2.0新增「跟踪止盈 + 状态持久化」
+基于v2.1新增「LLM/漏斗辅助卖出决策」
+
+v2.2 新增特性：
+  ✓ 读取前一交易日LLM+漏斗辅助数据
+  ✓ LLM/漏斗双重辅助的标的，放宽卖出阈值（多给0.5%空间）
+  ✓ 辅助数据缺失时自动降级为纯八步法逻辑
 
 v2.1 新增特性：
   ✓ 持久化最高盈利点（high_water）到 ./sell_state.json
@@ -12,6 +17,11 @@ v2.1 新增特性：
   ✓ 涨停后炸板检测：从涨停回落 ≥2% 强制清仓信号
   ✓ 09:25 集合竞价挂单建议（开盘前预挂限价单）
   ✓ T+1 日历对齐：自动比较 entry_date 与今日，区分 T+1 / T+N 持仓
+
+信号链路：
+  Day T 收盘后(15:10): LLM+漏斗 → 写入辅助数据
+  Day T+1 收盘后(15:10): LLM+漏斗 → 写入今日辅助数据
+  Day T+2 09:30: 卖出系统读取昨日LLM+漏斗 → 辅助卖出决策
 
 路径区分（继承v2.0）：
   稳健路径（来自hs300+zz500池）：
@@ -124,6 +134,94 @@ def save_state(state: Dict) -> None:
             json.dump(state, f, ensure_ascii=False, indent=2)
     except IOError as e:
         print(f"⚠️ 状态文件写入失败: {e}")
+
+
+def load_auxiliary_sell_data(codes: list) -> Dict:
+    """
+    从数据库加载LLM+漏斗辅助数据，用于卖出决策辅助。
+
+    信号链路：前一交易日收盘后LLM+漏斗产出辅助数据，
+    次日09:30卖出系统读取，辅助卖出决策。
+
+    返回:
+      {code: {'llm': bool, 'funnel': bool, 'llm_score': float, 'funnel_score': float, 'aux_count': int}}
+    """
+    result = {}
+    for c in codes:
+        result[c] = {'llm': False, 'funnel': False, 'llm_score': 0, 'funnel_score': 0, 'aux_count': 0}
+
+    try:
+        from core.db.connection import get_db_fresh
+        from psycopg2.extras import RealDictCursor
+    except ImportError:
+        print("  ⚠️ 数据库模块不可用，跳过辅助数据加载")
+        return result
+
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+
+        cur.execute("SELECT MAX(snapshot_date) as max_date FROM daily_candidates;")
+        row = cur.fetchone()
+        if not row or not row['max_date']:
+            return result
+        latest_date = row['max_date']
+
+        code_set = set()
+        for c in codes:
+            if c.startswith("6"):
+                code_set.add(f"{c}.SH")
+            elif c.startswith(("0", "3")):
+                code_set.add(f"{c}.SZ")
+            else:
+                code_set.add(f"{c}.BJ")
+
+        cur.execute("""
+            SELECT ts_code, final_score
+            FROM daily_candidates
+            WHERE snapshot_date = %s
+              AND source = 'llm_multisource'
+              AND selected = TRUE
+        """, (latest_date,))
+        for row in cur.fetchall():
+            ts = row['ts_code']
+            pure = ts.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
+            if pure in result:
+                result[pure]['llm'] = True
+                result[pure]['llm_score'] = float(row['final_score'] or 0)
+
+        cur.execute("""
+            SELECT ts_code, final_score
+            FROM daily_candidates
+            WHERE snapshot_date = %s
+              AND source = 'funnel_strategy'
+              AND selected = TRUE
+        """, (latest_date,))
+        for row in cur.fetchall():
+            ts = row['ts_code']
+            pure = ts.replace('.SH', '').replace('.SZ', '').replace('.BJ', '')
+            if pure in result:
+                result[pure]['funnel'] = True
+                result[pure]['funnel_score'] = float(row['final_score'] or 0)
+
+        cur.close()
+
+        for c in codes:
+            result[c]['aux_count'] = sum([result[c]['llm'], result[c]['funnel']])
+
+        llm_count = sum(1 for v in result.values() if v['llm'])
+        funnel_count = sum(1 for v in result.values() if v['funnel'])
+        dual_count = sum(1 for v in result.values() if v['llm'] and v['funnel'])
+        print(f"  🤖 LLM辅助: {llm_count} 只  🔽 漏斗辅助: {funnel_count} 只  🔗 双重: {dual_count} 只")
+
+        return result
+    except Exception as e:
+        print(f"  ⚠️ 加载辅助数据失败: {e}")
+        return result
+    finally:
+        if conn and not conn.closed:
+            conn.close()
 
 
 def get_position_state(state: Dict, code: str, cost: float) -> Dict:
@@ -300,8 +398,13 @@ def decide_sell(
     path: str,
     market_data: dict,
     state_rec: Dict,
+    aux_data: Dict = None,
 ) -> dict:
     cfg = CONFIG["paths"].get(path, CONFIG["paths"]["稳健"])
+
+    aux = (aux_data or {}).get(code, {})
+    aux_count = aux.get('aux_count', 0)
+    aux_tolerance = 0.5 if aux_count >= 2 else (0.25 if aux_count == 1 else 0.0)
 
     info = market_data.get(code)
     if not info:
@@ -360,9 +463,11 @@ def decide_sell(
     # ---------- 优先级 5：硬性清仓信号 ----------
 
     # 全局硬止损（最高优先级）
-    if profit_pct <= stop_global:
+    effective_stop = stop_global - aux_tolerance
+    if profit_pct <= effective_stop:
+        aux_note = f" (辅助放宽{aux_tolerance}%)" if aux_tolerance > 0 else ""
         result["action"] = "🚨 全局硬止损"
-        result["reason"] = f"亏损{profit_pct:.2f}%超全局止损{stop_global}%"
+        result["reason"] = f"亏损{profit_pct:.2f}%超止损{effective_stop}%{aux_note}"
         result["priority"] = 5
         return result
 
@@ -376,9 +481,10 @@ def decide_sell(
         return result
 
     # 竞价低开清仓（盘前/开盘后均生效）
-    if open_pct <= open_stop:
+    effective_open_stop = open_stop - aux_tolerance
+    if open_pct <= effective_open_stop:
         result["action"] = "🔴 竞价清仓"
-        result["reason"] = f"竞价{open_pct:.2f}%≤{open_stop}%({cfg['desc']})"
+        result["reason"] = f"竞价{open_pct:.2f}%≤{effective_open_stop}%({cfg['desc']})"
         result["priority"] = 5
         return result
 
@@ -533,6 +639,10 @@ def run():
     codes = [p["code"] for p in POSITIONS]
     print(f"📊 当前持仓: {len(codes)} 只")
 
+    # 加载LLM+漏斗辅助数据（前一交易日收盘后产出）
+    print("\n📋 加载辅助数据（LLM+漏斗）...")
+    aux_data = load_auxiliary_sell_data(codes)
+
     market_data = get_realtime_data(codes)
     if not market_data:
         print("❌ 行情数据获取失败，请检查网络")
@@ -560,7 +670,7 @@ def run():
         path = p.get("path", "稳健")
 
         state_rec = get_position_state(state, code, cost)
-        res = decide_sell(code, cost, path, market_data, state_rec)
+        res = decide_sell(code, cost, path, market_data, state_rec, aux_data=aux_data)
         res["path"] = path
         results.append(res)
 

@@ -1,4 +1,13 @@
-"""每日候选池生成 - 盘前/盘后双跑"""
+"""每日候选池生成 - 盘后运行（15:10+）
+
+信号链路：
+  Day T 收盘后(15:10): LLM策略运行 → 写入 daily_candidates (辅助数据)
+  Day T+1 14:30: 八步法读取昨日LLM结果 → 生成买入信号
+  Day T+2 09:30: 卖出系统读取昨日LLM结果 → 辅助卖出决策
+
+注意：LLM策略只在收盘后运行，产出次日辅助数据。
+      不再支持 morning 模式，避免盘前数据不完整导致误判。
+"""
 import json
 import os, sys, math
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -14,7 +23,7 @@ from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_d
 
 load_project_env()
 
-RUN_MODE = os.getenv('RUN_MODE', 'morning')
+RUN_MODE = os.getenv('RUN_MODE', 'afternoon')
 MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '25'))
 MAX_SELECTED = 5
 MIN_LIQUIDITY = 1e8
@@ -65,6 +74,13 @@ def aggregate_today():
     
     if not is_trading_day(today):
         logger.warning(f"{today} 非交易日，跳过候选生成")
+        return
+
+    now_beijing = datetime.now(BEIJING_TZ)
+    hour_min = now_beijing.hour * 100 + now_beijing.minute
+    if hour_min < 1510:
+        logger.warning(f"当前时间 {now_beijing.strftime('%H:%M')} 早于 15:10，LLM策略应在收盘后运行")
+        logger.warning(f"如确需运行，请设置环境变量 RUN_MODE=afternoon 并在 15:10 后执行")
         return
     
     cutoff = today - timedelta(days=2)

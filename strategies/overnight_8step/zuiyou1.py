@@ -516,6 +516,7 @@ def _read_intraday_picks(snapshot_date) -> set:
 # 缓存以 baostock 格式（'sz.000001'）为 key，避免 baostock <-> standard
 # 之间反复转换。get_llm_candidates_from_supabase 在写入时统一归一化。
 _llm_candidates_cache = {}
+_funnel_candidates_cache = {}
 
 def _normalize_to_baostock(code: str) -> str:
     """把任意常见格式归一到 baostock 格式 'sz.000001' / 'sh.600519'"""
@@ -649,6 +650,94 @@ def get_llm_boost_score(code: str) -> float:
         boost += 1.0
     
     return min(boost, 12.0)
+
+
+def get_funnel_candidates_from_db(
+    today: str,
+    lookback_days: int = 3,
+) -> dict:
+    """从数据库读取最近 lookback_days 天的漏斗策略候选，用于八步法辅助加成
+
+    漏斗策略在收盘后(15:10)运行，产出次日辅助数据。
+    八步法在次日14:30读取，作为买入辅助信号。
+    """
+    global _funnel_candidates_cache
+
+    if _funnel_candidates_cache:
+        return _funnel_candidates_cache
+
+    if not DB_ENABLED:
+        return {}
+
+    conn = None
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+
+        today_date = datetime.strptime(today, "%Y-%m-%d").date()
+        effective_lookback = lookback_days
+        if today_date.weekday() == 0:
+            effective_lookback = max(lookback_days, 5)
+        elif today_date.weekday() == 6:
+            effective_lookback = max(lookback_days, 4)
+
+        cur.execute("""
+            SELECT DISTINCT ON (ts_code)
+                   ts_code, final_score, snapshot_date
+            FROM daily_candidates
+            WHERE snapshot_date >= (%s::date - (%s || ' days')::interval)
+              AND snapshot_date < %s::date
+              AND source = 'funnel_strategy'
+              AND selected = TRUE
+            ORDER BY ts_code, snapshot_date DESC, final_score DESC
+        """, (today, effective_lookback, today))
+
+        rows = cur.fetchall()
+        cur.close()
+
+        for row in rows:
+            ts_code = row[0]
+            bs_code = _normalize_to_baostock(ts_code)
+            if not bs_code:
+                continue
+            _funnel_candidates_cache[bs_code] = {
+                'ts_code': ts_code,
+                'final_score': float(row[1]) if row[1] else 0,
+                'snapshot_date': row[2],
+            }
+
+        print(f"✓ 从数据库加载 {len(_funnel_candidates_cache)} 只漏斗候选池 (近{lookback_days}日)")
+        return _funnel_candidates_cache
+    except Exception as e:
+        print(f"⚠️ 加载漏斗候选池失败: {e}")
+        return {}
+    finally:
+        if conn and not conn.closed:
+            conn.close()
+
+
+def is_funnel_candidate(code: str) -> tuple:
+    """检查股票是否在漏斗候选池中"""
+    global _funnel_candidates_cache
+    if not _funnel_candidates_cache:
+        return False, {}
+    bs_code = _normalize_to_baostock(code)
+    if bs_code in _funnel_candidates_cache:
+        return True, _funnel_candidates_cache[bs_code]
+    return False, {}
+
+
+def get_funnel_boost_score(code: str) -> float:
+    """获取漏斗候选池的加成分数，上限10分（漏斗七层过滤已做严格筛选）"""
+    is_candidate, info = is_funnel_candidate(code)
+    if not is_candidate:
+        return 0.0
+
+    boost = 0.0
+    boost += min(info.get('final_score', 0) * 0.04, 6.0)
+    boost += 4.0
+
+    return min(boost, 10.0)
 
 
 # ============================================================
@@ -1578,9 +1667,11 @@ def analyze_ultimate(
     #   换手率 3-15% (vs 5-10%)
     # 量比/均线/压力/乖离 等核心 8步法逻辑保持不变，确保二次确认仍然有效
     _is_llm_for_filter, _ = is_llm_candidate(code)
+    _is_funnel_for_filter, _ = is_funnel_candidate(code)
+    _is_auxiliary = _is_llm_for_filter or _is_funnel_for_filter
 
     # --- STEP 1: 涨幅筛选 ---
-    if _is_llm_for_filter:
+    if _is_auxiliary:
         in_stable = 1.5 <= curr_pct <= cfg["stable_pct_hi"]
         in_upper = cfg["stable_pct_hi"] < curr_pct <= 12.0
     else:
@@ -1598,14 +1689,14 @@ def analyze_ultimate(
         return None
 
     # --- STEP 2: 成交额硬过滤 ---
-    min_amount = 50_000_000 if _is_llm_for_filter else cfg["min_amount"]
+    min_amount = 50_000_000 if _is_auxiliary else cfg["min_amount"]
     if curr_amount < min_amount or curr_amount > cfg["max_amount"]:
         if reject_stats is not None:
             reject_stats["成交额"] += 1
         return None
 
     # --- STEP 3: 换手率硬过滤（8步法原始5%-10%）---
-    if _is_llm_for_filter:
+    if _is_auxiliary:
         turn_min, turn_max = 3.0, 15.0
     else:
         turn_min, turn_max = cfg["turn_min"], cfg["turn_max"]
@@ -1922,6 +2013,14 @@ def analyze_ultimate(
         tags.extend(llm_tags)
         tags.append("🤖LLM")
 
+    # --- 漏斗策略辅助加成（v1.8）---
+    is_funnel_cand, funnel_info = is_funnel_candidate(code)
+    funnel_boost = 0.0
+    if is_funnel_cand:
+        funnel_boost = get_funnel_boost_score(code)
+        score += funnel_boost
+        tags.append(f"🔽漏斗+{funnel_boost:.0f}")
+
     # --- 新增指标加成（v1.6+）---
     # v1.7: 新增加成项总上限30分，防止评分膨胀稀释核心8步法逻辑
     _bonus_pool = 0.0
@@ -2050,12 +2149,22 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
     llm_count = len(llm_pool)
     if llm_count > 0:
         print(f"📊 LLM候选池: {llm_count} 只 (最近 3 日盘后 selected/分数≥40)")
-        # 把 LLM 候选码合并进 stock_pool，避免基础池外的 LLM 票被漏扫
         existing = set(stock_pool)
         added = [c for c in llm_pool.keys() if c not in existing]
         if added:
             stock_pool = stock_pool + added
             print(f"  ➕ 合并 LLM 候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
+
+    # v1.8: 加载漏斗策略候选池（收盘后产出，次日八步法辅助）
+    funnel_pool = get_funnel_candidates_from_db(today_str, lookback_days=3)
+    funnel_count = len(funnel_pool)
+    if funnel_count > 0:
+        print(f"🔽 漏斗候选池: {funnel_count} 只 (最近 3 日盘后漏斗筛选)")
+        existing = set(stock_pool)
+        added = [c for c in funnel_pool.keys() if c not in existing]
+        if added:
+            stock_pool = stock_pool + added
+            print(f"  ➕ 合并漏斗候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
 
     # v1.6+: 加载新增指标（强势股排名、机构预期、概念板块）
     load_new_indicators(today_str)
@@ -2100,7 +2209,8 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
         pct = real_info.get("pct", 0)
         # LLM 票预过滤用更宽的 1.5-12% 区间，与 analyze_ultimate 内部逻辑一致
         _is_llm_pre, _ = is_llm_candidate(code)
-        if _is_llm_pre:
+        _is_funnel_pre, _ = is_funnel_candidate(code)
+        if _is_llm_pre or _is_funnel_pre:
             if not (1.5 <= pct <= 12.0):
                 continue
         else:
