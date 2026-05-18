@@ -1504,6 +1504,10 @@ def get_trading_date_for_snapshot() -> str:
     获取选股数据归属的交易日。
     凌晨运行（09:30前）使用上一个交易日，避免 snapshot_date 变成次日。
     盘中/盘后使用当天。
+    关键：工作日盘中 baostock 可能尚未更新当天行情数据，
+    query_all_stock 返回空 → get_latest_trading_day 回退到上一个交易日，
+    导致 snapshot_date 错误地指向 T-1（如 05-18 周一 14:58 写成 05-15）。
+    修复：工作日 9:30 后直接取当天日期，无需等 baostock 更新。
     """
     now = beijing_now()
     # 凌晨0:00 ~ 9:30 之前，视为上一交易日的盘后处理
@@ -1516,7 +1520,10 @@ def get_trading_date_for_snapshot() -> str:
                 rows.append(rs.get_row_data())
             if rows:
                 return day_str
-    # 盘中/盘后使用当天
+    # 盘中/盘后：工作日直接取当天（baostock 盘中可能无当天数据，但当天仍是交易日）
+    if now.weekday() < 5:  # 周一=0 ... 周五=4
+        return now.strftime("%Y-%m-%d")
+    # 周末回退到最近有数据的交易日
     return get_latest_trading_day()
 
 

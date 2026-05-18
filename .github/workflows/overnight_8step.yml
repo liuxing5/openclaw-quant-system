@@ -248,6 +248,7 @@ jobs:
 
     - name: Generate report (8step only)
       if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
       env:
         RUN_MODE: afternoon
         POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
@@ -261,6 +262,7 @@ jobs:
 
     - name: Deploy to GitHub Pages (8step)
       if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
       uses: peaceiris/actions-gh-pages@v3
       with:
         personal_token: ${{ secrets.GH_PAT }}

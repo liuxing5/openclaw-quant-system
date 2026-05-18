@@ -90,8 +90,13 @@ jobs:
         run: |
           python strategies/llm_multisource/aggregate.py
           python -m core.tracker.performance
-          python strategies/llm_multisource/generate_report.py
           python -m core.notify.pusher
+
+      - name: Generate LLM report
+        continue-on-error: true
+        env:
+          RUN_MODE: ${{ steps.mode.outputs.mode }}
+        run: python strategies/llm_multisource/generate_report.py
 
       - name: Deploy to GitHub Pages
         uses: peaceiris/actions-gh-pages@v3
