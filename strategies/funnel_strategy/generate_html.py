@@ -483,7 +483,12 @@ def generate_unified_html(output_dir=None, trade_date=None):
             card = render_candidate_card(c, badge_text=f'<span class="signal-badge">{signal_text}</span>{bonus_text}')
             funnel_cards += card
     if not funnel_cards:
-        funnel_cards = '<div class="no-data">今日无推荐</div>'
+        l5_pass = funnel.get('layer5_pass', 0) if funnel else 0
+        l6_pass = funnel.get('layer6_pass', 0) if funnel else 0
+        if l5_pass > 0 and l6_pass == 0:
+            funnel_cards = f'<div class="no-data">L5通过{l5_pass}只，L6风控全部未通过<br><small>（盈亏比≥2:1、止损≤8%等刚性条件）</small></div>'
+        else:
+            funnel_cards = '<div class="no-data">今日无推荐</div>'
 
     llm_cards = ""
     if llm_candidates:
@@ -495,9 +500,39 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     eight_cards = ""
     if eight_candidates:
+        stable_cards = ""
+        upper_cards = ""
         for c in eight_candidates:
-            card = render_candidate_card(c, badge_class='badge-8step', badge_text='<span class="badge-8step">八步法</span>')
-            eight_cards += card
+            pool = ''
+            sources_raw = c.get('sources')
+            if sources_raw:
+                if isinstance(sources_raw, str):
+                    try:
+                        sources_raw = json.loads(sources_raw)
+                    except (json.JSONDecodeError, TypeError):
+                        sources_raw = []
+                if isinstance(sources_raw, list) and sources_raw:
+                    pool = sources_raw[0].get('pool', '')
+            if not pool:
+                tags = c.get('logic_tags', [])
+                if isinstance(tags, str):
+                    tags = tags.replace('/', '|').split('|')
+                for t in (tags or []):
+                    if 'pool:stable' in t or 'pool:upper' in t:
+                        pool = 'stable' if 'stable' in t else 'upper'
+                        break
+            if 'stable' in pool.lower():
+                path_badge = '<span class="path-badge path-stable">稳健</span>'
+                stable_cards += render_candidate_card(c, badge_text=f'<span class="badge-8step">八步法</span>{path_badge}')
+            elif 'upper' in pool.lower():
+                path_badge = '<span class="path-badge path-upper">高位</span>'
+                upper_cards += render_candidate_card(c, badge_text=f'<span class="badge-8step">八步法</span>{path_badge}')
+            else:
+                eight_cards += render_candidate_card(c, badge_text='<span class="badge-8step">八步法</span>')
+        if stable_cards:
+            eight_cards += f'<div class="path-group"><div class="path-label path-stable">稳健路径</div><div class="cards-grid">{stable_cards}</div></div>'
+        if upper_cards:
+            eight_cards += f'<div class="path-group"><div class="path-label path-upper">高位路径</div><div class="cards-grid">{upper_cards}</div></div>'
     if not eight_cards:
         eight_cards = '<div class="no-data">今日无推荐</div>'
 
@@ -612,6 +647,15 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .signal-badge {{ display:inline-block; padding:2px 7px; border-radius:10px; font-size:.68rem; background:var(--badge-bg); color:var(--badge-text); margin-left:4px; }}
 .llm-badge {{ display:inline-block; padding:2px 7px; border-radius:10px; font-size:.68rem; background:var(--llm-badge-bg); color:var(--llm-badge-text); margin-left:4px; }}
 .src-badge {{ display:inline-block; padding:2px 6px; border-radius:10px; font-size:.65rem; background:var(--badge-bg); color:var(--badge-text); margin-left:4px; }}
+.path-badge {{ display:inline-block; padding:2px 8px; border-radius:10px; font-size:.68rem; font-weight:bold; margin-left:4px; }}
+.path-stable {{ background:#e8f5e9; color:#2e7d32; }}
+.path-upper {{ background:#fff3e0; color:#e65100; }}
+.path-group {{ margin-bottom:12px; }}
+.path-label {{ font-size:.82rem; font-weight:bold; padding:4px 10px; border-radius:6px; margin-bottom:8px; display:inline-block; }}
+.path-label.path-stable {{ background:#e8f5e9; color:#2e7d32; }}
+.path-label.path-upper {{ background:#fff3e0; color:#e65100; }}
+[data-theme="dark"] .path-stable {{ background:#3fb95033; color:#3fb950; }}
+[data-theme="dark"] .path-upper {{ background:#f0883e33; color:#f0883e; }}
 
 /* Tabs */
 .tabs {{ display:flex; gap:4px; margin-bottom:14px; flex-wrap:wrap; }}
