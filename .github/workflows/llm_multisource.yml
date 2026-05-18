@@ -99,3 +99,22 @@ jobs:
           personal_token: ${{ secrets.GH_PAT }}
           publish_dir: ./strategies/llm_multisource/docs
           keep_files: true
+
+      - name: Generate unified HTML report (funnel page)
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        run: |
+          pip install jinja2 psycopg2-binary python-dotenv
+          python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs
+
+      - name: Deploy unified HTML to GitHub Pages (funnel)
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.GH_PAT }}
+          publish_dir: ./strategies/funnel_strategy/docs
+          destination_dir: funnel
+          keep_files: true
