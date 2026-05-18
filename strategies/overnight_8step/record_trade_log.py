@@ -211,7 +211,7 @@ def fetch_historical_daily(code: str, target_date: str) -> Optional[dict]:
 def parse_zuiyou1_results() -> tuple:
     """
     从数据库 daily_candidates 读取当日 zuiyou1 推荐结果
-    返回: (stable_best, upper_best)
+    返回: (stable_list, upper_list)  每个路径的全部候选列表
     """
     if not DB_ENABLED:
         print("⚠️ 数据库未启用，回退到本地文件模式")
@@ -237,6 +237,25 @@ def parse_zuiyou1_results() -> tuple:
         """, (today,))
         rows = cur.fetchall()
         print(f"  查询结果: {len(rows)} 条记录")
+        
+        if not rows:
+            print(f"  ⚠️ snapshot_date={today} 无记录，尝试按 created_at 查询...")
+            cur.execute("""
+                SELECT ts_code, stock_name, final_score, quant_score, llm_score,
+                       sources, logic_tags, entry_low, entry_high, stop_loss, target_1,
+                       run_mode
+                FROM daily_candidates
+                WHERE source = 'overnight_8step'
+                  AND run_mode IN ('afternoon', 'intraday')
+                  AND created_at >= %s::date
+                  AND created_at <  %s::date + 1
+                ORDER BY 
+                    CASE run_mode WHEN 'afternoon' THEN 0 WHEN 'intraday' THEN 1 ELSE 2 END,
+                    final_score DESC;
+            """, (today, today))
+            rows = cur.fetchall()
+            print(f"  created_at 查询结果: {len(rows)} 条记录")
+        
         cur.close()
     except Exception as e:
         print(f"⚠️ 数据库查询失败: {e}，回退到本地文件模式")
@@ -247,7 +266,7 @@ def parse_zuiyou1_results() -> tuple:
     
     if not rows:
         print(f"⚠️ 今日({today})无数据库选股记录")
-        return None, None
+        return [], []
     
     # 优先使用 afternoon 模式的数据，如果没有则使用 intraday
     afternoon_rows = [r for r in rows if r[11] == 'afternoon']
@@ -257,10 +276,8 @@ def parse_zuiyou1_results() -> tuple:
     else:
         print(f"  使用盘中初筛数据 ({len(rows)} 条)")
     
-    stable_best = None
-    upper_best = None
-    stable_max_score = -1
-    upper_max_score = -1
+    stable_list = []
+    upper_list = []
     
     for row in rows:
         ts_code = row[0]
@@ -306,27 +323,23 @@ def parse_zuiyou1_results() -> tuple:
         }
         
         if 'stable' in pool.lower():
-            if final_score > stable_max_score:
-                stable_max_score = final_score
-                stable_best = {**stock_data, "path": "稳健"}
+            stable_list.append({**stock_data, "path": "稳健"})
         elif 'upper' in pool.lower():
-            if final_score > upper_max_score:
-                upper_max_score = final_score
-                upper_best = {**stock_data, "path": "高位"}
+            upper_list.append({**stock_data, "path": "高位"})
     
-    return stable_best, upper_best
+    return stable_list, upper_list
 
 
 def _parse_from_local_file() -> tuple:
     """
     从本地选股记录汇总文件解析（回退模式）
-    返回: (stable_best, upper_best)
+    返回: (stable_list, upper_list)
     """
     summary_file = os.path.join(LOG_DIR, "..", "选股记录汇总.txt")
     
     if not os.path.exists(summary_file):
         print("⚠️ 选股记录汇总文件不存在")
-        return None, None
+        return [], []
     
     today = get_latest_trading_day()
     
@@ -335,24 +348,22 @@ def _parse_from_local_file() -> tuple:
             content = f.read()
     except Exception as e:
         print(f"⚠️ 读取汇总文件失败: {e}")
-        return None, None
+        return [], []
     
     if today not in content:
         print(f"⚠️ 今日({today})无选股记录")
-        return None, None
+        return [], []
     
     blocks = content.split("=" * 80)
     today_blocks = [b for b in blocks if today in b]
     if not today_blocks:
         print(f"⚠️ 今日({today})无选股记录块")
-        return None, None
+        return [], []
     
     block = today_blocks[-1]
     
-    stable_best = None
-    upper_best = None
-    stable_max_score = -1
-    upper_max_score = -1
+    stable_list = []
+    upper_list = []
     
     def parse_stock_line(line: str) -> Optional[dict]:
         """解析单行股票信息"""
@@ -406,9 +417,8 @@ def _parse_from_local_file() -> tuple:
             if not line or line.startswith("━") or line.startswith("单票"):
                 continue
             stock = parse_stock_line(line)
-            if stock and stock["score"] > stable_max_score:
-                stable_max_score = stock["score"]
-                stable_best = {**stock, "path": "稳健"}
+            if stock:
+                stable_list.append({**stock, "path": "稳健"})
     
     # 解析高位路径
     if "高位路径" in block:
@@ -418,11 +428,10 @@ def _parse_from_local_file() -> tuple:
             if not line or line.startswith("━") or line.startswith("单票"):
                 continue
             stock = parse_stock_line(line)
-            if stock and stock["score"] > upper_max_score:
-                upper_max_score = stock["score"]
-                upper_best = {**stock, "path": "高位"}
+            if stock:
+                upper_list.append({**stock, "path": "高位"})
     
-    return stable_best, upper_best
+    return stable_list, upper_list
 
 
 def load_my_trades() -> dict:
@@ -566,18 +575,18 @@ def evening_mode():
     
     # Step 2: 解析 zuiyou1 选股结果
     print("\nStep 2: 解析 zuiyou1 选股结果...")
-    stable_best, upper_best = parse_zuiyou1_results()
+    stable_list, upper_list = parse_zuiyou1_results()
     
     stocks_to_record = []
-    if stable_best:
-        stocks_to_record.append(stable_best)
-        print(f"  稳健最佳: {stable_best['code']} 得分{stable_best['score']}")
+    if stable_list:
+        stocks_to_record.extend(stable_list)
+        print(f"  稳健路径: {len(stable_list)} 只  {[s['code'] for s in stable_list]}")
     else:
         print("  稳健路径: 无推荐")
     
-    if upper_best:
-        stocks_to_record.append(upper_best)
-        print(f"  高位最佳: {upper_best['code']} 得分{upper_best['score']}")
+    if upper_list:
+        stocks_to_record.extend(upper_list)
+        print(f"  高位路径: {len(upper_list)} 只  {[s['code'] for s in upper_list]}")
     else:
         print("  高位路径: 无推荐")
     
