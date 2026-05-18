@@ -500,11 +500,72 @@ class FunnelEngine:
             conn.commit()
             cur.close()
             print(f"  ✓ 结果已保存到数据库 (funnel_results)")
+
+            self._save_candidates_to_daily(candidates, trade_date, conn)
         except Exception as e:
             print(f"  ⚠️ 保存数据库失败: {e}")
         finally:
             if conn and not conn.closed:
                 conn.close()
+
+    def _save_candidates_to_daily(self, candidates: list, trade_date: date, conn):
+        """将漏斗最终候选写入 daily_candidates 表 (source='funnel_strategy')
+
+        信号链路：Day T 收盘后漏斗策略运行 → 写入 daily_candidates (辅助数据)
+                  Day T+1 八步法/卖出系统读取 → 辅助买入/卖出决策
+        """
+        if not candidates:
+            print(f"  ⚠️ 漏斗无最终候选，跳过 daily_candidates 写入")
+            return
+
+        try:
+            from core.db.candidates import write_candidates
+        except ImportError:
+            print(f"  ⚠️ write_candidates 模块不可用，跳过 daily_candidates 写入")
+            return
+
+        items = []
+        for c in candidates:
+            ts_code = c.get('ts_code', '')
+            entry_price = c.get('entry_price', 0)
+            stop_loss = c.get('stop_loss', 0)
+            target_price = c.get('target_price', 0)
+            score = c.get('score', 0)
+            atr = c.get('atr', 0)
+            tags = c.get('tags', [])
+            if isinstance(tags, str):
+                tags = [t.strip() for t in tags.replace('/', '|').split('|') if t.strip()]
+            signal_type = c.get('signal_type', '')
+            if signal_type:
+                tags.append(f"信号:{signal_type}")
+            profit_loss_ratio = c.get('profit_loss_ratio', 0)
+
+            items.append({
+                'ts_code': ts_code,
+                'stock_name': c.get('stock_name'),
+                'final_score': float(score),
+                'quant_score': float(score),
+                'llm_score': float(c.get('llm_bonus', 0)),
+                'consensus_score': 1.0,
+                'mention_count': 1,
+                'source_diversity': 1,
+                'logic_tags': tags,
+                'selected': True,
+                'position_pct': round(self._stats.get('layer0_max_position', 0.5) / max(len(candidates), 1), 4),
+                'entry_low': round(entry_price * 0.99, 2) if entry_price else None,
+                'entry_high': round(entry_price * 1.01, 2) if entry_price else None,
+                'stop_loss': round(stop_loss, 2) if stop_loss else None,
+                'target_1': round(target_price, 2) if target_price else None,
+                'target_2': round(entry_price + (entry_price - stop_loss) * 3, 2) if entry_price and stop_loss else None,
+                'sources': [{'source': 'funnel_L6', 'signal': signal_type,
+                             'atr': float(atr), 'pl_ratio': float(profit_loss_ratio)}],
+            })
+
+        try:
+            n = write_candidates(items, trade_date, source='funnel_strategy', run_mode='afternoon', conn=conn)
+            print(f"  ✓ 写入 {n} 条到 daily_candidates (source=funnel_strategy)")
+        except Exception as e:
+            print(f"  ⚠️ daily_candidates 写入失败: {e}")
 
     def _print_funnel_summary(self):
         """打印漏斗统计"""

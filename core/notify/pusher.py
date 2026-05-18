@@ -19,7 +19,7 @@ load_project_env()
 BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 PROXY_URL = os.getenv('TELEGRAM_PROXY')
-RUN_MODE = os.getenv('RUN_MODE', 'morning')
+RUN_MODE = os.getenv('RUN_MODE', 'afternoon')
 
 # 北京时间时区
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -143,8 +143,7 @@ async def push_daily_candidates():
         llm_cands = cur.fetchall()
         logger.info(f"LLM候选: snapshot_date={today}, selected=TRUE, source='llm_multisource', run_mode={RUN_MODE} → {len(llm_cands)} 条")
 
-        if not llm_cands and RUN_MODE == 'morning':
-            from datetime import timedelta
+        if not llm_cands:
             yesterday = today - timedelta(days=1)
             cur.execute("""
                 SELECT * FROM daily_candidates
@@ -153,22 +152,36 @@ async def push_daily_candidates():
             """, (yesterday,))
             llm_cands = cur.fetchall()
             if llm_cands:
-                logger.info(f"盘前回退推送：使用昨天 afternoon 的 {len(llm_cands)} 条选中候选")
+                logger.info(f"回退推送：使用昨天 afternoon 的 {len(llm_cands)} 条选中候选")
 
         cur.execute("""
             SELECT * FROM daily_candidates
-            WHERE snapshot_date=%s AND selected=TRUE AND source='overnight_8step'
+            WHERE snapshot_date=%s AND selected=TRUE AND source='overnight_8step' AND run_mode='afternoon'
             ORDER BY final_score DESC;
         """, (today,))
         eight_step_cands = cur.fetchall()
+        if not eight_step_cands:
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date=%s AND selected=TRUE AND source='overnight_8step'
+                ORDER BY final_score DESC;
+            """, (today,))
+            eight_step_cands = cur.fetchall()
         logger.info(f"八步法候选: snapshot_date={today}, selected=TRUE, source='overnight_8step' → {len(eight_step_cands)} 条")
 
         cur.execute("""
             SELECT * FROM daily_candidates
-            WHERE snapshot_date=%s AND selected=TRUE AND source='funnel_strategy'
+            WHERE snapshot_date=%s AND selected=TRUE AND source='funnel_strategy' AND run_mode='afternoon'
             ORDER BY final_score DESC;
         """, (today,))
         funnel_cands = cur.fetchall()
+        if not funnel_cands:
+            cur.execute("""
+                SELECT * FROM daily_candidates
+                WHERE snapshot_date=%s AND selected=TRUE AND source='funnel_strategy'
+                ORDER BY final_score DESC;
+            """, (today,))
+            funnel_cands = cur.fetchall()
         logger.info(f"漏斗策略候选: snapshot_date={today}, selected=TRUE, source='funnel_strategy' → {len(funnel_cands)} 条")
 
         all_cands_empty = not llm_cands and not eight_step_cands and not funnel_cands

@@ -223,7 +223,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
     funnel_date = str(funnel['trade_date']) if funnel else None
     funnel_timestamp = load_strategy_timestamp('funnel', funnel_date)
 
-    llm_candidates, llm_date = load_candidates('llm_multisource', trade_date=trade_date, run_mode='morning')
+    llm_candidates, llm_date = load_candidates('llm_multisource', trade_date=trade_date, run_mode='afternoon')
     if not llm_candidates:
         llm_candidates, llm_date = load_candidates('llm_multisource', trade_date=trade_date)
     llm_timestamp = load_strategy_timestamp('llm_multisource', llm_date)
