@@ -182,7 +182,10 @@ def load_scan_stats(strategy, snapshot_date=None):
 
 
 def load_strategy_timestamp(source, snapshot_date=None):
-    """Load the exact created_at timestamp for a strategy's latest data."""
+    """Load the exact created_at timestamp for a strategy's latest data.
+    
+    PostgreSQL TIMESTAMPTZ 返回 UTC 时间，需转换为北京时间 (UTC+8) 显示。
+    """
     if source == 'funnel':
         if snapshot_date:
             row = query_one("""
@@ -205,6 +208,10 @@ def load_strategy_timestamp(source, snapshot_date=None):
             """, (source,))
     if row and row.get('created_at'):
         ct = row['created_at']
+        if hasattr(ct, 'astimezone'):
+            ct = ct.astimezone(BEIJING_TZ)
+        elif hasattr(ct, 'replace'):
+            ct = ct.replace(tzinfo=timezone.utc).astimezone(BEIJING_TZ)
         if hasattr(ct, 'strftime'):
             return ct.strftime('%Y-%m-%d %H:%M:%S')
         return str(ct)
