@@ -1,0 +1,226 @@
+name: main_uptrend
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'strategies/main_uptrend/**'
+      - 'core/**'
+      - '.github/workflows/main_uptrend.yml'
+  schedule:
+    - cron: '10 7 * * 1-5'  # UTC 7:10 = 北京时间 15:10 (盘后)
+  workflow_dispatch:
+    inputs:
+      date:
+        description: '评估日期/回测起始 (YYYY-MM-DD)'
+        required: false
+      end_date:
+        description: '回测结束日期 (YYYY-MM-DD)，仅 backtest 模式'
+        required: false
+      mode:
+        description: '运行模式'
+        type: choice
+        default: 'daily'
+        options:
+          - daily
+          - backtest
+          - analyze
+      symbol:
+        description: '单票分析标的 (如 sh.603115)，仅 analyze 模式'
+        required: false
+
+jobs:
+  daily:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && (inputs.mode == 'daily' || inputs.mode == '')) || (github.event_name == 'push' && github.event_name != 'workflow_dispatch') }}
+
+    env:
+      POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+      POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+      POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_SSLMODE: require
+      TZ: Asia/Shanghai
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check if trading day
+        id: check_trading
+        run: |
+          python -c "
+          from core.utils.trading_calendar import is_trading_day
+          from datetime import datetime, timedelta, timezone, date
+          utc_dt = datetime.now(timezone.utc)
+          beijing_dt = utc_dt + timedelta(hours=8)
+          beijing_date = beijing_dt.date()
+          if is_trading_day(beijing_date):
+              print(f'{beijing_date} is trading day, proceeding')
+          else:
+              print(f'{beijing_date} is NOT trading day, skipping')
+              exit(1)
+          "
+
+      - name: Run main uptrend strategy
+        run: |
+          CMD="python -m strategies.main_uptrend.run_daily --write-db"
+          if [ -n "${{ inputs.date }}" ]; then
+            CMD="$CMD --date ${{ inputs.date }}"
+          fi
+          echo "Running: $CMD"
+          $CMD
+
+      - name: Send Telegram notification
+        if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          pip install psycopg2-binary python-dotenv
+          python -c "
+          import sys, os, json
+          sys.path.insert(0, '.')
+          from core.db.connection import get_db_fresh
+          from psycopg2.extras import RealDictCursor
+          from datetime import datetime, timedelta, timezone
+          from zoneinfo import ZoneInfo
+          tz = ZoneInfo('Asia/Shanghai')
+          today = datetime.now(tz).date()
+          conn = get_db_fresh()
+          cur = conn.cursor(cursor_factory=RealDictCursor)
+          cur.execute('SELECT ts_code, stock_name, consensus_score FROM daily_candidates WHERE snapshot_date = %s AND source = %s AND selected = TRUE ORDER BY consensus_score DESC LIMIT 8', (today, 'main_uptrend'))
+          rows = cur.fetchall()
+          cur.close(); conn.close()
+          if not rows:
+              print('main_uptrend 无候选标的')
+          else:
+              lines = ['\u5347\u6d6a\u68c0\u6d4b ' + today.strftime('%m-%d')]
+              for i, r in enumerate(rows, 1):
+                  lines.append(f\"{i}. {r['ts_code']} {r['stock_name'] or ''} \u8bc4\u5206:{r['consensus_score']:.0f}\")
+              lines.append(f'\u5171 {len(rows)} \u53ea\u5019\u9009')
+              print('\n'.join(lines))
+          "
+
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.mode == 'backtest' || inputs.mode == 'analyze') }}
+
+    env:
+      POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+      POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+      POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_SSLMODE: require
+      TZ: Asia/Shanghai
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install tqdm
+
+      - name: Apply DB schema migrations
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_SSLMODE: require
+        run: |
+          python -m core.db.apply_schema || echo "Schema apply skipped"
+
+      - name: Run backtest
+        id: backtest_run
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_SSLMODE: require
+        run: |
+          START_DATE="${{ inputs.date }}"
+          END_DATE="${{ inputs.end_date }}"
+          MODE="${{ inputs.mode }}"
+          SYMBOL="${{ inputs.symbol }}"
+
+          if [ -z "$START_DATE" ]; then START_DATE="2025-01-01"; fi
+          if [ -z "$END_DATE" ]; then END_DATE="2026-05-15"; fi
+
+          echo "Mode: $MODE"
+          echo "Period: $START_DATE ~ $END_DATE"
+
+          if [ "$MODE" = "analyze" ] && [ -n "$SYMBOL" ]; then
+            CMD="python -m strategies.main_uptrend.run_backtest --analyze --symbol $SYMBOL --start $START_DATE --end $END_DATE --output strategies/main_uptrend/results/analyze_$SYMBOL.txt"
+          else
+            CMD="python -m strategies.main_uptrend.run_backtest --no-a --start $START_DATE --end $END_DATE --output strategies/main_uptrend/results/backtest.txt"
+          fi
+
+          echo "Running: $CMD"
+          $CMD
+
+      - name: Check backtest JSON
+        run: |
+          if [ -f "strategies/funnel_strategy/docs/main_uptrend_backtest.json" ]; then
+            echo "BACKTEST_JSON_EXISTS=true" >> $GITHUB_ENV
+            echo "Backtest JSON ready: $(wc -c < strategies/funnel_strategy/docs/main_uptrend_backtest.json) bytes"
+          else
+            echo "⓬ Backtest JSON not found, skipping deploy"
+            echo "BACKTEST_JSON_EXISTS=false" >> $GITHUB_ENV
+          fi
+
+      - name: Generate HTML report
+        if: env.BACKTEST_JSON_EXISTS == 'true'
+        run: |
+          python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs
+
+      - name: Commit backtest JSON to repo
+        if: env.BACKTEST_JSON_EXISTS == 'true'
+        run: |
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git add strategies/funnel_strategy/docs/main_uptrend_backtest.json
+          git diff --staged --quiet || git commit -m "chore: update main_uptrend backtest JSON"
+          git push origin master
+
+      - name: Deploy to GitHub Pages
+        if: env.BACKTEST_JSON_EXISTS == 'true'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.GH_PAT }}
+          publish_dir: ./strategies/funnel_strategy/docs
+          destination_dir: funnel
+          keep_files: true
+
+      - name: Upload backtest artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: main-uptrend-backtest
+          path: |
+            strategies/main_uptrend/results/
+            strategies/funnel_strategy/docs/main_uptrend_backtest.json

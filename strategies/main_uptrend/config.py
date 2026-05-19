@@ -1,0 +1,103 @@
+"""
+主升浪策略配置
+==================
+Layer A/B/C/D 四层参数，支持回测和实盘两种模式。
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from zoneinfo import ZoneInfo
+from typing import List, Optional
+
+TZ = ZoneInfo("Asia/Shanghai")
+
+
+@dataclass
+class MainUptrendConfig:
+    # ============================================================
+    # Layer A: 选股池预筛（周频）
+    # ============================================================
+    a_enabled: bool = True
+
+    a_profit_growth_min: float = 0.30
+    a_profit_acceleration: bool = True
+
+    a_market_cap_min: float = 50e8
+    a_market_cap_max: float = 200e8
+
+    a_industry_momentum_top_pct: float = 0.30
+    a_industry_momentum_days: int = 20
+
+    a_incentive_lookback_months: int = 6
+
+    # ============================================================
+    # Layer B: 启动信号识别（日频）
+    # ============================================================
+    b_enabled: bool = True
+
+    b_volume_breakout_mult: float = 2.5
+    b_volume_ma_days: int = 60
+    b_turnover_min: float = 5.0
+
+    b_price_breakout_box_days: int = 60
+    b_price_ma_period: int = 120
+    b_price_above_ma_max_pct: float = 0.08
+
+    b_main_force_inflow_min_pct: float = 0.05
+
+    b_seal_amount_ratio_min: float = 0.005
+
+    b_next_day_hold_avg_price: bool = True
+
+    # ============================================================
+    # Layer C: 持续性判定（日频）
+    # ============================================================
+    c_enabled: bool = True
+
+    c_intraday_morning_pct: float = 0.03
+    c_intraday_morning_amplitude_max: float = 0.02
+    c_intraday_up_ratio_min: float = 0.60
+
+    c_big_order_net_buy_min_pct: float = 0.08
+    c_big_order_threshold: float = 500000
+
+    c_volume_shrink_ratio_min: float = 0.60
+    c_volume_shrink_ratio_max: float = 0.80
+
+    c_seal_early_time: str = "10:00"
+    c_seal_max_open_times: int = 0
+
+    c_sector_rise_min_pct: float = 0.03
+    c_sector_peer_count_min: int = 2
+
+    # ============================================================
+    # Layer D: 风险过滤
+    # ============================================================
+    d_enabled: bool = True
+
+    d_exclude_st: bool = True
+    d_exclude_delist_warning: bool = True
+
+    d_share_reduction_days: int = 30
+
+    d_trap_volume_ratio: float = 5.0
+    d_trap_seal_ratio_max: float = 0.003
+
+    d_pledge_ratio_max: float = 0.50
+    d_pledge_consecutive_limit_days: int = 3
+
+    # ============================================================
+    # 综合参数
+    # ============================================================
+    b_top_n_daily: int = 20
+    c_top_n_daily: int = 8
+
+    backtest_start: str = "2025-01-01"
+    backtest_end: str = "2026-05-15"
+
+    forward_return_days: List[int] = field(default_factory=lambda: [10, 20, 60])
+
+    db_batch_size: int = 1000
+
+
+DEFAULT_CONFIG = MainUptrendConfig()

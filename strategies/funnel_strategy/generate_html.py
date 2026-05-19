@@ -218,6 +218,26 @@ def load_strategy_timestamp(source, snapshot_date=None):
     return None
 
 
+def load_main_uptrend_backtest():
+    """从 docs 目录加载 main_uptrend 回测 JSON 数据"""
+    backtest_file = Path(__file__).parent / "docs" / "main_uptrend_backtest.json"
+    if not backtest_file.exists():
+        return None
+    with open(backtest_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
+    return clean_nan(data)
+
+
+def load_main_uptrend_daily(trade_date=None):
+    """从 daily_candidates 加载 main_uptrend 当日候选"""
+    try:
+        candidates, date = load_candidates('main_uptrend', trade_date=trade_date)
+        return candidates, date
+    except Exception as e:
+        print(f"  ⚠ 加载 main_uptrend daily 数据失败: {e}")
+        return [], None
+
+
 def generate_unified_html(output_dir=None, trade_date=None):
     if output_dir is None:
         output_dir = Path(__file__).parent / "docs"
@@ -254,6 +274,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     llm_scan = load_scan_stats('llm_multisource', llm_date)
     eight_scan = load_scan_stats('overnight_8step', eight_date)
+
+    uptrend_daily, uptrend_date = load_main_uptrend_daily(trade_date=trade_date)
+    uptrend_backtest = load_main_uptrend_backtest()
 
     display_date = str(funnel_date or llm_date or eight_date or get_beijing_date())
 
@@ -430,6 +453,88 @@ def generate_unified_html(output_dir=None, trade_date=None):
           <span class="rule-inline">综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只</span>
         </div>"""
 
+    # ── 主升浪步骤与回测展示 ──
+    uptrend_steps_html = ""
+    top10_html = ""
+    if uptrend_backtest:
+        bt = uptrend_backtest
+        signal_count = bt.get('total_signals', 0)
+        period = f"{bt.get('backtest_start', '')} ~ {bt.get('backtest_end', '')}"
+        fwd = bt.get('forward_returns', {})
+
+        table_rows = ""
+        for days_key in ['10', '20', '60']:
+            fd = fwd.get(days_key, {})
+            if not fd:
+                continue
+            wr = fd.get('win_rate', 0)
+            hr = fd.get('hit_rate_5pct', 0)
+            mn = fd.get('mean', 0)
+            md = fd.get('median', 0)
+            a5 = fd.get('above_5pct', 0)
+            a10 = fd.get('above_10pct', 0)
+            n = fd.get('count', 0)
+            color = '#3fb950' if wr > 0.55 else ('#f0883e' if wr > 0.50 else '#f85149')
+            table_rows += f"""
+            <tr>
+              <td><strong>{days_key}日</strong></td>
+              <td>{n}</td>
+              <td style="color:{color}"><strong>{wr:.1%}</strong></td>
+              <td>{hr:.1%}</td>
+              <td>{mn:.1%}</td>
+              <td>{md:.1%}</td>
+              <td>{a5:.1%}</td>
+              <td>{a10:.1%}</td>
+            </tr>"""
+
+        uptrend_steps_html = f"""
+        <div class="step-row">
+          <span class="step-name">回测区间</span>
+          <span class="rule-inline">{period}</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">总信号数</span>
+          <span class="step-pass">{signal_count}</span>
+        </div>
+        <div style="overflow-x:auto;margin:8px 0;">
+        <table style="width:100%;font-size:.75rem;border-collapse:collapse;">
+        <thead><tr style="background:var(--metric-bg)">
+          <th>持有期</th><th>样本</th><th>胜率</th><th>命中&gt;5%</th><th>均值</th><th>中位数</th><th>&gt;5%概率</th><th>&gt;10%概率</th>
+        </tr></thead>
+        <tbody>{table_rows}</tbody>
+        </table>
+        </div>"""
+
+        top10_html = ""
+        for s in bt.get('top10_signals', [])[:5]:
+            frets = s.get('forward_rets', {})
+            ret_10 = f"{frets.get('10', 0):.1%}" if '10' in frets else '—'
+            ret_20 = f"{frets.get('20', 0):.1%}" if '20' in frets else '—'
+            ret_60 = f"{frets.get('60', 0):.1%}" if '60' in frets else '—'
+            top10_html += f"""
+            <div class="candidate-card">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code">{s.get('ts_code', '')}</span>
+                  <span style="font-size:.7rem;color:var(--text2);margin-left:4px;">{s.get('eval_date', '')}</span>
+                </div>
+                <span class="cand-score">{s.get('composite_score', 0):.0f}</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">{ret_10}</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">{ret_20}</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">{ret_60}</span><span class="ml">60日</span></div>
+              </div>
+            </div>"""
+    elif uptrend_daily:
+        uptrend_steps_html = """
+        <div class="step-row">
+          <span class="step-name">今日运行</span>
+          <span class="step-pass">✓</span>
+        </div>"""
+    else:
+        uptrend_steps_html = '<div class="no-data">暂无回测数据<br><small>运行全量回测后自动展示</small></div>'
+
     # ── 候选卡片渲染 ──
     def render_candidate_card(c, badge_class='', badge_text=''):
         code = c.get('ts_code', '')
@@ -539,6 +644,16 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if not eight_cards:
         eight_cards = '<div class="no-data">今日无推荐</div>'
 
+    uptrend_cards = ""
+    if uptrend_daily:
+        for c in uptrend_daily[:5]:
+            card = render_candidate_card(c, badge_text='<span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">主升浪</span>')
+            uptrend_cards += card
+    if not uptrend_cards and uptrend_backtest:
+        uptrend_cards = top10_html
+    if not uptrend_cards:
+        uptrend_cards = '<div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div>'
+
     # ── 历史日期 ──
     history_dates_raw = query_dicts("""
         SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC LIMIT 10;
@@ -566,7 +681,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>三策略对比 - {display_date}</title>
+<title>四策略对比 - {display_date}</title>
 <style>
 :root {{
   --bg: #f0f2f5; --card: #fff; --text: #1a1a1a; --text2: #666; --border: #e0e0e0;
@@ -609,7 +724,17 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .section h2 {{ font-size:1.05rem; margin-bottom:14px; padding-bottom:8px; border-bottom:2px solid var(--tab-active); }}
 .section-subtitle {{ font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; }}
 
-/* Three column layout */
+/* Four column layout */
+.four-col {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:stretch; }}
+.four-col .section {{ margin-bottom:0; display:flex; flex-direction:column; }}
+.four-col .section > h2 {{ flex-shrink:0; }}
+.four-col .section > h3 {{ flex-shrink:0; margin-top:auto; }}
+.four-col .cards-grid {{ flex:1; align-content:start; }}
+.four-col .candidate-card {{ align-self:stretch; }}
+@media (max-width:1200px) {{ .four-col {{ grid-template-columns:repeat(2,1fr); }} }}
+@media (max-width:768px) {{ .four-col {{ grid-template-columns:1fr; }} }}
+
+/* Keep three-col for backward compatibility */
 .three-col {{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; align-items:stretch; }}
 .three-col .section {{ margin-bottom:0; display:flex; flex-direction:column; }}
 .three-col .section > h2 {{ flex-shrink:0; }}
@@ -681,7 +806,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 <div class="container">
   <div class="header">
     <div>
-      <h1>📊 三策略对比选股系统</h1>
+      <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
         报告日期: {display_date} | 生成: {gen_time}
         <select class="date-select" onchange="switchDate(this.value)">
@@ -703,7 +828,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <div class="legend-item"><span class="signal-badge">信号</span> 买入信号</div>
   </div>
 
-  <div class="three-col">
+  <div class="four-col">
     <!-- ========== 八步法 ========== -->
     <div class="section">
       <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
@@ -727,10 +852,18 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({llm_count}只)</h3>
       <div class="cards-grid">{llm_cards}</div>
     </div>
+
+    <!-- ========== 主升浪 ========== -->
+    <div class="section">
+      <h2>📈 主升浪检测<span class="section-subtitle">{uptrend_backtest.get('backtest_start', '') if uptrend_backtest else (uptrend_date or '—')}</span></h2>
+      {uptrend_steps_html}
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('回测 Top 5' if uptrend_backtest else '今日候选') + (' (' + str(len(uptrend_daily)) + '只)' if uptrend_daily else ' (0只)')}</h3>
+      <div class="cards-grid">{uptrend_cards}</div>
+    </div>
   </div>
 
   <div class="footer">
-    AI Stock Recommendation System | 三策略对比 · 每日15:10自动更新
+    AI Stock Recommendation System | 四策略对比 · 每日15:10自动更新
   </div>
 </div>
 
