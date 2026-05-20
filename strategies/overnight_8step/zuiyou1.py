@@ -2248,7 +2248,7 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
             res["pool"] = pool_name
             results.append(res)
             msg = (f"  🎯 {code:<14} 涨幅:{res['pct']:>6.2f}%  "
-                   f"路径:{res['path']}  连板:{res['streak']}  得分:{res['score']}  "
+                   f"路径:{res['path']}  连板:{res['streak']}  得分:{res['score']:.1f}  "
                    f"换手:{res['turn']}%  量比:{res['vol_ratio']}")
             if HAS_TQDM:
                 tqdm.write(msg)
@@ -2349,7 +2349,7 @@ def append_to_summary(
             lines.append(
                 f"{row['code']:<14} {row['pool']:<16} {row['price']:>7.2f} "
                 f"{row['pct']:>7.2f} {row['vol_ratio']:>6.2f} {row['turn']:>7.2f} "
-                f"{row['streak']:>5} {row['bias_ma5']:>7.2f} {row['score']:>5}  {tags_clean}"
+                f"{row['streak']:>5} {row['bias_ma5']:>7.2f} {row['score']:>5.1f}  {tags_clean}"
             )
 
     lines.append("")
@@ -2398,12 +2398,24 @@ def _format_funnel(rejects: dict, total: int, results: list = None, cfg: dict = 
         min_amount_upper = 0.3
         max_amount_upper = 30
     
+    # 从配置中读取量比阈值
+    if cfg:
+        vol_ratio_min_stable = cfg.get("vol_ratio_min", 1.5)
+        vol_ratio_max_stable = cfg.get("vol_ratio_max", 8.0)
+        vol_ratio_min_upper = CONFIG_UPPER.get("vol_ratio_min", 1.5)
+        vol_ratio_max_upper = CONFIG_UPPER.get("vol_ratio_max", 10.0)
+    else:
+        vol_ratio_min_stable = 1.5
+        vol_ratio_max_stable = 8.0
+        vol_ratio_min_upper = 1.5
+        vol_ratio_max_upper = 10.0
+
     steps = [
         ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
         ("成交额", f"{min_amount_stable}-{max_amount_stable}亿/{min_amount_upper}-{max_amount_upper}亿", ["成交额"]),
         ("换手率", ">=5%,<=10%", ["换手率"]),
         ("市值过滤", "50-500亿/30-200亿", ["市值"]),
-        ("量比", ">=1", ["量比"]),
+        ("量比", f">={vol_ratio_min_stable}/{vol_ratio_min_upper}", ["量比"]),
         ("均线+压力检测", "", ["均线", "压力"]),
         ("乖离严重", "超阈值5%+", ["乖离严重"]),
         ("得分不足", "低于阈值", ["得分不足"]),
@@ -2434,7 +2446,7 @@ def _format_funnel(rejects: dict, total: int, results: list = None, cfg: dict = 
         for r in results:
             lines.append(
                 f"  {r['code']:<14} 涨幅:{r['pct']:>6.2f}%  "
-                f"路径:{r['path']}  连板:{r['streak']}  得分:{r['score']}  "
+                f"路径:{r['path']}  连板:{r['streak']}  得分:{r['score']:.1f}  "
                 f"换手:{r['turn']}%  量比:{r['vol_ratio']}"
             )
 
@@ -2644,11 +2656,13 @@ def main():
         print(msg, file=sys.stderr)
 
     # 15:10 盘后定稿时计算与 14:30 的 diff
+    # 注意：使用完整通过列表(all_results)而非压缩后列表(stable_picks/upper_picks)，
+    # 避免因情绪压缩导致误判新增/剔除
     diff_summary = ""
     if is_post_time:
         intraday_codes = _read_intraday_picks(end_d)
         if intraday_codes:
-            current_codes = {baostock_to_standard(row['code']) for _, row in pd.concat([stable_picks, upper_picks]).iterrows()}
+            current_codes = {baostock_to_standard(code) for code in all_results.keys()}
             added = current_codes - intraday_codes
             removed = intraday_codes - current_codes
             kept = current_codes & intraday_codes
@@ -2679,7 +2693,7 @@ def main():
             print(
                 f"{row['code']:<14} {row['price']:>7.2f} "
                 f"{row['pct']:>7.2f} {row['vol_ratio']:>6.2f} {row['turn']:>7.2f} "
-                f"{row['streak']:>5} {row['bias_ma5']:>7.2f} {row['score']:>5}  {row['tags']}"
+                f"{row['streak']:>5} {row['bias_ma5']:>7.2f} {row['score']:>5.1f}  {row['tags']}"
             )
 
     print(f"\n操作指引")
@@ -3036,7 +3050,7 @@ def debug_stock(code: str, cfg: dict = None):
     score = min(score, 150)
 
     steps.append(("评分", score >= cfg["score_threshold"],
-                  f"得分:{score} 阈值:{cfg['score_threshold']} 标签:{' | '.join(tags)}"))
+                  f"得分:{score:.1f} 阈值:{cfg['score_threshold']} 标签:{' | '.join(tags)}"))
 
     _print_debug_steps(steps)
     if score >= cfg["score_threshold"]:

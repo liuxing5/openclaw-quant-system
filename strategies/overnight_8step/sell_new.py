@@ -47,8 +47,17 @@ import os
 import json
 import requests
 import pandas as pd
-from datetime import datetime
+import time
+from datetime import datetime, timezone, timedelta
 from typing import Dict, Optional
+
+
+def beijing_now():
+    """返回北京时间，自动处理不同服务器时区"""
+    utc_timestamp = time.time()
+    utc_dt = datetime.fromtimestamp(utc_timestamp, tz=timezone.utc)
+    beijing_tz = timezone(timedelta(hours=8))
+    return utc_dt.astimezone(beijing_tz)
 
 # ============================================================
 #  Telegram 推送（可选）
@@ -73,7 +82,7 @@ POSITIONS = [
 ]
 
 CONFIG = {
-    "state_file": "./sell_state.json",
+    "state_file": os.path.join(os.path.dirname(os.path.abspath(__file__)), "sell_state.json"),
     "check_times": ["09:30", "10:00", "10:30", "13:00", "14:00"],
     "stop_loss_global": -2.5,
     "atr_stop_enabled": True,
@@ -622,9 +631,9 @@ def auction_advice(code: str, cost: float, path: str, market_data: dict) -> Opti
 #  主程序
 # ============================================================
 def run():
-    now = datetime.now()
+    now = beijing_now()
     print("=" * 70)
-    print("  自动卖出系统 v2.1（含跟踪止盈 + 状态持久化）")
+    print("  自动卖出系统 v2.2（含跟踪止盈 + 状态持久化 + LLM辅助）")
     print(f"  运行时间: {now.strftime('%Y-%m-%d %H:%M:%S')}")
     print("=" * 70)
 

@@ -150,7 +150,7 @@ def _format_pick_message(s: dict, prefix: str = "•") -> str:
         f"{prefix} {s['code']}{llm_tag} ¥{s['price']} +{s['pct']:.2f}% "
         f"量比{s.get('vol_ratio',0):.2f} 换手{s.get('turn',0):.1f}% "
         f"连板{s.get('streak',0)} 乖离{s.get('bias_ma5',0):.2f}% "
-        f"得分{s['score']} | {tags_display}"
+        f"得分{s['score']:.1f} | {tags_display}"
     )
     return msg
 
@@ -312,7 +312,7 @@ def send_stock_picks_with_buttons(
         lines.append("💰 单票≤15% 总仓位")
         for s in stable_picks:
             lines.append(f"• {s['code']}  ¥{s['price']}  +{(s.get('pct') or 0):.2f}%")
-            lines.append(f"  得分 {s['score']} | {s['tags']}")
+            lines.append(f"  得分 {s['score']:.1f} | {s['tags']}")
         lines.append("")
 
     if upper_picks:
@@ -320,7 +320,7 @@ def send_stock_picks_with_buttons(
         lines.append("💰 单票≤8% 总仓位")
         for s in upper_picks:
             lines.append(f"• {s['code']}  ¥{s['price']}  +{(s.get('pct') or 0):.2f}%")
-            lines.append(f"  得分 {s['score']} | {s['tags']}")
+            lines.append(f"  得分 {s['score']:.1f} | {s['tags']}")
         lines.append("")
 
     if operation_note:
