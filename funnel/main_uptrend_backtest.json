@@ -1,55 +1,55 @@
 {
   "backtest_start": "2025-05-19",
   "backtest_end": "2026-05-19",
-  "total_signals": 30,
+  "total_signals": 1879,
   "forward_returns": {
     "10": {
-      "count": 29,
-      "win_rate": 0.4482758620689655,
-      "hit_rate_5pct": 0.27586206896551724,
-      "mean": 0.0033731319478895413,
-      "median": -0.026178010471204185,
-      "max": 0.536723163841808,
-      "min": -0.2981927710843374,
-      "std": 0.20156726992766974,
-      "above_3pct": 0.3448275862068966,
-      "above_5pct": 0.27586206896551724,
-      "above_10pct": 0.27586206896551724
+      "count": 1800,
+      "win_rate": 0.3883333333333333,
+      "hit_rate_5pct": 0.2611111111111111,
+      "mean": -0.004795697692668808,
+      "median": -0.03319798917246704,
+      "max": 1.1162444113263785,
+      "min": -0.35398991761957455,
+      "std": 0.17207631006738316,
+      "above_3pct": 0.3016666666666667,
+      "above_5pct": 0.2611111111111111,
+      "above_10pct": 0.18444444444444444
     },
     "20": {
-      "count": 28,
-      "win_rate": 0.39285714285714285,
-      "hit_rate_5pct": 0.35714285714285715,
-      "mean": -0.002683697889647539,
-      "median": -0.08359770853202031,
-      "max": 0.6919708029197081,
-      "min": -0.3509635974304069,
-      "std": 0.2812198018971637,
-      "above_3pct": 0.35714285714285715,
-      "above_5pct": 0.35714285714285715,
-      "above_10pct": 0.32142857142857145
+      "count": 1720,
+      "win_rate": 0.3825581395348837,
+      "hit_rate_5pct": 0.288953488372093,
+      "mean": 0.009113481837050212,
+      "median": -0.04302035983423137,
+      "max": 2.3048245614035094,
+      "min": -0.43829962855963683,
+      "std": 0.24182810039694352,
+      "above_3pct": 0.32209302325581396,
+      "above_5pct": 0.288953488372093,
+      "above_10pct": 0.22732558139534884
     },
     "60": {
-      "count": 25,
-      "win_rate": 0.44,
-      "hit_rate_5pct": 0.36,
-      "mean": 0.10099705692892982,
-      "median": -0.08302354399008673,
-      "max": 1.1969496021220163,
-      "min": -0.35384615384615387,
-      "std": 0.4168169273002858,
-      "above_3pct": 0.4,
-      "above_5pct": 0.36,
-      "above_10pct": 0.36
+      "count": 1416,
+      "win_rate": 0.4293785310734463,
+      "hit_rate_5pct": 0.356638418079096,
+      "mean": 0.06489773650350159,
+      "median": -0.03582133315957516,
+      "max": 4.804824561403509,
+      "min": -0.49751072961373394,
+      "std": 0.37549566678559315,
+      "above_3pct": 0.3926553672316384,
+      "above_5pct": 0.356638418079096,
+      "above_10pct": 0.2951977401129944
     }
   },
   "top10_signals": [
     {
       "ts_code": "002969.SZ",
       "eval_date": "2026-01-05",
-      "composite_score": 6.8,
+      "composite_score": 8.2,
       "b_score": 2.8,
-      "c_score": 4.0,
+      "c_score": 5.4,
       "entry_price": 13.7,
       "forward_rets": {
         "10": 0.2555,
@@ -60,9 +60,9 @@
     {
       "ts_code": "002969.SZ",
       "eval_date": "2026-01-06",
-      "composite_score": 6.7,
+      "composite_score": 8.0,
       "b_score": 2.7,
-      "c_score": 4.0,
+      "c_score": 5.4,
       "entry_price": 15.07,
       "forward_rets": {
         "10": 0.2555,
@@ -73,9 +73,9 @@
     {
       "ts_code": "002939.SZ",
       "eval_date": "2025-08-15",
-      "composite_score": 6.6,
+      "composite_score": 8.0,
       "b_score": 2.6,
-      "c_score": 4.0,
+      "c_score": 5.4,
       "entry_price": 12.06,
       "forward_rets": {
         "10": 0.0141,
@@ -86,9 +86,9 @@
     {
       "ts_code": "000859.SZ",
       "eval_date": "2025-11-24",
-      "composite_score": 6.6,
+      "composite_score": 8.0,
       "b_score": 2.6,
-      "c_score": 4.0,
+      "c_score": 5.4,
       "entry_price": 9.55,
       "forward_rets": {
         "10": -0.0262,
@@ -97,24 +97,11 @@
       }
     },
     {
-      "ts_code": "000798.SZ",
-      "eval_date": "2025-11-24",
-      "composite_score": 6.4,
-      "b_score": 2.6,
-      "c_score": 3.9,
-      "entry_price": 16.6,
-      "forward_rets": {
-        "10": -0.2982,
-        "20": -0.3193,
-        "60": -0.2759
-      }
-    },
-    {
       "ts_code": "002009.SZ",
       "eval_date": "2025-12-30",
-      "composite_score": 6.4,
+      "composite_score": 7.8,
       "b_score": 2.4,
-      "c_score": 4.0,
+      "c_score": 5.4,
       "entry_price": 23.43,
       "forward_rets": {
         "10": -0.0849,
@@ -123,11 +110,24 @@
       }
     },
     {
+      "ts_code": "000798.SZ",
+      "eval_date": "2025-11-24",
+      "composite_score": 7.8,
+      "b_score": 2.6,
+      "c_score": 5.2,
+      "entry_price": 16.6,
+      "forward_rets": {
+        "10": -0.2982,
+        "20": -0.3193,
+        "60": -0.2759
+      }
+    },
+    {
       "ts_code": "002189.SZ",
       "eval_date": "2025-06-30",
-      "composite_score": 6.4,
+      "composite_score": 7.7,
       "b_score": 2.5,
-      "c_score": 3.9,
+      "c_score": 5.2,
       "entry_price": 30.8,
       "forward_rets": {
         "10": -0.139,
@@ -138,9 +138,9 @@
     {
       "ts_code": "002158.SZ",
       "eval_date": "2025-08-19",
-      "composite_score": 6.3,
+      "composite_score": 7.7,
       "b_score": 2.5,
-      "c_score": 3.8,
+      "c_score": 5.2,
       "entry_price": 23.85,
       "forward_rets": {
         "10": 0.0147,
@@ -149,29 +149,29 @@
       }
     },
     {
-      "ts_code": "600117.SH",
-      "eval_date": "2025-07-30",
-      "composite_score": 6.3,
-      "b_score": 2.6,
-      "c_score": 3.7,
-      "entry_price": 4.2,
-      "forward_rets": {
-        "10": -0.0976,
-        "20": -0.1905,
-        "60": -0.2476
-      }
-    },
-    {
       "ts_code": "002811.SZ",
       "eval_date": "2025-05-20",
-      "composite_score": 6.2,
+      "composite_score": 7.6,
       "b_score": 2.2,
-      "c_score": 4.0,
+      "c_score": 5.4,
       "entry_price": 13.6,
       "forward_rets": {
         "10": -0.1963,
         "20": -0.2228,
         "60": -0.1588
+      }
+    },
+    {
+      "ts_code": "600117.SH",
+      "eval_date": "2025-07-30",
+      "composite_score": 7.6,
+      "b_score": 2.6,
+      "c_score": 5.0,
+      "entry_price": 4.2,
+      "forward_rets": {
+        "10": -0.0976,
+        "20": -0.1905,
+        "60": -0.2476
       }
     }
   ]
