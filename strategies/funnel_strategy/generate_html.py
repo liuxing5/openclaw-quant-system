@@ -687,9 +687,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
             else:
                 eight_cards += render_candidate_card(c, badge_text='<span class="badge-8step">八步法</span>')
         if stable_cards:
-            eight_cards += f'<div class="path-group"><div class="path-label path-stable">稳健路径</div><div class="cards-grid">{stable_cards}</div></div>'
+            eight_cards += f'<div class="path-group"><div class="cards-grid">{stable_cards}</div></div>'
         if upper_cards:
-            eight_cards += f'<div class="path-group"><div class="path-label path-upper">高位路径</div><div class="cards-grid">{upper_cards}</div></div>'
+            eight_cards += f'<div class="path-group"><div class="path-label path-upper" style="margin-bottom:8px;">高位路径</div><div class="cards-grid">{upper_cards}</div></div>'
     if not eight_cards:
         eight_cards = '<div class="no-data">今日无推荐</div>'
 
@@ -719,6 +719,11 @@ def generate_unified_html(output_dir=None, trade_date=None):
     funnel_elapsed = funnel.get('elapsed_seconds', 0) if funnel else 0
     llm_count = len(llm_candidates)
     eight_count = len(eight_candidates)
+
+    # 八步法 h3 标题行：候选标的 + 稳健路径 合并到一行
+    eight_h3 = f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({eight_count}只)</h3>'
+    if stable_cards:
+        eight_h3 = f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 ({eight_count}只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>'
 
     gen_time = datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
@@ -883,7 +888,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <div class="section">
       <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
       <div class="steps-area">{eight_steps_html}</div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({eight_count}只)</h3>
+      {eight_h3}
       <div class="cards-grid">{eight_cards}</div>
     </div>
 
