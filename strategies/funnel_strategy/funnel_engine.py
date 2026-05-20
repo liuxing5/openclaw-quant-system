@@ -539,6 +539,22 @@ class FunnelEngine:
             print(f"  ⚠️ write_candidates 模块不可用，跳过 daily_candidates 写入")
             return
 
+        # 补充 stock_name：漏斗流程中 L1 返回 List[str]，stock_name 在后续层丢失
+        name_cache = {}
+        codes_missing_name = [c.get('ts_code', '') for c in candidates if not c.get('stock_name')]
+        if codes_missing_name:
+            try:
+                from core.db.connection import get_db_fresh
+                _conn = get_db_fresh()
+                _cur = _conn.cursor()
+                _cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes_missing_name,))
+                for _r in _cur.fetchall():
+                    name_cache[_r[0]] = _r[1]
+                _cur.close()
+                _conn.close()
+            except Exception:
+                pass
+
         items = []
         for c in candidates:
             ts_code = c.get('ts_code', '')
@@ -557,7 +573,7 @@ class FunnelEngine:
 
             items.append({
                 'ts_code': ts_code,
-                'stock_name': c.get('stock_name'),
+                'stock_name': c.get('stock_name') or name_cache.get(ts_code),
                 'final_score': float(score),
                 'quant_score': float(score),
                 'llm_score': float(c.get('llm_bonus', 0)),
