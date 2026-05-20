@@ -288,7 +288,7 @@ class DataLoader:
         # 存储指标数据
         self._indicators_df = df
 
-        # 按日期构建索引（使用groupby避免复制）
+        # 按日期构建索引（需要先按日期排序）
         t3 = time.time()
         logger.info("    构建日期索引...")
         
@@ -301,8 +301,10 @@ class DataLoader:
                 logger.info(f"    [DEBUG] amount >= 1e7 的股票数: {(amt >= 1e7).sum()}/{len(amt)}")
                 logger.info(f"    [DEBUG] pct_chg >= 3 的股票数: {(df['pct_chg'].abs() >= 3).sum()}/{len(df)}")
         
+        # 修复：按日期排序后构建索引
+        df_by_date = df.sort_values(['trade_date', 'ts_code']).reset_index(drop=True)
         self._indicators_by_date = {}
-        date_vals = df['trade_date'].values
+        date_vals = df_by_date['trade_date'].values
         date_change = np.empty(len(date_vals), dtype=bool)
         date_change[0] = True
         date_change[1:] = date_vals[1:] != date_vals[:-1]
@@ -310,7 +312,7 @@ class DataLoader:
         date_ends = np.append(date_starts[1:], len(date_vals))
         for i in range(len(date_starts)):
             d = date_vals[date_starts[i]]
-            self._indicators_by_date[d] = df.iloc[date_starts[i]:date_ends[i]]
+            self._indicators_by_date[d] = df_by_date.iloc[date_starts[i]:date_ends[i]]
         logger.info(f"    日期索引: {len(self._indicators_by_date)} 天, 耗时{time.time()-t3:.1f}s")
 
         t2 = time.time()
