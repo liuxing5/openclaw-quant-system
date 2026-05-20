@@ -207,6 +207,7 @@ def main():
             ts = datetime.now().strftime('%Y%m%d_%H%M%S')
             out_path = out_dir / f"backtest_{args.start}_{args.end}_{ts}.txt"
 
+        Path(out_path).parent.mkdir(parents=True, exist_ok=True)
         with open(out_path, 'w', encoding='utf-8') as f:
             f.write(result.get('summary', ''))
         print(f"\n结果已保存: {out_path}")
