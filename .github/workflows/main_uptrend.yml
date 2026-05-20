@@ -200,9 +200,12 @@ jobs:
 
       - name: Commit backtest JSON to repo
         if: env.BACKTEST_JSON_EXISTS == 'true'
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
         run: |
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
+          git remote set-url origin https://x-access-token:${GH_PAT}@github.com/liuxing5/openclaw-quant-system.git
           git add strategies/funnel_strategy/docs/main_uptrend_backtest.json
           git diff --staged --quiet || git commit -m "chore: update main_uptrend backtest JSON"
           git push origin master
