@@ -634,14 +634,14 @@ def is_llm_candidate(code: str) -> tuple:
 
 
 def get_llm_boost_score(code: str) -> float:
-    """获取LLM候选池的加成分数，上限12分（总分120的10%）"""
+    """获取LLM候选池的加成分数，上限10分（总分100的10%）"""
     is_candidate, info = is_llm_candidate(code)
     if not is_candidate:
         return 0.0
     
     boost = 0.0
-    boost += min(info.get('final_score', 0) * 0.05, 8.0)
-    boost += min(info.get('llm_score', 0) * 0.03, 5.0)
+    boost += min(info.get('final_score', 0) * 0.04, 6.0)
+    boost += min(info.get('llm_score', 0) * 0.025, 4.0)
     
     source_diversity = info.get('source_diversity', 0)
     if source_diversity >= 3:
@@ -728,16 +728,16 @@ def is_funnel_candidate(code: str) -> tuple:
 
 
 def get_funnel_boost_score(code: str) -> float:
-    """获取漏斗候选池的加成分数，上限10分（漏斗七层过滤已做严格筛选）"""
+    """获取漏斗候选池的加成分数，上限8分（漏斗七层过滤已做严格筛选）"""
     is_candidate, info = is_funnel_candidate(code)
     if not is_candidate:
         return 0.0
 
     boost = 0.0
-    boost += min(info.get('final_score', 0) * 0.04, 6.0)
-    boost += 4.0
+    boost += min(info.get('final_score', 0) * 0.03, 5.0)
+    boost += 3.0
 
-    return min(boost, 10.0)
+    return min(boost, 8.0)
 
 
 # ============================================================
@@ -1103,7 +1103,7 @@ CONFIG_STABLE = {
     "turn_max": 10.0,
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
-    "score_threshold": 85,
+    "score_threshold": 70,
     "sentiment_cold": 40,      # 情绪评分阈值：冷淡
     "sentiment_normal": 55,    # 情绪评分阈值：正常
     "sentiment_hot": 70,       # 情绪评分阈值：活跃
@@ -1132,7 +1132,7 @@ CONFIG_UPPER = {
     "turn_max": 10.0,
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
-    "score_threshold": 85,
+    "score_threshold": 70,
     "sentiment_cold": 40,      # 情绪评分阈值：冷淡
     "sentiment_normal": 55,    # 情绪评分阈值：正常
     "sentiment_hot": 70,       # 情绪评分阈值：活跃
@@ -1834,64 +1834,64 @@ def analyze_ultimate(
     else:
         streak = 0
 
-    # --- 评分系统（基础分50）---
+    # --- 评分系统（基础分50，满分100）---
     score = 50
     tags = []
 
     # A. 涨幅路径
     if in_stable:
-        score += 15
+        score += 12
         tags.append("稳健蓄势")
         bias = (curr_price - ma5_yest) / ma5_yest if ma5_yest > 0 else 1
         if bias < 0.02:
-            score += 10
+            score += 8
             tags.append("紧贴MA5")
     elif in_upper:
-        score += 20
+        score += 17
         tags.append("高位博弈")
         if cfg["MODE"] == "post":
             if curr_high > 0 and curr_price >= curr_high * 0.998:
-                score += 10
+                score += 8
                 tags.append("光头大阳")
 
     # B. 量比评分
     if 1.8 <= vol_ratio <= 4.0:
-        score += 25
+        score += 21
         tags.append("黄金放量")
     elif vol_ratio > 4.0:
-        score += 10
+        score += 8
         tags.append("爆量博弈")
     else:
-        score += 5
+        score += 4
         tags.append("量能达标")
 
     # C. 换手率评分
     if 5.0 <= curr_turn <= 8.0:
-        score += 15
+        score += 12
         tags.append("黄金换手")
     elif 8.0 < curr_turn <= 10.0:
-        score += 8
+        score += 7
         tags.append("换手偏高")
 
     # D. 成交量递增加分
     if vol_increasing:
-        score += 10
+        score += 8
         tags.append("量能递增")
     else:
-        score -= 5
+        score -= 4
 
     # E. 连板高度
     if streak == 0:
-        score += 5
+        score += 4
         tags.append("首阳突破")
     elif streak == 1:
-        score += 20
+        score += 17
         tags.append("首板突破")
     elif streak == 2:
-        score += 30
+        score += 25
         tags.append("二连板")
     elif streak >= cfg["streak_penalty_threshold"]:
-        bonus = 30
+        bonus = 25
         penalty = (streak - 2) * cfg["streak_penalty_per_board"]
         net = bonus - penalty
         score += max(net, 0)
@@ -1901,31 +1901,31 @@ def analyze_ultimate(
     # sentiment_score 是综合情绪分数(0-100)
     if sentiment_score >= cfg["sentiment_fever"]:
         # 高潮期(≥85分)：风险最高，大幅扣分
-        score -= 15
+        score -= 12
         tags.append("情绪高潮↓↓")
     elif sentiment_score >= cfg["sentiment_hot"]:
         # 活跃期(≥70分)：适当扣分
-        score -= 5
+        score -= 4
         tags.append("情绪偏热↓")
     elif sentiment_score >= cfg["sentiment_normal"]:
         # 正常期(≥55分)：小幅加分
-        score += 3
+        score += 2
         tags.append("情绪健康+")
     elif sentiment_score >= cfg["sentiment_cold"]:
         # 冷淡期(≥40分)：观望态度，不加分也不扣分
         tags.append("情绪观望")
     else:
         # 极冷期(<40分)：市场风险高，扣分
-        score -= 10
+        score -= 8
         tags.append("情绪极冷↓")
 
     # --- 风险扣分 ---
     if curr_turn > cfg["penalty_hot_turn"]:
-        score -= 20
+        score -= 17
         tags.append("换手过热↓")
 
     if vol_ratio > cfg["penalty_vol_ratio"]:
-        score -= 15
+        score -= 12
         tags.append("量比过激↓")
         # 移除可能已加的"爆量博弈"标签，避免自相矛盾
         if "爆量博弈" in tags:
@@ -1944,10 +1944,10 @@ def analyze_ultimate(
     bias_excess = bias_ma5 - bias_threshold
     if bias_excess > 0:
         if bias_excess <= 0.02:  # 超出阈值 0-2%
-            score -= 15
+            score -= 12
             tags.append(f"乖离偏大({bias_ma5*100:.1f}%)↓")
         elif bias_excess <= 0.05:  # 超出 2-5%
-            score -= 30
+            score -= 25
             tags.append(f"乖离过大({bias_ma5*100:.1f}%)↓↓")
         else:  # 超出 5%+，直接剔除
             if reject_stats is not None:
@@ -1969,7 +1969,7 @@ def analyze_ultimate(
         if curr_high > 0 and curr_price > 0:
             drawdown_from_high = (curr_high - curr_price) / curr_high
             if drawdown_from_high > 0.03:
-                score -= 15
+                score -= 12
                 tags.append("尾盘回落↓")
 
     # --- 细粒度排序因子（区分度增强）---
@@ -1983,25 +1983,25 @@ def analyze_ultimate(
         if avg_amount_5d > 0:
             amount_ratio = curr_amount / avg_amount_5d
             if amount_ratio > 3.0:
-                fine_score += 5
+                fine_score += 4
                 tags.append("成交额三倍量")
             elif amount_ratio < 0.8:
-                fine_score -= 3
+                fine_score -= 2
                 tags.append("成交额萎缩↓")
 
     # F2. 距离涨停的远近（高位路径才用）
     if in_upper:
         distance_to_limit = limit_pct - curr_pct
         if distance_to_limit < 1.0:
-            fine_score += 5
+            fine_score += 4
             tags.append("濒临涨停")
         elif distance_to_limit < 2.0:
-            fine_score += 3
+            fine_score += 2
 
     # F3. 收盘价是否守住5日均线（post模式独有）—— 只扣分不加分
     if cfg["MODE"] == "post":
         if curr_price < ma5_yest:
-            fine_score -= 5
+            fine_score -= 4
             tags.append("破MA5↓")
 
     score += fine_score
@@ -2029,9 +2029,9 @@ def analyze_ultimate(
         tags.append(f"🔽漏斗+{funnel_boost:.0f}")
 
     # --- 新增指标加成（v1.6+）---
-    # v1.7: 新增加成项总上限30分，防止评分膨胀稀释核心8步法逻辑
+    # v1.7: 新增加成项总上限25分，防止评分膨胀稀释核心8步法逻辑
     _bonus_pool = 0.0
-    _BONUS_POOL_CAP = 30.0
+    _BONUS_POOL_CAP = 25.0
 
     amplitude = real_info.get('amplitude', 0) if real_info else 0
     if 3 <= amplitude <= 8:
@@ -2043,34 +2043,34 @@ def analyze_ultimate(
 
     volume_ratio = real_info.get('volume_ratio', 0) if real_info else 0
     if volume_ratio > 1.5:
-        _bonus_pool += min(3, (volume_ratio - 1.5) * 2)
+        _bonus_pool += min(2, (volume_ratio - 1.5) * 1.5)
         tags.append("放量确认")
     elif volume_ratio < 0.8:
-        score -= 3
+        score -= 2
         tags.append("缩量↓")
 
     commission_ratio = real_info.get('commission_ratio', 0) if real_info else 0
     if commission_ratio > 0:
-        _bonus_pool += min(10, commission_ratio / 10)
+        _bonus_pool += min(8, commission_ratio / 10)
         tags.append("买盘强劲")
     elif commission_ratio < -20:
-        score -= 5
+        score -= 4
         tags.append("卖压大↓")
 
     large_order_net = real_info.get('large_order_net', 0) if real_info else 0
     if large_order_net > 0:
-        _bonus_pool += min(15, large_order_net * 5)
+        _bonus_pool += min(12, large_order_net * 4)
         tags.append("大单净流入")
     elif large_order_net < -5:
-        score -= 10
+        score -= 8
         tags.append("大单净流出↓")
 
     main_force_net = real_info.get('main_force_net', 0) if real_info else 0
     if main_force_net > 0:
-        _bonus_pool += min(10, main_force_net / 1e6 * 2)
+        _bonus_pool += min(8, main_force_net / 1e6 * 1.5)
         tags.append("主力流入")
     elif main_force_net < -1e7:
-        score -= 5
+        score -= 4
         tags.append("主力流出↓")
 
     ts_code = baostock_to_standard(code) if 'baostock_to_standard' in globals() else code
@@ -2111,8 +2111,8 @@ def analyze_ultimate(
     score += capped_bonus
 
     # --- 最终判定 ---
-    # v1.7: 评分上限120分，阈值提升至85（防止加成项稀释核心8步法）
-    score = min(score, 120)
+    # v2.0: 评分上限100分，阈值70
+    score = min(score, 100)
     if score < cfg["score_threshold"]:
         if reject_stats is not None:
             reject_stats["得分不足"] += 1
