@@ -777,7 +777,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .four-col {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:stretch; }}
 .four-col .section {{ margin-bottom:0; display:flex; flex-direction:column; min-width:0; overflow:hidden; }}
 .four-col .section > h2 {{ flex-shrink:0; }}
-.four-col .section > h3 {{ flex-shrink:0; margin-top:auto; }}
+.four-col .section > h3 {{ flex-shrink:0; margin-top:14px; }}
 .four-col .cards-grid {{ flex:1; align-content:start; }}
 .four-col .candidate-card {{ align-self:stretch; }}
 @media (max-width:1400px) {{ .four-col {{ grid-template-columns:repeat(2,1fr); }} }}
@@ -800,7 +800,6 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .step-pass {{ font-weight:bold; color:var(--score-color); min-width:36px; text-align:right; }}
 .step-row .elim {{ color:var(--elim-color); font-size:.72rem; margin-left:4px; }}
 .step-row .rule-inline {{ color:var(--text2); font-size:.7rem; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%; }}
-.step-row[title] {{ cursor:help; }}
 .step-note {{ font-size:.75rem; color:var(--text2); padding:6px 10px; }}
 
 /* Candidate cards */
