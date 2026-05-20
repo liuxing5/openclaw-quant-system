@@ -131,7 +131,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-05-20 | 生成: 2026-05-20 20:28:49
+        报告日期: 2026-05-20 | 生成: 2026-05-20 20:59:16
         <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           <option value="2026-05-20" selected>2026-05-20</option><option value="2026-05-19" >2026-05-19</option><option value="2026-05-18" >2026-05-18</option><option value="2026-05-15" >2026-05-15</option><option value="2026-05-12" >2026-05-12</option>
@@ -477,18 +477,115 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row">
           <span class="step-name">总信号数</span>
-          <span class="step-pass">0</span>
+          <span class="step-pass">674</span>
         </div>
         <div style="overflow-x:auto;margin:8px 0;">
         <table style="width:100%;font-size:.7rem;border-collapse:collapse;white-space:nowrap;">
         <thead><tr style="background:var(--metric-bg)">
           <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th><th>&gt;5%</th><th>&gt;10%</th>
         </tr></thead>
-        <tbody></tbody>
+        <tbody>
+            <tr>
+              <td><strong>10日</strong></td>
+              <td>595</td>
+              <td style="color:#f85149"><strong>40.3%</strong></td>
+              <td>-0.7%</td>
+              <td>-3.0%</td>
+              <td>29.2%</td>
+              <td>20.0%</td>
+            </tr>
+            <tr>
+              <td><strong>20日</strong></td>
+              <td>515</td>
+              <td style="color:#f85149"><strong>35.5%</strong></td>
+              <td>-0.2%</td>
+              <td>-6.3%</td>
+              <td>27.6%</td>
+              <td>21.6%</td>
+            </tr>
+            <tr>
+              <td><strong>60日</strong></td>
+              <td>206</td>
+              <td style="color:#f85149"><strong>35.9%</strong></td>
+              <td>0.2%</td>
+              <td>-9.2%</td>
+              <td>28.2%</td>
+              <td>25.7%</td>
+            </tr></tbody>
         </table>
         </div></div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">回测 Top 5 (0只)</h3>
-      <div class="cards-grid"><div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div></div>
+      <div class="cards-grid">
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-002969','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-002969" target="_blank" style="color:inherit;text-decoration:none">002969.SZ</a></span>
+                  <span style="font-size:.7rem;color:var(--text2);margin-left:4px;">2026-01-05</span>
+                </div>
+                <span class="cand-score">7</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">25.6%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">69.2%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">69.2%</span><span class="ml">60日</span></div>
+              </div>
+            </div>
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-002969','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-002969" target="_blank" style="color:inherit;text-decoration:none">002969.SZ</a></span>
+                  <span style="font-size:.7rem;color:var(--text2);margin-left:4px;">2026-01-06</span>
+                </div>
+                <span class="cand-score">7</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">25.6%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">57.9%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">63.2%</span><span class="ml">60日</span></div>
+              </div>
+            </div>
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-300986','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300986" target="_blank" style="color:inherit;text-decoration:none">300986.SZ</a></span>
+                  <span style="font-size:.7rem;color:var(--text2);margin-left:4px;">2026-01-06</span>
+                </div>
+                <span class="cand-score">6</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">109.9%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">162.7%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">61.5%</span><span class="ml">60日</span></div>
+              </div>
+            </div>
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-600108','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600108" target="_blank" style="color:inherit;text-decoration:none">600108.SH</a></span>
+                  <span style="font-size:.7rem;color:var(--text2);margin-left:4px;">2026-03-04</span>
+                </div>
+                <span class="cand-score">6</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">6.0%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">-12.3%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">—</span><span class="ml">60日</span></div>
+              </div>
+            </div>
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-000995','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000995" target="_blank" style="color:inherit;text-decoration:none">000995.SZ</a></span>
+                  <span style="font-size:.7rem;color:var(--text2);margin-left:4px;">2026-02-03</span>
+                </div>
+                <span class="cand-score">6</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">-15.2%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">-19.5%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">-28.2%</span><span class="ml">60日</span></div>
+              </div>
+            </div></div>
     </div>
   </div>
 
