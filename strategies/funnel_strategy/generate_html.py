@@ -777,6 +777,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .four-col {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:stretch; }}
 .four-col .section {{ margin-bottom:0; display:flex; flex-direction:column; min-width:0; overflow:hidden; }}
 .four-col .section > h2 {{ flex-shrink:0; }}
+.four-col .steps-area {{ flex-shrink:0; min-height:260px; }}
 .four-col .section > h3 {{ flex-shrink:0; margin-top:14px; }}
 .four-col .cards-grid {{ flex:1; align-content:start; }}
 .four-col .candidate-card {{ align-self:stretch; }}
@@ -881,7 +882,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <!-- ========== 八步法 ========== -->
     <div class="section">
       <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
-      {eight_steps_html}
+      <div class="steps-area">{eight_steps_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({eight_count}只)</h3>
       <div class="cards-grid">{eight_cards}</div>
     </div>
@@ -889,7 +890,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <!-- ========== 七步漏斗 ========== -->
     <div class="section">
       <h2>🎯 七步漏斗选股<span class="section-subtitle">{funnel_timestamp or funnel_date or '—'}</span></h2>
-      {funnel_steps_html}
+      <div class="steps-area">{funnel_steps_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 ({funnel_count}只)</h3>
       <div class="cards-grid">{funnel_cards}</div>
     </div>
@@ -897,7 +898,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <!-- ========== LLM多源 ========== -->
     <div class="section">
       <h2>🤖 LLM多源策略<span class="section-subtitle">{llm_timestamp or llm_date or '—'}</span></h2>
-      {llm_steps_html}
+      <div class="steps-area">{llm_steps_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({llm_count}只)</h3>
       <div class="cards-grid">{llm_cards}</div>
     </div>
@@ -905,7 +906,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <!-- ========== 主升浪 ========== -->
     <div class="section">
       <h2>📈 主升浪检测<span class="section-subtitle">{uptrend_backtest.get('backtest_start', '') if uptrend_backtest else (uptrend_date or '—')}</span></h2>
-      {uptrend_steps_html}
+      <div class="steps-area">{uptrend_steps_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('回测 Top 5' if uptrend_backtest else '今日候选') + (' (' + str(len(uptrend_daily)) + '只)' if uptrend_daily else ' (0只)')}</h3>
       <div class="cards-grid">{uptrend_cards}</div>
     </div>
