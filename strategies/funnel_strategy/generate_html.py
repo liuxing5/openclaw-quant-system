@@ -341,9 +341,10 @@ def generate_unified_html(output_dir=None, trade_date=None):
             ]
             for name, icon, cnt, elim, rule, color in steps_data:
                 elim_html = f'<span class="elim">{elim}</span>' if elim else ''
-                rule_html = f'<span class="rule-inline">{rule}</span>' if rule and len(rule) < 50 else ''
+                rule_html = f'<span class="rule-inline">{rule}</span>' if rule else ''
+                title_attr = f' title="{rule}"' if rule else ''
                 funnel_steps_html += f"""
-            <div class="step-row">
+            <div class="step-row"{title_attr}>
               <span class="step-icon">{icon}</span>
               <span class="step-name">{name}</span>
               <span class="step-pass">{cnt}</span>
@@ -396,8 +397,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
             elim_html = f'<span class="elim">{elim}</span>' if elim else ''
             rule = step_rules.get(sname, '')
             rule_html = f'<span class="rule-inline">{rule}</span>' if rule else ''
+            title_attr = f' title="{rule}"' if rule else ''
             eight_steps_html += f"""
-            <div class="step-row">
+            <div class="step-row"{title_attr}>
               <span class="step-name">{sname}</span>
               <span class="step-pass">{remaining}</span>
               {elim_html}
@@ -419,56 +421,56 @@ def generate_unified_html(output_dir=None, trade_date=None):
             "精选标记": "综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只",
         }
         llm_steps_html += f"""
-        <div class="step-row">
+        <div class="step-row" title="{llm_step_rules['多源信号采集']}">
           <span class="step-name">多源信号采集</span>
           <span class="step-pass">{stats.get('多源聚合后', '—')}</span>
           <span class="rule-inline">{llm_step_rules['多源信号采集']}</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="{llm_step_rules['流动性过滤']}">
           <span class="step-name">流动性过滤</span>
           <span class="rule-inline">{llm_step_rules['流动性过滤']}</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="{llm_step_rules['量化评分']}">
           <span class="step-name">量化评分</span>
           <span class="rule-inline">{llm_step_rules['量化评分']}</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="{llm_step_rules['估值与财务']}">
           <span class="step-name">估值与财务</span>
           <span class="rule-inline">{llm_step_rules['估值与财务']}</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="{llm_step_rules['综合评分≥阈值']}">
           <span class="step-name">综合评分≥阈值</span>
           <span class="step-pass">{stats.get('综合评分≥阈值', '—')}</span>
           <span class="rule-inline">{llm_step_rules['综合评分≥阈值']}</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="{llm_step_rules['精选标记']}">
           <span class="step-name">精选标记</span>
           <span class="step-pass">{stats.get('精选标记', '—')}</span>
           <span class="rule-inline">{llm_step_rules['精选标记']}</span>
         </div>"""
     else:
         llm_steps_html = """
-        <div class="step-row">
+        <div class="step-row" title="6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐">
           <span class="step-name">多源信号采集</span>
           <span class="rule-inline">6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股">
           <span class="step-name">流动性过滤</span>
           <span class="rule-inline">成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="10维量化打分：涨幅/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100">
           <span class="step-name">量化评分</span>
           <span class="rule-inline">10维量化打分：涨幅/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="PE/PB估值打分；净利润率/毛利率/负债率/现金流质量评估">
           <span class="step-name">估值与财务</span>
           <span class="rule-inline">PE/PB估值打分；净利润率/毛利率/负债率/现金流质量评估</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池">
           <span class="step-name">综合评分≥阈值</span>
           <span class="rule-inline">量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池</span>
         </div>
-        <div class="step-row">
+        <div class="step-row" title="综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只">
           <span class="step-name">精选标记</span>
           <span class="rule-inline">综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只</span>
         </div>"""
@@ -798,6 +800,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .step-pass {{ font-weight:bold; color:var(--score-color); min-width:36px; text-align:right; }}
 .step-row .elim {{ color:var(--elim-color); font-size:.72rem; margin-left:4px; }}
 .step-row .rule-inline {{ color:var(--text2); font-size:.7rem; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%; }}
+.step-row[title] {{ cursor:help; }}
 .step-note {{ font-size:.75rem; color:var(--text2); padding:6px 10px; }}
 
 /* Candidate cards */
