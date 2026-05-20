@@ -392,12 +392,19 @@ class FunnelEngine:
             print(f"  {'代码':<14} {'入场价':>8} {'评分':>5} {'ATR':>7} "
                   f"{'止损':>8} {'目标':>8} {'盈亏比':>6}  信号")
             print(f"  {'─'*80}")
+            _SIGNAL_ZH = {
+                'pullback_bounce': '回踩反弹',
+                'trend_continuation': '趋势延续',
+                'demand_absorption': '需求吸收',
+                'strong_relay': '强势接力',
+            }
             for item in l6_result:
                 tags_str = ', '.join(item.get('tags', [])[:3])
+                signal_zh = _SIGNAL_ZH.get(item.get('signal_type', ''), item.get('signal_type', ''))
                 print(f"  {item['ts_code']:<14} {item['entry_price']:>8.2f} "
                       f"{item['score']:>5.0f} {item['atr']:>7.3f} "
                       f"{item['stop_loss']:>8.2f} {item['target_price']:>8.2f} "
-                      f"{item['profit_loss_ratio']:>6.1f}  {item.get('signal_type', '')} "
+                      f"{item['profit_loss_ratio']:>6.1f}  {signal_zh} "
                       f"[{tags_str}]")
 
             print(f"\n  💡 操作指引")

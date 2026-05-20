@@ -291,6 +291,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
         'L6': '14:30后买入；止损=入场价-1ATR；目标=入场价+2ATR；盈亏比≥2:1',
     }
     SIGNAL_MAP = {
+        'pullback_bounce': '回踩反弹',
+        'trend_continuation': '趋势延续',
         'demand_absorption': '需求吸收',
         'strong_relay': '强势接力',
         'none': '无信号',
