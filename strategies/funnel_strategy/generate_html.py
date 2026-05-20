@@ -574,10 +574,10 @@ def generate_unified_html(output_dir=None, trade_date=None):
         entry_l = c.get('entry_low') or c.get('entry_price')
         stop_l = c.get('stop_loss')
         target = c.get('target_1') or c.get('target_price')
-        tags = c.get('logic_tags', [])
+        tags = c.get('logic_tags') or c.get('tags', [])
         if isinstance(tags, str):
             tags = tags.replace('/', '|').split('|')
-        tags = [t.strip() for t in tags if t.strip()][:3]
+        tags = [t.strip() for t in tags if t.strip()][:4]
         selected = c.get('selected', False)
         sel_cls = 'selected' if selected else ''
 

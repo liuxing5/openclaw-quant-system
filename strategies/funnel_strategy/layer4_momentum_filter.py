@@ -208,6 +208,7 @@ def _check_single(
     result = {
         'passed': False, 'signal_type': 'none',
         'score_bonus': 0.0, 'details': {}, 'reject_reason': '',
+        'pct_chg': 0.0, 'bias_pct': 0.0, 'vol_ratio': 0.0,
     }
 
     rows = ohlcv_cache.get(ts_code)
@@ -218,8 +219,12 @@ def _check_single(
 
     today = rows[-1]
 
+    # 0. 涨跌幅
+    result['pct_chg'] = today.get('pct_chg', 0.0)
+
     # 1. 量比验证（从预计算读取）
     vol_ratio = pre['vol_ratio']
+    result['vol_ratio'] = round(vol_ratio, 2)
     result['details']['vol_ratio'] = round(vol_ratio, 2)
 
     if vol_ratio < cfg.layer4_volume_ratio_min:
@@ -231,6 +236,7 @@ def _check_single(
 
     # 2. 乖离率检查（从预计算读取）
     bias_pct = pre['bias_pct']
+    result['bias_pct'] = round(bias_pct, 2)
     result['details']['bias_pct'] = round(bias_pct, 2)
 
     if abs(bias_pct) > cfg.layer4_max_bias_pct:
@@ -454,6 +460,9 @@ def _run_parallel(stock_list, cfg, ohlcv_cache, precomputed, passed, reject_stat
                     'score_bonus': check['score_bonus'],
                     'signal_type': check['signal_type'],
                     'details': check['details'],
+                    'pct_chg': check.get('pct_chg', 0.0),
+                    'bias_pct': check.get('bias_pct', 0.0),
+                    'vol_ratio': check.get('vol_ratio', 0.0),
                 })
             else:
                 _count_reject(check['reject_reason'], reject_stats)
@@ -473,6 +482,9 @@ def _run_serial(stock_list, cfg, ohlcv_cache, precomputed, passed, reject_stats,
                 'score_bonus': check['score_bonus'],
                 'signal_type': check['signal_type'],
                 'details': check['details'],
+                'pct_chg': check.get('pct_chg', 0.0),
+                'bias_pct': check.get('bias_pct', 0.0),
+                'vol_ratio': check.get('vol_ratio', 0.0),
             })
         else:
             _count_reject(check['reject_reason'], reject_stats)

@@ -574,6 +574,45 @@ class FunnelEngine:
             if isinstance(tags, str):
                 tags = [t.strip() for t in tags.replace('/', '|').split('|') if t.strip()]
             signal_type = c.get('signal_type', '')
+
+            # 为漏斗候选生成描述性标签（与L5的tags合并）
+            pct = c.get('pct_chg', 0)
+            bias = c.get('bias_pct', 0)
+            vol_ratio = c.get('vol_ratio', 0)
+            amp = c.get('amplitude', 0)
+
+            # 涨幅标签
+            has_pct_tag = any('涨幅' in t or '突破' in t for t in tags)
+            if not has_pct_tag:
+                if 3 <= pct <= 7:
+                    tags.append('黄金涨幅')
+                elif pct > 7:
+                    tags.append('强势突破')
+                else:
+                    tags.append('涨幅偏低')
+
+            # 乖离标签
+            has_bias_tag = any('MA5' in t or '乖离' in t for t in tags)
+            if not has_bias_tag:
+                if abs(bias) > 3:
+                    tags.append('乖离偏大')
+                else:
+                    tags.append('贴MA5')
+
+            # 量能标签
+            has_vol_tag = any('放量' in t or '量能' in t for t in tags)
+            if not has_vol_tag:
+                if vol_ratio > 1.5:
+                    tags.append('放量')
+                else:
+                    tags.append('量能平稳')
+
+            # 振幅标签
+            has_amp_tag = any('平稳' in t for t in tags)
+            if not has_amp_tag:
+                if amp < 5:
+                    tags.append('分时平稳')
+
             if signal_type:
                 tags.append(f"信号:{signal_type}")
             profit_loss_ratio = c.get('profit_loss_ratio', 0)
