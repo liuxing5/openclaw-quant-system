@@ -7,6 +7,10 @@ Layer C: 持续性判定（日频）
   3. 缩量上涨：价涨量缩（缩到前一日 60-80%）
   4. 板上量比：封板时间 + 开板次数
   5. 同板块联动：概念板块涨幅 > 3%，至少 2 只同行同涨
+
+v2: 向量化扫描优化
+- 优先使用预计算指标快照，批量DataFrame过滤
+- 降级到逐只评估（实盘模式）
 """
 from __future__ import annotations
 
@@ -51,10 +55,153 @@ class LayerCSustainAnalyzer:
         self.cfg = cfg
         self.loader = loader or DataLoader()
         self.skip_1min = skip_1min  # 回测模式下跳过1分钟线查询
-        self._sector_cache: Dict[str, List[float]] = {}  # 行业涨幅缓存
+
+    def scan_b_signals(self, b_signals: List[LaunchSignal],
+                       top_n: int = 8) -> List[SustainSignal]:
+        """
+        对 B 层输出的 Top N 信号做持续性二次过滤
+
+        优化：优先使用预计算指标向量化扫描，降级到逐只评估
+        """
+        # ---- 向量化路径 ----
+        if self.loader._indicators_by_date and b_signals:
+            return self._scan_b_signals_vectorized(b_signals, top_n)
+
+        # ---- 降级路径：逐只评估 ----
+        return self._scan_b_signals_fallback(b_signals, top_n)
+
+    def _scan_b_signals_vectorized(self, b_signals: List[LaunchSignal],
+                                    top_n: int = 8) -> List[SustainSignal]:
+        """向量化扫描：使用预计算指标，批量DataFrame过滤"""
+        eval_date = b_signals[0].eval_date
+        b_codes = {s.ts_code: s for s in b_signals}
+
+        ind_df = self.loader.get_indicators_snapshot(eval_date)
+        if ind_df.empty:
+            return []
+
+        # 过滤到B层信号中的股票
+        pool_df = ind_df[ind_df['ts_code'].isin(b_codes)].copy()
+        if pool_df.empty:
+            return []
+
+        scores_df = pd.DataFrame(index=pool_df.index)
+        scores_df['ts_code'] = pool_df['ts_code']
+        passed_count = np.zeros(len(pool_df), dtype=int)
+
+        # ---- C1: 分时形态质量（回测模式用日线近似） ----
+        if self.skip_1min:
+            c1_pass = pool_df['pct_chg'].fillna(0) > 3.0
+            scores_df['intraday'] = np.minimum(1.0, pool_df['pct_chg'].fillna(0) / 5.0)
+            scores_df['intraday'] = np.where(pool_df['pct_chg'].fillna(0) > 0, scores_df['intraday'], 0)
+        else:
+            # 实盘模式降级到逐只
+            scores_df['intraday'] = 0.0
+            c1_pass = pd.Series(False, index=pool_df.index)
+
+        passed_count += c1_pass.astype(int)
+
+        # ---- C2: 大单买入占比（成交额放大 + 涨幅配合） ----
+        amount_ratio = pool_df['amount_ratio_20'].fillna(0)
+        pct_chg = pool_df['pct_chg'].fillna(0)
+        c2_pass = (amount_ratio > 2.0) & (pct_chg > 2.0)
+        scores_df['big_order'] = np.minimum(1.0, amount_ratio / 5.0)
+        passed_count += c2_pass.astype(int)
+
+        # ---- C3: 缩量上涨 ----
+        vol_shrink = pool_df['volume_shrink_ratio'].fillna(0)
+        c3_pass = (pct_chg > 0) & (vol_shrink >= self.cfg.c_volume_shrink_ratio_min) & \
+                  (vol_shrink <= self.cfg.c_volume_shrink_ratio_max)
+        scores_df['vol_shrink'] = c3_pass.astype(float)
+        passed_count += c3_pass.astype(int)
+
+        # ---- C4: 板上量比（涨停日封板质量） ----
+        limit_pct = np.where(pool_df['is_kcb_cyb'], 0.197, 0.097)
+        is_zt = pct_chg >= limit_pct - 0.003
+        if self.skip_1min:
+            c4_pass = is_zt
+            scores_df['seal_quality'] = np.where(is_zt, 1.0, 0.0)
+        else:
+            c4_pass = pd.Series(False, index=pool_df.index)
+            scores_df['seal_quality'] = 0.0
+        passed_count += c4_pass.astype(int)
+
+        # ---- C5: 同板块联动 ----
+        industry_avg = pool_df.get('industry_avg_pct', pd.Series(np.nan, index=pool_df.index))
+        industry_rising = pool_df.get('industry_rising_count', pd.Series(0, index=pool_df.index))
+        # industry_avg_pct 是小数形式（pct_chg的mean），需要转换
+        c5_pass = (industry_avg.fillna(0) > self.cfg.c_sector_rise_min_pct * 100) & \
+                  (industry_rising.fillna(0) >= self.cfg.c_sector_peer_count_min)
+        # 如果industry_avg_pct已经是百分比形式（0.03表示3%），则不需要*100
+        # 检查：daily_quotes中pct_chg是百分比形式（如3.5表示3.5%），所以mean也是百分比
+        c5_pass = (industry_avg.fillna(0) > self.cfg.c_sector_rise_min_pct * 100) & \
+                  (industry_rising.fillna(0) >= self.cfg.c_sector_peer_count_min)
+        scores_df['sector'] = c5_pass.astype(float)
+        passed_count += c5_pass.astype(int)
+
+        # ---- 综合判定 ----
+        scores_df['total_score'] = scores_df['intraday'] + scores_df['big_order'] + \
+                                   scores_df['vol_shrink'] + scores_df['seal_quality'] + scores_df['sector']
+        scores_df['passed'] = passed_count >= 3
+
+        # 过滤通过的，取Top N
+        passed_df = scores_df[scores_df['passed']].sort_values('total_score', ascending=False)
+        top = passed_df.head(top_n)
+
+        # 转换为SustainSignal列表
+        results = []
+        for idx, row in top.iterrows():
+            ts_code = row['ts_code']
+            b_sig = b_codes.get(ts_code)
+
+            vol_shrink_val = pool_df.loc[idx, 'volume_shrink_ratio'] if idx in pool_df.index else 0
+            amt_ratio_val = pool_df.loc[idx, 'amount_ratio_20'] if idx in pool_df.index else 0
+            ind_avg_val = pool_df.loc[idx, 'industry_avg_pct'] if idx in pool_df.index and 'industry_avg_pct' in pool_df.columns else 0
+            ind_rise_val = pool_df.loc[idx, 'industry_rising_count'] if idx in pool_df.index and 'industry_rising_count' in pool_df.columns else 0
+
+            sig = SustainSignal(
+                ts_code=ts_code,
+                eval_date=eval_date,
+                score=float(row['total_score']),
+                factors={
+                    'intraday': float(row['intraday']),
+                    'big_order': float(row['big_order']),
+                    'vol_shrink': float(row['vol_shrink']),
+                    'seal_quality': float(row['seal_quality']),
+                    'sector': float(row['sector']),
+                },
+                details={
+                    'intraday': f"回测模式, 日涨幅={pool_df.loc[idx, 'pct_chg']:.1f}%" if self.skip_1min else "1分钟线不可用",
+                    'big_order': f"成交额倍数={amt_ratio_val:.1f}x, 涨幅={pool_df.loc[idx, 'pct_chg']:.1f}%",
+                    'vol_shrink': f"量比T-1={vol_shrink_val:.1f}x, 涨跌={pool_df.loc[idx, 'pct_chg']:+.1f}%",
+                    'seal_quality': f"回测模式, 涨停={pool_df.loc[idx, 'pct_chg']:.1f}%" if is_zt[idx] else "非涨停日",
+                    'sector': f"板块均值={ind_avg_val:.1f}%, 上涨={ind_rise_val:.0f}只",
+                },
+                passed=True,
+                b_signal=b_sig,
+            )
+            results.append(sig)
+
+        logger.info(f"C层向量化扫描 {len(b_signals)} 只，通过 {len(passed_df)} 只，输出 Top {len(results)} 只")
+        return results
+
+    def _scan_b_signals_fallback(self, b_signals: List[LaunchSignal],
+                                  top_n: int = 8) -> List[SustainSignal]:
+        """降级路径：逐只评估（实盘模式用）"""
+        results = []
+        for b_sig in b_signals:
+            c_sig = self.evaluate(b_sig.ts_code, b_sig.eval_date, b_sig)
+            if c_sig.passed:
+                results.append(c_sig)
+
+        results.sort(key=lambda x: x.score, reverse=True)
+        top = results[:top_n]
+        logger.info(f"C 层扫描 {len(b_signals)} 只，通过 {len(results)} 只，输出 Top {len(top)} 只")
+        return top
 
     def evaluate(self, ts_code: str, eval_date: str,
                  b_signal: Optional[LaunchSignal] = None) -> SustainSignal:
+        """评估单只股票的持续性（降级路径，实盘用）"""
         sig = SustainSignal(
             ts_code=ts_code, eval_date=eval_date, b_signal=b_signal,
         )
@@ -81,11 +228,8 @@ class LayerCSustainAnalyzer:
         details = {}
         passed_count = 0
 
-        # --------------------------------------------------
-        # C1: 分时形态质量（回测模式跳过1分钟线）
-        # --------------------------------------------------
+        # C1: 分时形态质量
         if self.skip_1min:
-            # 回测模式：用日线数据近似判断（涨幅>3%视为强势）
             c1_pass = today_pct > 3.0
             scores["intraday"] = min(1.0, today_pct / 5.0) if today_pct > 0 else 0
             details["intraday"] = f"回测模式(跳过1min), 日涨幅={today_pct:.1f}%"
@@ -105,13 +249,10 @@ class LayerCSustainAnalyzer:
                 c1_pass = False
                 scores["intraday"] = 0
                 details["intraday"] = "1分钟线不可用"
-
         if c1_pass:
             passed_count += 1
 
-        # --------------------------------------------------
-        # C2: 大单买入占比（简化为成交额放大 + 涨幅配合）
-        # --------------------------------------------------
+        # C2: 大单买入占比
         avg_amount_20 = df["amount"].iloc[-21:-1].mean() if len(df) >= 21 else df["amount"].mean()
         if avg_amount_20 > 0:
             amount_ratio = today_amount / avg_amount_20
@@ -125,9 +266,7 @@ class LayerCSustainAnalyzer:
         if c2_pass:
             passed_count += 1
 
-        # --------------------------------------------------
         # C3: 缩量上涨
-        # --------------------------------------------------
         c3_pass = volume_shrink_check(today_volume, prev_volume, today_pct)
         scores["vol_shrink"] = 1.0 if c3_pass else 0
         ratio_v = today_volume / prev_volume if prev_volume > 0 else 0
@@ -135,14 +274,11 @@ class LayerCSustainAnalyzer:
         if c3_pass:
             passed_count += 1
 
-        # --------------------------------------------------
-        # C4: 板上量比（连板股次日封板质量）
-        # --------------------------------------------------
+        # C4: 板上量比
         limit_pct = detect_limit_up_pct(ts_code)
         is_zt = is_limit_up(today_pct, limit_pct)
         if is_zt:
             if self.skip_1min:
-                # 回测模式：用日线数据近似（涨停即视为封板质量好）
                 c4_pass = True
                 scores["seal_quality"] = 1.0
                 details["seal_quality"] = f"回测模式, 涨停={today_pct:.1f}%"
@@ -161,9 +297,7 @@ class LayerCSustainAnalyzer:
         if c4_pass:
             passed_count += 1
 
-        # --------------------------------------------------
         # C5: 同板块联动
-        # --------------------------------------------------
         peer_pct = self._get_sector_peers_pct(ts_code, eval_date)
         sector_result = sector_peers_rising(
             peer_pct,
@@ -214,90 +348,51 @@ class LayerCSustainAnalyzer:
         return max(0, open_times - 1)
 
     def _get_sector_peers_pct(self, ts_code: str, eval_date: str) -> List[float]:
-        """获取同概念板块其他标的当日涨幅（带缓存）"""
-        cache_key = f"{ts_code}:{eval_date}"
-        if cache_key in self._sector_cache:
-            return self._sector_cache[cache_key]
-
+        """获取同概念板块其他标的当日涨幅"""
         # 优先从预加载数据获取
         if self.loader._preloaded_daily is not None and not self.loader._preloaded_daily.empty:
             day_data = self.loader._preloaded_daily[
                 self.loader._preloaded_daily['trade_date'] == eval_date
             ]
-            # 找到该股票的行业
             stock_rows = day_data[day_data['ts_code'] == ts_code]
             if stock_rows.empty or 'industry' not in stock_rows.columns:
-                self._sector_cache[cache_key] = []
                 return []
             industry = stock_rows.iloc[0].get('industry')
             if not industry or pd.isna(industry):
-                self._sector_cache[cache_key] = []
                 return []
-            # 同行业其他股票涨幅
             peers = day_data[
                 (day_data['industry'] == industry) &
                 (day_data['ts_code'] != ts_code) &
                 (day_data['pct_chg'].notna())
             ]
-            result = peers['pct_chg'].astype(float).tolist()
-            self._sector_cache[cache_key] = result
-            return result
+            return peers['pct_chg'].astype(float).tolist()
 
         # 降级到DB查询
         conn = None
         try:
-            import sys, os
-            sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
             from core.db.connection import get_db_fresh
-            from psycopg2.extras import RealDictCursor
-
             conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
-
             cur.execute("""
                 SELECT industry FROM daily_quotes
-                WHERE ts_code = %s
-                  AND trade_date = %s
-                  AND industry IS NOT NULL
+                WHERE ts_code = %s AND trade_date = %s AND industry IS NOT NULL
                 LIMIT 1
             """, (ts_code, eval_date))
             row = cur.fetchone()
             if not row or not row['industry']:
                 cur.close()
-                self._sector_cache[cache_key] = []
                 return []
-
             industry = row['industry']
             cur.execute("""
-                SELECT ts_code, pct_chg FROM daily_quotes
-                WHERE trade_date = %s
-                  AND industry = %s
-                  AND pct_chg IS NOT NULL
-                  AND ts_code != %s
+                SELECT pct_chg FROM daily_quotes
+                WHERE trade_date = %s AND industry = %s
+                  AND pct_chg IS NOT NULL AND ts_code != %s
             """, (eval_date, industry, ts_code))
             results = [float(r['pct_chg']) for r in cur.fetchall()]
             cur.close()
-            self._sector_cache[cache_key] = results
             return results
         except Exception:
-            self._sector_cache[cache_key] = []
             return []
         finally:
             if conn and not conn.closed:
                 conn.close()
-
-    def scan_b_signals(self, b_signals: List[LaunchSignal],
-                       top_n: int = 8) -> List[SustainSignal]:
-        """
-        对 B 层输出的 Top N 信号做持续性二次过滤
-        """
-        results = []
-        for b_sig in b_signals:
-            c_sig = self.evaluate(b_sig.ts_code, b_sig.eval_date, b_sig)
-            if c_sig.passed:
-                results.append(c_sig)
-
-        results.sort(key=lambda x: x.score, reverse=True)
-        top = results[:top_n]
-        logger.info(f"C 层扫描 {len(b_signals)} 只，通过 {len(results)} 只，输出 Top {len(top)} 只")
-        return top

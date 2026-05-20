@@ -7,6 +7,10 @@ Layer B: 启动信号识别（日频）
   3. 主力资金净流入：当日主力净流入 > 总成交额的 5%
   4. 封单质量（涨停日）：封单金额 / 流通市值 > 0.5%
   5. 次日强度：次日不破当日均价，缩量整理或继续放量上攻
+
+v2: 向量化扫描优化
+- 优先使用预计算指标快照，每日扫描变为DataFrame过滤
+- 降级到逐只评估（实盘模式）
 """
 from __future__ import annotations
 
@@ -49,7 +53,7 @@ class LayerBLaunchDetector:
 
     def evaluate(self, ts_code: str, eval_date: str) -> LaunchSignal:
         """
-        评估单只股票在 eval_date 的启动信号
+        评估单只股票在 eval_date 的启动信号（降级路径，实盘用）
 
         返回 LaunchSignal，含 composite score
         """
@@ -187,8 +191,129 @@ class LayerBLaunchDetector:
         """
         扫描 A 层预筛池，返回 Top N 启动信号
 
-        优化：使用全市场快照批量计算，避免逐只股票查DB
+        优化：优先使用预计算指标向量化扫描，降级到逐只评估
         """
+        # ---- 向量化路径：使用预计算指标 ----
+        if self.loader._indicators_by_date:
+            return self._scan_pool_vectorized(pool, eval_date, top_n)
+
+        # ---- 降级路径：逐只评估 ----
+        return self._scan_pool_fallback(pool, eval_date, top_n)
+
+    def _scan_pool_vectorized(self, pool: Set[str], eval_date: str,
+                               top_n: int = 20) -> List[LaunchSignal]:
+        """向量化扫描：使用预计算指标，每日扫描变为DataFrame过滤"""
+        ind_df = self.loader.get_indicators_snapshot(eval_date)
+        if ind_df.empty:
+            return []
+
+        # 过滤到pool中的股票
+        pool_df = ind_df[ind_df['ts_code'].isin(pool)].copy()
+        if pool_df.empty:
+            return []
+
+        # 快速预筛：至少满足量能或涨幅门槛之一
+        quick = pool_df[
+            (pool_df['amount'] >= 1e8) | (pool_df['pct_chg'].abs() >= 3)
+        ].copy()
+        if quick.empty:
+            return []
+
+        # ---- B1: 量能突破 ----
+        b1_pass = (quick['vol_breakout_ratio'] > self.cfg.b_volume_breakout_mult) & \
+                  (quick['turnover_rate'] > self.cfg.b_turnover_min)
+        vol_breakout_score = np.minimum(
+            1.0, quick['vol_breakout_ratio'].fillna(0) / (self.cfg.b_volume_breakout_mult * 2)
+        )
+
+        # ---- B2: 价格突破 ----
+        breakout_box = quick['close'] > quick['box_60_high'].fillna(0)
+        above_ma = (quick['ma_120'].notna()) & \
+                   (quick['close'] > quick['ma_120']) & \
+                   (quick['above_ma_120_pct'].fillna(0) > 0) & \
+                   (quick['above_ma_120_pct'].fillna(0) < self.cfg.b_price_above_ma_max_pct)
+        b2_pass = breakout_box | above_ma
+        price_breakout_score = np.where(breakout_box, 0.8, np.where(above_ma, 0.6, 0.0))
+
+        # ---- B3: 主力资金 ----
+        b3_pass = (quick['main_inflow_ratio'].fillna(0) > self.cfg.b_main_force_inflow_min_pct) & \
+                  (quick['main_net_inflow'].fillna(0) > 0)
+        main_force_score = np.minimum(
+            1.0, quick['main_inflow_ratio'].fillna(0) / (self.cfg.b_main_force_inflow_min_pct * 5)
+        )
+
+        # ---- B4: 封单质量 ----
+        limit_pct = np.where(quick['is_kcb_cyb'], 0.197, 0.097)
+        is_zt = quick['pct_chg'].fillna(0) >= limit_pct - 0.003
+        seal_quality_score = np.where(
+            is_zt,
+            np.minimum(1.0, quick['seal_quality_est'].fillna(0) / (self.cfg.b_seal_amount_ratio_min * 2)),
+            0.3
+        )
+
+        # 综合评分
+        total_score = vol_breakout_score + price_breakout_score + main_force_score + seal_quality_score
+
+        # 通过条件：B1-B4中至少3个有分
+        has_score = ((vol_breakout_score > 0).astype(int) +
+                     (price_breakout_score > 0).astype(int) +
+                     (main_force_score > 0).astype(int) +
+                     (seal_quality_score > 0).astype(int))
+        passed = has_score >= 3
+
+        # 组装结果到DataFrame
+        quick['total_score'] = total_score.values
+        quick['passed'] = passed.values
+        quick['b_vol_breakout_score'] = vol_breakout_score.values
+        quick['b_price_breakout_score'] = price_breakout_score.values
+        quick['b_main_force_score'] = main_force_score.values
+        quick['b_seal_quality_score'] = seal_quality_score.values
+        quick['b_is_zt'] = is_zt.values
+
+        # 过滤通过的，取Top N
+        passed_df = quick[quick['passed']].sort_values('total_score', ascending=False)
+        top = passed_df.head(top_n)
+
+        # 转换为LaunchSignal列表
+        results = []
+        for _, row in top.iterrows():
+            price_detail = "未突破"
+            if row['b_price_breakout_score'] == 0.8:
+                price_detail = "突破箱体"
+            elif row['b_price_breakout_score'] == 0.6:
+                above_pct = row.get('above_ma_120_pct', 0)
+                price_detail = f"突破半年线(距MA={above_pct * 100:.1f}%)" if pd.notna(above_pct) else "突破半年线"
+
+            main_detail = "无数据"
+            if pd.notna(row.get('main_inflow_ratio')):
+                main_detail = f"主力净流入比={row['main_inflow_ratio'] * 100:.1f}%"
+
+            sig = LaunchSignal(
+                ts_code=row['ts_code'],
+                eval_date=eval_date,
+                score=float(row['total_score']),
+                factors={
+                    'vol_breakout': float(row['b_vol_breakout_score']),
+                    'price_breakout': float(row['b_price_breakout_score']),
+                    'main_force': float(row['b_main_force_score']),
+                    'seal_quality': float(row['b_seal_quality_score']),
+                },
+                details={
+                    'vol_breakout': f"量比MA60={row.get('vol_breakout_ratio', 0):.1f}x, 换手={row.get('turnover_rate', 0):.1f}%",
+                    'price_breakout': price_detail,
+                    'main_force': main_detail,
+                    'seal_quality': "涨停日" if row['b_is_zt'] else "非涨停日",
+                },
+                passed=True,
+            )
+            results.append(sig)
+
+        logger.info(f"B层向量化扫描 {len(pool)} 只，预筛 {len(quick)} 只，通过 {len(passed_df)} 只，输出 Top {len(results)} 只")
+        return results
+
+    def _scan_pool_fallback(self, pool: Set[str], eval_date: str,
+                             top_n: int = 20) -> List[LaunchSignal]:
+        """降级路径：逐只评估（实盘模式用）"""
         # ---- 快速路径：用快照批量预筛 ----
         snapshot = self.loader.get_market_snapshot(eval_date, min_amount=0)
         if snapshot.empty:

@@ -155,25 +155,27 @@ class LayerAPrescreener:
         return codes
 
     def _filter_market_cap_preloaded(self, as_of_date: str) -> Set[str]:
-        """从预加载数据批量估算市值"""
-        codes = set()
+        """从预加载数据批量估算市值（向量化，无iterrows）"""
         df = self.loader._preloaded_daily
         day_data = df[df['trade_date'] == as_of_date]
         if day_data.empty:
-            return codes
+            return set()
 
-        for _, row in day_data.iterrows():
-            turnover_rate = row.get('turnover_rate')
-            if not turnover_rate or pd.isna(turnover_rate) or turnover_rate <= 0:
-                continue
-            close = row.get('close')
-            volume = row.get('volume')
-            if not close or not volume or pd.isna(close) or pd.isna(volume):
-                continue
-            est_mcap = float(close) * float(volume) / float(turnover_rate)
-            if self.cfg.a_market_cap_min <= est_mcap <= self.cfg.a_market_cap_max:
-                codes.add(row['ts_code'])
-        return codes
+        # 向量化计算市值
+        turnover_rate = pd.to_numeric(day_data['turnover_rate'], errors='coerce')
+        close = pd.to_numeric(day_data['close'], errors='coerce')
+        volume = pd.to_numeric(day_data['volume'], errors='coerce')
+
+        # 过滤有效数据
+        valid = (turnover_rate > 0) & close.notna() & volume.notna()
+        valid_data = day_data[valid].copy()
+
+        if valid_data.empty:
+            return set()
+
+        est_mcap = close[valid] * volume[valid] / turnover_rate[valid]
+        in_range = (est_mcap >= self.cfg.a_market_cap_min) & (est_mcap <= self.cfg.a_market_cap_max)
+        return set(valid_data.loc[in_range, 'ts_code'].tolist())
 
     def _estimate_market_cap(self, conn, ts_code: str,
                              as_of_date: str) -> Optional[float]:
@@ -256,11 +258,10 @@ class LayerAPrescreener:
         return codes
 
     def _filter_industry_momentum_preloaded(self, as_of_date: str) -> Set[str]:
-        """从预加载数据批量计算行业景气"""
-        codes = set()
+        """从预加载数据批量计算行业景气（向量化，无iterrows）"""
         df = self.loader._preloaded_daily
         if 'industry' not in df.columns:
-            return codes
+            return set()
 
         start_date = (
             datetime.strptime(as_of_date, "%Y-%m-%d") -
@@ -271,7 +272,7 @@ class LayerAPrescreener:
                df['industry'].notna() & df['pct_chg'].notna()
         sub = df[mask]
         if sub.empty:
-            return codes
+            return set()
 
         recent_start = (
             datetime.strptime(as_of_date, "%Y-%m-%d") -
@@ -280,15 +281,13 @@ class LayerAPrescreener:
         recent = sub[sub['trade_date'] > recent_start]
 
         if recent.empty:
-            return codes
+            return set()
 
         industry_returns = recent.groupby('industry')['pct_chg'].astype(float).mean().sort_values(ascending=False)
         threshold_idx = max(1, int(len(industry_returns) * self.cfg.a_industry_momentum_top_pct))
         top_industries = set(industry_returns.head(threshold_idx).index)
 
-        # 找出属于景气行业的股票
+        # 向量化：找出属于景气行业的股票
         day_data = sub[sub['trade_date'] == as_of_date]
-        for _, row in day_data.iterrows():
-            if row['industry'] in top_industries:
-                codes.add(row['ts_code'])
-        return codes
+        in_top = day_data['industry'].isin(top_industries)
+        return set(day_data.loc[in_top, 'ts_code'].tolist())

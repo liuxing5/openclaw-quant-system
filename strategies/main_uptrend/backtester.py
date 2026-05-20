@@ -71,12 +71,17 @@ class MainUptrendBacktester:
         logger.info(f"=" * 60)
 
         # ---- 预加载全量数据（核心优化） ----
-        # 只预加载回测区间内的数据（用于快照和收盘价查找）
-        # B层需要的历史数据由 DataLoader 缓存机制处理
-        self.loader.preload_for_backtest(start_date, end_date)
+        # 扩展预加载范围：B层需要60日均线，至少往前推4个月
+        preload_start = (
+            datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=150)
+        ).strftime("%Y-%m-%d")
+        self.loader.preload_for_backtest(preload_start, end_date)
 
         # 通知引擎各层使用预加载模式
         self.engine.layer_c.skip_1min = True  # 回测模式跳过1分钟线
+
+        # D层：一次性预加载全量风险数据
+        self.engine.layer_d.preload_for_backtest(start_date, end_date)
 
         trading_days = self.loader.get_trading_days(start_date, end_date)
         if not trading_days:
@@ -84,6 +89,9 @@ class MainUptrendBacktester:
             return {}
 
         logger.info(f"交易日: {len(trading_days)} 天")
+
+        # 构建交易日索引（避免list.index()的O(n)查找）
+        trading_day_idx = {d: i for i, d in enumerate(trading_days)}
 
         # 预加载 A 层池（全市场时做一次周频更新）
         pool_a_cache: Dict[str, Set[str]] = {}
@@ -100,6 +108,7 @@ class MainUptrendBacktester:
                 if candidates:
                     signals = self._calc_forward_returns(
                         candidates, trade_date, trading_days, i,
+                        trading_day_idx,
                     )
                     all_signals.extend(signals)
 
@@ -157,7 +166,8 @@ class MainUptrendBacktester:
     def _calc_forward_returns(self, candidates: List[Dict],
                                trade_date: str,
                                trading_days: List[str],
-                               current_idx: int) -> List[Dict]:
+                               current_idx: int,
+                               trading_day_idx: Optional[Dict[str, int]] = None) -> List[Dict]:
         results = []
         for c in candidates:
             ts_code = c['ts_code']
@@ -312,6 +322,9 @@ class MainUptrendBacktester:
         # 按时间排序
         detection_history.sort(key=lambda x: x['eval_date'])
 
+        # 构建交易日索引
+        trading_day_idx = {d: i for i, d in enumerate(trading_days)}
+
         # 第一次检测
         first_detect = detection_history[0]
         first_date = first_detect['eval_date']
@@ -323,7 +336,7 @@ class MainUptrendBacktester:
         summary_parts.append(f"总检测次数: {len(detection_history)}")
 
         for days in self.cfg.forward_return_days:
-            first_idx = trading_days.index(first_date) if first_date in trading_days else -1
+            first_idx = trading_day_idx.get(first_date, -1)
             if first_idx >= 0:
                 target_idx = first_idx + days
                 if target_idx < len(trading_days):
