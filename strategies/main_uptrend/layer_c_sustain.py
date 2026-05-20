@@ -144,8 +144,8 @@ class LayerCSustainAnalyzer:
                       sector_score * 1.0)
         
         # 恢复通过条件为3/5，但配合综合分阈值过滤
-        # 加权后理论最高分约6.4，设置阈值4.7平衡信号数量和质量
-        passed = (passed_count >= 3) & (total_score >= 4.7)
+        # 加权后理论最高分约6.4，设置阈值4.8为最优平衡点
+        passed = (passed_count >= 3) & (total_score >= 4.8)
 
         # 过滤通过的，取Top N
         pool_df['total_score'] = total_score
