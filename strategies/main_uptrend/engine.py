@@ -190,14 +190,17 @@ class MainUptrendEngine:
 
         b_signals = self.layer_b.scan_pool(pool_a, eval_date, top_n=self.cfg.b_top_n_daily)
         if not b_signals:
+            logger.info(f"[Engine调试] {eval_date}: B层返回0个信号")
             return []
 
         c_signals = self.layer_c.scan_b_signals(b_signals, top_n=self.cfg.c_top_n_daily)
         if not c_signals:
+            logger.info(f"[Engine调试] {eval_date}: B层{len(b_signals)}个信号，C层返回0个")
             return []
 
         c_codes = [s.ts_code for s in c_signals]
         d_passed_set = set(self.layer_d.filter_list(c_codes, eval_date))
+        logger.info(f"[Engine调试] {eval_date}: B层{len(b_signals)}个, C层{len(c_signals)}个, D层通过{len(d_passed_set)}个")
 
         candidates = []
         for c_sig in c_signals:

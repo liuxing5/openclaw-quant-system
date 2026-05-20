@@ -141,7 +141,9 @@ class MainUptrendBacktester:
                                f"已用{elapsed:.0f}s, 预计剩余{remaining:.0f}s")
 
             except Exception as e:
+                import traceback
                 logger.warning(f"{trade_date} 评估失败: {e}")
+                logger.warning(traceback.format_exc())
 
         self.loader.clear_cache()
 
