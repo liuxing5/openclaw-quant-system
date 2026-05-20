@@ -85,7 +85,7 @@ class LayerCSustainAnalyzer:
         if pool_df.empty:
             return []
 
-        pct_chg = pool_df['pct_chg'].fillna(0)
+        pct_chg = pool_df['pct_chg'].fillna(0).values  # 转为numpy数组
 
         # ---- C1: 分时形态质量（回测模式用日线近似） ----
         if self.skip_1min:
@@ -94,32 +94,39 @@ class LayerCSustainAnalyzer:
             intraday_score = np.where(pct_chg > 0, intraday_score, 0.0)
         else:
             intraday_score = np.zeros(len(pool_df))
-            c1_pass = pd.Series(False, index=pool_df.index)
+            c1_pass = np.zeros(len(pool_df), dtype=bool)
 
         # ---- C2: 大单买入占比 ----
-        amount_ratio = pool_df['amount_ratio_20'].fillna(0)
+        amount_ratio = pool_df['amount_ratio_20'].fillna(0).values
         c2_pass = (amount_ratio > 2.0) & (pct_chg > 2.0)
         big_order_score = np.minimum(1.0, amount_ratio / 5.0)
 
         # ---- C3: 缩量上涨 ----
-        vol_shrink = pool_df['volume_shrink_ratio'].fillna(0)
+        vol_shrink = pool_df['volume_shrink_ratio'].fillna(0).values
         c3_pass = (pct_chg > 0) & (vol_shrink >= self.cfg.c_volume_shrink_ratio_min) & \
                   (vol_shrink <= self.cfg.c_volume_shrink_ratio_max)
         vol_shrink_score = c3_pass.astype(float)
 
         # ---- C4: 板上量比 ----
-        limit_pct = np.where(pool_df['is_kcb_cyb'], 0.197, 0.097)
+        is_kcb_cyb = pool_df['is_kcb_cyb'].values if 'is_kcb_cyb' in pool_df.columns else np.zeros(len(pool_df), dtype=bool)
+        limit_pct = np.where(is_kcb_cyb, 0.197, 0.097)
         is_zt = pct_chg >= limit_pct - 0.003
         if self.skip_1min:
             c4_pass = is_zt
             seal_quality_score = np.where(is_zt, 1.0, 0.0)
         else:
-            c4_pass = pd.Series(False, index=pool_df.index)
+            c4_pass = np.zeros(len(pool_df), dtype=bool)
             seal_quality_score = np.zeros(len(pool_df))
 
         # ---- C5: 同板块联动 ----
-        industry_avg = pool_df.get('industry_avg_pct', pd.Series(np.nan, index=pool_df.index)).fillna(0)
-        industry_rising = pool_df.get('industry_rising_count', pd.Series(0, index=pool_df.index)).fillna(0)
+        if 'industry_avg_pct' in pool_df.columns:
+            industry_avg = pool_df['industry_avg_pct'].fillna(0).values
+        else:
+            industry_avg = np.zeros(len(pool_df))
+        if 'industry_rising_count' in pool_df.columns:
+            industry_rising = pool_df['industry_rising_count'].fillna(0).values
+        else:
+            industry_rising = np.zeros(len(pool_df))
         c5_pass = (industry_avg > self.cfg.c_sector_rise_min_pct * 100) & \
                   (industry_rising >= self.cfg.c_sector_peer_count_min)
         sector_score = c5_pass.astype(float)
@@ -140,30 +147,35 @@ class LayerCSustainAnalyzer:
         results = []
         top_ts_codes = top['ts_code'].values
         top_scores = top['total_score'].values
-        top_indices = top.index
+
+        # 构建pool_df行号到score数组位置的映射
+        # 因为score数组是按pool_df的顺序，top是从pool_df过滤出来的
+        # 需要找到top每行在pool_df中的位置
+        pool_idx_map = {idx: i for i, idx in enumerate(pool_df.index)}
 
         for i in range(len(top)):
-            idx = top_indices[i]
+            idx = top.index[i]
             code = top_ts_codes[i]
             b_sig = b_codes.get(code)
+            pos = pool_idx_map.get(idx, 0)  # score数组中的位置
 
             vol_shrink_val = float(pool_df.loc[idx, 'volume_shrink_ratio']) if 'volume_shrink_ratio' in pool_df.columns else 0
             amt_ratio_val = float(pool_df.loc[idx, 'amount_ratio_20']) if 'amount_ratio_20' in pool_df.columns else 0
             ind_avg_val = float(pool_df.loc[idx, 'industry_avg_pct']) if 'industry_avg_pct' in pool_df.columns else 0
             ind_rise_val = float(pool_df.loc[idx, 'industry_rising_count']) if 'industry_rising_count' in pool_df.columns else 0
             pct_val = float(pool_df.loc[idx, 'pct_chg'])
-            is_zt_val = bool(is_zt[idx]) if idx in is_zt.index else False
+            is_zt_val = bool(is_zt[pos]) if pos < len(is_zt) else False
 
             sig = SustainSignal(
                 ts_code=code,
                 eval_date=eval_date,
                 score=float(top_scores[i]),
                 factors={
-                    'intraday': float(intraday_score[i]) if i < len(intraday_score) else 0,
-                    'big_order': float(big_order_score[i]) if i < len(big_order_score) else 0,
-                    'vol_shrink': float(vol_shrink_score[i]) if i < len(vol_shrink_score) else 0,
-                    'seal_quality': float(seal_quality_score[i]) if i < len(seal_quality_score) else 0,
-                    'sector': float(sector_score[i]) if i < len(sector_score) else 0,
+                    'intraday': float(intraday_score[pos]) if pos < len(intraday_score) else 0,
+                    'big_order': float(big_order_score[pos]) if pos < len(big_order_score) else 0,
+                    'vol_shrink': float(vol_shrink_score[pos]) if pos < len(vol_shrink_score) else 0,
+                    'seal_quality': float(seal_quality_score[pos]) if pos < len(seal_quality_score) else 0,
+                    'sector': float(sector_score[pos]) if pos < len(sector_score) else 0,
                 },
                 details={
                     'intraday': f"回测模式, 日涨幅={pct_val:.1f}%" if self.skip_1min else "1分钟线不可用",
