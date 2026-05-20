@@ -193,11 +193,16 @@ class LayerBLaunchDetector:
 
         优化：优先使用预计算指标向量化扫描，降级到逐只评估
         """
+        # 调试：入口日志
+        has_indicators = bool(self.loader._indicators_by_date)
+        logger.info(f"[B层入口] eval_date={eval_date}, pool_size={len(pool)}, has_indicators={has_indicators}")
+        
         # ---- 向量化路径：使用预计算指标 ----
-        if self.loader._indicators_by_date:
+        if has_indicators:
             return self._scan_pool_vectorized(pool, eval_date, top_n)
 
         # ---- 降级路径：逐只评估 ----
+        logger.info(f"[B层入口] 使用fallback路径")
         return self._scan_pool_fallback(pool, eval_date, top_n)
 
     def _scan_pool_vectorized(self, pool: Set[str], eval_date: str,
@@ -210,16 +215,30 @@ class LayerBLaunchDetector:
         # 过滤到pool中的股票
         pool_df = ind_df[ind_df['ts_code'].isin(pool)].copy()
         if pool_df.empty:
+            logger.info(f"B层调试 - pool_df为空! ind_df有{len(ind_df)}行, pool有{len(pool)}只股票")
+            if not ind_df.empty:
+                logger.info(f"B层调试 - ind_df columns: {list(ind_df.columns)}, 前5行ts_code: {ind_df['ts_code'].head().tolist()}")
             return []
 
-        # 调试：检查amount数据（只打印一次）
+        # 调试：检查数据（只打印一次）
         if not hasattr(self, '_debug_logged'):
+            debug_msg = f"[B层调试] pool_df有{len(pool_df)}行, columns: {list(pool_df.columns)}\n"
             if 'amount' in pool_df.columns:
                 amt_stats = pool_df['amount'].describe()
-                logger.info(f"B层调试 - amount统计: min={amt_stats.get('min', 'N/A')}, max={amt_stats.get('max', 'N/A')}, mean={amt_stats.get('mean', 'N/A')}")
-                logger.info(f"B层调试 - amount NaN数量: {pool_df['amount'].isna().sum()}/{len(pool_df)}")
-                logger.info(f"B层调试 - pct_chg统计: min={pool_df['pct_chg'].min()}, max={pool_df['pct_chg'].max()}")
-                logger.info(f"B层调试 - pool_df columns: {list(pool_df.columns)}")
+                debug_msg += f"[B层调试] amount统计: min={amt_stats.get('min', 'N/A')}, max={amt_stats.get('max', 'N/A')}, mean={amt_stats.get('mean', 'N/A')}\n"
+                debug_msg += f"[B层调试] amount NaN数量: {pool_df['amount'].isna().sum()}/{len(pool_df)}\n"
+            else:
+                debug_msg += f"[B层调试] pool_df没有amount列!\n"
+            if 'pct_chg' in pool_df.columns:
+                debug_msg += f"[B层调试] pct_chg统计: min={pool_df['pct_chg'].min()}, max={pool_df['pct_chg'].max()}\n"
+            
+            # 同时写入文件和logger
+            logger.info(debug_msg)
+            try:
+                with open('d:/pythonProject/openclaw-quant-system/b_layer_debug.txt', 'w', encoding='utf-8') as f:
+                    f.write(debug_msg)
+            except:
+                pass
             self._debug_logged = True
 
         # 快速预筛：至少满足量能或涨幅门槛之一
