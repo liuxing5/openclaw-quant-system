@@ -134,8 +134,17 @@ class LayerCSustainAnalyzer:
         # ---- 综合判定 ----
         passed_count = c1_pass.astype(int) + c2_pass.astype(int) + c3_pass.astype(int) + \
                        c4_pass.astype(int) + c5_pass.astype(int)
-        total_score = intraday_score + big_order_score + vol_shrink_score + seal_quality_score + sector_score
-        passed = passed_count >= 4  # 收紧：3→4，要求更多条件同时满足
+        
+        # 优化评分权重：给关键条件更高权重
+        # C1(分时)和C2(大单)最重要，权重1.5x
+        # C3(缩量)和C4(封板)次重要，权重1.2x
+        # C5(板块)权重1.0x
+        total_score = (intraday_score * 1.5 + big_order_score * 1.5 + 
+                      vol_shrink_score * 1.2 + seal_quality_score * 1.2 + 
+                      sector_score * 1.0)
+        
+        # 恢复通过条件为3/5，但配合综合分阈值过滤
+        passed = passed_count >= 3
 
         # 过滤通过的，取Top N
         pool_df['total_score'] = total_score
