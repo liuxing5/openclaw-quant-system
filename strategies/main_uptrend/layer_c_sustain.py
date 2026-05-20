@@ -89,8 +89,8 @@ class LayerCSustainAnalyzer:
 
         # ---- C1: 分时形态质量（回测模式用日线近似） ----
         if self.skip_1min:
-            c1_pass = pct_chg > 3.0
-            intraday_score = np.minimum(1.0, pct_chg / 5.0)
+            c1_pass = pct_chg > 5.0  # 收紧：3→5，要求更强涨幅
+            intraday_score = np.minimum(1.0, pct_chg / 7.0)  # 收紧：5→7，提高打分门槛
             intraday_score = np.where(pct_chg > 0, intraday_score, 0.0)
         else:
             intraday_score = np.zeros(len(pool_df))
@@ -98,8 +98,8 @@ class LayerCSustainAnalyzer:
 
         # ---- C2: 大单买入占比 ----
         amount_ratio = pool_df['amount_ratio_20'].fillna(0).values
-        c2_pass = (amount_ratio > 2.0) & (pct_chg > 2.0)
-        big_order_score = np.minimum(1.0, amount_ratio / 5.0)
+        c2_pass = (amount_ratio > 3.0) & (pct_chg > 3.0)  # 收紧：2→3倍，涨幅2→3%
+        big_order_score = np.minimum(1.0, amount_ratio / 6.0)  # 收紧：5→6
 
         # ---- C3: 缩量上涨 ----
         vol_shrink = pool_df['volume_shrink_ratio'].fillna(0).values
@@ -135,7 +135,7 @@ class LayerCSustainAnalyzer:
         passed_count = c1_pass.astype(int) + c2_pass.astype(int) + c3_pass.astype(int) + \
                        c4_pass.astype(int) + c5_pass.astype(int)
         total_score = intraday_score + big_order_score + vol_shrink_score + seal_quality_score + sector_score
-        passed = passed_count >= 3
+        passed = passed_count >= 4  # 收紧：3→4，要求更多条件同时满足
 
         # 过滤通过的，取Top N
         pool_df['total_score'] = total_score
