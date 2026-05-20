@@ -776,15 +776,15 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 /* Section */
 .section {{ background:var(--section-bg); border-radius:10px; padding:20px; margin-bottom:16px; box-shadow:var(--shadow); border:1px solid var(--border); }}
 .section h2 {{ font-size:1.05rem; margin-bottom:14px; padding-bottom:8px; border-bottom:2px solid var(--tab-active); }}
-.section-subtitle {{ font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; }}
+.section-subtitle {{ font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 
 /* Four column layout */
 .four-col {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:stretch; }}
-.four-col .section {{ margin-bottom:0; position:relative; min-height:500px; min-width:0; overflow:hidden; }}
-.four-col .section > h2 {{ position:absolute; top:0; left:0; right:0; padding:16px 20px 0; margin:0; border-bottom:none; font-size:1.05rem; }}
-.four-col .steps-area {{ position:absolute; top:48px; left:0; right:0; height:380px; overflow:hidden; padding:0 20px; }}
-.four-col .section > h3 {{ position:absolute; top:428px; left:0; right:0; margin:0; padding:14px 20px 8px; font-size:.9rem; }}
-.four-col .cards-grid {{ position:absolute; top:470px; left:0; right:0; bottom:0; overflow-y:auto; padding:0 20px 20px; align-content:start; }}
+.four-col .section {{ margin-bottom:0; display:flex; flex-direction:column; min-width:0; overflow:hidden; padding:0; }}
+.four-col .section > h2 {{ padding:16px 20px 0; margin:0; border-bottom:none; font-size:1.05rem; height:64px; display:flex; align-items:center; flex-wrap:wrap; }}
+.four-col .steps-area {{ height:364px; overflow:hidden; padding:0 20px; flex-shrink:0; }}
+.four-col .section > h3 {{ margin:0; padding:14px 20px 8px; font-size:.9rem; flex-shrink:0; }}
+.four-col .cards-grid {{ flex:1; overflow-y:auto; padding:0 20px 20px; align-content:start; }}
 .four-col .candidate-card {{ align-self:stretch; }}
 @media (max-width:1400px) {{ .four-col {{ grid-template-columns:repeat(2,1fr); }} }}
 @media (max-width:768px) {{ .four-col {{ grid-template-columns:1fr; }} }}
