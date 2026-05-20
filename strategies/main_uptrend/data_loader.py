@@ -291,6 +291,16 @@ class DataLoader:
         # 按日期构建索引（使用groupby避免复制）
         t3 = time.time()
         logger.info("    构建日期索引...")
+        
+        # 调试：打印amount数据分布
+        if 'amount' in df.columns:
+            amt = df['amount'].dropna()
+            if len(amt) > 0:
+                logger.info(f"    [DEBUG] amount统计: min={amt.min()}, max={amt.max()}, mean={amt.mean():.0f}, median={amt.median():.0f}")
+                logger.info(f"    [DEBUG] amount >= 1e8 的股票数: {(amt >= 1e8).sum()}/{len(amt)}")
+                logger.info(f"    [DEBUG] amount >= 1e7 的股票数: {(amt >= 1e7).sum()}/{len(amt)}")
+                logger.info(f"    [DEBUG] pct_chg >= 3 的股票数: {(df['pct_chg'].abs() >= 3).sum()}/{len(df)}")
+        
         self._indicators_by_date = {}
         date_vals = df['trade_date'].values
         date_change = np.empty(len(date_vals), dtype=bool)
