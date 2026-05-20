@@ -516,7 +516,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
             if _ts_code:
                 _parts = _ts_code.split('.')
                 if len(_parts) == 2:
-                    _stock_url = f'https://gupiao.baidu.com/stock/{_parts[1].lower()}{_parts[0]}.html'
+                    _stock_url = f'https://finance.baidu.com/stock/ab-{_parts[0]}'
             _onclick = f' onclick="window.open(\'{_stock_url}\',\'_blank\')" style="cursor:pointer"' if _stock_url else ''
             _code_link = f'<a href="{_stock_url}" target="_blank" style="color:inherit;text-decoration:none">{_ts_code}</a>' if _stock_url else _ts_code
             top10_html += f"""
@@ -575,8 +575,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
             parts = code.split('.')
             if len(parts) == 2:
                 numeric_code = parts[0]
-                market = parts[1].lower()
-                stock_url = f'https://gupiao.baidu.com/stock/{market}{numeric_code}.html'
+                stock_url = f'https://finance.baidu.com/stock/ab-{numeric_code}'
 
         onclick_attr = f' onclick="window.open(\'{stock_url}\',\'_blank\')" style="cursor:pointer"' if stock_url else ''
         code_link = f'<a href="{stock_url}" target="_blank" style="color:inherit;text-decoration:none">{code}</a>' if stock_url else code
