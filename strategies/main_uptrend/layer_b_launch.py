@@ -276,18 +276,19 @@ class LayerBLaunchDetector:
         seal_quality_score = np.where(
             is_zt,
             np.minimum(1.0, quick['seal_quality_est'].fillna(0) / (self.cfg.b_seal_amount_ratio_min * 2)),
-            0.3
+            0.0  # 收紧：非涨停不给分
         )
 
-        # 综合评分
-        total_score = vol_breakout_score.values + price_breakout_score + main_force_score.values + seal_quality_score
+        # 优化评分权重：量能和主力更重要
+        total_score = (vol_breakout_score.values * 1.3 + price_breakout_score * 1.0 + 
+                      main_force_score.values * 1.5 + seal_quality_score * 1.2)
 
-        # 通过条件：B1-B4中至少3个有分
+        # 通过条件：B1-B4中至少3个有分，且必须有主力流入(B3)或涨停(B4>0)
         has_score = ((vol_breakout_score.values > 0).astype(int) +
                      (price_breakout_score > 0).astype(int) +
                      (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
-        passed = has_score >= 3
+        passed = (has_score >= 3) & ((main_force_score.values > 0) | (seal_quality_score > 0))
 
         # 组装结果到DataFrame
         quick['total_score'] = total_score
