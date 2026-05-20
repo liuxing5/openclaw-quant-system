@@ -229,12 +229,18 @@ class LayerAPrescreener:
             ).strftime("%Y-%m-%d")
 
             cur.execute("""
-                SELECT ts_code, industry, trade_date, pct_chg
-                FROM daily_quotes
-                WHERE trade_date BETWEEN %s AND %s
-                  AND industry IS NOT NULL
-                  AND pct_chg IS NOT NULL
-                ORDER BY ts_code, trade_date
+                SELECT d.ts_code, sf.industry, d.trade_date, d.pct_chg
+                FROM daily_quotes d
+                LEFT JOIN (
+                    SELECT DISTINCT ON (ts_code) ts_code, industry
+                    FROM stock_fundamentals
+                    WHERE industry IS NOT NULL
+                    ORDER BY ts_code, report_date DESC
+                ) sf ON d.ts_code = sf.ts_code
+                WHERE d.trade_date BETWEEN %s AND %s
+                  AND sf.industry IS NOT NULL
+                  AND d.pct_chg IS NOT NULL
+                ORDER BY d.ts_code, d.trade_date
             """, (start_date, as_of_date))
             rows = cur.fetchall()
             cur.close()

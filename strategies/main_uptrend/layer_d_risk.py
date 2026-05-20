@@ -233,9 +233,10 @@ class LayerDRiskFilter:
             conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
-                SELECT DISTINCT ts_code FROM daily_quotes
-                WHERE name IS NOT NULL
-                  AND (UPPER(name) LIKE '%%ST%%' OR name LIKE '%%*%%' OR name LIKE '%%退%%')
+                SELECT DISTINCT d.ts_code FROM daily_quotes d
+                LEFT JOIN stock_basic_info sb ON d.ts_code = sb.ts_code
+                WHERE sb.stock_name IS NOT NULL
+                  AND (UPPER(sb.stock_name) LIKE '%%ST%%' OR sb.stock_name LIKE '%%*%%' OR sb.stock_name LIKE '%%退%%')
             """)
             for row in cur.fetchall():
                 codes.add(row['ts_code'])
@@ -328,14 +329,14 @@ class LayerDRiskFilter:
             conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
-                SELECT name FROM daily_quotes
-                WHERE ts_code = %s AND name IS NOT NULL
-                ORDER BY trade_date DESC LIMIT 1
+                SELECT sb.stock_name FROM stock_basic_info sb
+                WHERE sb.ts_code = %s AND sb.stock_name IS NOT NULL
+                LIMIT 1
             """, (ts_code,))
             row = cur.fetchone()
             cur.close()
             if row:
-                name = (row['name'] or '').upper()
+                name = (row['stock_name'] or '').upper()
                 if 'ST' in name or '*' in name or '退' in name:
                     if self._st_cache is None:
                         self._st_cache = set()

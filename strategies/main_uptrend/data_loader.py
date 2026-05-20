@@ -62,13 +62,21 @@ class DataLoader:
             conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
-                SELECT ts_code, trade_date, open, high, low, close, volume, amount,
-                       pct_chg, turnover_rate, industry, name
-                FROM daily_quotes
-                WHERE trade_date >= %s
-                  AND trade_date <= %s
-                  AND amount IS NOT NULL
-                ORDER BY ts_code, trade_date
+                SELECT d.ts_code, d.trade_date, d.open, d.high, d.low, d.close,
+                       d.volume, d.amount, d.pct_chg, d.turnover_rate,
+                       sf.industry, sb.stock_name AS name
+                FROM daily_quotes d
+                LEFT JOIN (
+                    SELECT DISTINCT ON (ts_code) ts_code, industry
+                    FROM stock_fundamentals
+                    WHERE industry IS NOT NULL
+                    ORDER BY ts_code, report_date DESC
+                ) sf ON d.ts_code = sf.ts_code
+                LEFT JOIN stock_basic_info sb ON d.ts_code = sb.ts_code
+                WHERE d.trade_date >= %s
+                  AND d.trade_date <= %s
+                  AND d.amount IS NOT NULL
+                ORDER BY d.ts_code, d.trade_date
             """, (start_date, end_date))
             rows = cur.fetchall()
             cur.close()

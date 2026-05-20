@@ -369,8 +369,14 @@ class LayerCSustainAnalyzer:
             conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
-                SELECT industry FROM daily_quotes
-                WHERE ts_code = %s AND trade_date = %s AND industry IS NOT NULL
+                SELECT sf.industry FROM daily_quotes d
+                LEFT JOIN (
+                    SELECT DISTINCT ON (ts_code) ts_code, industry
+                    FROM stock_fundamentals
+                    WHERE industry IS NOT NULL
+                    ORDER BY ts_code, report_date DESC
+                ) sf ON d.ts_code = sf.ts_code
+                WHERE d.ts_code = %s AND d.trade_date = %s AND sf.industry IS NOT NULL
                 LIMIT 1
             """, (ts_code, eval_date))
             row = cur.fetchone()
@@ -379,9 +385,15 @@ class LayerCSustainAnalyzer:
                 return []
             industry = row['industry']
             cur.execute("""
-                SELECT pct_chg FROM daily_quotes
-                WHERE trade_date = %s AND industry = %s
-                  AND pct_chg IS NOT NULL AND ts_code != %s
+                SELECT d.pct_chg FROM daily_quotes d
+                LEFT JOIN (
+                    SELECT DISTINCT ON (ts_code) ts_code, industry
+                    FROM stock_fundamentals
+                    WHERE industry IS NOT NULL
+                    ORDER BY ts_code, report_date DESC
+                ) sf ON d.ts_code = sf.ts_code
+                WHERE d.trade_date = %s AND sf.industry = %s
+                  AND d.pct_chg IS NOT NULL AND d.ts_code != %s
             """, (eval_date, industry, ts_code))
             results = [float(r['pct_chg']) for r in cur.fetchall()]
             cur.close()
