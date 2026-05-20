@@ -55,7 +55,7 @@ class LayerBLaunchDetector:
         """
         sig = LaunchSignal(ts_code=ts_code, eval_date=eval_date)
 
-        df = self.loader.get_daily(ts_code, start_date="2020-01-01", end_date=eval_date)
+        df = self.loader.get_daily(ts_code, start_date="2020-01-01", end_date=eval_date, min_days=self.cfg.b_volume_ma_days + 10)
         if df is None or len(df) < self.cfg.b_volume_ma_days + 10:
             sig.details["error"] = "数据不足"
             return sig
@@ -187,11 +187,40 @@ class LayerBLaunchDetector:
         """
         扫描 A 层预筛池，返回 Top N 启动信号
 
-        注意：B5 次日强度需要 T+1 数据，在扫描阶段暂不验证，
-        由 engine 层在次日完成二次确认。
+        优化：使用全市场快照批量计算，避免逐只股票查DB
         """
-        results = []
+        # ---- 快速路径：用快照批量预筛 ----
+        snapshot = self.loader.get_market_snapshot(eval_date, min_amount=0)
+        if snapshot.empty:
+            logger.info(f"B 层扫描 {len(pool)} 只，快照为空，跳过")
+            return []
+
+        # 构建快照索引
+        snap_map: Dict[str, dict] = {}
+        for _, row in snapshot.iterrows():
+            snap_map[row['ts_code']] = row.to_dict()
+
+        # 批量计算量能指标（用快照数据）
+        # 先收集需要详细评估的候选
+        quick_candidates = []
         for code in pool:
+            if code not in snap_map:
+                continue
+            row = snap_map[code]
+            today_amount = float(row.get('amount', 0))
+            today_turn = float(row.get('turnover_rate', 0))
+            today_pct = float(row.get('pct_chg', 0))
+
+            # 快速预筛：至少满足量能或涨幅门槛之一
+            if today_amount < 1e8 and abs(today_pct) < 3:
+                continue
+            quick_candidates.append(code)
+
+        logger.info(f"B 层扫描 {len(pool)} 只，快照命中 {len(quick_candidates)} 只，进入详细评估")
+
+        # ---- 详细评估（只对预筛通过的） ----
+        results = []
+        for code in quick_candidates:
             sig = self.evaluate(code, eval_date)
             if sig.passed:
                 results.append(sig)

@@ -43,7 +43,7 @@ class MainUptrendBacktester:
     def __init__(self, cfg: Optional[MainUptrendConfig] = None):
         self.cfg = cfg or DEFAULT_CONFIG
         self.loader = DataLoader()
-        self.engine = MainUptrendEngine(self.cfg)
+        self.engine = MainUptrendEngine(self.cfg, self.loader)
 
     # ================================================================
     # 主回测循环
@@ -69,6 +69,14 @@ class MainUptrendBacktester:
         logger.info(f"=" * 60)
         logger.info(f"主升浪回测 {start_date} ~ {end_date}")
         logger.info(f"=" * 60)
+
+        # ---- 预加载全量数据（核心优化） ----
+        # 只预加载回测区间内的数据（用于快照和收盘价查找）
+        # B层需要的历史数据由 DataLoader 缓存机制处理
+        self.loader.preload_for_backtest(start_date, end_date)
+
+        # 通知引擎各层使用预加载模式
+        self.engine.layer_c.skip_1min = True  # 回测模式跳过1分钟线
 
         trading_days = self.loader.get_trading_days(start_date, end_date)
         if not trading_days:
@@ -181,6 +189,12 @@ class MainUptrendBacktester:
         return results
 
     def _get_close_price(self, ts_code: str, trade_date: str) -> Optional[float]:
+        # 优先使用预加载的收盘价查找表
+        price = self.loader.get_preloaded_close(ts_code, trade_date)
+        if price is not None:
+            return price
+
+        # 降级到DB查询
         df = self.loader.get_daily(ts_code, start_date="2024-01-01", end_date=trade_date)
         if df is None or len(df) == 0:
             return None

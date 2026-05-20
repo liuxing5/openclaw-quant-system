@@ -46,9 +46,12 @@ class LayerCSustainAnalyzer:
     """C 层：持续性判定"""
 
     def __init__(self, cfg: MainUptrendConfig,
-                 loader: Optional[DataLoader] = None):
+                 loader: Optional[DataLoader] = None,
+                 skip_1min: bool = False):
         self.cfg = cfg
         self.loader = loader or DataLoader()
+        self.skip_1min = skip_1min  # 回测模式下跳过1分钟线查询
+        self._sector_cache: Dict[str, List[float]] = {}  # 行业涨幅缓存
 
     def evaluate(self, ts_code: str, eval_date: str,
                  b_signal: Optional[LaunchSignal] = None) -> SustainSignal:
@@ -79,23 +82,29 @@ class LayerCSustainAnalyzer:
         passed_count = 0
 
         # --------------------------------------------------
-        # C1: 分时形态质量
+        # C1: 分时形态质量（回测模式跳过1分钟线）
         # --------------------------------------------------
-        df_1min = self.loader.get_1min_kline(ts_code, eval_date)
-        if df_1min is not None and len(df_1min) >= 30:
-            up_ratio = intraday_up_ratio(df_1min)
-            morning = intraday_morning_checks(
-                df_1min,
-                morning_pct=self.cfg.c_intraday_morning_pct,
-                morning_amplitude_max=self.cfg.c_intraday_morning_amplitude_max,
-            )
-            c1_pass = up_ratio > self.cfg.c_intraday_up_ratio_min or morning["passed"]
-            scores["intraday"] = max(up_ratio, 1.0 if morning["passed"] else 0)
-            details["intraday"] = f"上行占比={up_ratio:.0%}, 午前形态={'强势' if morning['passed'] else '普通'}"
+        if self.skip_1min:
+            # 回测模式：用日线数据近似判断（涨幅>3%视为强势）
+            c1_pass = today_pct > 3.0
+            scores["intraday"] = min(1.0, today_pct / 5.0) if today_pct > 0 else 0
+            details["intraday"] = f"回测模式(跳过1min), 日涨幅={today_pct:.1f}%"
         else:
-            c1_pass = False
-            scores["intraday"] = 0
-            details["intraday"] = "1分钟线不可用"
+            df_1min = self.loader.get_1min_kline(ts_code, eval_date)
+            if df_1min is not None and len(df_1min) >= 30:
+                up_ratio = intraday_up_ratio(df_1min)
+                morning = intraday_morning_checks(
+                    df_1min,
+                    morning_pct=self.cfg.c_intraday_morning_pct,
+                    morning_amplitude_max=self.cfg.c_intraday_morning_amplitude_max,
+                )
+                c1_pass = up_ratio > self.cfg.c_intraday_up_ratio_min or morning["passed"]
+                scores["intraday"] = max(up_ratio, 1.0 if morning["passed"] else 0)
+                details["intraday"] = f"上行占比={up_ratio:.0%}, 午前形态={'强势' if morning['passed'] else '普通'}"
+            else:
+                c1_pass = False
+                scores["intraday"] = 0
+                details["intraday"] = "1分钟线不可用"
 
         if c1_pass:
             passed_count += 1
@@ -132,13 +141,19 @@ class LayerCSustainAnalyzer:
         limit_pct = detect_limit_up_pct(ts_code)
         is_zt = is_limit_up(today_pct, limit_pct)
         if is_zt:
-            seal_time = self._estimate_seal_time(ts_code, eval_date)
-            open_times = self._estimate_open_times(ts_code, eval_date)
-            early = seal_time <= self.cfg.c_seal_early_time
-            tight = open_times <= self.cfg.c_seal_max_open_times
-            c4_pass = early and tight
-            scores["seal_quality"] = (1.0 if early else 0.3) + (1.0 if tight else 0.1)
-            details["seal_quality"] = f"封板={seal_time}, 开板={open_times}次"
+            if self.skip_1min:
+                # 回测模式：用日线数据近似（涨停即视为封板质量好）
+                c4_pass = True
+                scores["seal_quality"] = 1.0
+                details["seal_quality"] = f"回测模式, 涨停={today_pct:.1f}%"
+            else:
+                seal_time = self._estimate_seal_time(ts_code, eval_date)
+                open_times = self._estimate_open_times(ts_code, eval_date)
+                early = seal_time <= self.cfg.c_seal_early_time
+                tight = open_times <= self.cfg.c_seal_max_open_times
+                c4_pass = early and tight
+                scores["seal_quality"] = (1.0 if early else 0.3) + (1.0 if tight else 0.1)
+                details["seal_quality"] = f"封板={seal_time}, 开板={open_times}次"
         else:
             c4_pass = False
             scores["seal_quality"] = 0
@@ -199,7 +214,36 @@ class LayerCSustainAnalyzer:
         return max(0, open_times - 1)
 
     def _get_sector_peers_pct(self, ts_code: str, eval_date: str) -> List[float]:
-        """获取同概念板块其他标的当日涨幅"""
+        """获取同概念板块其他标的当日涨幅（带缓存）"""
+        cache_key = f"{ts_code}:{eval_date}"
+        if cache_key in self._sector_cache:
+            return self._sector_cache[cache_key]
+
+        # 优先从预加载数据获取
+        if self.loader._preloaded_daily is not None and not self.loader._preloaded_daily.empty:
+            day_data = self.loader._preloaded_daily[
+                self.loader._preloaded_daily['trade_date'] == eval_date
+            ]
+            # 找到该股票的行业
+            stock_rows = day_data[day_data['ts_code'] == ts_code]
+            if stock_rows.empty or 'industry' not in stock_rows.columns:
+                self._sector_cache[cache_key] = []
+                return []
+            industry = stock_rows.iloc[0].get('industry')
+            if not industry or pd.isna(industry):
+                self._sector_cache[cache_key] = []
+                return []
+            # 同行业其他股票涨幅
+            peers = day_data[
+                (day_data['industry'] == industry) &
+                (day_data['ts_code'] != ts_code) &
+                (day_data['pct_chg'].notna())
+            ]
+            result = peers['pct_chg'].astype(float).tolist()
+            self._sector_cache[cache_key] = result
+            return result
+
+        # 降级到DB查询
         conn = None
         try:
             import sys, os
@@ -220,6 +264,7 @@ class LayerCSustainAnalyzer:
             row = cur.fetchone()
             if not row or not row['industry']:
                 cur.close()
+                self._sector_cache[cache_key] = []
                 return []
 
             industry = row['industry']
@@ -232,8 +277,10 @@ class LayerCSustainAnalyzer:
             """, (eval_date, industry, ts_code))
             results = [float(r['pct_chg']) for r in cur.fetchall()]
             cur.close()
+            self._sector_cache[cache_key] = results
             return results
         except Exception:
+            self._sector_cache[cache_key] = []
             return []
         finally:
             if conn and not conn.closed:

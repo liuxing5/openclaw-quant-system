@@ -39,9 +39,10 @@ BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 class MainUptrendEngine:
     """四层主升浪检测引擎"""
 
-    def __init__(self, cfg: Optional[MainUptrendConfig] = None):
+    def __init__(self, cfg: Optional[MainUptrendConfig] = None,
+                 loader: Optional[DataLoader] = None):
         self.cfg = cfg or DEFAULT_CONFIG
-        self.loader = DataLoader()
+        self.loader = loader or DataLoader()
 
         self.layer_a = LayerAPrescreener(self.cfg, self.loader)
         self.layer_b = LayerBLaunchDetector(self.cfg, self.loader)

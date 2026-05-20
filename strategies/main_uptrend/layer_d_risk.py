@@ -48,32 +48,138 @@ class LayerDRiskFilter:
         self.cfg = cfg
         self.loader = loader or DataLoader()
         self._st_cache: Optional[Set[str]] = None
+        # 批量预加载缓存
+        self._reduction_cache: Optional[Set[str]] = None  # 有减持的股票
+        self._pledge_cache: Optional[Set[str]] = None     # 高质押股票
+        self._preloaded_eval_date: Optional[str] = None
+
+    def preload_for_date(self, eval_date: str):
+        """批量预加载某日的风险数据，避免逐只股票查DB"""
+        if self._preloaded_eval_date == eval_date:
+            return
+        self._preloaded_eval_date = eval_date
+
+        # 批量加载ST
+        if self._st_cache is None:
+            self._st_cache = self._batch_load_st()
+
+        # 批量加载减持
+        self._reduction_cache = self._batch_load_reductions(eval_date)
+
+        # 批量加载高质押
+        if self._pledge_cache is None:
+            self._pledge_cache = self._batch_load_high_pledge()
+
+    def _batch_load_st(self) -> Set[str]:
+        """批量加载ST/退市股票"""
+        codes = set()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("""
+                SELECT DISTINCT ts_code FROM daily_quotes
+                WHERE name IS NOT NULL
+                  AND (UPPER(name) LIKE '%%ST%%' OR name LIKE '%%*%%' OR name LIKE '%%退%%')
+            """)
+            for row in cur.fetchall():
+                codes.add(row['ts_code'])
+            cur.close()
+        except Exception:
+            pass
+        finally:
+            if conn and not conn.closed:
+                conn.close()
+        return codes
+
+    def _batch_load_reductions(self, eval_date: str) -> Set[str]:
+        """批量加载近期有减持的股票"""
+        codes = set()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            start_date = (
+                datetime.strptime(eval_date, "%Y-%m-%d") -
+                timedelta(days=self.cfg.d_share_reduction_days)
+            ).strftime("%Y-%m-%d")
+            cur.execute("""
+                SELECT DISTINCT ts_code FROM announcement_data
+                WHERE pub_date BETWEEN %s AND %s
+                  AND (title ILIKE '%%减持%%' OR title ILIKE '%%reduction%%')
+            """, (start_date, eval_date))
+            for row in cur.fetchall():
+                codes.add(row['ts_code'])
+            cur.close()
+        except Exception:
+            pass
+        finally:
+            if conn and not conn.closed:
+                conn.close()
+        return codes
+
+    def _batch_load_high_pledge(self) -> Set[str]:
+        """批量加载高质押股票"""
+        codes = set()
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("""
+                SELECT DISTINCT ts_code FROM financial_data
+                WHERE indicator = 'pledge_ratio'
+                  AND value > %s
+            """, (self.cfg.d_pledge_ratio_max,))
+            for row in cur.fetchall():
+                codes.add(row['ts_code'])
+            cur.close()
+        except Exception:
+            pass
+        finally:
+            if conn and not conn.closed:
+                conn.close()
+        return codes
 
     def check(self, ts_code: str, eval_date: str,
               consecutive_limits: int = 0) -> RiskVerdict:
         verdict = RiskVerdict(ts_code=ts_code, eval_date=eval_date)
 
-        # D1: ST / 退市风险
+        # D1: ST / 退市风险（使用缓存）
         if self.cfg.d_exclude_st or self.cfg.d_exclude_delist_warning:
-            if self._is_st_or_delist(ts_code):
+            if self._st_cache is not None and ts_code in self._st_cache:
                 verdict.passed = False
                 verdict.blacklist_reasons.append("D1: ST/退市风险")
+            elif self._st_cache is None:
+                # 降级到逐只查询
+                if self._is_st_or_delist(ts_code):
+                    verdict.passed = False
+                    verdict.blacklist_reasons.append("D1: ST/退市风险")
 
-        # D2: 近 30 日重大减持
-        if self._has_recent_reduction(ts_code, eval_date):
-            verdict.passed = False
-            verdict.blacklist_reasons.append("D2: 近30日有减持")
+        # D2: 近 30 日重大减持（使用缓存）
+        if self._reduction_cache is not None:
+            if ts_code in self._reduction_cache:
+                verdict.passed = False
+                verdict.blacklist_reasons.append("D2: 近30日有减持")
+        else:
+            if self._has_recent_reduction(ts_code, eval_date):
+                verdict.passed = False
+                verdict.blacklist_reasons.append("D2: 近30日有减持")
 
         # D3: 诱多型涨停
         if self._is_trap_limit_up(ts_code, eval_date):
             verdict.passed = False
             verdict.blacklist_reasons.append("D3: 诱多型涨停")
 
-        # D4: 高质押 + 连板 > 3
+        # D4: 高质押 + 连板 > 3（使用缓存）
         if consecutive_limits > self.cfg.d_pledge_consecutive_limit_days:
-            if self._is_high_pledge(ts_code, eval_date):
-                verdict.passed = False
-                verdict.blacklist_reasons.append("D4: 高质押连板")
+            if self._pledge_cache is not None:
+                if ts_code in self._pledge_cache:
+                    verdict.passed = False
+                    verdict.blacklist_reasons.append("D4: 高质押连板")
+            else:
+                if self._is_high_pledge(ts_code, eval_date):
+                    verdict.passed = False
+                    verdict.blacklist_reasons.append("D4: 高质押连板")
 
         return verdict
 
@@ -185,6 +291,9 @@ class LayerDRiskFilter:
         """
         批量过滤，返回通过 D 层的标的列表
         """
+        # 预加载风险数据
+        self.preload_for_date(eval_date)
+
         if consecutive_limits_map is None:
             consecutive_limits_map = {}
         passed = []

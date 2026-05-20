@@ -118,6 +118,10 @@ class LayerAPrescreener:
     # A2: 市值适中
     # ================================================================
     def _filter_market_cap(self, as_of_date: str) -> Set[str]:
+        # 优先从预加载数据获取
+        if self.loader._preloaded_daily is not None and not self.loader._preloaded_daily.empty:
+            return self._filter_market_cap_preloaded(as_of_date)
+
         conn = None
         codes = set()
         try:
@@ -150,6 +154,27 @@ class LayerAPrescreener:
                 conn.close()
         return codes
 
+    def _filter_market_cap_preloaded(self, as_of_date: str) -> Set[str]:
+        """从预加载数据批量估算市值"""
+        codes = set()
+        df = self.loader._preloaded_daily
+        day_data = df[df['trade_date'] == as_of_date]
+        if day_data.empty:
+            return codes
+
+        for _, row in day_data.iterrows():
+            turnover_rate = row.get('turnover_rate')
+            if not turnover_rate or pd.isna(turnover_rate) or turnover_rate <= 0:
+                continue
+            close = row.get('close')
+            volume = row.get('volume')
+            if not close or not volume or pd.isna(close) or pd.isna(volume):
+                continue
+            est_mcap = float(close) * float(volume) / float(turnover_rate)
+            if self.cfg.a_market_cap_min <= est_mcap <= self.cfg.a_market_cap_max:
+                codes.add(row['ts_code'])
+        return codes
+
     def _estimate_market_cap(self, conn, ts_code: str,
                              as_of_date: str) -> Optional[float]:
         """估算流通市值（收盘价 × 流通股本）"""
@@ -180,6 +205,10 @@ class LayerAPrescreener:
     # A3: 行业景气
     # ================================================================
     def _filter_industry_momentum(self, as_of_date: str) -> Set[str]:
+        # 优先从预加载数据获取
+        if self.loader._preloaded_daily is not None and not self.loader._preloaded_daily.empty:
+            return self._filter_industry_momentum_preloaded(as_of_date)
+
         conn = None
         codes = set()
         try:
@@ -224,4 +253,42 @@ class LayerAPrescreener:
         finally:
             if conn and not conn.closed:
                 conn.close()
+        return codes
+
+    def _filter_industry_momentum_preloaded(self, as_of_date: str) -> Set[str]:
+        """从预加载数据批量计算行业景气"""
+        codes = set()
+        df = self.loader._preloaded_daily
+        if 'industry' not in df.columns:
+            return codes
+
+        start_date = (
+            datetime.strptime(as_of_date, "%Y-%m-%d") -
+            timedelta(days=self.cfg.a_industry_momentum_days * 2)
+        ).strftime("%Y-%m-%d")
+
+        mask = (df['trade_date'] >= start_date) & (df['trade_date'] <= as_of_date) & \
+               df['industry'].notna() & df['pct_chg'].notna()
+        sub = df[mask]
+        if sub.empty:
+            return codes
+
+        recent_start = (
+            datetime.strptime(as_of_date, "%Y-%m-%d") -
+            timedelta(days=self.cfg.a_industry_momentum_days)
+        ).strftime("%Y-%m-%d")
+        recent = sub[sub['trade_date'] > recent_start]
+
+        if recent.empty:
+            return codes
+
+        industry_returns = recent.groupby('industry')['pct_chg'].astype(float).mean().sort_values(ascending=False)
+        threshold_idx = max(1, int(len(industry_returns) * self.cfg.a_industry_momentum_top_pct))
+        top_industries = set(industry_returns.head(threshold_idx).index)
+
+        # 找出属于景气行业的股票
+        day_data = sub[sub['trade_date'] == as_of_date]
+        for _, row in day_data.iterrows():
+            if row['industry'] in top_industries:
+                codes.add(row['ts_code'])
         return codes
