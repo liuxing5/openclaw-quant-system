@@ -569,7 +569,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         code = c.get('ts_code', '')
         name = c.get('stock_name', '')
         score = c.get('final_score', c.get('score', 0))
-        quant = c.get('quant_score', 0)
+        quant = c.get('quant_score') or c.get('score', 0)
         llm_score = c.get('llm_score', 0)
         entry_l = c.get('entry_low') or c.get('entry_price')
         stop_l = c.get('stop_loss')
@@ -679,13 +679,11 @@ def generate_unified_html(output_dir=None, trade_date=None):
                         pool = 'stable' if 'stable' in t else 'upper'
                         break
             if 'stable' in pool.lower():
-                path_badge = '<span class="path-badge path-stable">稳健</span>'
-                stable_cards += render_candidate_card(c, badge_text=f'<span class="badge-8step">八步法</span>{path_badge}')
+                stable_cards += render_candidate_card(c)
             elif 'upper' in pool.lower():
-                path_badge = '<span class="path-badge path-upper">高位</span>'
-                upper_cards += render_candidate_card(c, badge_text=f'<span class="badge-8step">八步法</span>{path_badge}')
+                upper_cards += render_candidate_card(c)
             else:
-                eight_cards += render_candidate_card(c, badge_text='<span class="badge-8step">八步法</span>')
+                eight_cards += render_candidate_card(c)
         if stable_cards:
             eight_cards += f'<div class="path-group"><div class="cards-grid">{stable_cards}</div></div>'
         if upper_cards:
