@@ -320,7 +320,12 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if funnel:
         total = funnel['total_stocks']
         if total == 0:
-            funnel_steps_html = '<div class="no-data">漏斗策略运行时行情数据未就绪，各层统计为空<br><small>（daily_quotes 在收盘后才写入，漏斗策略需在数据就绪后运行）</small></div>'
+            # 判断是数据未就绪还是大盘风控未通过
+            l0 = funnel.get('layer0_pass', 0)
+            if l0 == 0:
+                funnel_steps_html = '<div class="no-data">L0 大盘风控未通过<br><small>（上涨家数不足或市场广度低于20EMA，当日不荐股）</small></div>'
+            else:
+                funnel_steps_html = '<div class="no-data">漏斗策略运行时行情数据未就绪，各层统计为空<br><small>（daily_quotes 在收盘后才写入，漏斗策略需在数据就绪后运行）</small></div>'
         else:
             steps_data = [
                 ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
