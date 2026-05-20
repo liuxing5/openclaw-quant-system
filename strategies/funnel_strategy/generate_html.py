@@ -500,7 +500,6 @@ def generate_unified_html(output_dir=None, trade_date=None):
               <td><strong>{days_key}日</strong></td>
               <td>{n}</td>
               <td style="color:{color}"><strong>{wr:.1%}</strong></td>
-              <td>{hr:.1%}</td>
               <td>{mn:.1%}</td>
               <td>{md:.1%}</td>
               <td>{a5:.1%}</td>
@@ -517,9 +516,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
           <span class="step-pass">{signal_count}</span>
         </div>
         <div style="overflow-x:auto;margin:8px 0;">
-        <table style="width:100%;font-size:.75rem;border-collapse:collapse;">
+        <table style="width:100%;font-size:.7rem;border-collapse:collapse;white-space:nowrap;">
         <thead><tr style="background:var(--metric-bg)">
-          <th>持有期</th><th>样本</th><th>胜率</th><th>命中&gt;5%</th><th>均值</th><th>中位数</th><th>&gt;5%概率</th><th>&gt;10%概率</th>
+          <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th><th>&gt;5%</th><th>&gt;10%</th>
         </tr></thead>
         <tbody>{table_rows}</tbody>
         </table>
@@ -757,7 +756,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 }}
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif; background:var(--bg); color:var(--text); min-height:100vh; transition:background .3s,color .3s; }}
-.container {{ max-width:1400px; margin:0 auto; padding:16px; }}
+.container {{ max-width:1600px; margin:0 auto; padding:16px; overflow-x:hidden; }}
 
 /* Header */
 .header {{ background:var(--header-bg); color:var(--header-text); padding:28px 24px; border-radius:12px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }}
@@ -774,12 +773,12 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 
 /* Four column layout */
 .four-col {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:stretch; }}
-.four-col .section {{ margin-bottom:0; display:flex; flex-direction:column; }}
+.four-col .section {{ margin-bottom:0; display:flex; flex-direction:column; min-width:0; overflow:hidden; }}
 .four-col .section > h2 {{ flex-shrink:0; }}
 .four-col .section > h3 {{ flex-shrink:0; margin-top:auto; }}
 .four-col .cards-grid {{ flex:1; align-content:start; }}
 .four-col .candidate-card {{ align-self:stretch; }}
-@media (max-width:1200px) {{ .four-col {{ grid-template-columns:repeat(2,1fr); }} }}
+@media (max-width:1400px) {{ .four-col {{ grid-template-columns:repeat(2,1fr); }} }}
 @media (max-width:768px) {{ .four-col {{ grid-template-columns:1fr; }} }}
 
 /* Keep three-col for backward compatibility */
@@ -798,11 +797,11 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .step-name {{ font-weight:500; min-width:80px; }}
 .step-pass {{ font-weight:bold; color:var(--score-color); min-width:36px; text-align:right; }}
 .step-row .elim {{ color:var(--elim-color); font-size:.72rem; margin-left:4px; }}
-.step-row .rule-inline {{ color:var(--text2); font-size:.7rem; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:220px; }}
+.step-row .rule-inline {{ color:var(--text2); font-size:.7rem; margin-left:auto; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:50%; }}
 .step-note {{ font-size:.75rem; color:var(--text2); padding:6px 10px; }}
 
 /* Candidate cards */
-.cards-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; }}
+.cards-grid {{ display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; }}
 .candidate-card {{ background:var(--metric-bg); border-radius:8px; padding:12px; border:1px solid var(--border); transition:transform .15s,box-shadow .15s; min-height:160px; display:flex; flex-direction:column; justify-content:space-between; }}
 .candidate-card:hover {{ transform:translateY(-2px); box-shadow:var(--shadow); }}
 .candidate-card.selected {{ border-color:var(--sel-border); }}
