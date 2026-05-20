@@ -72,7 +72,7 @@ class LayerCSustainAnalyzer:
 
     def _scan_b_signals_vectorized(self, b_signals: List[LaunchSignal],
                                     top_n: int = 8) -> List[SustainSignal]:
-        """向量化扫描：使用预计算指标，批量DataFrame过滤"""
+        """向量化扫描：使用预计算指标，批量DataFrame过滤，无iterrows"""
         eval_date = b_signals[0].eval_date
         b_codes = {s.ts_code: s for s in b_signals}
 
@@ -85,96 +85,91 @@ class LayerCSustainAnalyzer:
         if pool_df.empty:
             return []
 
-        scores_df = pd.DataFrame(index=pool_df.index)
-        scores_df['ts_code'] = pool_df['ts_code']
-        passed_count = np.zeros(len(pool_df), dtype=int)
+        pct_chg = pool_df['pct_chg'].fillna(0)
 
         # ---- C1: 分时形态质量（回测模式用日线近似） ----
         if self.skip_1min:
-            c1_pass = pool_df['pct_chg'].fillna(0) > 3.0
-            scores_df['intraday'] = np.minimum(1.0, pool_df['pct_chg'].fillna(0) / 5.0)
-            scores_df['intraday'] = np.where(pool_df['pct_chg'].fillna(0) > 0, scores_df['intraday'], 0)
+            c1_pass = pct_chg > 3.0
+            intraday_score = np.minimum(1.0, pct_chg / 5.0)
+            intraday_score = np.where(pct_chg > 0, intraday_score, 0.0)
         else:
-            # 实盘模式降级到逐只
-            scores_df['intraday'] = 0.0
+            intraday_score = np.zeros(len(pool_df))
             c1_pass = pd.Series(False, index=pool_df.index)
 
-        passed_count += c1_pass.astype(int)
-
-        # ---- C2: 大单买入占比（成交额放大 + 涨幅配合） ----
+        # ---- C2: 大单买入占比 ----
         amount_ratio = pool_df['amount_ratio_20'].fillna(0)
-        pct_chg = pool_df['pct_chg'].fillna(0)
         c2_pass = (amount_ratio > 2.0) & (pct_chg > 2.0)
-        scores_df['big_order'] = np.minimum(1.0, amount_ratio / 5.0)
-        passed_count += c2_pass.astype(int)
+        big_order_score = np.minimum(1.0, amount_ratio / 5.0)
 
         # ---- C3: 缩量上涨 ----
         vol_shrink = pool_df['volume_shrink_ratio'].fillna(0)
         c3_pass = (pct_chg > 0) & (vol_shrink >= self.cfg.c_volume_shrink_ratio_min) & \
                   (vol_shrink <= self.cfg.c_volume_shrink_ratio_max)
-        scores_df['vol_shrink'] = c3_pass.astype(float)
-        passed_count += c3_pass.astype(int)
+        vol_shrink_score = c3_pass.astype(float)
 
-        # ---- C4: 板上量比（涨停日封板质量） ----
+        # ---- C4: 板上量比 ----
         limit_pct = np.where(pool_df['is_kcb_cyb'], 0.197, 0.097)
         is_zt = pct_chg >= limit_pct - 0.003
         if self.skip_1min:
             c4_pass = is_zt
-            scores_df['seal_quality'] = np.where(is_zt, 1.0, 0.0)
+            seal_quality_score = np.where(is_zt, 1.0, 0.0)
         else:
             c4_pass = pd.Series(False, index=pool_df.index)
-            scores_df['seal_quality'] = 0.0
-        passed_count += c4_pass.astype(int)
+            seal_quality_score = np.zeros(len(pool_df))
 
         # ---- C5: 同板块联动 ----
-        industry_avg = pool_df.get('industry_avg_pct', pd.Series(np.nan, index=pool_df.index))
-        industry_rising = pool_df.get('industry_rising_count', pd.Series(0, index=pool_df.index))
-        # industry_avg_pct 是小数形式（pct_chg的mean），需要转换
-        c5_pass = (industry_avg.fillna(0) > self.cfg.c_sector_rise_min_pct * 100) & \
-                  (industry_rising.fillna(0) >= self.cfg.c_sector_peer_count_min)
-        # 如果industry_avg_pct已经是百分比形式（0.03表示3%），则不需要*100
-        # 检查：daily_quotes中pct_chg是百分比形式（如3.5表示3.5%），所以mean也是百分比
-        c5_pass = (industry_avg.fillna(0) > self.cfg.c_sector_rise_min_pct * 100) & \
-                  (industry_rising.fillna(0) >= self.cfg.c_sector_peer_count_min)
-        scores_df['sector'] = c5_pass.astype(float)
-        passed_count += c5_pass.astype(int)
+        industry_avg = pool_df.get('industry_avg_pct', pd.Series(np.nan, index=pool_df.index)).fillna(0)
+        industry_rising = pool_df.get('industry_rising_count', pd.Series(0, index=pool_df.index)).fillna(0)
+        c5_pass = (industry_avg > self.cfg.c_sector_rise_min_pct * 100) & \
+                  (industry_rising >= self.cfg.c_sector_peer_count_min)
+        sector_score = c5_pass.astype(float)
 
         # ---- 综合判定 ----
-        scores_df['total_score'] = scores_df['intraday'] + scores_df['big_order'] + \
-                                   scores_df['vol_shrink'] + scores_df['seal_quality'] + scores_df['sector']
-        scores_df['passed'] = passed_count >= 3
+        passed_count = c1_pass.astype(int) + c2_pass.astype(int) + c3_pass.astype(int) + \
+                       c4_pass.astype(int) + c5_pass.astype(int)
+        total_score = intraday_score + big_order_score + vol_shrink_score + seal_quality_score + sector_score
+        passed = passed_count >= 3
 
         # 过滤通过的，取Top N
-        passed_df = scores_df[scores_df['passed']].sort_values('total_score', ascending=False)
+        pool_df['total_score'] = total_score
+        pool_df['passed'] = passed.values if hasattr(passed, 'values') else passed
+        passed_df = pool_df[pool_df['passed']].sort_values('total_score', ascending=False)
         top = passed_df.head(top_n)
 
-        # 转换为SustainSignal列表
+        # 直接从DataFrame构建结果（无iterrows）
         results = []
-        for idx, row in top.iterrows():
-            ts_code = row['ts_code']
-            b_sig = b_codes.get(ts_code)
+        top_ts_codes = top['ts_code'].values
+        top_scores = top['total_score'].values
+        top_indices = top.index
 
-            vol_shrink_val = pool_df.loc[idx, 'volume_shrink_ratio'] if idx in pool_df.index else 0
-            amt_ratio_val = pool_df.loc[idx, 'amount_ratio_20'] if idx in pool_df.index else 0
-            ind_avg_val = pool_df.loc[idx, 'industry_avg_pct'] if idx in pool_df.index and 'industry_avg_pct' in pool_df.columns else 0
-            ind_rise_val = pool_df.loc[idx, 'industry_rising_count'] if idx in pool_df.index and 'industry_rising_count' in pool_df.columns else 0
+        for i in range(len(top)):
+            idx = top_indices[i]
+            code = top_ts_codes[i]
+            b_sig = b_codes.get(code)
+
+            vol_shrink_val = float(pool_df.loc[idx, 'volume_shrink_ratio']) if 'volume_shrink_ratio' in pool_df.columns else 0
+            amt_ratio_val = float(pool_df.loc[idx, 'amount_ratio_20']) if 'amount_ratio_20' in pool_df.columns else 0
+            ind_avg_val = float(pool_df.loc[idx, 'industry_avg_pct']) if 'industry_avg_pct' in pool_df.columns else 0
+            ind_rise_val = float(pool_df.loc[idx, 'industry_rising_count']) if 'industry_rising_count' in pool_df.columns else 0
+            pct_val = float(pool_df.loc[idx, 'pct_chg'])
+            is_zt_val = bool(is_zt[idx]) if idx in is_zt.index else False
 
             sig = SustainSignal(
-                ts_code=ts_code,
+                ts_code=code,
                 eval_date=eval_date,
-                score=float(row['total_score']),
+                score=float(top_scores[i]),
                 factors={
-                    'intraday': float(row['intraday']),
-                    'big_order': float(row['big_order']),
-                    'vol_shrink': float(row['vol_shrink']),
-                    'seal_quality': float(row['seal_quality']),
-                    'sector': float(row['sector']),
+                    'intraday': float(intraday_score[i]) if i < len(intraday_score) else 0,
+                    'big_order': float(big_order_score[i]) if i < len(big_order_score) else 0,
+                    'vol_shrink': float(vol_shrink_score[i]) if i < len(vol_shrink_score) else 0,
+                    'seal_quality': float(seal_quality_score[i]) if i < len(seal_quality_score) else 0,
+                    'sector': float(sector_score[i]) if i < len(sector_score) else 0,
                 },
                 details={
-                    'intraday': f"回测模式, 日涨幅={pool_df.loc[idx, 'pct_chg']:.1f}%" if self.skip_1min else "1分钟线不可用",
-                    'big_order': f"成交额倍数={amt_ratio_val:.1f}x, 涨幅={pool_df.loc[idx, 'pct_chg']:.1f}%",
-                    'vol_shrink': f"量比T-1={vol_shrink_val:.1f}x, 涨跌={pool_df.loc[idx, 'pct_chg']:+.1f}%",
-                    'seal_quality': f"回测模式, 涨停={pool_df.loc[idx, 'pct_chg']:.1f}%" if is_zt[idx] else "非涨停日",
+                    'intraday': f"回测模式, 日涨幅={pct_val:.1f}%" if self.skip_1min else "1分钟线不可用",
+                    'big_order': f"成交额倍数={amt_ratio_val:.1f}x, 涨幅={pct_val:.1f}%",
+                    'vol_shrink': f"量比T-1={vol_shrink_val:.1f}x, 涨跌={pct_val:+.1f}%",
+                    'seal_quality': f"回测模式, 涨停={pct_val:.1f}%" if is_zt_val else "非涨停日",
                     'sector': f"板块均值={ind_avg_val:.1f}%, 上涨={ind_rise_val:.0f}只",
                 },
                 passed=True,

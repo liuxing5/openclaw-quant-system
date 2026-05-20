@@ -39,6 +39,7 @@ class LayerAPrescreener:
         self.cfg = cfg
         self.loader = loader or DataLoader()
         self._pool_cache: Dict[str, Set[str]] = {}
+        self._profit_cache: Optional[Set[str]] = None  # A1业绩加速缓存
 
     def prescreen(self, as_of_date: Optional[str] = None) -> Set[str]:
         """
@@ -91,6 +92,10 @@ class LayerAPrescreener:
     # A1: 业绩加速
     # ================================================================
     def _filter_profit_acceleration(self) -> Set[str]:
+        # 使用缓存（整个回测期间不变）
+        if self._profit_cache is not None:
+            return self._profit_cache
+
         conn = None
         codes = set()
         try:
@@ -112,6 +117,7 @@ class LayerAPrescreener:
         finally:
             if conn and not conn.closed:
                 conn.close()
+        self._profit_cache = codes
         return codes
 
     # ================================================================

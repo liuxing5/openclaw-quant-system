@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple
@@ -98,12 +99,17 @@ class MainUptrendBacktester:
 
         all_signals = []
         forward_data: Dict[int, List[Dict]] = {d: [] for d in self.cfg.forward_return_days}
+        day_count = len(trading_days)
+        t_day_start = 0
+        t_total_start = time.time()
 
         for i, trade_date in enumerate(_safe_tqdm(trading_days, desc="回测进度")):
             try:
+                t1 = time.time()
                 pool_a = self._get_pool_a(pool_a_cache, trade_date, target_stocks)
 
                 candidates = self.engine.evaluate_single_day(trade_date, pool_a)
+                t2 = time.time()
 
                 if candidates:
                     signals = self._calc_forward_returns(
@@ -122,6 +128,17 @@ class MainUptrendBacktester:
                                     f'ret_{d}d': s[f'ret_{d}d'],
                                     f'hit_{d}d': s.get(f'hit_{d}d', False),
                                 })
+
+                # 每50天打印一次进度（避免日志过多）
+                if (i + 1) % 50 == 0 or i == day_count - 1:
+                    elapsed = time.time() - t_total_start
+                    avg_per_day = elapsed / (i + 1) if i > 0 else 0
+                    remaining = avg_per_day * (day_count - i - 1)
+                    logger.info(f"进度 {i+1}/{day_count} ({trade_date}): "
+                               f"单日耗时{t2-t1:.2f}s, "
+                               f"候选{len(candidates)}只, "
+                               f"总信号{len(all_signals)}个, "
+                               f"已用{elapsed:.0f}s, 预计剩余{remaining:.0f}s")
 
             except Exception as e:
                 logger.warning(f"{trade_date} 评估失败: {e}")

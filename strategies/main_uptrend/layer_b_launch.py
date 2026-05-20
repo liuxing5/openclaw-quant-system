@@ -202,7 +202,7 @@ class LayerBLaunchDetector:
 
     def _scan_pool_vectorized(self, pool: Set[str], eval_date: str,
                                top_n: int = 20) -> List[LaunchSignal]:
-        """向量化扫描：使用预计算指标，每日扫描变为DataFrame过滤"""
+        """向量化扫描：使用预计算指标，每日扫描变为DataFrame过滤，无iterrows"""
         ind_df = self.loader.get_indicators_snapshot(eval_date)
         if ind_df.empty:
             return []
@@ -213,9 +213,8 @@ class LayerBLaunchDetector:
             return []
 
         # 快速预筛：至少满足量能或涨幅门槛之一
-        quick = pool_df[
-            (pool_df['amount'] >= 1e8) | (pool_df['pct_chg'].abs() >= 3)
-        ].copy()
+        quick_mask = (pool_df['amount'] >= 1e8) | (pool_df['pct_chg'].abs() >= 3)
+        quick = pool_df[quick_mask].copy()
         if quick.empty:
             return []
 
@@ -252,57 +251,72 @@ class LayerBLaunchDetector:
         )
 
         # 综合评分
-        total_score = vol_breakout_score + price_breakout_score + main_force_score + seal_quality_score
+        total_score = vol_breakout_score.values + price_breakout_score + main_force_score.values + seal_quality_score
 
         # 通过条件：B1-B4中至少3个有分
-        has_score = ((vol_breakout_score > 0).astype(int) +
+        has_score = ((vol_breakout_score.values > 0).astype(int) +
                      (price_breakout_score > 0).astype(int) +
-                     (main_force_score > 0).astype(int) +
+                     (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
         passed = has_score >= 3
 
         # 组装结果到DataFrame
-        quick['total_score'] = total_score.values
-        quick['passed'] = passed.values
-        quick['b_vol_breakout_score'] = vol_breakout_score.values
-        quick['b_price_breakout_score'] = price_breakout_score.values
-        quick['b_main_force_score'] = main_force_score.values
-        quick['b_seal_quality_score'] = seal_quality_score.values
-        quick['b_is_zt'] = is_zt.values
+        quick['total_score'] = total_score
+        quick['passed'] = passed
 
         # 过滤通过的，取Top N
         passed_df = quick[quick['passed']].sort_values('total_score', ascending=False)
         top = passed_df.head(top_n)
 
-        # 转换为LaunchSignal列表
+        # 直接从DataFrame构建结果（无iterrows）
         results = []
-        for _, row in top.iterrows():
-            price_detail = "未突破"
-            if row['b_price_breakout_score'] == 0.8:
-                price_detail = "突破箱体"
-            elif row['b_price_breakout_score'] == 0.6:
-                above_pct = row.get('above_ma_120_pct', 0)
-                price_detail = f"突破半年线(距MA={above_pct * 100:.1f}%)" if pd.notna(above_pct) else "突破半年线"
+        ts_codes_arr = top['ts_code'].values
+        scores_arr = top['total_score'].values
+        vol_scores = top.get('vol_breakout_ratio', pd.Series(0, index=top.index))
+        turn_rates = top.get('turnover_rate', pd.Series(0, index=top.index))
+        price_scores = np.where(top.index.isin(top[breakout_box.reindex(top.index, fill_value=False)].index), 0.8,
+                                np.where(top.index.isin(top[above_ma.reindex(top.index, fill_value=False)].index), 0.6, 0.0))
 
-            main_detail = "无数据"
-            if pd.notna(row.get('main_inflow_ratio')):
-                main_detail = f"主力净流入比={row['main_inflow_ratio'] * 100:.1f}%"
+        for i in range(len(top)):
+            idx = top.index[i]
+            code = ts_codes_arr[i]
+            score = float(scores_arr[i])
+
+            # 构造detail字符串
+            vol_ratio_val = float(quick.loc[idx, 'vol_breakout_ratio']) if idx in quick.index else 0
+            turn_val = float(quick.loc[idx, 'turnover_rate']) if idx in quick.index else 0
+            above_pct_val = float(quick.loc[idx, 'above_ma_120_pct']) if idx in quick.index and 'above_ma_120_pct' in quick.columns else 0
+
+            # 判断价格突破类型
+            is_box_break = bool(breakout_box.get(idx, False)) if idx in breakout_box.index else False
+            is_ma_break = bool(above_ma.get(idx, False)) if idx in above_ma.index else False
+            if is_box_break:
+                price_detail = "突破箱体"
+            elif is_ma_break:
+                price_detail = f"突破半年线(距MA={above_pct_val * 100:.1f}%)"
+            else:
+                price_detail = "未突破"
+
+            main_ratio_val = float(quick.loc[idx, 'main_inflow_ratio']) if idx in quick.index and 'main_inflow_ratio' in quick.columns else 0
+            main_detail = f"主力净流入比={main_ratio_val * 100:.1f}%" if not np.isnan(main_ratio_val) and main_ratio_val != 0 else "无数据"
+
+            is_zt_val = bool(is_zt.get(idx, False)) if idx in is_zt.index else False
 
             sig = LaunchSignal(
-                ts_code=row['ts_code'],
+                ts_code=code,
                 eval_date=eval_date,
-                score=float(row['total_score']),
+                score=score,
                 factors={
-                    'vol_breakout': float(row['b_vol_breakout_score']),
-                    'price_breakout': float(row['b_price_breakout_score']),
-                    'main_force': float(row['b_main_force_score']),
-                    'seal_quality': float(row['b_seal_quality_score']),
+                    'vol_breakout': float(vol_breakout_score.values[i]) if i < len(vol_breakout_score) else 0,
+                    'price_breakout': float(price_breakout_score[i]) if i < len(price_breakout_score) else 0,
+                    'main_force': float(main_force_score.values[i]) if i < len(main_force_score) else 0,
+                    'seal_quality': float(seal_quality_score[i]) if i < len(seal_quality_score) else 0,
                 },
                 details={
-                    'vol_breakout': f"量比MA60={row.get('vol_breakout_ratio', 0):.1f}x, 换手={row.get('turnover_rate', 0):.1f}%",
+                    'vol_breakout': f"量比MA60={vol_ratio_val:.1f}x, 换手={turn_val:.1f}%",
                     'price_breakout': price_detail,
                     'main_force': main_detail,
-                    'seal_quality': "涨停日" if row['b_is_zt'] else "非涨停日",
+                    'seal_quality': "涨停日" if is_zt_val else "非涨停日",
                 },
                 passed=True,
             )

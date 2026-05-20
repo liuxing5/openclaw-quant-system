@@ -127,7 +127,7 @@ class LayerDRiskFilter:
 
     def _filter_list_vectorized(self, ts_codes: List[str], eval_date: str,
                                  consecutive_limits_map: Optional[dict] = None) -> List[str]:
-        """向量化过滤：使用预计算指标批量检测诱多"""
+        """向量化过滤：使用预计算指标批量检测，无iterrows"""
         if consecutive_limits_map is None:
             consecutive_limits_map = {}
 
@@ -139,42 +139,41 @@ class LayerDRiskFilter:
         if pool_df.empty:
             return ts_codes
 
-        passed_codes = []
+        # ---- D1: ST/退市 ----
+        d1_fail = pd.Series(False, index=pool_df.index)
+        if self._st_cache:
+            d1_fail = pool_df['ts_code'].isin(self._st_cache)
 
-        for _, row in pool_df.iterrows():
-            code = row['ts_code']
-            reasons = []
+        # ---- D2: 减持 ----
+        d2_fail = pd.Series(False, index=pool_df.index)
+        if self._reduction_cache:
+            d2_fail = pool_df['ts_code'].isin(self._reduction_cache)
 
-            # D1: ST/退市
-            if self._st_cache and code in self._st_cache:
-                reasons.append("D1: ST/退市风险")
+        # ---- D3: 诱多型涨停（向量化） ----
+        pct_chg = pool_df['pct_chg'].fillna(0)
+        is_kcb_cyb = pool_df.get('is_kcb_cyb', pd.Series(False, index=pool_df.index))
+        limit_pct = np.where(is_kcb_cyb, 0.197, 0.097)
+        is_zt = pct_chg >= limit_pct - 0.003
 
-            # D2: 减持
-            if self._reduction_cache and code in self._reduction_cache:
-                reasons.append("D2: 近30日有减持")
+        vol_ratio = pool_df.get('volume_ratio_20', pd.Series(0, index=pool_df.index)).fillna(0)
+        seal_quality = pool_df.get('seal_quality_est', pd.Series(0, index=pool_df.index)).fillna(0)
+        d3_fail = is_zt & (vol_ratio > self.cfg.d_trap_volume_ratio) & \
+                  (seal_quality < self.cfg.d_trap_seal_ratio_max)
 
-            # D3: 诱多型涨停（向量化：使用预计算指标）
-            pct_chg = float(row.get('pct_chg', 0))
-            is_kcb_cyb = row.get('is_kcb_cyb', False)
-            limit_pct = 0.197 if is_kcb_cyb else 0.097
-            is_zt = pct_chg >= limit_pct - 0.003
+        # ---- D4: 高质押+连板 ----
+        d4_fail = pd.Series(False, index=pool_df.index)
+        if self._pledge_cache:
+            pledge_codes = pool_df['ts_code'].isin(self._pledge_cache)
+            # 检查连板数
+            if consecutive_limits_map:
+                cons_limits_arr = pool_df['ts_code'].map(
+                    lambda c: consecutive_limits_map.get(c, 0)
+                ).fillna(0)
+                d4_fail = pledge_codes & (cons_limits_arr > self.cfg.d_pledge_consecutive_limit_days)
 
-            if is_zt:
-                vol_ratio = float(row.get('volume_ratio_20', 0))
-                seal_quality = float(row.get('seal_quality_est', 0))
-                if vol_ratio > self.cfg.d_trap_volume_ratio and seal_quality < self.cfg.d_trap_seal_ratio_max:
-                    reasons.append("D3: 诱多型涨停")
-
-            # D4: 高质押+连板
-            cons_limits = consecutive_limits_map.get(code, 0)
-            if cons_limits > self.cfg.d_pledge_consecutive_limit_days:
-                if self._pledge_cache and code in self._pledge_cache:
-                    reasons.append("D4: 高质押连板")
-
-            if not reasons:
-                passed_codes.append(code)
-            else:
-                logger.debug(f"D 层剔除 {code}: {reasons}")
+        # ---- 综合判定 ----
+        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail)
+        passed_codes = pool_df.loc[all_pass, 'ts_code'].tolist()
 
         rejected = len(ts_codes) - len(passed_codes)
         logger.info(f"D层向量化过滤: {len(passed_codes)} 通过 / {rejected} 剔除")
