@@ -511,11 +511,19 @@ def generate_unified_html(output_dir=None, trade_date=None):
             ret_10 = f"{frets.get('10', 0):.1%}" if '10' in frets else '—'
             ret_20 = f"{frets.get('20', 0):.1%}" if '20' in frets else '—'
             ret_60 = f"{frets.get('60', 0):.1%}" if '60' in frets else '—'
+            _ts_code = s.get('ts_code', '')
+            _stock_url = ''
+            if _ts_code:
+                _parts = _ts_code.split('.')
+                if len(_parts) == 2:
+                    _stock_url = f'https://gupiao.baidu.com/stock/{_parts[1].lower()}{_parts[0]}.html'
+            _onclick = f' onclick="window.open(\'{_stock_url}\',\'_blank\')" style="cursor:pointer"' if _stock_url else ''
+            _code_link = f'<a href="{_stock_url}" target="_blank" style="color:inherit;text-decoration:none">{_ts_code}</a>' if _stock_url else _ts_code
             top10_html += f"""
-            <div class="candidate-card">
+            <div class="candidate-card"{_onclick}>
               <div class="cand-header">
                 <div>
-                  <span class="cand-code">{s.get('ts_code', '')}</span>
+                  <span class="cand-code">{_code_link}</span>
                   <span style="font-size:.7rem;color:var(--text2);margin-left:4px;">{s.get('eval_date', '')}</span>
                 </div>
                 <span class="cand-score">{s.get('composite_score', 0):.0f}</span>
@@ -561,11 +569,23 @@ def generate_unified_html(output_dir=None, trade_date=None):
         stop_fmt = f'{stop_l:.2f}' if stop_l else '—'
         target_fmt = f'{target:.2f}' if target else '—'
 
+        # 百度财经个股页面链接
+        stock_url = ''
+        if code:
+            parts = code.split('.')
+            if len(parts) == 2:
+                numeric_code = parts[0]
+                market = parts[1].lower()
+                stock_url = f'https://gupiao.baidu.com/stock/{market}{numeric_code}.html'
+
+        onclick_attr = f' onclick="window.open(\'{stock_url}\',\'_blank\')" style="cursor:pointer"' if stock_url else ''
+        code_link = f'<a href="{stock_url}" target="_blank" style="color:inherit;text-decoration:none">{code}</a>' if stock_url else code
+
         return f"""
-        <div class="candidate-card {sel_cls}">
+        <div class="candidate-card {sel_cls}"{onclick_attr}>
           <div class="cand-header">
             <div>
-              <span class="cand-code">{code}</span>
+              <span class="cand-code">{code_link}</span>
               <span class="cand-name">{name or ''}</span>
               {badge_text}
               {src_badge}
