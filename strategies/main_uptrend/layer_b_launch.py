@@ -212,6 +212,16 @@ class LayerBLaunchDetector:
         if pool_df.empty:
             return []
 
+        # 调试：检查amount数据（只打印一次）
+        if not hasattr(self, '_debug_logged'):
+            if 'amount' in pool_df.columns:
+                amt_stats = pool_df['amount'].describe()
+                logger.info(f"B层调试 - amount统计: min={amt_stats.get('min', 'N/A')}, max={amt_stats.get('max', 'N/A')}, mean={amt_stats.get('mean', 'N/A')}")
+                logger.info(f"B层调试 - amount NaN数量: {pool_df['amount'].isna().sum()}/{len(pool_df)}")
+                logger.info(f"B层调试 - pct_chg统计: min={pool_df['pct_chg'].min()}, max={pool_df['pct_chg'].max()}")
+                logger.info(f"B层调试 - pool_df columns: {list(pool_df.columns)}")
+            self._debug_logged = True
+
         # 快速预筛：至少满足量能或涨幅门槛之一
         quick_mask = (pool_df['amount'] >= 1e8) | (pool_df['pct_chg'].abs() >= 3)
         quick = pool_df[quick_mask].copy()
