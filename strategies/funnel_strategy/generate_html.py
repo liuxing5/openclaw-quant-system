@@ -627,9 +627,18 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     eight_cards = ""
     if eight_candidates:
+        # 去重：同一 ts_code 可能同时出现在稳健和高位路径，保留评分更高的
+        seen_codes = {}
+        for c in eight_candidates:
+            code = c.get('ts_code', '')
+            score = c.get('final_score', 0)
+            if code not in seen_codes or score > seen_codes[code].get('final_score', 0):
+                seen_codes[code] = c
+        deduped_candidates = list(seen_codes.values())
+
         stable_cards = ""
         upper_cards = ""
-        for c in eight_candidates:
+        for c in deduped_candidates:
             pool = ''
             sources_raw = c.get('sources')
             if sources_raw:
