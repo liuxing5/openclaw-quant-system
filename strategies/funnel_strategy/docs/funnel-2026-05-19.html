@@ -48,11 +48,11 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
 /* Four column layout */
 .four-col { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:stretch; }
-.four-col .section { margin-bottom:0; display:flex; flex-direction:column; min-width:0; overflow:hidden; }
-.four-col .section > h2 { flex-shrink:0; }
-.four-col .steps-area { flex-shrink:0; min-height:260px; }
-.four-col .section > h3 { flex-shrink:0; margin-top:14px; }
-.four-col .cards-grid { flex:1; align-content:start; }
+.four-col .section { margin-bottom:0; position:relative; min-height:500px; min-width:0; overflow:hidden; }
+.four-col .section > h2 { position:absolute; top:0; left:0; right:0; padding:16px 20px 0; margin:0; border-bottom:none; font-size:1.05rem; }
+.four-col .steps-area { position:absolute; top:48px; left:0; right:0; height:380px; overflow:hidden; padding:0 20px; }
+.four-col .section > h3 { position:absolute; top:428px; left:0; right:0; margin:0; padding:14px 20px 8px; font-size:.9rem; }
+.four-col .cards-grid { position:absolute; top:470px; left:0; right:0; bottom:0; overflow-y:auto; padding:0 20px 20px; align-content:start; }
 .four-col .candidate-card { align-self:stretch; }
 @media (max-width:1400px) { .four-col { grid-template-columns:repeat(2,1fr); } }
 @media (max-width:768px) { .four-col { grid-template-columns:1fr; } }
@@ -131,7 +131,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-05-19 | 生成: 2026-05-20 14:50:42
+        报告日期: 2026-05-19 | 生成: 2026-05-20 15:29:41
         <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           <option value="2026-05-19" selected>2026-05-19</option><option value="2026-05-18" >2026-05-18</option><option value="2026-05-15" >2026-05-15</option><option value="2026-05-12" >2026-05-12</option>
