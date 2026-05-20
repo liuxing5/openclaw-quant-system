@@ -113,7 +113,25 @@ def load_funnel_data(trade_date=None):
     candidates = row.get('candidates')
     if isinstance(candidates, str):
         candidates = json.loads(candidates)
-    row['candidates'] = clean_nan(candidates or [])
+    candidates = clean_nan(candidates or [])
+
+    # 补充 stock_name：漏斗流程中 stock_name 可能在后续层丢失
+    codes_missing_name = [c.get('ts_code', '') for c in candidates if not c.get('stock_name')]
+    if codes_missing_name:
+        try:
+            conn = get_db_fresh(use_dict_cursor=True)
+            cur = conn.cursor()
+            cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes_missing_name,))
+            name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
+            cur.close()
+            conn.close()
+            for c in candidates:
+                if not c.get('stock_name'):
+                    c['stock_name'] = name_map.get(c.get('ts_code', ''), '')
+        except Exception:
+            pass
+
+    row['candidates'] = candidates
     return row
 
 
