@@ -396,7 +396,14 @@ class DataLoader:
 
     def get_indicators_snapshot(self, trade_date: str) -> pd.DataFrame:
         """获取某日的预计算指标快照"""
-        return self._indicators_by_date.get(trade_date, pd.DataFrame())
+        snap = self._indicators_by_date.get(trade_date, pd.DataFrame())
+        # 调试：首次调用打印快照信息
+        if not snap.empty and not hasattr(self, '_snap_debug_done'):
+            logger.info(f"[DEBUG] 快照 {trade_date}: {len(snap)}行, columns={list(snap.columns)}")
+            logger.info(f"[DEBUG] 快照 amount: min={snap['amount'].min()}, max={snap['amount'].max()}, nan={snap['amount'].isna().sum()}")
+            logger.info(f"[DEBUG] 快照 pct_chg: min={snap['pct_chg'].min()}, max={snap['pct_chg'].max()}")
+            self._snap_debug_done = True
+        return snap
 
     def get_preloaded_close(self, ts_code: str, trade_date: str) -> Optional[float]:
         """从预加载数据快速获取收盘价 - O(1)"""
