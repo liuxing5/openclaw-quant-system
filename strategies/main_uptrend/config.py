@@ -35,15 +35,15 @@ class MainUptrendConfig:
     # ============================================================
     b_enabled: bool = True
 
-    b_volume_breakout_mult: float = 2.5
+    b_volume_breakout_mult: float = 3.0  # 提高：2.5→3.0，要求更明显的放量
     b_volume_ma_days: int = 60
-    b_turnover_min: float = 5.0
+    b_turnover_min: float = 8.0  # 提高：5→8，要求更高活跃度
 
     b_price_breakout_box_days: int = 60
     b_price_ma_period: int = 120
-    b_price_above_ma_max_pct: float = 0.08
+    b_price_above_ma_max_pct: float = 0.05  # 收紧：0.08→0.05，要求更接近突破点
 
-    b_main_force_inflow_min_pct: float = 0.05
+    b_main_force_inflow_min_pct: float = 0.08  # 提高：0.05→0.08，要求更多主力流入
 
     b_seal_amount_ratio_min: float = 0.005
 
@@ -58,17 +58,17 @@ class MainUptrendConfig:
     c_intraday_morning_amplitude_max: float = 0.02
     c_intraday_up_ratio_min: float = 0.60
 
-    c_big_order_net_buy_min_pct: float = 0.08
+    c_big_order_net_buy_min_pct: float = 0.10  # 提高：0.08→0.10
     c_big_order_threshold: float = 500000
 
-    c_volume_shrink_ratio_min: float = 0.60
-    c_volume_shrink_ratio_max: float = 0.80
+    c_volume_shrink_ratio_min: float = 0.50  # 收紧：0.60→0.50，要求更明显的缩量
+    c_volume_shrink_ratio_max: float = 0.70  # 收紧：0.80→0.70
 
     c_seal_early_time: str = "10:00"
     c_seal_max_open_times: int = 0
 
-    c_sector_rise_min_pct: float = 0.03
-    c_sector_peer_count_min: int = 2
+    c_sector_rise_min_pct: float = 0.05  # 提高：0.03→0.05，要求行业更强
+    c_sector_peer_count_min: int = 3  # 提高：2→3，要求更多同板块联动
 
     # ============================================================
     # Layer D: 风险过滤
