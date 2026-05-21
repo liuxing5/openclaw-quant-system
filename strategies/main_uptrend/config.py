@@ -93,8 +93,8 @@ class MainUptrendConfig:
     # ============================================================
     # 综合参数
     # ============================================================
-    b_top_n_daily: int = 20
-    c_top_n_daily: int = 8
+    b_top_n_daily: int = 5  # 收紧：20→5，只让最强的5个信号进入C层
+    c_top_n_daily: int = 5  # 收紧：8→5
 
     backtest_start: str = "2025-01-01"
     backtest_end: str = "2026-05-15"
