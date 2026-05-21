@@ -255,11 +255,13 @@ class LayerBLaunchDetector:
         )
 
         # ---- B2: 价格突破 ----
+        # 突破60日箱体高点（真突破）
         breakout_box = quick['close'] > quick['box_60_high'].fillna(0)
+        # 或刚站上120日均线（偏离<3%，避免盘整期误判）
         above_ma = (quick['ma_120'].notna()) & \
                    (quick['close'] > quick['ma_120']) & \
                    (quick['above_ma_120_pct'].fillna(0) > 0) & \
-                   (quick['above_ma_120_pct'].fillna(0) < self.cfg.b_price_above_ma_max_pct)
+                   (quick['above_ma_120_pct'].fillna(0) < 0.03)  # 收紧：0.05→0.03
         b2_pass = breakout_box | above_ma
         price_breakout_score = np.where(breakout_box, 0.8, np.where(above_ma, 0.6, 0.0))
 
