@@ -915,7 +915,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <div class="section">
       <h2>📈 主升浪检测<span class="section-subtitle">{uptrend_backtest.get('backtest_start', '') if uptrend_backtest else (uptrend_date or '—')}</span></h2>
       <div class="steps-area">{uptrend_steps_html}</div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('回测 Top 5' if uptrend_backtest else '今日候选') + (' (' + str(len(uptrend_daily)) + '只)' if uptrend_daily else ' (0只)')}</h3>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('回测 Top 5 (' + str(uptrend_backtest.get('total_signals', 0)) + '只)' if uptrend_backtest and not uptrend_daily else '今日候选') + (' (' + str(len(uptrend_daily)) + '只)' if uptrend_daily else '')}</h3>
       <div class="cards-grid">{uptrend_cards}</div>
     </div>
   </div>
