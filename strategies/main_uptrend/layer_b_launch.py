@@ -264,11 +264,8 @@ class LayerBLaunchDetector:
                        (quick['pct_chg'].fillna(0) > 3.0) & \
                        ma120_up  # 新增：MA120必须向上
         # 或刚站上120日均线（偏离<3%，避免盘整期误判）
-        above_ma = (quick['ma_120'].notna()) & \
-                   (quick['close'] > quick['ma_120']) & \
-                   (quick['above_ma_120_pct'].fillna(0) > 0) & \
-                   (quick['above_ma_120_pct'].fillna(0) < 0.03) & \
-                   ma120_up  # 新增：MA120必须向上
+        # 收紧：取消above_ma路径，只保留真突破
+        above_ma = pd.Series(False, index=quick.index)  # 禁用MA120路径
         b2_pass = breakout_box | above_ma
         price_breakout_score = np.where(breakout_box, 0.8, np.where(above_ma, 0.6, 0.0))
 
