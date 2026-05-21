@@ -86,7 +86,7 @@ class MainUptrendConfig:
     d_pledge_ratio_max: float = 0.50
     d_pledge_consecutive_limit_days: int = 3
 
-    d_max_gain_20d: float = 0.50  # 新增：20日涨幅超过50%的剔除（追高风险）
+    d_max_gain_20d: float = 0.30  # 收紧：50%→30%，20日涨幅超过30%的剔除（追高风险）
     d_near_high_pct: float = 0.95  # 新增：收盘价接近52周高点95%以上剔除（高位接盘风险）
     d_max_drop_5d: float = 0.15  # 新增：近5日跌幅超过15%剔除（接飞刀风险）
 
