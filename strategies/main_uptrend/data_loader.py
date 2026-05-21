@@ -254,6 +254,10 @@ class DataLoader:
         df['volume_ratio_20'] = volume_arr / np.where(volume_ma_20 != 0, volume_ma_20, np.nan)
         df['seal_quality_est'] = amount_arr / np.where(vol_ma_60 != 0, vol_ma_60, np.nan) * 0.001
 
+        # D5: 20日涨幅（用于追高风险过滤）
+        close_20 = self._fast_rolling_mean_shifted(close_arr, group_starts, group_ends, 20)
+        df['pct_chg_20d'] = (close_arr - close_20) / np.where(close_20 != 0, close_20, np.nan) * 100
+
         # ---- 辅助列 ----
         df['is_kcb_cyb'] = df['ts_code'].str.startswith(('300', '688'))
 
