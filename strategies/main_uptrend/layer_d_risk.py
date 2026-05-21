@@ -171,13 +171,8 @@ class LayerDRiskFilter:
                 ).fillna(0)
                 d4_fail = pledge_codes & (cons_limits_arr > self.cfg.d_pledge_consecutive_limit_days)
 
-        # ---- D5: 追高风险（20日涨幅过大） ----
-        d5_fail = pd.Series(False, index=pool_df.index)
-        if 'pct_chg_20d' in pool_df.columns:
-            d5_fail = pool_df['pct_chg_20d'].fillna(0) > self.cfg.d_max_gain_20d * 100
-
         # ---- 综合判定 ----
-        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail | d5_fail)
+        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail)
         passed_codes = pool_df.loc[all_pass, 'ts_code'].tolist()
 
         rejected = len(ts_codes) - len(passed_codes)
