@@ -187,8 +187,13 @@ class LayerDRiskFilter:
         pct_chg_20d = pool_df.get('pct_chg_20d', pd.Series(0, index=pool_df.index)).fillna(0)
         d7_fail = pct_chg_20d > (self.cfg.d_max_gain_20d * 100)  # 转换为百分比
 
+        # ---- D8: 高位派发风险 ----
+        # 换手率超过25%，剔除（高位派发风险）
+        turnover = pool_df.get('turnover_rate', pd.Series(0, index=pool_df.index)).fillna(0)
+        d8_fail = turnover > self.cfg.d_max_turnover
+
         # ---- 综合判定 ----
-        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail | d5_fail | d6_fail | d7_fail)
+        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail | d5_fail | d6_fail | d7_fail | d8_fail)
         passed_codes = pool_df.loc[all_pass, 'ts_code'].tolist()
 
         rejected = len(ts_codes) - len(passed_codes)
