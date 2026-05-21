@@ -135,13 +135,10 @@ class LayerCSustainAnalyzer:
         passed_count = c1_pass.astype(int) + c2_pass.astype(int) + c3_pass.astype(int) + \
                        c4_pass.astype(int) + c5_pass.astype(int)
         
-        # 优化评分权重：给关键条件更高权重
-        # C1(分时)和C2(大单)最重要，权重1.5x
-        # C3(缩量)和C4(封板)次重要，权重1.2x
-        # C5(板块)权重1.0x
-        total_score = (intraday_score * 1.5 + big_order_score * 1.5 + 
-                      vol_shrink_score * 1.2 + seal_quality_score * 1.2 + 
-                      sector_score * 1.0)
+        # 调整评分权重：缩量(C3)和封板(C4)最重要，分时(C1)和大单(C2)次重要
+        total_score = (intraday_score * 1.0 + big_order_score * 1.0 + 
+                      vol_shrink_score * 1.5 + seal_quality_score * 1.5 + 
+                      sector_score * 1.2)
         
         # 恢复通过条件为3/5，但配合综合分阈值过滤
         # 加权后理论最高分约6.4，设置阈值4.8为最优平衡点
