@@ -285,9 +285,9 @@ class LayerBLaunchDetector:
             0.0  # 收紧：非涨停不给分
         )
 
-        # 优化评分权重：量能和主力更重要
-        total_score = (vol_breakout_score.values * 1.3 + price_breakout_score * 1.0 + 
-                      main_force_score.values * 1.5 + seal_quality_score * 1.2)
+        # 反转评分权重：涨停质量最重要，主力最低（高分信号反而亏损）
+        total_score = (vol_breakout_score.values * 1.0 + price_breakout_score * 1.0 + 
+                      main_force_score.values * 0.8 + seal_quality_score * 1.5)
 
         # 通过条件：B1-B4中至少3个有分，且必须有主力流入(B3)或涨停(B4>0)
         # 收紧：必须涨停才能通过（确保强势启动）
