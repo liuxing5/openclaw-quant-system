@@ -247,9 +247,24 @@ def load_main_uptrend_backtest():
 
 
 def load_main_uptrend_daily(trade_date=None):
-    """从 daily_candidates 加载 main_uptrend 当日候选"""
+    """从 daily_candidates 加载 main_uptrend 当日候选，补充 stock_name"""
     try:
         candidates, date = load_candidates('main_uptrend', trade_date=trade_date)
+        if candidates:
+            codes = [c.get('ts_code', '') for c in candidates if not c.get('stock_name')]
+            if codes:
+                try:
+                    conn = get_db_fresh(use_dict_cursor=True)
+                    cur = conn.cursor()
+                    cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes,))
+                    name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
+                    cur.close()
+                    conn.close()
+                    for c in candidates:
+                        if not c.get('stock_name'):
+                            c['stock_name'] = name_map.get(c.get('ts_code', ''), '')
+                except Exception:
+                    pass
         return candidates, date
     except Exception as e:
         print(f"  ⚠ 加载 main_uptrend daily 数据失败: {e}")
@@ -538,6 +553,19 @@ def generate_unified_html(output_dir=None, trade_date=None):
             ret_20 = f"{frets.get('20', 0):.1%}" if '20' in frets else '—'
             ret_60 = f"{frets.get('60', 0):.1%}" if '60' in frets else '—'
             _ts_code = s.get('ts_code', '')
+            _name = s.get('stock_name', '')
+            _score = s.get('composite_score', 0)
+            _eval = s.get('eval_date', '')
+            _signal = s.get('signal_type', '')
+            _signal_map = {'pullback_bounce': '回踩反弹', 'trend_continuation': '趋势延续', 'demand_absorption': '需求吸收', 'strong_relay': '强势接力'}
+            _signal_label = _signal_map.get(_signal, _signal)
+            _tags = []
+            if _signal_label:
+                _tags.append(_signal_label)
+            _win = frets.get('win_rate', 0)
+            if _win > 0:
+                _tags.append(f'胜率{_win:.0%}')
+            _tags_str = ' · '.join(_tags) if _tags else ''
             _stock_url = ''
             if _ts_code:
                 _parts = _ts_code.split('.')
@@ -550,15 +578,16 @@ def generate_unified_html(output_dir=None, trade_date=None):
               <div class="cand-header">
                 <div>
                   <span class="cand-code">{_code_link}</span>
-                  <span style="font-size:.7rem;color:var(--text2);margin-left:4px;">{s.get('eval_date', '')}</span>
+                  <span class="cand-name">{_name or ''}</span>
                 </div>
-                <span class="cand-score">{s.get('composite_score', 0):.0f}</span>
+                <span class="cand-score">{_score:.0f}</span>
               </div>
               <div class="cand-metrics">
                 <div class="metric"><span class="mv">{ret_10}</span><span class="ml">10日</span></div>
                 <div class="metric"><span class="mv">{ret_20}</span><span class="ml">20日</span></div>
                 <div class="metric"><span class="mv">{ret_60}</span><span class="ml">60日</span></div>
               </div>
+              {f'<div class="cand-tags">{_tags_str}</div>' if _tags_str else ''}
             </div>"""
     elif uptrend_daily:
         uptrend_steps_html = """
