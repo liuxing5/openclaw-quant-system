@@ -127,9 +127,9 @@ def main():
                         help="跳过 D 层风险过滤")
     parser.add_argument("--output", "-o", type=str, default=None,
                         help="输出文件路径（.txt）")
-    parser.add_argument("--top-b", type=int, default=20,
+    parser.add_argument("--top-b", type=int, default=5,
                         help="B 层 Top N 数量")
-    parser.add_argument("--top-c", type=int, default=8,
+    parser.add_argument("--top-c", type=int, default=5,
                         help="C 层 Top N 数量")
 
     args = parser.parse_args()
