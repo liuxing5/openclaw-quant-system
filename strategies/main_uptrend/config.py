@@ -86,7 +86,7 @@ class MainUptrendConfig:
     d_pledge_ratio_max: float = 0.50
     d_pledge_consecutive_limit_days: int = 3
 
-    d_max_gain_20d: float = 0.30  # 新增：20日涨幅超过30%的剔除（追高风险）
+    d_max_gain_20d: float = 0.50  # 新增：20日涨幅超过50%的剔除（追高风险）
 
     # ============================================================
     # 综合参数
