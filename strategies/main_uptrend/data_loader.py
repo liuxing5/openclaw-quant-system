@@ -217,6 +217,14 @@ class DataLoader:
         df['high_52w'] = high_52w
         df['above_ma_120_pct'] = (close_arr - ma_120) / np.where(ma_120 != 0, ma_120, np.nan)
 
+        # 5日收益率（用于D6接飞刀过滤）- 向量化计算
+        close_shifted = np.roll(close_arr, 5)
+        # 处理跨股票边界：将每个股票组前5个位置设为NaN
+        for g_start in group_starts:
+            close_shifted[g_start:g_start + 5] = np.nan
+        pct_chg_5d = np.where(close_shifted != 0, (close_arr - close_shifted) / close_shifted, np.nan)
+        df['pct_chg_5d'] = pct_chg_5d
+
         logger.info("    B3: 主力资金指标...")
         if self._preloaded_main_flow is not None:
             flow = self._preloaded_main_flow[['ts_code', 'trade_date', 'main_net_inflow']].drop_duplicates(

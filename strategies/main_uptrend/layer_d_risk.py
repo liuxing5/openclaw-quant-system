@@ -177,8 +177,13 @@ class LayerDRiskFilter:
         close = pool_df['close'].fillna(0)
         d5_fail = (high_52w > 0) & (close / high_52w > self.cfg.d_near_high_pct)
 
+        # ---- D6: 接飞刀风险 ----
+        # 近5日跌幅超过15%，剔除（避免接飞刀）
+        pct_chg_5d = pool_df.get('pct_chg_5d', pd.Series(0, index=pool_df.index)).fillna(0)
+        d6_fail = pct_chg_5d < -self.cfg.d_max_drop_5d
+
         # ---- 综合判定 ----
-        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail | d5_fail)
+        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail | d5_fail | d6_fail)
         passed_codes = pool_df.loc[all_pass, 'ts_code'].tolist()
 
         rejected = len(ts_codes) - len(passed_codes)
