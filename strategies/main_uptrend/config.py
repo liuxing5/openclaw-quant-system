@@ -35,9 +35,9 @@ class MainUptrendConfig:
     # ============================================================
     b_enabled: bool = True
 
-    b_volume_breakout_mult: float = 3.0  # 提高：2.5→3.0，要求更明显的放量
+    b_volume_breakout_mult: float = 3.5  # 提高：3.0→3.5，要求更明显的放量
     b_volume_ma_days: int = 60
-    b_turnover_min: float = 8.0  # 提高：5→8，要求更高活跃度
+    b_turnover_min: float = 10.0  # 提高：8→10，要求更高活跃度
 
     b_price_breakout_box_days: int = 60
     b_price_ma_period: int = 120
