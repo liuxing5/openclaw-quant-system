@@ -256,15 +256,19 @@ class LayerBLaunchDetector:
 
         # ---- B2: 价格突破 ----
         # 突破60日箱体高点，且突破幅度>2%（避免假突破）
+        # 新增：要求MA120向上（趋势确认），避免盘整期误判
         box_high = quick['box_60_high'].fillna(0)
+        ma120_up = quick.get('ma_120_slope', pd.Series(0, index=quick.index)).fillna(0) > 0
         breakout_box = (quick['close'] > box_high) & \
                        ((quick['close'] - box_high) / np.where(box_high != 0, box_high, 1) > 0.02) & \
-                       (quick['pct_chg'].fillna(0) > 3.0)  # 当日涨幅>3%确认
+                       (quick['pct_chg'].fillna(0) > 3.0) & \
+                       ma120_up  # 新增：MA120必须向上
         # 或刚站上120日均线（偏离<3%，避免盘整期误判）
         above_ma = (quick['ma_120'].notna()) & \
                    (quick['close'] > quick['ma_120']) & \
                    (quick['above_ma_120_pct'].fillna(0) > 0) & \
-                   (quick['above_ma_120_pct'].fillna(0) < 0.03)  # 收紧：0.05→0.03
+                   (quick['above_ma_120_pct'].fillna(0) < 0.03) & \
+                   ma120_up  # 新增：MA120必须向上
         b2_pass = breakout_box | above_ma
         price_breakout_score = np.where(breakout_box, 0.8, np.where(above_ma, 0.6, 0.0))
 

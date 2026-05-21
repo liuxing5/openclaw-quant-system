@@ -217,6 +217,13 @@ class DataLoader:
         df['high_52w'] = high_52w
         df['above_ma_120_pct'] = (close_arr - ma_120) / np.where(ma_120 != 0, ma_120, np.nan)
 
+        # MA120斜率（用于B2趋势确认）- 比较当前MA120与5日前MA120
+        ma_120_shifted = np.roll(ma_120, 5)
+        for g_start in group_starts:
+            ma_120_shifted[g_start:g_start + 5] = np.nan
+        ma_120_slope = np.where(ma_120_shifted != 0, (ma_120 - ma_120_shifted) / ma_120_shifted, np.nan)
+        df['ma_120_slope'] = ma_120_slope
+
         # 5日收益率（用于D6接飞刀过滤）- 向量化计算
         close_shifted = np.roll(close_arr, 5)
         # 处理跨股票边界：将每个股票组前5个位置设为NaN
