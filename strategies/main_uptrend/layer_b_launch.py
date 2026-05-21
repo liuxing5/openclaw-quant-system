@@ -290,11 +290,12 @@ class LayerBLaunchDetector:
                       main_force_score.values * 1.5 + seal_quality_score * 1.2)
 
         # 通过条件：B1-B4中至少3个有分，且必须有主力流入(B3)或涨停(B4>0)
+        # 收紧：必须涨停才能通过（确保强势启动）
         has_score = ((vol_breakout_score.values > 0).astype(int) +
                      (price_breakout_score > 0).astype(int) +
                      (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
-        passed = (has_score >= 3) & ((main_force_score.values > 0) | (seal_quality_score > 0))
+        passed = (has_score >= 3) & (seal_quality_score > 0)  # 必须涨停
 
         # 组装结果到DataFrame
         quick['total_score'] = total_score
