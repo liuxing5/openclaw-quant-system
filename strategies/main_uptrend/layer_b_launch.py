@@ -296,9 +296,8 @@ class LayerBLaunchDetector:
                      (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
         
-        # 新增：要求近5日涨幅5%-30%（动量确认但不过热）
-        pct_5d = quick.get('pct_chg_5d', pd.Series(0, index=quick.index)).fillna(0)
-        momentum_confirm = (pct_5d > 0.05) & (pct_5d < 0.30)  # 5%-30%区间
+        # 新增：要求近5日涨幅>5%（动量确认，避免刚启动就信号）
+        momentum_confirm = quick.get('pct_chg_5d', pd.Series(0, index=quick.index)).fillna(0) > 0.05
         
         passed = (has_score >= 3) & (seal_quality_score > 0) & momentum_confirm  # 必须涨停+动量确认
 
