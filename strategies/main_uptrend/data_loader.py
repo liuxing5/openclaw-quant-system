@@ -210,9 +210,11 @@ class DataLoader:
         box_60_high = self._fast_rolling_max_shifted(high_arr, group_starts, group_ends, 60)
         box_60_low = self._fast_rolling_min_shifted(low_arr, group_starts, group_ends, 60)
         ma_120 = self._fast_rolling_mean(close_arr, group_starts, group_ends, 120)
+        high_52w = self._fast_rolling_max_shifted(high_arr, group_starts, group_ends, 250)  # 52周高点
         df['box_60_high'] = box_60_high
         df['box_60_low'] = box_60_low
         df['ma_120'] = ma_120
+        df['high_52w'] = high_52w
         df['above_ma_120_pct'] = (close_arr - ma_120) / np.where(ma_120 != 0, ma_120, np.nan)
 
         logger.info("    B3: 主力资金指标...")

@@ -171,8 +171,14 @@ class LayerDRiskFilter:
                 ).fillna(0)
                 d4_fail = pledge_codes & (cons_limits_arr > self.cfg.d_pledge_consecutive_limit_days)
 
+        # ---- D5: 高位接盘风险 ----
+        # 收盘价接近52周高点95%以上，剔除（避免高位接盘）
+        high_52w = pool_df.get('high_52w', pd.Series(0, index=pool_df.index)).fillna(0)
+        close = pool_df['close'].fillna(0)
+        d5_fail = (high_52w > 0) & (close / high_52w > self.cfg.d_near_high_pct)
+
         # ---- 综合判定 ----
-        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail)
+        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail | d5_fail)
         passed_codes = pool_df.loc[all_pass, 'ts_code'].tolist()
 
         rejected = len(ts_codes) - len(passed_codes)
