@@ -255,8 +255,11 @@ class LayerBLaunchDetector:
         )
 
         # ---- B2: 价格突破 ----
-        # 突破60日箱体高点（真突破）
-        breakout_box = quick['close'] > quick['box_60_high'].fillna(0)
+        # 突破60日箱体高点，且突破幅度>2%（避免假突破）
+        box_high = quick['box_60_high'].fillna(0)
+        breakout_box = (quick['close'] > box_high) & \
+                       ((quick['close'] - box_high) / np.where(box_high != 0, box_high, 1) > 0.02) & \
+                       (quick['pct_chg'].fillna(0) > 3.0)  # 当日涨幅>3%确认
         # 或刚站上120日均线（偏离<3%，避免盘整期误判）
         above_ma = (quick['ma_120'].notna()) & \
                    (quick['close'] > quick['ma_120']) & \
