@@ -1,7 +1,61 @@
 {
   "backtest_start": "2025-05-19",
   "backtest_end": "2026-05-19",
-  "total_signals": 0,
-  "forward_returns": {},
-  "top10_signals": []
+  "total_signals": 1,
+  "forward_returns": {
+    "10": {
+      "count": 1,
+      "win_rate": 1.0,
+      "hit_rate_5pct": 0.0,
+      "mean": 0.014869888475836333,
+      "median": 0.014869888475836333,
+      "max": 0.014869888475836333,
+      "min": 0.014869888475836333,
+      "std": 0.0,
+      "above_3pct": 0.0,
+      "above_5pct": 0.0,
+      "above_10pct": 0.0
+    },
+    "20": {
+      "count": 1,
+      "win_rate": 0.0,
+      "hit_rate_5pct": 0.0,
+      "mean": -0.06567534076827759,
+      "median": -0.06567534076827759,
+      "max": -0.06567534076827759,
+      "min": -0.06567534076827759,
+      "std": 0.0,
+      "above_3pct": 0.0,
+      "above_5pct": 0.0,
+      "above_10pct": 0.0
+    },
+    "60": {
+      "count": 1,
+      "win_rate": 1.0,
+      "hit_rate_5pct": 1.0,
+      "mean": 0.28624535315985133,
+      "median": 0.28624535315985133,
+      "max": 0.28624535315985133,
+      "min": 0.28624535315985133,
+      "std": 0.0,
+      "above_3pct": 1.0,
+      "above_5pct": 1.0,
+      "above_10pct": 1.0
+    }
+  },
+  "top10_signals": [
+    {
+      "ts_code": "002474.SZ",
+      "eval_date": "2025-10-15",
+      "composite_score": 7.2,
+      "b_score": 2.0,
+      "c_score": 5.2,
+      "entry_price": 8.07,
+      "forward_rets": {
+        "10": 0.0149,
+        "20": -0.0657,
+        "60": 0.2862
+      }
+    }
+  ]
 }
