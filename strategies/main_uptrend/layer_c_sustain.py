@@ -143,14 +143,9 @@ class LayerCSustainAnalyzer:
                       vol_shrink_score * 1.2 + seal_quality_score * 1.2 + 
                       sector_score * 1.0)
         
-        # 新增：要求每个子分数都>0.3，避免"偏科"信号（某项为0但其他项拉高总分）
-        no_weak_score = (intraday_score > 0.3) & (big_order_score > 0.3) & \
-                        (vol_shrink_score > 0.3) & (seal_quality_score > 0.3) & \
-                        (sector_score > 0.3)
-        
         # 恢复通过条件为3/5，但配合综合分阈值过滤
         # 加权后理论最高分约6.4，设置阈值4.8为最优平衡点
-        passed = (passed_count >= 3) & (total_score >= 4.8) & no_weak_score
+        passed = (passed_count >= 3) & (total_score >= 4.8)
 
         # 过滤通过的，取Top N
         pool_df['total_score'] = total_score

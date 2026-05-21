@@ -297,12 +297,7 @@ class LayerBLaunchDetector:
                      (price_breakout_score > 0).astype(int) +
                      (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
-        
-        # 新增：要求每个子分数都>0.2，避免"偏科"信号
-        no_weak_b = (vol_breakout_score.values > 0.2) & (price_breakout_score > 0.2) & \
-                    (main_force_score.values > 0.2) & (seal_quality_score > 0.2)
-        
-        passed = (has_score >= 3) & ((main_force_score.values > 0) | (seal_quality_score > 0)) & no_weak_b
+        passed = (has_score >= 3) & ((main_force_score.values > 0) | (seal_quality_score > 0))
 
         # 组装结果到DataFrame
         quick['total_score'] = total_score
