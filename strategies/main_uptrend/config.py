@@ -61,8 +61,8 @@ class MainUptrendConfig:
     c_big_order_net_buy_min_pct: float = 0.10  # 提高：0.08→0.10
     c_big_order_threshold: float = 500000
 
-    c_volume_shrink_ratio_min: float = 0.50  # 收紧：0.60→0.50，要求更明显的缩量
-    c_volume_shrink_ratio_max: float = 0.70  # 收紧：0.80→0.70
+    c_volume_shrink_ratio_min: float = 0.45  # 收紧：0.50→0.45，要求更明显的缩量
+    c_volume_shrink_ratio_max: float = 0.65  # 收紧：0.70→0.65
 
     c_seal_early_time: str = "10:00"
     c_seal_max_open_times: int = 0
