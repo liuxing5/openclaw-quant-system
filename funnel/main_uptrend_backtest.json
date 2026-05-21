@@ -47,8 +47,8 @@
     {
       "ts_code": "002939.SZ",
       "eval_date": "2025-08-15",
-      "composite_score": 8.5,
-      "b_score": 3.1,
+      "composite_score": 8.4,
+      "b_score": 3.0,
       "c_score": 5.4,
       "entry_price": 12.06,
       "forward_rets": {
@@ -74,7 +74,7 @@
       "ts_code": "600117.SH",
       "eval_date": "2025-07-30",
       "composite_score": 8.0,
-      "b_score": 3.1,
+      "b_score": 3.0,
       "c_score": 5.0,
       "entry_price": 4.2,
       "forward_rets": {
@@ -87,7 +87,7 @@
       "ts_code": "000592.SZ",
       "eval_date": "2025-10-31",
       "composite_score": 7.3,
-      "b_score": 2.4,
+      "b_score": 2.3,
       "c_score": 5.0,
       "entry_price": 7.08,
       "forward_rets": {
@@ -99,7 +99,7 @@
     {
       "ts_code": "002474.SZ",
       "eval_date": "2025-10-15",
-      "composite_score": 7.3,
+      "composite_score": 7.2,
       "b_score": 2.0,
       "c_score": 5.2,
       "entry_price": 8.07,
