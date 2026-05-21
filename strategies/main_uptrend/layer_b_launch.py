@@ -295,7 +295,11 @@ class LayerBLaunchDetector:
                      (price_breakout_score > 0).astype(int) +
                      (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
-        passed = (has_score >= 3) & (seal_quality_score > 0)  # 必须涨停
+        
+        # 新增：要求近5日涨幅>5%（动量确认，避免刚启动就信号）
+        momentum_confirm = quick.get('pct_chg_5d', pd.Series(0, index=quick.index)).fillna(0) > 0.05
+        
+        passed = (has_score >= 3) & (seal_quality_score > 0) & momentum_confirm  # 必须涨停+动量确认
 
         # 组装结果到DataFrame
         quick['total_score'] = total_score
