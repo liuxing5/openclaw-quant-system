@@ -127,14 +127,25 @@ class FunnelEngine:
         cfg = self.cfg
 
         if trade_date is None:
+            today = datetime.now(BEIJING_TZ).date()
             conn = None
             try:
                 conn = get_db_fresh()
                 cur = conn.cursor(cursor_factory=RealDictCursor)
                 cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
                 row = cur.fetchone()
-                trade_date = row['max_date'] if row else datetime.now(BEIJING_TZ).date()
+                db_date = row['max_date'] if row else None
+                # 优先使用当前日期，如果数据库数据滞后则用当前日期
+                if db_date and db_date >= today - timedelta(days=1):
+                    trade_date = db_date
+                else:
+                    trade_date = today
+                    if db_date:
+                        logger.warning(f"数据库行情数据滞后({db_date})，使用当前日期({trade_date})")
                 cur.close()
+            except Exception as e:
+                trade_date = today
+                logger.warning(f"获取数据库日期失败: {e}，使用当前日期({trade_date})")
             finally:
                 if conn and not conn.closed:
                     conn.close()
