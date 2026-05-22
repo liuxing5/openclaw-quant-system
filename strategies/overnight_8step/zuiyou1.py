@@ -2410,11 +2410,23 @@ def _format_funnel(rejects: dict, total: int, results: list = None, cfg: dict = 
         vol_ratio_min_upper = 1.5
         vol_ratio_max_upper = 10.0
 
+    # 从配置中读取市值阈值（单位：亿元）
+    if cfg:
+        min_mktcap_stable = cfg.get("min_mktcap", 10_000_000_000) / 100_000_000
+        max_mktcap_stable = cfg.get("max_mktcap", 200_000_000_000) / 100_000_000
+        min_mktcap_upper = CONFIG_UPPER.get("min_mktcap", 3_000_000_000) / 100_000_000
+        max_mktcap_upper = CONFIG_UPPER.get("max_mktcap", 30_000_000_000) / 100_000_000
+    else:
+        min_mktcap_stable = 100
+        max_mktcap_stable = 2000
+        min_mktcap_upper = 30
+        max_mktcap_upper = 300
+
     steps = [
         ("涨幅筛选", "3%-5%/6%-9.7%", ["涨幅不符"]),
         ("成交额", f"{min_amount_stable}-{max_amount_stable}亿/{min_amount_upper}-{max_amount_upper}亿", ["成交额"]),
         ("换手率", ">=5%,<=10%", ["换手率"]),
-        ("市值过滤", "50-500亿/30-200亿", ["市值"]),
+        ("市值过滤", f"{min_mktcap_stable:.0f}-{max_mktcap_stable:.0f}亿/{min_mktcap_upper:.0f}-{max_mktcap_upper:.0f}亿", ["市值"]),
         ("量比", f">={vol_ratio_min_stable}/{vol_ratio_min_upper}", ["量比"]),
         ("均线+压力检测", "", ["均线", "压力"]),
         ("乖离严重", "超阈值5%+", ["乖离严重"]),
@@ -3005,28 +3017,31 @@ def debug_stock(code: str, cfg: dict = None):
             ok = drawdown <= 0.03
             steps.append(("尾盘回落", ok, f"回撤:{drawdown*100:.2f}% 阈值:3%"))
 
-    # 评分
+    # 评分（与 analyze_ultimate 主流程保持一致）
     score = 50
     tags = []
     if in_stable:
-        score += 15; tags.append("稳健蓄势")
+        score += 12; tags.append("稳健蓄势")
         bias = (curr_price - ma5_yest) / ma5_yest if ma5_yest > 0 else 1
         if bias < 0.02:
-            score += 10; tags.append("紧贴MA5")
+            score += 8; tags.append("紧贴MA5")
     elif in_upper:
-        score += 20; tags.append("高位博弈")
+        score += 17; tags.append("高位博弈")
+        if cfg["MODE"] == "post":
+            if curr_high > 0 and curr_price >= curr_high * 0.998:
+                score += 8; tags.append("光头大阳")
 
     if 1.8 <= vol_ratio <= 4.0:
-        score += 25; tags.append("黄金放量")
+        score += 21; tags.append("黄金放量")
     elif vol_ratio > 4.0:
-        score += 10; tags.append("爆量博弈")
+        score += 8; tags.append("爆量博弈")
     else:
-        score += 5; tags.append("量能达标")
+        score += 4; tags.append("量能达标")
 
     if 5.0 <= curr_turn <= 8.0:
-        score += 15; tags.append("黄金换手")
+        score += 12; tags.append("黄金换手")
     elif 8.0 < curr_turn <= 10.0:
-        score += 8; tags.append("换手偏高")
+        score += 7; tags.append("换手偏高")
 
     # 行业评分（复用上面已计算的 industry_bonus，不重复调用）
     if industry_bonus != 0:
@@ -3047,7 +3062,14 @@ def debug_stock(code: str, cfg: dict = None):
             tags.append("共识强化")
         tags.append("🤖LLM")
 
-    score = min(score, 150)
+    # 漏斗策略辅助加成（与主流程一致）
+    is_funnel_cand, funnel_info = is_funnel_candidate(code)
+    if is_funnel_cand:
+        funnel_boost = get_funnel_boost_score(code)
+        score += funnel_boost
+        tags.append(f"🔽漏斗+{funnel_boost:.0f}")
+
+    score = min(score, 100)
 
     steps.append(("评分", score >= cfg["score_threshold"],
                   f"得分:{score:.1f} 阈值:{cfg['score_threshold']} 标签:{' | '.join(tags)}"))
