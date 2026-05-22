@@ -158,6 +158,7 @@ class FunnelEngine:
             market_env = check_market_environment(
                 trade_date=trade_date,
                 min_advancers=cfg.layer0_min_advancers,
+                min_breadth_ratio=cfg.layer0_min_breadth_ratio,
                 index_code=cfg.layer0_index_code,
                 ema_period=cfg.layer0_index_ema_period,
                 partial_cap=cfg.layer0_partial_cap,

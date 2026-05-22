@@ -96,7 +96,8 @@ def _calc_ema(values: pd.Series, period: int) -> pd.Series:
 
 def check_market_environment(
     trade_date: date = None,
-    min_advancers: int = 2500,
+    min_advancers: int = 2000,
+    min_breadth_ratio: float = 0.35,
     index_code: str = '000001.SH',
     ema_period: int = 20,
     partial_cap: float = 0.50,
@@ -243,12 +244,18 @@ def check_market_environment(
 
     # 3. 综合判断
     indicator_label = '广度' if use_breadth_ema else '指数'
-    if breadth_ok and index_above_ema:
+    total_stocks = advancers + decliners
+    breadth_ratio = advancers / total_stocks if total_stocks > 0 else 0
+
+    # 满足上涨家数或广度占比任一条件即可
+    breadth_condition = breadth_ok or (breadth_ratio >= min_breadth_ratio)
+
+    if breadth_condition and index_above_ema:
         result['passed'] = True
         result['can_trade'] = True
         result['max_position_pct'] = 1.0
         result['reason'] = f'大盘偏强(涨{advancers}/{indicator_label}{index_close:.1f}%>{ema_period}EMA)，满仓操作'
-    elif breadth_ok or index_above_ema:
+    elif breadth_condition or index_above_ema:
         result['passed'] = False
         result['can_trade'] = True
         result['max_position_pct'] = partial_cap

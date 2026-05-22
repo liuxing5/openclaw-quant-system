@@ -18,7 +18,8 @@ class FunnelConfig:
     # Layer 0: 大盘风控（盘前）[③看大盘控仓位]
     # ================================================================
     layer0_enabled: bool = True
-    layer0_min_advancers: int = 2500          # 两市上涨≥此数才荐股
+    layer0_min_advancers: int = 2000          # 两市上涨≥此数才荐股（或广度占比≥35%）
+    layer0_min_breadth_ratio: float = 0.35     # 广度占比最低35%（替代方案）
     layer0_use_breadth_ema: bool = True        # 使用市场广度EMA替代指数EMA
     layer0_index_code: str = '000001.SH'       # 指数代码（仅breadth_ema=False时使用）
     layer0_index_ema_period: int = 20           # 广度/指数EMA周期
