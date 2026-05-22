@@ -110,9 +110,26 @@ def get_next_trading_day(date_str: str) -> str:
     return base.strftime("%Y-%m-%d")
 
 
+def _standard_to_tencent(code: str) -> str:
+    """将标准代码格式转换为腾讯接口格式
+    000887.SZ -> sz000887, 600519.SH -> sh600519
+    """
+    if "." in code:
+        num, suffix = code.split(".", 1)
+        return f"{suffix.lower()}{num}"
+    # 已经是纯数字或 baostock 格式
+    pure = code.replace("sh.", "").replace("sz.", "").replace("bj.", "")
+    if pure.startswith("6") or pure.startswith("9"):
+        return f"sh{pure}"
+    elif pure.startswith("8") or pure.startswith("4"):
+        return f"bj{pure}"
+    else:
+        return f"sz{pure}"
+
+
 def fetch_stock_info(code: str) -> Optional[dict]:
     """从腾讯接口获取股票实时行情（仅用于当日数据）"""
-    api_code = code.replace(".", "").lower()
+    api_code = _standard_to_tencent(code)
     url = f"http://qt.gtimg.cn/q={api_code}"
     try:
         resp = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=5)
@@ -304,11 +321,37 @@ def parse_zuiyou1_results() -> tuple:
         vol_ratio = float(source_info.get('vol_ratio', 0))
         turn = float(source_info.get('turn', 0))
         streak = int(source_info.get('streak', 0))
-        
-        # 从 sources 中获取价格信息，或使用 stop_loss 反推
-        entry_price = source_info.get('price', 0)
-        if entry_price <= 0 and stop_loss:
-            entry_price = float(stop_loss) / 0.975
+
+        # 从 sources 中获取价格信息
+        entry_price = float(source_info.get('price', 0))
+        # 如果 sources 中无价格，从 entry_low/entry_high 均值推算
+        if entry_price <= 0:
+            entry_low = float(row[7] or 0)
+            entry_high = float(row[8] or 0)
+            if entry_low > 0 and entry_high > 0:
+                entry_price = (entry_low + entry_high) / 2
+            elif entry_low > 0:
+                entry_price = entry_low / 0.99  # entry_low = price * 0.99
+            elif stop_loss and float(stop_loss) > 0:
+                entry_price = float(stop_loss) / 0.975
+
+        # 从 logic_tags 提取乖离率（格式: "乖离3.74%"）
+        bias = 0.0
+        logic_tags_raw = row[6]
+        if logic_tags_raw:
+            tags_list = logic_tags_raw if isinstance(logic_tags_raw, list) else []
+            if isinstance(logic_tags_raw, str):
+                try:
+                    tags_list = json.loads(logic_tags_raw)
+                except (json.JSONDecodeError, TypeError):
+                    tags_list = []
+            for tag in tags_list:
+                tag_str = str(tag)
+                if "乖离" in tag_str:
+                    try:
+                        bias = float(tag_str.replace("乖离", "").replace("%", "").replace("↓", ""))
+                    except ValueError:
+                        pass
         
         stock_data = {
             "code": ts_code,
@@ -318,8 +361,8 @@ def parse_zuiyou1_results() -> tuple:
             "vol_ratio": vol_ratio,
             "turn": turn,
             "streak": streak,
-            "bias": 0,
-            "score": final_score,
+            "bias": bias,
+            "score": round(final_score, 1),
         }
         
         if 'stable' in pool.lower():
@@ -601,10 +644,17 @@ def evening_mode():
     
     # Step 4: 写入新行
     print(f"\nStep 4: 记录到 CSV...")
+    existing_rows = load_csv_rows()
+    existing_keys = {(r["date"], r["code"]) for r in existing_rows if "date" in r and "code" in r}
+    
     for stock in stocks_to_record:
         code = stock["code"]
         stock_name = stock.get("name", "")
         
+        # 跳过已存在的记录（同日同代码）
+        if (today, code) in existing_keys:
+            print(f"  ⏭️ {code} 今日已记录，跳过")
+            continue
         # 尝试获取实时行情（用于验证），但不依赖它
         info = fetch_stock_info(code)
         if info is None:
