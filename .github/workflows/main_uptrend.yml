@@ -114,6 +114,20 @@ jobs:
               print('\n'.join(lines))
           "
 
+      - name: Generate HTML report
+        if: success()
+        run: |
+          python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs
+
+      - name: Deploy to GitHub Pages
+        if: success()
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.GH_PAT }}
+          publish_dir: ./strategies/funnel_strategy/docs
+          destination_dir: funnel
+          keep_files: true
+
   backtest:
     runs-on: ubuntu-latest
     timeout-minutes: 120
