@@ -324,7 +324,6 @@ ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS accounts_receivable NUME
 ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS inventory NUMERIC(20,2);
 ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS goodwill NUMERIC(20,2);
 ALTER TABLE stock_fundamentals ADD COLUMN IF NOT EXISTS pledge_ratio FLOAT;
-CREATE INDEX IF NOT EXISTS idx_fund_ts ON stock_fundamentals(ts_code, report_date DESC);
 
 -- Layer 5: Announcements (巨潮 cninfo + mootdx)
 CREATE TABLE IF NOT EXISTS stock_announcements (
