@@ -21,7 +21,7 @@ on:
 jobs:
   collect_data:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     
     env:
       POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
@@ -44,11 +44,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r strategies/llm_multisource/requirements.txt
 
-      - name: Setup & collect
-        run: |
-          python -m core.db.apply_schema
-          python strategies/llm_multisource/seed_sources.py
-          python strategies/llm_multisource/sync_stock_info.py
+      - name: Apply DB schema
+        continue-on-error: true
+        run: python -m core.db.apply_schema
+
+      - name: Seed sources
+        continue-on-error: true
+        run: python strategies/llm_multisource/seed_sources.py
+
+      - name: Sync stock info
+        continue-on-error: true
+        run: python strategies/llm_multisource/sync_stock_info.py
 
       - name: Collect market data
         run: |
