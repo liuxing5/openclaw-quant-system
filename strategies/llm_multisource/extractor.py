@@ -18,12 +18,12 @@ sys.path.insert(0, os.path.join(BASE_DIR, '..', '..'))
 from core.db.connection import get_db_fresh
 
 PRIMARY_API_KEY = os.getenv('LLM_API_KEY') or os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
-PRIMARY_BASE_URL = os.getenv('LLM_BASE_URL') or os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-PRIMARY_MODEL = os.getenv('LLM_MODEL') or os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+PRIMARY_BASE_URL = os.getenv('LLM_BASE_URL') or 'https://openrouter.ai/api/v1'
+PRIMARY_MODEL = os.getenv('LLM_MODEL') or 'nvidia/nemotron-3-super-120b-a12b:free'
 
-BACKUP_API_KEY = os.getenv('BACKUP_API_KEY') or os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
-BACKUP_BASE_URL = os.getenv('DEEPSEEK_BASE_URL') or os.getenv('OPENAI_BASE_URL', 'https://api.openai.com/v1')
-BACKUP_MODEL = os.getenv('DEEPSEEK_MODEL') or os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+BACKUP_API_KEY = os.getenv('DEEPSEEK_API_KEY') or os.getenv('OPENAI_API_KEY')
+BACKUP_BASE_URL = os.getenv('DEEPSEEK_BASE_URL') or 'https://api.deepseek.com/v1'
+BACKUP_MODEL = os.getenv('DEEPSEEK_MODEL') or 'deepseek-chat'
 
 CONCURRENCY = int(os.getenv('LLM_CONCURRENCY', 5))
 
