@@ -36,8 +36,8 @@ warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-FETCH_TIMEOUT = 120
-CONCEPT_TIMEOUT = 90
+FETCH_TIMEOUT = 60
+CONCEPT_TIMEOUT = 45
 
 # 北京时间时区
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -932,7 +932,7 @@ def main():
 
     # ---- Layer 4: Fundamentals (daily, lightweight) ----
     fetchers.extend([
-        (lambda: fetch_mootdx_fundamentals(make_signal), 'MootDX财务', FETCH_TIMEOUT * 2),
+        (lambda: fetch_mootdx_fundamentals(make_signal), 'MootDX财务', FETCH_TIMEOUT),
     ])
 
     # ---- Layer 5: Announcements (always run) ----

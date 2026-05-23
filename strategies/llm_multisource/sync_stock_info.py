@@ -20,15 +20,14 @@ def sync():
 
     logger.info("同步 A 股代码-名称表...")
     df = None
-    for attempt in range(5):
+    for attempt in range(2):
         try:
             df = ak.stock_info_a_code_name()
             break
         except Exception as e:
-            wait = 5 * (2 ** attempt)
-            if attempt < 4:
-                logger.warning(f"AKShare stock_info_a_code_name 失败 (尝试 {attempt+1}/5), 等待 {wait}s: {e}")
-                time.sleep(wait)
+            if attempt < 1:
+                logger.warning(f"AKShare stock_info_a_code_name 失败, 等待 5s: {e}")
+                time.sleep(5)
             else:
                 logger.error(f"AKShare stock_info_a_code_name 最终失败: {e}")
                 return
@@ -66,33 +65,8 @@ def sync():
         conn.commit()
         logger.info(f"同步 {len(rows)} 只股票基本信息")
 
-        cur.execute("""
-            SELECT ts_code FROM stock_basic_info WHERE list_date IS NULL LIMIT 100;
-        """)
-        missing = [row[0] for row in cur.fetchall()]
-
-        if missing:
-            logger.info(f"开始回填 {len(missing)} 只股票的上市日期...")
-            for ts_code in missing:
-                try:
-                    code = ts_code.split('.')[0]
-                    info_df = ak.stock_individual_info_em(symbol=code)
-                    if info_df is not None and not info_df.empty:
-                        list_date_row = info_df[info_df['item'] == '上市时间']
-                        if not list_date_row.empty:
-                            list_date_str = str(list_date_row['value'].iloc[0])
-                            if list_date_str and list_date_str != 'nan' and len(list_date_str) == 8:
-                                list_date = pd.to_datetime(list_date_str, format='%Y%m%d').date()
-                                if list_date < date.today():
-                                    cur.execute("""
-                                        UPDATE stock_basic_info SET list_date = %s WHERE ts_code = %s;
-                                    """, (list_date, ts_code))
-                                conn.commit()
-                                logger.debug(f"{ts_code} list_date = {list_date}")
-                    time.sleep(0.3)
-                except Exception as e:
-                    logger.debug(f"获取 {ts_code} 上市日期失败: {e}")
-                    continue
+        # 上市日期回填已移至独立脚本，不在每日同步中执行
+        # 避免逐只股票请求导致超时（100只 × 0.3s = 30s+）
 
         cur.close()
         logger.info("股票信息同步完成")

@@ -410,34 +410,54 @@ def _supplement_with_tushare_daily_basic():
 
     logger.info(f"Tushare daily_basic 返回 {len(df)} 条，补充 turnover_rate/volume_ratio/PE/PB")
 
+    # 批量更新：先写入临时表，再 JOIN UPDATE，避免逐行 UPDATE
     conn = None
     try:
         conn = get_db_fresh()
         cur = conn.cursor()
-        updated = 0
+
+        # 准备批量数据
+        batch = []
         for _, r in df.iterrows():
             ts_code = r.get('ts_code')
+            if not ts_code:
+                continue
             tr = r.get('turnover_rate')
             vr = r.get('volume_ratio')
             pe = r.get('pe')
             pb = r.get('pb')
-            if not ts_code:
-                continue
-            try:
-                cur.execute("""
-                    UPDATE daily_quotes SET
-                        turnover_rate = COALESCE(%s, turnover_rate),
-                        volume_ratio = COALESCE(%s, volume_ratio),
-                        pe_ratio = COALESCE(%s, pe_ratio),
-                        pb_ratio = COALESCE(%s, pb_ratio)
-                    WHERE ts_code = %s AND trade_date = %s
-                      AND (turnover_rate IS NULL OR volume_ratio IS NULL
-                           OR pe_ratio IS NULL OR pb_ratio IS NULL);
-                """, (tr, vr, pe, pb, ts_code, today))
-                if cur.rowcount > 0:
-                    updated += cur.rowcount
-            except Exception:
-                pass
+            batch.append((ts_code, today, tr, vr, pe, pb))
+
+        if not batch:
+            cur.close()
+            return
+
+        # 创建临时表
+        cur.execute("""
+            CREATE TEMP TABLE _tmp_daily_basic (
+                ts_code VARCHAR(20), trade_date DATE,
+                turnover_rate FLOAT, volume_ratio FLOAT,
+                pe_ratio FLOAT, pb_ratio FLOAT
+            ) ON COMMIT DROP;
+        """)
+        execute_values(cur, """
+            INSERT INTO _tmp_daily_basic VALUES %s
+        """, batch)
+
+        # 批量 JOIN UPDATE
+        cur.execute("""
+            UPDATE daily_quotes dq
+            SET turnover_rate = COALESCE(t.turnover_rate, dq.turnover_rate),
+                volume_ratio = COALESCE(t.volume_ratio, dq.volume_ratio),
+                pe_ratio = COALESCE(t.pe_ratio, dq.pe_ratio),
+                pb_ratio = COALESCE(t.pb_ratio, dq.pb_ratio)
+            FROM _tmp_daily_basic t
+            WHERE dq.ts_code = t.ts_code
+              AND dq.trade_date = t.trade_date
+              AND (dq.turnover_rate IS NULL OR dq.volume_ratio IS NULL
+                   OR dq.pe_ratio IS NULL OR dq.pb_ratio IS NULL);
+        """)
+        updated = cur.rowcount
         conn.commit()
         cur.close()
         logger.info(f"Tushare daily_basic 补充: {updated} 条更新")
