@@ -31,16 +31,18 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-# 优先使用 baostock 数据源，PostgreSQL 不可用时降级
+# 优先使用 PostgreSQL 数据源，baostock 不可用时降级
 try:
-    from strategies.meta_strategy.baostock_data import get_daily_quotes_cached
-    _USE_BAOSTOCK = True
+    from core.db.connection import get_db
+    _USE_DB = True
 except ImportError:
-    _USE_BAOSTOCK = False
+    _USE_DB = False
     try:
-        from core.db.connection import get_db_fresh
+        from strategies.meta_strategy.baostock_data import get_daily_quotes_cached
+        _USE_BAOSTOCK = True
     except ImportError:
-        get_db_fresh = None
+        _USE_BAOSTOCK = False
+        get_db = None
 
 logger = logging.getLogger(__name__)
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -371,19 +373,30 @@ class PositionManager:
 
     def _load_price_data(self, ts_codes: List[str], eval_date: date,
                          lookback: int = 60) -> Dict[str, pd.DataFrame]:
-        """批量加载行情数据（优先baostock，降级PostgreSQL）"""
+        """批量加载行情数据（优先PostgreSQL，降级baostock）"""
         start_date = eval_date - timedelta(days=lookback * 2)
         cache = {}
 
-        if _USE_BAOSTOCK:
-            # 使用 baostock
+        if _USE_DB and get_db is not None:
+            # 优先使用 PostgreSQL - 使用 db_data_adapter 的批量查询
+            try:
+                from strategies.meta_strategy.db_data_adapter import get_daily_quotes_batch
+                batch = get_daily_quotes_batch(ts_codes, start_date, eval_date)
+                for code, df in batch.items():
+                    for c in ['open', 'high', 'low', 'close', 'volume', 'amount', 'pct_chg']:
+                        if c in df.columns:
+                            df[c] = pd.to_numeric(df[c], errors='coerce')
+                    cache[code] = df.tail(lookback)
+            except Exception as e:
+                logger.warning(f"DB行情数据加载失败: {e}")
+        elif not _USE_DB:
+            # 降级到 baostock
             for ts_code in ts_codes:
                 try:
                     df = get_daily_quotes_cached(
                         ts_code, start_date, eval_date,
                         fields="date,open,high,low,close,volume,amount,pctChg,turn")
                     if not df.empty:
-                        # 重命名列
                         rename = {'date': 'trade_date', 'pctChg': 'pct_chg',
                                   'turn': 'turnover_rate'}
                         df = df.rename(columns={k: v for k, v in rename.items()
@@ -394,35 +407,6 @@ class PositionManager:
                         cache[ts_code] = df.tail(lookback)
                 except Exception as e:
                     logger.debug(f"baostock加载{ts_code}失败: {e}")
-        elif get_db_fresh is not None:
-            # 降级到 PostgreSQL
-            conn = None
-            try:
-                from psycopg2.extras import RealDictCursor
-                conn = get_db_fresh()
-                cur = conn.cursor(cursor_factory=RealDictCursor)
-                cur.execute("""
-                    SELECT ts_code, trade_date, open, high, low, close,
-                           volume, amount, pct_chg
-                    FROM daily_quotes
-                    WHERE trade_date >= %s AND trade_date <= %s
-                      AND ts_code = ANY(%s)
-                    ORDER BY ts_code, trade_date;
-                """, (start_date, eval_date, ts_codes))
-                rows = cur.fetchall()
-                cur.close()
-
-                if rows:
-                    df = pd.DataFrame(rows)
-                    for c in ['open', 'high', 'low', 'close', 'volume', 'amount', 'pct_chg']:
-                        df[c] = pd.to_numeric(df[c], errors='coerce')
-                    for ts_code, group in df.groupby('ts_code'):
-                        cache[ts_code] = group.sort_values('trade_date').tail(lookback)
-            except Exception as e:
-                logger.warning(f"行情数据加载失败: {e}")
-            finally:
-                if conn and not conn.closed:
-                    conn.close()
 
         return cache
 
