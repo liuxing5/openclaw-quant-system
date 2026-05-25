@@ -14,14 +14,21 @@ _session_lock = threading.Lock()
 
 
 def _connect():
-    return psycopg2.connect(
+    conn = psycopg2.connect(
         host=os.getenv('POSTGRES_HOST'),
         port=int(os.getenv('POSTGRES_PORT') or '5432'),
         user=os.getenv('POSTGRES_USER'),
         password=os.getenv('POSTGRES_PASSWORD'),
         dbname=os.getenv('POSTGRES_DB'),
         sslmode=os.getenv('POSTGRES_SSLMODE', 'require'),
+        # TCP keepalive to prevent pooler from closing idle connections
+        keepalives=1,
+        keepalives_idle=30,
+        keepalives_interval=10,
+        keepalives_count=3,
+        connect_timeout=15,
     )
+    return conn
 
 
 class _NoCloseConnection:

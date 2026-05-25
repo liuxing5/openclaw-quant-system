@@ -33,26 +33,34 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
-def query_dicts(sql, params=None, max_retries=3):
+def query_dicts(sql, params=None, max_retries=5):
     """Execute query with retry on SSL connection errors (Supabase pooler issue)."""
     import time as _t
     for attempt in range(max_retries):
-        conn = get_db_fresh(use_dict_cursor=True)
+        conn = None
         try:
+            conn = get_db_fresh(use_dict_cursor=True)
+            # Verify connection is alive before executing
+            if conn.closed:
+                raise psycopg2.OperationalError("Connection is closed")
             cur = conn.cursor()
             cur.execute(sql, params)
             rows = [dict(r) for r in cur.fetchall()]
             cur.close()
             return rows
         except Exception as e:
-            if "SSL connection" in str(e) and attempt < max_retries - 1:
-                print(f"  ⚠ DB query SSL error, retrying ({attempt+1}/{max_retries})...")
-                _t.sleep(2)
+            if ("SSL connection" in str(e) or "closed" in str(e).lower()) and attempt < max_retries - 1:
+                delay = 3 * (attempt + 1)  # 3s, 6s, 9s, 12s, 15s
+                print(f"  ⚠ DB query SSL error, retrying in {delay}s ({attempt+1}/{max_retries})...")
+                _t.sleep(delay)
                 continue
             raise
         finally:
             if conn and not conn.closed:
-                conn.close()
+                try:
+                    conn.close()
+                except:
+                    pass
 
 
 def query_one(sql, params=None):
@@ -144,12 +152,15 @@ def load_funnel_data(trade_date=None):
     return row
 
 
-def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, max_retries=3):
+def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, max_retries=5):
     """Load candidates with SSL retry logic."""
     import time as _t
     for attempt in range(max_retries):
-        conn = get_db_fresh(use_dict_cursor=True)
+        conn = None
         try:
+            conn = get_db_fresh(use_dict_cursor=True)
+            if conn.closed:
+                raise psycopg2.OperationalError("Connection is closed")
             cur = conn.cursor()
 
             if trade_date:
@@ -185,14 +196,18 @@ def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, m
             cur.close()
             return candidates, latest
         except Exception as e:
-            if "SSL connection" in str(e) and attempt < max_retries - 1:
-                print(f"  ⚠ load_candidates({source}) SSL error, retrying ({attempt+1}/{max_retries})...")
-                _t.sleep(2)
+            if ("SSL connection" in str(e) or "closed" in str(e).lower()) and attempt < max_retries - 1:
+                delay = 3 * (attempt + 1)
+                print(f"  ⚠ load_candidates({source}) SSL error, retrying in {delay}s ({attempt+1}/{max_retries})...")
+                _t.sleep(delay)
                 continue
             raise
         finally:
             if conn and not conn.closed:
-                conn.close()
+                try:
+                    conn.close()
+                except:
+                    pass
 
 
 def load_scan_stats(strategy, snapshot_date=None):
