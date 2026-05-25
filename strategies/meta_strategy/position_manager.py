@@ -220,6 +220,9 @@ class PositionManager:
     ) -> Optional[ExitSignal]:
         """逐项检查退出条件"""
 
+        # 首日保护：买入当天(holding_days=0)只检查硬止损
+        first_day_protection = holding_days == 0
+
         # E1: 硬止损
         if pnl_pct <= -self.cfg.hard_stop_loss_pct:
             return ExitSignal(
@@ -229,6 +232,10 @@ class PositionManager:
                 current_price=current_price,
                 pnl_pct=pnl_pct, holding_days=holding_days,
                 details={'trigger': 'hard_stop'})
+
+        # 首日保护：买入当天不触发隔夜止损、MACD、破位放量等
+        if first_day_protection:
+            return None
 
         # 八步法隔夜止损（次日开盘检查）
         if (self.cfg.enable_overnight_stop and
@@ -362,6 +369,7 @@ class PositionManager:
             'entry_price': pos.entry_price,
             'exit_date': str(exit_date),
             'exit_price': exit_price,
+            'shares': pos.shares,
             'pnl_pct': round(pnl_pct, 4),
             'holding_days': holding_days,
             'exit_reason': exit_reason,

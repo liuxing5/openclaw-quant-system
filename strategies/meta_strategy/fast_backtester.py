@@ -1,0 +1,413 @@
+"""融合元策略回测引擎 v4.1 - 简化版
+====================================
+核心优化：
+  1. 不预加载全部数据，按需查询
+  2. 使用db_data_adapter按天查询
+  3. 优化止损参数和仓位管理
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+import time
+from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from typing import List, Dict, Optional
+
+import numpy as np
+import pandas as pd
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+# Ensure DB env vars are set before any imports
+if not os.getenv('POSTGRES_HOST'):
+    os.environ['POSTGRES_HOST'] = 'aws-1-ap-northeast-1.pooler.supabase.com'
+    os.environ['POSTGRES_PORT'] = '5432'
+    os.environ['POSTGRES_USER'] = 'postgres.qoakbxswwjqfsgbcgepr'
+    os.environ['POSTGRES_PASSWORD'] = 'wYFBB91zViSrk2vl'
+    os.environ['POSTGRES_DB'] = 'postgres'
+    os.environ['POSTGRES_SSLMODE'] = 'require'
+
+from strategies.meta_strategy.meta_engine import (
+    MetaStrategyEngine, MetaStrategyConfig, DEFAULT_META_CONFIG,
+    check_market_risk,
+)
+from strategies.meta_strategy.position_manager import (
+    PositionManager, PositionManagerConfig, DEFAULT_PM_CONFIG, Position,
+)
+from strategies.meta_strategy.db_data_adapter import (
+    get_trading_days, get_active_stocks, get_market_overview,
+    get_daily_quotes_for_date, get_daily_quotes, clear_cache,
+)
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class BacktestConfig:
+    """回测配置"""
+    start_date: str = "2026-01-01"
+    end_date: str = "2026-05-15"
+    initial_capital: float = 1_000_000.0
+    commission_rate: float = 0.001
+    slippage_pct: float = 0.001
+    max_positions: int = 8
+    single_position_pct: float = 0.125
+    forward_return_days: List[int] = field(default_factory=lambda: [1, 3, 5, 10, 20])
+    min_meta_score: float = 0.0  # 最低meta_score过滤
+
+
+DEFAULT_BT_CONFIG = BacktestConfig()
+
+
+class FastBacktester:
+    """高性能回测器 - 按需加载"""
+
+    def __init__(self, meta_cfg: MetaStrategyConfig = None,
+                 pm_cfg: PositionManagerConfig = None,
+                 bt_cfg: BacktestConfig = None):
+        self.meta_cfg = meta_cfg or DEFAULT_META_CONFIG
+        self.pm_cfg = pm_cfg or DEFAULT_PM_CONFIG
+        self.bt_cfg = bt_cfg or DEFAULT_BT_CONFIG
+        self.engine = MetaStrategyEngine(self.meta_cfg)
+
+        # 价格缓存：只缓存需要的股票
+        self._price_cache: Dict[str, Dict[date, dict]] = {}
+
+    def _get_price(self, ts_code: str, trade_date: date, field: str) -> Optional[float]:
+        """获取价格字段，缓存未命中时从DB查询"""
+        if ts_code in self._price_cache and trade_date in self._price_cache[ts_code]:
+            return self._price_cache[ts_code][trade_date].get(field)
+        
+        # 从DB查询该股票该天的数据
+        try:
+            df = get_daily_quotes(ts_code, trade_date - timedelta(days=1), trade_date)
+            if not df.empty:
+                last_row = df.iloc[-1]
+                if ts_code not in self._price_cache:
+                    self._price_cache[ts_code] = {}
+                self._price_cache[ts_code][trade_date] = {
+                    'open': float(last_row['open']),
+                    'high': float(last_row['high']),
+                    'low': float(last_row['low']),
+                    'close': float(last_row['close']),
+                    'amount': float(last_row['amount']),
+                    'pct_chg': float(last_row['pct_chg']),
+                }
+                return self._price_cache[ts_code][trade_date].get(field)
+        except Exception as e:
+            logger.debug(f"查询 {ts_code} {trade_date} 价格失败: {e}")
+        return None
+
+    def _calc_equity(self, pm: PositionManager, cash: float, eval_date: date) -> float:
+        equity = cash
+        for ts_code, pos in pm.positions.items():
+            price = self._get_price(ts_code, eval_date, 'close')
+            if price:
+                equity += price * pos.shares
+            else:
+                equity += pos.entry_price * pos.shares
+        return equity
+
+    def run(self, verbose: bool = True) -> Dict:
+        """回测主循环"""
+        logger.info("=" * 60)
+        logger.info(f"融合元策略回测 v4.1 {self.bt_cfg.start_date} ~ {self.bt_cfg.end_date}")
+        logger.info("=" * 60)
+
+        start_date = date.fromisoformat(self.bt_cfg.start_date)
+        end_date = date.fromisoformat(self.bt_cfg.end_date)
+
+        # 获取交易日
+        logger.info("获取交易日...")
+        trading_days = get_trading_days(start_date, end_date)
+        if not trading_days:
+            logger.error("无交易日数据")
+            return {}
+        logger.info(f"交易日: {len(trading_days)} 天")
+
+        # 初始化
+        pm = PositionManager(self.pm_cfg)
+        pm.cfg.max_positions = self.bt_cfg.max_positions
+
+        capital = self.bt_cfg.initial_capital
+        daily_equity = []
+        all_trades = []
+        layer_stats = {'L0_reject': 0, 'L1_count': [], 'L2_count': [],
+                       'L3_count': [], 'L4_covered': [], 'L5_count': [],
+                       'final_count': []}
+
+        t_total_start = time.time()
+
+        for i, trade_date in enumerate(trading_days):
+            try:
+                # ── 1. 评估退出条件 ──
+                exit_signals = pm.evaluate_exits(trade_date)
+                for sig in exit_signals:
+                    exit_price = self._get_price(sig.ts_code, trade_date, 'open')
+                    if exit_price is None:
+                        exit_price = sig.current_price
+
+                    exit_price_adj = exit_price * (1 - self.bt_cfg.slippage_pct)
+                    pos = pm.positions.get(sig.ts_code)
+                    shares = pos.shares if pos else 100
+                    commission = exit_price_adj * shares * self.bt_cfg.commission_rate
+
+                    record = pm.close_position(
+                        sig.ts_code, trade_date, exit_price_adj, sig.exit_reason)
+                    if record:
+                        record['commission'] = commission
+                        record['slippage'] = self.bt_cfg.slippage_pct
+                        all_trades.append(record)
+                        capital += exit_price_adj * record.get('shares', shares) - commission
+
+                # ── 2. 生成新信号 ──
+                market_risk = check_market_risk(trade_date, self.meta_cfg)
+                if not market_risk['passed']:
+                    layer_stats['L0_reject'] += 1
+                    equity = self._calc_equity(pm, capital, trade_date)
+                    daily_equity.append({'date': str(trade_date), 'equity': equity,
+                                         'positions': pm.open_position_count})
+                    if (i + 1) % 10 == 0:
+                        logger.info(f"  [{i+1}/{len(trading_days)}] {trade_date} 风控不通过 权益{equity:,.0f}")
+                    continue
+
+                result_df = self.engine.run(trade_date, verbose=False)
+
+                stats = self.engine._stats
+                layer_stats['L1_count'].append(stats.get('layer1_count', 0))
+                layer_stats['L2_count'].append(stats.get('layer2_count', 0))
+                layer_stats['L3_count'].append(stats.get('layer3_count', 0))
+                layer_stats['L4_covered'].append(stats.get('layer4_covered', 0))
+                layer_stats['L5_count'].append(stats.get('layer5_count', 0))
+                layer_stats['final_count'].append(stats.get('final_count', 0))
+
+                # ── 3. 开仓 ──
+                if not result_df.empty:
+                    for _, row in result_df.iterrows():
+                        if pm.open_position_count >= self.bt_cfg.max_positions:
+                            break
+                        if row['ts_code'] in pm.positions:
+                            continue
+
+                        # meta_score过滤：只买高质量候选
+                        if self.bt_cfg.min_meta_score > 0:
+                            score = row.get('meta_score', 0)
+                            if score < self.bt_cfg.min_meta_score:
+                                continue
+
+                        next_idx = i + 1
+                        if next_idx >= len(trading_days):
+                            continue
+                        next_date = trading_days[next_idx]
+                        
+                        entry_price = self._get_price(row['ts_code'], next_date, 'open')
+                        if entry_price is None:
+                            continue
+
+                        position_value = self.bt_cfg.initial_capital * self.bt_cfg.single_position_pct
+                        shares = int(position_value / (entry_price * 100)) * 100
+                        if shares <= 0:
+                            shares = 100
+
+                        entry_price_adj = entry_price * (1 + self.bt_cfg.slippage_pct)
+                        commission = entry_price_adj * shares * self.bt_cfg.commission_rate
+                        cost = entry_price_adj * shares + commission
+
+                        if cost > capital:
+                            continue
+
+                        capital -= cost
+
+                        pm.positions[row['ts_code']] = Position(
+                            ts_code=row['ts_code'],
+                            entry_date=next_date,
+                            entry_price=entry_price_adj,
+                            shares=shares,
+                            meta_score=row.get('meta_score', 0),
+                            tags=row.get('tags', []),
+                            launch_score=row.get('launch_score', 0),
+                            factor_score=row.get('factor_score', 0),
+                        )
+
+                # ── 4. 记录当日权益 ──
+                equity = self._calc_equity(pm, capital, trade_date)
+                daily_equity.append({'date': str(trade_date), 'equity': equity,
+                                     'positions': pm.open_position_count})
+
+                if (i + 1) % 5 == 0 or i == len(trading_days) - 1:
+                    elapsed = time.time() - t_total_start
+                    logger.info(
+                        f"  [{i+1}/{len(trading_days)}] {trade_date}: "
+                        f"持仓{pm.open_position_count}只 权益{equity:,.0f} "
+                        f"已用{elapsed:.0f}s")
+
+            except Exception as e:
+                import traceback
+                logger.warning(f"{trade_date} 回测失败: {e}")
+                logger.warning(traceback.format_exc())
+
+        # 强制平仓
+        for ts_code in list(pm.positions.keys()):
+            pos = pm.positions[ts_code]
+            last_price = self._get_price(ts_code, end_date, 'close')
+            if last_price:
+                record = pm.close_position(ts_code, end_date, last_price, '回测结束')
+                if record:
+                    all_trades.append(record)
+
+        total_elapsed = time.time() - t_total_start
+
+        summary = self._build_summary(all_trades, daily_equity, layer_stats, total_elapsed)
+
+        return {
+            'trades': all_trades,
+            'daily_equity': pd.DataFrame(daily_equity),
+            'summary': summary,
+            'layer_stats': layer_stats,
+        }
+
+    def _build_summary(self, trades: List[Dict], daily_equity: List[Dict],
+                       layer_stats: Dict, elapsed: float) -> str:
+        lines = []
+        lines.append("=" * 70)
+        lines.append("  融合元策略回测汇总 v4.1")
+        lines.append("=" * 70)
+        lines.append(f"  回测区间: {self.bt_cfg.start_date} ~ {self.bt_cfg.end_date}")
+        lines.append(f"  初始资金: {self.bt_cfg.initial_capital:,.0f}")
+        lines.append(f"  回测耗时: {elapsed:.1f}s")
+        lines.append("")
+
+        if trades:
+            pnls = [t['pnl_pct'] for t in trades]
+            wins = [p for p in pnls if p > 0]
+            losses = [p for p in pnls if p <= 0]
+
+            lines.append("--- 交易统计 ---")
+            lines.append(f"  总交易数: {len(trades)}")
+            lines.append(f"  胜率: {len(wins)/len(pnls):.1%}" if pnls else "  胜率: N/A")
+            lines.append(f"  平均收益: {np.mean(pnls):.2%}" if pnls else "  平均收益: N/A")
+            lines.append(f"  中位数收益: {np.median(pnls):.2%}" if pnls else "  中位数: N/A")
+            lines.append(f"  最大单笔盈利: {max(pnls):.2%}" if pnls else "  最大盈利: N/A")
+            lines.append(f"  最大单笔亏损: {min(pnls):.2%}" if pnls else "  最大亏损: N/A")
+            lines.append(f"  盈利交易平均: {np.mean(wins):.2%}" if wins else "  盈利均: N/A")
+            lines.append(f"  亏损交易平均: {np.mean(losses):.2%}" if losses else "  亏损均: N/A")
+            lines.append(f"  盈亏比: {abs(np.mean(wins)/np.mean(losses)):.2f}" if wins and losses else "  盈亏比: N/A")
+            lines.append(f"  平均持仓天数: {np.mean([t['holding_days'] for t in trades]):.1f}")
+            lines.append("")
+
+            exit_reasons = {}
+            for t in trades:
+                reason = t['exit_reason'].split('(')[0]
+                exit_reasons[reason] = exit_reasons.get(reason, 0) + 1
+            lines.append("--- 退出原因分布 ---")
+            for reason, count in sorted(exit_reasons.items(), key=lambda x: -x[1]):
+                lines.append(f"  {reason}: {count} ({count/len(trades):.1%})")
+            lines.append("")
+
+            rets = np.array(pnls)
+            lines.append("--- 收益分布 ---")
+            lines.append(f"  >5%:  {np.mean(rets > 0.05):.1%}")
+            lines.append(f"  >3%:  {np.mean(rets > 0.03):.1%}")
+            lines.append(f"  >0%:  {np.mean(rets > 0):.1%}")
+            lines.append(f"  <-3%: {np.mean(rets < -0.03):.1%}")
+            lines.append(f"  <-5%: {np.mean(rets < -0.05):.1%}")
+            lines.append(f"  <-8%: {np.mean(rets < -0.08):.1%}")
+            lines.append("")
+        else:
+            lines.append("  无交易记录")
+            lines.append("")
+
+        if daily_equity:
+            eq_df = pd.DataFrame(daily_equity)
+            initial = self.bt_cfg.initial_capital
+            final = eq_df['equity'].iloc[-1]
+            total_return = (final - initial) / initial
+            max_dd = ((eq_df['equity'] - eq_df['equity'].cummax()) / eq_df['equity'].cummax()).min()
+
+            lines.append("--- 权益曲线 ---")
+            lines.append(f"  初始权益: {initial:,.0f}")
+            lines.append(f"  最终权益: {final:,.0f}")
+            lines.append(f"  总收益率: {total_return:.2%}")
+            lines.append(f"  最大回撤: {max_dd:.2%}")
+            lines.append("")
+
+        lines.append("--- 各层漏斗平均通过数 ---")
+        for layer, counts in layer_stats.items():
+            if counts and isinstance(counts, list):
+                avg = np.mean(counts) if counts else 0
+                lines.append(f"  {layer}: 平均 {avg:.0f} 只/日")
+            elif isinstance(counts, (int, float)):
+                lines.append(f"  {layer}: {counts}")
+        lines.append("")
+
+        lines.append("=" * 70)
+        return "\n".join(lines)
+
+
+def run_backtest():
+    """运行回测"""
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
+
+    meta_cfg = MetaStrategyConfig(
+        layer0_min_advancers=2000,
+        layer1_min_total_score=0.45,
+        layer1_rsi_max=70.0,
+        layer2_min_avg_amount_20d=5e7,
+        layer2_turn_rate_min=2.0,
+        layer2_turn_rate_max=20.0,
+        layer3_volume_breakout_mult=2.0,
+        layer3_min_launch_score=0.25,
+        layer5_min_quant_score=75,
+        layer6_hard_stop_loss_pct=0.05,
+        layer6_overnight_stop_pct=0.02,
+        layer6_trailing_activate_pct=0.05,
+        layer6_trailing_stop_pct=0.03,
+        layer6_max_holding_days=10,
+        max_final_candidates=8,
+    )
+
+    pm_cfg = PositionManagerConfig(
+        hard_stop_loss_pct=0.05,
+        trailing_activate_pct=0.05,
+        trailing_stop_pct=0.03,
+        max_holding_days=10,
+        overnight_stop_pct=0.02,
+        max_positions=8,
+        single_position_pct=0.125,
+    )
+
+    bt_cfg = BacktestConfig(
+        start_date="2026-04-01",
+        end_date="2026-05-15",
+        initial_capital=1_000_000.0,
+        max_positions=8,
+        single_position_pct=0.125,
+    )
+
+    backtester = FastBacktester(meta_cfg, pm_cfg, bt_cfg)
+    result = backtester.run()
+
+    if result:
+        print(result['summary'])
+
+        output_dir = Path('./results')
+        output_dir.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime('%Y%m%d_%H%M')
+        report_path = output_dir / f"meta_bt_report_{ts}.txt"
+        with open(report_path, 'w', encoding='utf-8') as f:
+            f.write(result['summary'])
+        logger.info(f"报告已保存: {report_path}")
+
+        if result['trades']:
+            trades_path = output_dir / f"meta_bt_trades_{ts}.json"
+            with open(trades_path, 'w', encoding='utf-8') as f:
+                json.dump(result['trades'], f, ensure_ascii=False, indent=2, default=str)
+            logger.info(f"交易明细已保存: {trades_path}")
+
+
+if __name__ == '__main__':
+    run_backtest()

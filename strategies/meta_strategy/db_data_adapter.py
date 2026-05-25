@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 def _ensure_env():
     if not os.getenv('POSTGRES_HOST'):
         os.environ['POSTGRES_HOST'] = 'aws-1-ap-northeast-1.pooler.supabase.com'
-        os.environ['POSTGRES_PORT'] = '5432'  # 直连模式，避免连接池耗尽
+        os.environ['POSTGRES_PORT'] = '5432'  # 直连模式，回测更快
         os.environ['POSTGRES_USER'] = 'postgres.qoakbxswwjqfsgbcgepr'
         os.environ['POSTGRES_PASSWORD'] = 'wYFBB91zViSrk2vl'
         os.environ['POSTGRES_DB'] = 'postgres'
