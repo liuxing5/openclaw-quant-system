@@ -13,12 +13,15 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import sys
 import os
 import time
 from datetime import date, datetime, timezone, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
