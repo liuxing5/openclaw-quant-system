@@ -40,7 +40,7 @@ from strategies.meta_strategy.position_manager import (
 )
 from strategies.meta_strategy.db_data_adapter import (
     get_trading_days, get_active_stocks, get_market_overview,
-    get_daily_quotes_for_date, get_daily_quotes, clear_cache,
+    get_daily_quotes_for_date, get_daily_quotes, get_daily_quotes_batch, clear_cache,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,6 +76,34 @@ class FastBacktester:
 
         # 价格缓存：只缓存需要的股票
         self._price_cache: Dict[str, Dict[date, dict]] = {}
+
+    def _preload_prices(self, ts_codes: List[str], start_date: date, end_date: date):
+        """批量预加载股票价格数据到缓存，避免逐日逐股查DB"""
+        if not ts_codes:
+            return
+        # 过滤已缓存的股票
+        missing = [c for c in ts_codes if c not in self._price_cache]
+        if not missing:
+            return
+
+        try:
+            batch_data = get_daily_quotes_batch(missing, start_date, end_date)
+            for code, df in batch_data.items():
+                if code not in self._price_cache:
+                    self._price_cache[code] = {}
+                for _, row in df.iterrows():
+                    td = row['trade_date'] if isinstance(row['trade_date'], date) else date.fromisoformat(str(row['trade_date']))
+                    self._price_cache[code][td] = {
+                        'open': float(row['open']),
+                        'high': float(row['high']),
+                        'low': float(row['low']),
+                        'close': float(row['close']),
+                        'amount': float(row['amount']),
+                        'pct_chg': float(row['pct_chg']),
+                    }
+            logger.info(f"预加载{len(missing)}只股票价格数据完成")
+        except Exception as e:
+            logger.warning(f"预加载价格数据失败: {e}")
 
     def _get_price(self, ts_code: str, trade_date: date, field: str) -> Optional[float]:
         """获取价格字段，缓存未命中时从DB查询"""
@@ -226,30 +254,24 @@ class FastBacktester:
                             logger.debug(f"  {ts_code} 无T+1开盘价: {next_date}")
                             continue
 
-                        # 追涨保护：如果T+1日开盘价相对信号日收盘价下跌超过2%，放弃买入
                         signal_close = row.get('close', 0)
-                        if signal_close > 0 and entry_price < signal_close * 0.98:
-                            logger.info(f"  {ts_code} 追涨保护: 次日开盘{entry_price:.2f} < 信号日收盘{signal_close:.2f}*0.98, 放弃买入")
-                            continue
+                        signal_pct = float(row.get('pct_chg', 0))
 
-                        # 信号衰减保护：如果信号日到T+1日之间收盘价已大幅下跌（>3%），信号作废
+                        # 信号衰减保护：信号14:30产生，14:50买入，如果次日开盘相对信号日收盘跌>3%，信号作废
                         # 防止涨停后连续下跌时仍买入（如000030: 3/31涨停→4/1跌-6.47%→4/2仍买入）
-                        signal_pct = row.get('pct_chg', 0)
-                        if signal_pct and float(signal_pct) > 0:
-                            # 信号日是上涨的，检查T+1日开盘相对信号日收盘的跌幅
-                            if signal_close > 0:
-                                gap_pct = (entry_price - signal_close) / signal_close
-                                if gap_pct < -0.03:
-                                    logger.info(f"  {ts_code} 信号衰减: 信号日涨{float(signal_pct):+.2f}%但次日开盘跌{gap_pct:+.2%}, 放弃买入")
-                                    continue
-
-                        # 涨停日追涨保护：如果T+1日开盘价已远高于信号日收盘（>5%），不追涨
-                        # 防止在涨停次日高开追涨（如000155: 4/2涨停+9.98%时买入）
                         if signal_close > 0:
-                            gap_up_pct = (entry_price - signal_close) / signal_close
-                            if gap_up_pct > 0.05:
-                                logger.info(f"  {ts_code} 涨停追涨保护: 次日开盘{entry_price:.2f}比信号日收盘{signal_close:.2f}高开{gap_up_pct:+.2%}>5%, 放弃买入")
+                            gap_pct = (entry_price - signal_close) / signal_close
+                            if gap_pct < -0.03:
+                                logger.info(f"  {ts_code} 信号衰减: 次日开盘{entry_price:.2f}比信号日收盘{signal_close:.2f}跌{gap_pct:+.2%}>3%, 放弃买入")
                                 continue
+
+                        # 涨停板保护：如果信号日已涨停（主板≥9.8% / 创业板≥19.8%），次日不追涨
+                        # 创业板代码以300/301开头，科创板以688开头（涨跌幅20%）
+                        is_kcb_or_cyb = ts_code.startswith('300') or ts_code.startswith('301') or ts_code.startswith('688')
+                        limit_pct = 19.8 if is_kcb_or_cyb else 9.8
+                        if signal_pct >= limit_pct:
+                            logger.info(f"  {ts_code} 涨停板保护: 信号日涨{signal_pct:+.2f}%已达涨停(>={limit_pct}%), 不追涨")
+                            continue
 
                         position_value = self.bt_cfg.initial_capital * self.bt_cfg.single_position_pct
                         shares = int(position_value / (entry_price * 100)) * 100
@@ -277,6 +299,11 @@ class FastBacktester:
                             launch_score=row.get('launch_score', 0),
                             factor_score=row.get('factor_score', 0),
                         )
+
+                # 预加载持仓股票的价格数据（批量查询，避免逐日逐股查DB）
+                held_codes = list(pm.positions.keys())
+                if held_codes:
+                    self._preload_prices(held_codes, trade_date, end_date)
 
                 # ── 4. 记录当日权益 ──
                 equity = self._calc_equity(pm, capital, trade_date)

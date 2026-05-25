@@ -316,6 +316,14 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
 
         start_date = trade_date - timedelta(days=120)
 
+        # 先获取ST/*ST/退市等公认问题股列表，后续排除
+        cur.execute("""
+            SELECT ts_code FROM stock_basic_info
+            WHERE is_st = true OR is_active = false
+        """)
+        excluded_codes = set(r['ts_code'] for r in cur.fetchall())
+        logger.info(f"Layer1: 排除ST/退市股{len(excluded_codes)}只")
+
         # 先获取当日活跃股票列表（按涨幅优先+成交额保底混合排序）
         # 确保涨停/大涨的中小盘股不被遗漏
         # 排除当日跌幅>5%的股票（防止涨停后大跌日仍被选入，如000030: 3/31涨停→4/1跌-6.47%仍被选）
@@ -327,7 +335,7 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
             ORDER BY pct_chg DESC
             LIMIT 50
         """, (trade_date,))
-        pct_top = set(r['ts_code'] for r in cur.fetchall())
+        pct_top = set(r['ts_code'] for r in cur.fetchall()) - excluded_codes
         logger.info(f"Layer1: 涨幅前50={len(pct_top)}只")
 
         logger.info(f"Layer1: 查询成交额前50...")
@@ -337,7 +345,7 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
             ORDER BY amount DESC
             LIMIT 50
         """, (trade_date,))
-        amount_top = set(r['ts_code'] for r in cur.fetchall())
+        amount_top = set(r['ts_code'] for r in cur.fetchall()) - excluded_codes
         logger.info(f"Layer1: 成交额前50={len(amount_top)}只")
 
         active_codes = list(pct_top | amount_top)
@@ -351,8 +359,8 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
             return pd.DataFrame()
 
         # 获取这些股票的历史数据（分批查询避免IN列表过长）
-        # Supabase远程DB对大IN查询敏感，每批最多10只，批次间加延迟避免连接池耗尽
-        batch_size = 10
+        # batch_size=50，Supabase对单次IN查询50个代码无压力
+        batch_size = 50
         all_rows = []
         for batch_start in range(0, len(active_codes), batch_size):
             batch = active_codes[batch_start:batch_start + batch_size]
@@ -368,9 +376,9 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
             rows = cur.fetchall()
             logger.info(f"Layer1: 历史数据 {len(rows)}行")
             all_rows.extend(rows)
-            # 批次间延迟0.5s，避免Supabase连接池耗尽
+            # 批次间短暂延迟，避免Supabase连接池压力
             if batch_start + batch_size < len(active_codes):
-                import time; time.sleep(0.5)
+                import time; time.sleep(0.1)
 
         cur.close()
         if not all_rows:
