@@ -232,6 +232,25 @@ class FastBacktester:
                             logger.info(f"  {ts_code} 追涨保护: 次日开盘{entry_price:.2f} < 信号日收盘{signal_close:.2f}*0.98, 放弃买入")
                             continue
 
+                        # 信号衰减保护：如果信号日到T+1日之间收盘价已大幅下跌（>3%），信号作废
+                        # 防止涨停后连续下跌时仍买入（如000030: 3/31涨停→4/1跌-6.47%→4/2仍买入）
+                        signal_pct = row.get('pct_chg', 0)
+                        if signal_pct and float(signal_pct) > 0:
+                            # 信号日是上涨的，检查T+1日开盘相对信号日收盘的跌幅
+                            if signal_close > 0:
+                                gap_pct = (entry_price - signal_close) / signal_close
+                                if gap_pct < -0.03:
+                                    logger.info(f"  {ts_code} 信号衰减: 信号日涨{float(signal_pct):+.2f}%但次日开盘跌{gap_pct:+.2%}, 放弃买入")
+                                    continue
+
+                        # 涨停日追涨保护：如果T+1日开盘价已远高于信号日收盘（>5%），不追涨
+                        # 防止在涨停次日高开追涨（如000155: 4/2涨停+9.98%时买入）
+                        if signal_close > 0:
+                            gap_up_pct = (entry_price - signal_close) / signal_close
+                            if gap_up_pct > 0.05:
+                                logger.info(f"  {ts_code} 涨停追涨保护: 次日开盘{entry_price:.2f}比信号日收盘{signal_close:.2f}高开{gap_up_pct:+.2%}>5%, 放弃买入")
+                                continue
+
                         position_value = self.bt_cfg.initial_capital * self.bt_cfg.single_position_pct
                         shares = int(position_value / (entry_price * 100)) * 100
                         if shares <= 0:

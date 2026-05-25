@@ -316,19 +316,32 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
 
         start_date = trade_date - timedelta(days=120)
 
-        # 先获取当日活跃股票列表
+        # 先获取当日活跃股票列表（按涨幅优先+成交额保底混合排序）
+        # 确保涨停/大涨的中小盘股不被遗漏
+        # 排除当日跌幅>5%的股票（防止涨停后大跌日仍被选入，如000030: 3/31涨停→4/1跌-6.47%仍被选）
+        # SQL端完成排序和限制，避免传输2400+行到Python
+        logger.info(f"Layer1: 查询涨幅前50...")
         cur.execute("""
             SELECT ts_code FROM daily_quotes
-            WHERE trade_date = %s AND amount > 50000000
+            WHERE trade_date = %s AND amount > 50000000 AND pct_chg > -5.0
+            ORDER BY pct_chg DESC
+            LIMIT 50
         """, (trade_date,))
-        active_codes = [r['ts_code'] for r in cur.fetchall()]
+        pct_top = set(r['ts_code'] for r in cur.fetchall())
+        logger.info(f"Layer1: 涨幅前50={len(pct_top)}只")
 
-        if not active_codes:
-            cur.close()
-            return pd.DataFrame()
+        logger.info(f"Layer1: 查询成交额前50...")
+        cur.execute("""
+            SELECT ts_code FROM daily_quotes
+            WHERE trade_date = %s AND amount > 50000000 AND pct_chg > -5.0
+            ORDER BY amount DESC
+            LIMIT 50
+        """, (trade_date,))
+        amount_top = set(r['ts_code'] for r in cur.fetchall())
+        logger.info(f"Layer1: 成交额前50={len(amount_top)}只")
 
-        # 限制扫描数量：按成交额排序取Top 100（回测优化）
-        active_codes = active_codes[:100]
+        active_codes = list(pct_top | amount_top)
+        logger.info(f"Layer1: 合计{len(active_codes)}只")
 
         if stock_pool:
             active_codes = [c for c in active_codes if c in stock_pool]
@@ -338,11 +351,13 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
             return pd.DataFrame()
 
         # 获取这些股票的历史数据（分批查询避免IN列表过长）
-        batch_size = 200
+        # Supabase远程DB对大IN查询敏感，每批最多10只，批次间加延迟避免连接池耗尽
+        batch_size = 10
         all_rows = []
         for batch_start in range(0, len(active_codes), batch_size):
             batch = active_codes[batch_start:batch_start + batch_size]
             placeholders = ','.join(['%s'] * len(batch))
+            logger.info(f"Layer1: 查询历史数据 batch {batch_start//batch_size+1} ({len(batch)}只)...")
             cur.execute(f"""
                 SELECT ts_code, trade_date, open, high, low, close, volume, amount, pct_chg
                 FROM daily_quotes
@@ -350,7 +365,12 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
                   AND trade_date >= %s AND trade_date <= %s
                 ORDER BY ts_code, trade_date;
             """, batch + [start_date, trade_date])
-            all_rows.extend(cur.fetchall())
+            rows = cur.fetchall()
+            logger.info(f"Layer1: 历史数据 {len(rows)}行")
+            all_rows.extend(rows)
+            # 批次间延迟0.5s，避免Supabase连接池耗尽
+            if batch_start + batch_size < len(active_codes):
+                import time; time.sleep(0.5)
 
         cur.close()
         if not all_rows:

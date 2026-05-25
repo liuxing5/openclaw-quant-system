@@ -27,6 +27,7 @@ def _connect():
         keepalives_interval=10,
         keepalives_count=3,
         connect_timeout=15,
+        options='-c statement_timeout=60000',
     )
     return conn
 
