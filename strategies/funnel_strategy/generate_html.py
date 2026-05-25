@@ -335,6 +335,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
             eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
             if eight_candidates and eight_date and str(eight_date) >= str(beijing_today):
                 break
+        # 如果重试后仍然没有今天的数据，使用最新可用数据
+        if not eight_candidates or not eight_date or str(eight_date) < str(beijing_today):
+            print(f"   ⚠ overnight_8step 今天无数据，使用最新可用数据 (日期={eight_date})")
     eight_date_str = str(eight_date) if eight_date else None
     eight_timestamp = load_strategy_timestamp('overnight_8step', eight_date)
 
