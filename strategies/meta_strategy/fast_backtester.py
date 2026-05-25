@@ -98,8 +98,10 @@ class FastBacktester:
                     'pct_chg': float(last_row['pct_chg']),
                 }
                 return self._price_cache[ts_code][trade_date].get(field)
+            else:
+                logger.warning(f"查询 {ts_code} {trade_date} 价格: 无数据 (查询范围 {trade_date - timedelta(days=1)} ~ {trade_date})")
         except Exception as e:
-            logger.debug(f"查询 {ts_code} {trade_date} 价格失败: {e}")
+            logger.warning(f"查询 {ts_code} {trade_date} 价格失败: {e}")
         return None
 
     def _calc_equity(self, pm: PositionManager, cash: float, eval_date: date) -> float:
@@ -144,12 +146,22 @@ class FastBacktester:
 
         for i, trade_date in enumerate(trading_days):
             try:
-                # ── 1. 评估退出条件 ──
+                # ── 1. 评估退出条件（T日close评估，T+1日open卖出） ──
                 exit_signals = pm.evaluate_exits(trade_date)
                 for sig in exit_signals:
-                    exit_price = self._get_price(sig.ts_code, trade_date, 'open')
+                    # A股T+1：退出信号在T日收盘后触发，T+1日开盘卖出
+                    next_idx = i + 1
+                    if next_idx < len(trading_days):
+                        exit_date = trading_days[next_idx]
+                        exit_price = self._get_price(sig.ts_code, exit_date, 'open')
+                    else:
+                        # 回测最后一天，用当日close
+                        exit_date = trade_date
+                        exit_price = sig.current_price
+
                     if exit_price is None:
                         exit_price = sig.current_price
+                        exit_date = trade_date
 
                     exit_price_adj = exit_price * (1 - self.bt_cfg.slippage_pct)
                     pos = pm.positions.get(sig.ts_code)
@@ -157,12 +169,15 @@ class FastBacktester:
                     commission = exit_price_adj * shares * self.bt_cfg.commission_rate
 
                     record = pm.close_position(
-                        sig.ts_code, trade_date, exit_price_adj, sig.exit_reason)
+                        sig.ts_code, exit_date, exit_price_adj, sig.exit_reason)
                     if record:
                         record['commission'] = commission
                         record['slippage'] = self.bt_cfg.slippage_pct
                         all_trades.append(record)
                         capital += exit_price_adj * record.get('shares', shares) - commission
+                        logger.info(f"  卖出 {sig.ts_code}: {exit_date} @ {exit_price_adj:.2f} {sig.exit_reason} 盈亏{record['pnl_pct']:+.2%}")
+                    else:
+                        logger.warning(f"  卖出失败 {sig.ts_code}: 不在持仓中")
 
                 # ── 2. 生成新信号 ──
                 market_risk = check_market_risk(trade_date, self.meta_cfg)
@@ -188,24 +203,33 @@ class FastBacktester:
                 # ── 3. 开仓 ──
                 if not result_df.empty:
                     for _, row in result_df.iterrows():
+                        ts_code = row['ts_code']
                         if pm.open_position_count >= self.bt_cfg.max_positions:
                             break
-                        if row['ts_code'] in pm.positions:
+                        if ts_code in pm.positions:
                             continue
 
                         # meta_score过滤：只买高质量候选
                         if self.bt_cfg.min_meta_score > 0:
                             score = row.get('meta_score', 0)
                             if score < self.bt_cfg.min_meta_score:
+                                logger.debug(f"  {ts_code} meta_score过滤: {score:.1f} < {self.bt_cfg.min_meta_score}")
                                 continue
 
                         next_idx = i + 1
                         if next_idx >= len(trading_days):
                             continue
                         next_date = trading_days[next_idx]
-                        
-                        entry_price = self._get_price(row['ts_code'], next_date, 'open')
+
+                        entry_price = self._get_price(ts_code, next_date, 'open')
                         if entry_price is None:
+                            logger.debug(f"  {ts_code} 无T+1开盘价: {next_date}")
+                            continue
+
+                        # 追涨保护：如果T+1日开盘价相对信号日收盘价下跌超过2%，放弃买入
+                        signal_close = row.get('close', 0)
+                        if signal_close > 0 and entry_price < signal_close * 0.98:
+                            logger.info(f"  {ts_code} 追涨保护: 次日开盘{entry_price:.2f} < 信号日收盘{signal_close:.2f}*0.98, 放弃买入")
                             continue
 
                         position_value = self.bt_cfg.initial_capital * self.bt_cfg.single_position_pct
@@ -218,8 +242,10 @@ class FastBacktester:
                         cost = entry_price_adj * shares + commission
 
                         if cost > capital:
+                            logger.info(f"  {ts_code} 资金不足: 需要{cost:,.0f} 可用{capital:,.0f}")
                             continue
 
+                        logger.info(f"  买入 {ts_code}: {next_date} @ {entry_price_adj:.2f} x{shares} 持仓{pm.open_position_count+1}")
                         capital -= cost
 
                         pm.positions[row['ts_code']] = Position(
@@ -258,6 +284,9 @@ class FastBacktester:
                 record = pm.close_position(ts_code, end_date, last_price, '回测结束')
                 if record:
                     all_trades.append(record)
+                    logger.info(f"  强制平仓 {ts_code}: {end_date} @ {last_price:.2f} 盈亏{record['pnl_pct']:+.2%}")
+            else:
+                logger.warning(f"  强制平仓 {ts_code}: 无法获取{end_date}收盘价")
 
         total_elapsed = time.time() - t_total_start
 

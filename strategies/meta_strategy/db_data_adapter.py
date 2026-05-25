@@ -78,7 +78,7 @@ def get_daily_quotes_batch(ts_codes: List[str], start_date: date,
     if not ts_codes:
         return {}
 
-    cache_key = f"batch_{len(ts_codes)}_{start_date}_{end_date}"
+    cache_key = f"batch_{'_'.join(sorted(ts_codes))}_{start_date}_{end_date}"
     if cache_key in _cache:
         return _cache[cache_key]
 
