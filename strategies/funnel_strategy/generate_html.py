@@ -290,15 +290,15 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
     # 并行 workflow 竞争：overnight_8step 和 funnel 同时 15:10 触发，
-    # zuiyou1.py 可能还在写入，最多重试 5 次（每次 15s，共 75s）
+    # zuiyou1.py 可能还在写入，最多重试 8 次（每次 15s，共 120s）
     # 关键修复：即使有昨天的数据，也要等待今天的数据写入
     beijing_today = get_beijing_date()
     need_retry = (not eight_candidates or not eight_date) or (eight_date and str(eight_date) < str(beijing_today))
     if need_retry:
         import time as _time
-        for _retry in range(5):
+        for _retry in range(8):
             _time.sleep(15)
-            print(f"   overnight_8step 数据未就绪 (当前={eight_date}, 期望>={beijing_today})，15s后重试 ({_retry+1}/5)...")
+            print(f"   overnight_8step 数据未就绪 (当前={eight_date}, 期望>={beijing_today})，15s后重试 ({_retry+1}/8)...")
             eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
             if eight_candidates and eight_date and str(eight_date) >= str(beijing_today):
                 break
@@ -1011,10 +1011,16 @@ function switchDate(dateVal) {{
 
 if __name__ == "__main__":
     import argparse
+    import traceback
     parser = argparse.ArgumentParser(description="生成三策略对比 HTML 报告")
     parser.add_argument("--date", "-d", type=str, default=None, help="日期 (YYYY-MM-DD)")
     parser.add_argument("--output", "-o", type=str, default=None, help="输出目录")
     args = parser.parse_args()
 
     output_dir = args.output
-    generate_unified_html(output_dir=output_dir, trade_date=args.date)
+    try:
+        generate_unified_html(output_dir=output_dir, trade_date=args.date)
+    except Exception as e:
+        print(f"❌ funnel HTML generation failed: {e}")
+        traceback.print_exc()
+        sys.exit(1)
