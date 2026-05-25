@@ -65,6 +65,18 @@ def get_db(use_dict_cursor: bool = False):
     """
     global _session_conn
     with _session_lock:
+        if _session_conn is not None and not _session_conn.closed:
+            # Lightweight liveness check: only reconnect if cursor creation fails
+            try:
+                _session_conn.cursor()
+            except Exception:
+                import logging
+                logging.getLogger(__name__).warning("DB session connection lost, reconnecting...")
+                try:
+                    _session_conn.close()
+                except Exception:
+                    pass
+                _session_conn = None
         if _session_conn is None or _session_conn.closed:
             _session_conn = _connect()
         wrapped = _NoCloseConnection(_session_conn)

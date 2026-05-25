@@ -45,7 +45,7 @@ from psycopg2.extras import RealDictCursor
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..")))
 
-from core.db.connection import get_db_fresh, close_db_session
+from core.db.connection import get_db, close_db_session
 
 logger = logging.getLogger(__name__)
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -188,7 +188,7 @@ def check_market_risk(trade_date: date = None, cfg: MetaStrategyConfig = None) -
 
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db(use_dict_cursor=True)
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         if trade_date is None:
@@ -284,8 +284,7 @@ def check_market_risk(trade_date: date = None, cfg: MetaStrategyConfig = None) -
             'reason': f'查询失败({e})，默认放行',
         }
     finally:
-        if conn and not conn.closed:
-            conn.close()
+        pass  # session connection managed by get_db()
 
 
 # ============================================================
@@ -311,7 +310,7 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
 
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db(use_dict_cursor=True)
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         start_date = trade_date - timedelta(days=120)
@@ -560,8 +559,7 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
         import traceback; traceback.print_exc()
         return pd.DataFrame()
     finally:
-        if conn and not conn.closed:
-            conn.close()
+        pass  # session connection managed by get_db()
 
 
 
@@ -579,7 +577,7 @@ def run_fundamental_liquidity_filter(stock_list: List[str], trade_date: date,
 
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db(use_dict_cursor=True)
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         cur.execute("""
@@ -689,8 +687,7 @@ def run_fundamental_liquidity_filter(stock_list: List[str], trade_date: date,
         logger.warning(f"Layer2 基本面过滤失败: {e}，返回原始列表")
         return stock_list
     finally:
-        if conn and not conn.closed:
-            conn.close()
+        pass  # session connection managed by get_db()
 
 
 def _check_fundamental_liquidity(ts_code, stock_info, fin, liq,
@@ -752,7 +749,7 @@ def detect_launch_signals(stock_list: List[str], trade_date: date,
 
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db(use_dict_cursor=True)
         cur = conn.cursor(cursor_factory=RealDictCursor)
         start_date = trade_date - timedelta(days=120)
         cur.execute("""
@@ -875,8 +872,7 @@ def detect_launch_signals(stock_list: List[str], trade_date: date,
         logger.error(f"Layer3 启动信号检测失败: {e}")
         return pd.DataFrame()
     finally:
-        if conn and not conn.closed:
-            conn.close()
+        pass  # session connection managed by get_db()
 
 
 
@@ -896,7 +892,7 @@ def get_llm_boost(stock_list: List[str], trade_date: date,
 
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db(use_dict_cursor=True)
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT ts_code, stock_name, final_score, llm_score,
@@ -970,8 +966,7 @@ def get_llm_boost(stock_list: List[str], trade_date: date,
                      'llm_veto': False, 'veto_reason': ''}
                 for c in stock_list}
     finally:
-        if conn and not conn.closed:
-            conn.close()
+        pass  # session connection managed by get_db()
 
 
 # ============================================================
@@ -988,7 +983,7 @@ def compute_overnight_score(stock_list: List[str], trade_date: date,
 
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db(use_dict_cursor=True)
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
         cur.execute("""
@@ -1175,8 +1170,7 @@ def compute_overnight_score(stock_list: List[str], trade_date: date,
         logger.error(f"Layer5 八步法评分失败: {e}")
         return pd.DataFrame()
     finally:
-        if conn and not conn.closed:
-            conn.close()
+        pass  # session connection managed by get_db()
 
 
 
@@ -1194,7 +1188,7 @@ def evaluate_sustainability(stock_list: List[str], trade_date: date,
 
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db(use_dict_cursor=True)
         cur = conn.cursor(cursor_factory=RealDictCursor)
         start_date = trade_date - timedelta(days=120)
         cur.execute("""
@@ -1350,8 +1344,7 @@ def evaluate_sustainability(stock_list: List[str], trade_date: date,
         logger.error(f"Layer6 持续性评估失败: {e}")
         return pd.DataFrame()
     finally:
-        if conn and not conn.closed:
-            conn.close()
+        pass  # session connection managed by get_db()
 
 
 # ============================================================
