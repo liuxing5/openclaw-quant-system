@@ -272,6 +272,7 @@ jobs:
 
     - name: Generate unified HTML report (funnel page)
       if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
       env:
         POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
         POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
@@ -280,10 +281,11 @@ jobs:
         POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
       run: |
         pip install jinja2 psycopg2-binary python-dotenv
-        python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs
+        python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs || echo "⚠️ funnel HTML generation failed, continuing..."
 
     - name: Deploy unified HTML to GitHub Pages (funnel)
       if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
       uses: peaceiris/actions-gh-pages@v3
       with:
         personal_token: ${{ secrets.GH_PAT }}
