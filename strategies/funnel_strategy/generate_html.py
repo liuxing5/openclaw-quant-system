@@ -33,17 +33,26 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
-def query_dicts(sql, params=None):
-    conn = get_db_fresh(use_dict_cursor=True)
-    try:
-        cur = conn.cursor()
-        cur.execute(sql, params)
-        rows = [dict(r) for r in cur.fetchall()]
-        cur.close()
-        return rows
-    finally:
-        if conn and not conn.closed:
-            conn.close()
+def query_dicts(sql, params=None, max_retries=3):
+    """Execute query with retry on SSL connection errors (Supabase pooler issue)."""
+    import time as _t
+    for attempt in range(max_retries):
+        conn = get_db_fresh(use_dict_cursor=True)
+        try:
+            cur = conn.cursor()
+            cur.execute(sql, params)
+            rows = [dict(r) for r in cur.fetchall()]
+            cur.close()
+            return rows
+        except Exception as e:
+            if "SSL connection" in str(e) and attempt < max_retries - 1:
+                print(f"  ⚠ DB query SSL error, retrying ({attempt+1}/{max_retries})...")
+                _t.sleep(2)
+                continue
+            raise
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
 
 def query_one(sql, params=None):
@@ -135,46 +144,55 @@ def load_funnel_data(trade_date=None):
     return row
 
 
-def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False):
-    conn = get_db_fresh(use_dict_cursor=True)
-    try:
-        cur = conn.cursor()
+def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, max_retries=3):
+    """Load candidates with SSL retry logic."""
+    import time as _t
+    for attempt in range(max_retries):
+        conn = get_db_fresh(use_dict_cursor=True)
+        try:
+            cur = conn.cursor()
 
-        if trade_date:
-            latest = trade_date
-        else:
-            ref_date = get_beijing_date()
-            cur.execute("""
-                SELECT MAX(snapshot_date) AS max_date
-                FROM daily_candidates
-                WHERE source = %s AND snapshot_date >= %s::date - 7
-                  AND ts_code NOT LIKE '%%.AUDIT';
-            """, (source, ref_date))
-            row = cur.fetchone()
-            if not row or not row['max_date']:
-                cur.close()
-                return [], None
-            latest = row['max_date']
+            if trade_date:
+                latest = trade_date
+            else:
+                ref_date = get_beijing_date()
+                cur.execute("""
+                    SELECT MAX(snapshot_date) AS max_date
+                    FROM daily_candidates
+                    WHERE source = %s AND snapshot_date >= %s::date - 7
+                      AND ts_code NOT LIKE '%%.AUDIT';
+                """, (source, ref_date))
+                row = cur.fetchone()
+                if not row or not row['max_date']:
+                    cur.close()
+                    return [], None
+                latest = row['max_date']
 
-        if run_mode:
-            cur.execute("""
-                SELECT * FROM daily_candidates
-                WHERE snapshot_date = %s AND source = %s AND run_mode = %s
-                ORDER BY final_score DESC;
-            """, (latest, source, run_mode))
-        else:
-            cur.execute("""
-                SELECT * FROM daily_candidates
-                WHERE snapshot_date = %s AND source = %s AND ts_code NOT LIKE '%%.AUDIT'
-                ORDER BY final_score DESC;
-            """, (latest, source))
+            if run_mode:
+                cur.execute("""
+                    SELECT * FROM daily_candidates
+                    WHERE snapshot_date = %s AND source = %s AND run_mode = %s
+                    ORDER BY final_score DESC;
+                """, (latest, source, run_mode))
+            else:
+                cur.execute("""
+                    SELECT * FROM daily_candidates
+                    WHERE snapshot_date = %s AND source = %s AND ts_code NOT LIKE '%%.AUDIT'
+                    ORDER BY final_score DESC;
+                """, (latest, source))
 
-        candidates = [dict(r) for r in cur.fetchall()]
-        cur.close()
-        return candidates, latest
-    finally:
-        if conn and not conn.closed:
-            conn.close()
+            candidates = [dict(r) for r in cur.fetchall()]
+            cur.close()
+            return candidates, latest
+        except Exception as e:
+            if "SSL connection" in str(e) and attempt < max_retries - 1:
+                print(f"  ⚠ load_candidates({source}) SSL error, retrying ({attempt+1}/{max_retries})...")
+                _t.sleep(2)
+                continue
+            raise
+        finally:
+            if conn and not conn.closed:
+                conn.close()
 
 
 def load_scan_stats(strategy, snapshot_date=None):
