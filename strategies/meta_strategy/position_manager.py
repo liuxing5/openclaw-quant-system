@@ -118,7 +118,7 @@ class PositionManagerConfig:
 
     # 八步法隔夜止损
     enable_overnight_stop: bool = True
-    overnight_stop_pct: float = 0.025          # 次日未维持昨收+2.5%出局
+    overnight_stop_pct: float = 0.03          # 次日亏损>3%出局
 
     # 仓位管理
     max_positions: int = 5                     # 最大持仓数
@@ -248,19 +248,34 @@ class PositionManager:
                     pnl_pct=pnl_pct, holding_days=holding_days,
                     details={'trigger': 'trailing_stop', 'drawdown': drawdown})
 
-        # E3: 时间止损
-        if holding_days >= self.cfg.max_holding_days:
-            return ExitSignal(
-                ts_code=pos.ts_code, exit_date=eval_date,
-                exit_reason=f'时间止损(持仓{holding_days}天)',
-                entry_price=pos.entry_price,
-                current_price=current_price,
-                pnl_pct=pnl_pct, holding_days=holding_days,
-                details={'trigger': 'time_stop'})
-
         # 以下条件需要足够的历史数据
         close = prices['close'].values.astype(float)
         n = len(close)
+
+        # E3: 时间止损 — 但如果趋势仍在（收盘>5日均线且盈利），延长持仓
+        if holding_days >= self.cfg.max_holding_days:
+            # 趋势延续判断：收盘价在5日均线之上且盈利
+            if n >= self.cfg.breakdown_ma_period:
+                ma5 = pd.Series(close).rolling(self.cfg.breakdown_ma_period).mean().values
+                if current_price > ma5[-1] and pnl_pct > 0:
+                    # 趋势仍在，不触发时间止损，继续持有
+                    pass
+                else:
+                    return ExitSignal(
+                        ts_code=pos.ts_code, exit_date=eval_date,
+                        exit_reason=f'时间止损(持仓{holding_days}天)',
+                        entry_price=pos.entry_price,
+                        current_price=current_price,
+                        pnl_pct=pnl_pct, holding_days=holding_days,
+                        details={'trigger': 'time_stop'})
+            else:
+                return ExitSignal(
+                    ts_code=pos.ts_code, exit_date=eval_date,
+                    exit_reason=f'时间止损(持仓{holding_days}天)',
+                    entry_price=pos.entry_price,
+                    current_price=current_price,
+                    pnl_pct=pnl_pct, holding_days=holding_days,
+                    details={'trigger': 'time_stop'})
 
         # E4: MACD死叉
         if self.cfg.enable_macd_exit and n >= self.cfg.macd_slow + self.cfg.macd_signal:

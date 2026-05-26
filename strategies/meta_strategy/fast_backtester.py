@@ -174,18 +174,57 @@ class FastBacktester:
 
         for i, trade_date in enumerate(trading_days):
             try:
-                # ── 1. 评估退出条件（T日close评估，T+1日open卖出） ──
+                # ── 1. 评估退出条件 ──
+                # 1a. 日内大跌止损：如果当日跌幅>8%（相对买入价），当日收盘价卖出
+                #     用户反馈：002565在1月13日跌-10%未卖，14日又跌-10%才卖
+                #     关键改进：当日收盘卖出而非次日开盘，避免连续跌停扩大亏损
+                for ts_code in list(pm.positions.keys()):
+                    pos = pm.positions[ts_code]
+                    close_price = self._get_price(ts_code, trade_date, 'close')
+                    if close_price is None:
+                        continue
+                    holding_days = (trade_date - pos.entry_date).days
+                    if holding_days == 0:
+                        continue  # A股T+1，买入当天不能卖
+                    intraday_pnl = (close_price - pos.entry_price) / pos.entry_price
+                    if intraday_pnl < -0.08:
+                        # 日内大跌>8%，当日收盘价卖出
+                        exit_price_adj = close_price * (1 - self.bt_cfg.slippage_pct)
+                        commission = exit_price_adj * pos.shares * self.bt_cfg.commission_rate
+                        record = pm.close_position(
+                            ts_code, trade_date, exit_price_adj,
+                            f'日内止损(亏损{intraday_pnl:.1%})')
+                        if record:
+                            record['commission'] = commission
+                            record['slippage'] = self.bt_cfg.slippage_pct
+                            all_trades.append(record)
+                            capital += exit_price_adj * record.get('shares', pos.shares) - commission
+                            logger.info(f"  日内止损 {ts_code}: {trade_date} @ {exit_price_adj:.2f} 亏损{intraday_pnl:+.2%}")
+
+                # 1b. 常规退出条件评估
+                # 关键改进：如果退出原因是移动止盈/破位放量/高量阴线（当日大跌触发），
+                # 应当日收盘卖出而非次日开盘，避免次日继续大跌扩大亏损
                 exit_signals = pm.evaluate_exits(trade_date)
                 for sig in exit_signals:
-                    # A股T+1：退出信号在T日收盘后触发，T+1日开盘卖出
-                    next_idx = i + 1
-                    if next_idx < len(trading_days):
-                        exit_date = trading_days[next_idx]
-                        exit_price = self._get_price(sig.ts_code, exit_date, 'open')
-                    else:
-                        # 回测最后一天，用当日close
+                    # 判断是否当日收盘卖出
+                    sell_same_day = any(trigger in sig.exit_reason for trigger in
+                        ['移动止盈', '破位放量', '高量阴线', '隔夜止损'])
+
+                    if sell_same_day:
+                        # 当日收盘卖出
                         exit_date = trade_date
-                        exit_price = sig.current_price
+                        exit_price = self._get_price(sig.ts_code, trade_date, 'close')
+                        if exit_price is None:
+                            exit_price = sig.current_price
+                    else:
+                        # T日评估，T+1日开盘卖出（MACD死叉、时间止损等非紧急退出）
+                        next_idx = i + 1
+                        if next_idx < len(trading_days):
+                            exit_date = trading_days[next_idx]
+                            exit_price = self._get_price(sig.ts_code, exit_date, 'open')
+                        else:
+                            exit_date = trade_date
+                            exit_price = sig.current_price
 
                     if exit_price is None:
                         exit_price = sig.current_price

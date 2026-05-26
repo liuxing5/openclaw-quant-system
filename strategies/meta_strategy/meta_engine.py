@@ -347,7 +347,84 @@ def run_multi_factor_scan(trade_date: date, cfg: MetaStrategyConfig = None,
         amount_top = set(r['ts_code'] for r in cur.fetchall()) - excluded_codes
         logger.info(f"Layer1: 成交额前50={len(amount_top)}只")
 
-        active_codes = list(pct_top | amount_top)
+        # 趋势启动股：当日温和上涨(0-9%)+前5天内有上涨日+成交额>3千万
+        # 捕捉早期温和上涨的股票，避免只选当日大涨股导致入场太晚
+        # 简化SQL避免窗口函数在大表上超时
+        # v10: 放宽涨幅范围(0-9%)和成交额门槛(3千万)，增加LIMIT到50
+        logger.info(f"Layer1: 查询趋势启动股...")
+        cur.execute("""
+            SELECT DISTINCT a.ts_code
+            FROM daily_quotes a
+            WHERE a.trade_date = %s
+              AND a.pct_chg BETWEEN 0 AND 9
+              AND a.amount > 30000000
+              AND EXISTS (
+                SELECT 1 FROM daily_quotes b
+                WHERE b.ts_code = a.ts_code
+                  AND b.trade_date < %s
+                  AND b.trade_date >= %s - INTERVAL '5 days'
+                  AND b.pct_chg > 0
+              )
+            LIMIT 50
+        """, (trade_date, trade_date, trade_date))
+        trend_top = set(r['ts_code'] for r in cur.fetchall()) - excluded_codes
+        logger.info(f"Layer1: 趋势启动={len(trend_top)}只")
+
+        # 均线突破+放量股：收盘>5日均线+成交额>前5日均量1.3倍+成交额>3千万
+        # 使用JOIN代替相关子查询，性能更好
+        # 加超时保护：如果查询超时就跳过
+        ma_break_top = set()
+        try:
+            logger.info(f"Layer1: 查询均线突破股...")
+            cur.execute("""
+                SELECT DISTINCT a.ts_code
+                FROM daily_quotes a
+                JOIN (
+                    SELECT ts_code, AVG(close) as ma5, AVG(amount) as avg_amt5
+                    FROM daily_quotes
+                    WHERE trade_date <= %s AND trade_date > %s - INTERVAL '8 days'
+                    GROUP BY ts_code
+                    HAVING COUNT(*) >= 3
+                ) m ON a.ts_code = m.ts_code
+                WHERE a.trade_date = %s
+                  AND a.pct_chg > 0
+                  AND a.amount > 30000000
+                  AND a.close > m.ma5
+                  AND a.amount > m.avg_amt5 * 1.3
+                LIMIT 40
+            """, (trade_date, trade_date, trade_date))
+            ma_break_top = set(r['ts_code'] for r in cur.fetchall()) - excluded_codes
+        except Exception as e:
+            logger.warning(f"Layer1: 均线突破查询失败: {e}")
+        logger.info(f"Layer1: 均线突破={len(ma_break_top)}只")
+
+        # 连涨股：近3天均上涨+当日成交额>3千万
+        # 使用JOIN+GROUP BY代替EXISTS子查询
+        consecutive_top = set()
+        try:
+            logger.info(f"Layer1: 查询连涨股...")
+            cur.execute("""
+                SELECT DISTINCT a.ts_code
+                FROM daily_quotes a
+                JOIN (
+                    SELECT ts_code
+                    FROM daily_quotes
+                    WHERE trade_date < %s AND trade_date >= %s - INTERVAL '4 days'
+                      AND pct_chg > 0
+                    GROUP BY ts_code
+                    HAVING COUNT(*) >= 2
+                ) c ON a.ts_code = c.ts_code
+                WHERE a.trade_date = %s
+                  AND a.pct_chg > 0
+                  AND a.amount > 30000000
+                LIMIT 30
+            """, (trade_date, trade_date, trade_date))
+            consecutive_top = set(r['ts_code'] for r in cur.fetchall()) - excluded_codes
+        except Exception as e:
+            logger.warning(f"Layer1: 连涨股查询失败: {e}")
+        logger.info(f"Layer1: 连涨={len(consecutive_top)}只")
+
+        active_codes = list(pct_top | amount_top | trend_top | ma_break_top | consecutive_top)
         logger.info(f"Layer1: 合计{len(active_codes)}只")
 
         if stock_pool:
