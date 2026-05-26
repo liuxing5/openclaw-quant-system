@@ -85,7 +85,7 @@ def fetch_ths_profit_forecast(make_signal) -> list:
             SELECT ts_code FROM daily_quotes
             WHERE trade_date = (SELECT MAX(trade_date) FROM daily_quotes)
             ORDER BY amount DESC NULLS LAST
-            LIMIT 30;
+            LIMIT 15;
         """)
         codes = [row[0] for row in cur.fetchall()]
         cur.close()

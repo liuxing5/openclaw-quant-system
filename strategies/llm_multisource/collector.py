@@ -36,8 +36,8 @@ warnings.filterwarnings('ignore', message='.*invalid escape sequence.*')
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 
-FETCH_TIMEOUT = 60
-CONCEPT_TIMEOUT = 45
+FETCH_TIMEOUT = 30
+CONCEPT_TIMEOUT = 25
 
 # 北京时间时区
 BEIJING_TZ = timezone(timedelta(hours=8))

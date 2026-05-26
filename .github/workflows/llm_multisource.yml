@@ -21,7 +21,7 @@ on:
 jobs:
   collect_data:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     
     env:
       POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}

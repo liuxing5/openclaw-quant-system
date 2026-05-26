@@ -341,7 +341,7 @@ def fetch_earnings_forecast_structured(make_signal) -> list:
 def fetch_concept_constituents(make_signal) -> list:
     """概念成分股采集 -- 优先东财接口，回退同花顺接口
 
-    Fetches top-20 concept boards and their constituent stocks.
+    Fetches top-10 concept boards and their constituent stocks.
     Returns empty signal list + attaches _concept_membership data
     for store_concept_membership() to persist.
     """
@@ -368,9 +368,9 @@ def fetch_concept_constituents(make_signal) -> list:
 
             if col_chg:
                 df_concepts[col_chg] = pd.to_numeric(df_concepts[col_chg], errors='coerce')
-                top_concepts = df_concepts.nlargest(20, col_chg)
+                top_concepts = df_concepts.nlargest(10, col_chg)
             else:
-                top_concepts = df_concepts.head(20) if df_concepts is not None else pd.DataFrame()
+                top_concepts = df_concepts.head(10) if df_concepts is not None else pd.DataFrame()
 
         if df_concepts is None or (hasattr(df_concepts, 'empty') and df_concepts.empty):
             logger.debug("概念成分股: 回退 stock_board_concept_name_ths")
@@ -381,7 +381,7 @@ def fetch_concept_constituents(make_signal) -> list:
             col_code = next((c for c in ['代码', '板块代码', 'code'] if c in df_concepts.columns), None)
             if not col_name:
                 return rows
-            top_concepts = df_concepts.head(20)
+            top_concepts = df_concepts.head(10)
 
         for _, concept_row in top_concepts.iterrows():
             concept_name = str(concept_row.get(col_name, '') or '')
@@ -464,7 +464,7 @@ def fetch_tencent_supplementary(make_signal) -> list:
             WHERE trade_date = (SELECT MAX(trade_date) FROM daily_quotes)
               AND volume > 0
             ORDER BY amount DESC NULLS LAST
-            LIMIT 3000;
+            LIMIT 1500;
         """)
         codes = [row[0] for row in cur.fetchall()]
         cur.close()
@@ -490,8 +490,8 @@ def fetch_tencent_supplementary(make_signal) -> list:
             return f"sz{code}"
         return None
 
-    batch_size = 50
-    for i in range(0, len(codes), batch_size):
+    batch_size = 80
+    for i in range(0, min(len(codes), 2000), batch_size):
         batch = codes[i:i + batch_size]
         tencent_codes = [to_tencent_code(c) for c in batch if to_tencent_code(c)]
         if not tencent_codes:
