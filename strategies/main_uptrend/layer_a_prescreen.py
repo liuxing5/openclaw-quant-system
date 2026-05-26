@@ -71,18 +71,24 @@ class LayerAPrescreener:
             codes.update(codes_3)
             logger.info(f"A3 行业景气: {len(codes_3)} 只通过")
 
-        codes = codes_1 & codes_2 if codes_1 and codes_2 else (codes_1 | codes_2)
-        if codes_3:
-            codes = codes & codes_3
+        # 合并逻辑：通过的filter取交集，失败的filter自动跳过
+        active_filters = [f for f in [codes_1, codes_2, codes_3] if f is not None and len(f) > 0]
 
-        if codes_1 or codes_2 or codes_3:
-            codes = codes_1
-            if codes_2:
-                codes = codes & codes_2
-            if codes_3:
-                codes = codes & codes_3
-        else:
+        if not active_filters:
             codes = set()
+        elif len(active_filters) == 1:
+            # 只有一个filter有数据，直接用
+            codes = active_filters[0]
+        else:
+            # 多个filter有数据，取交集
+            codes = active_filters[0]
+            for f in active_filters[1:]:
+                codes = codes & f
+
+        # 如果交集为空但有filter返回了数据，降级为取最大的filter结果
+        if not codes and active_filters:
+            codes = max(active_filters, key=len)
+            logger.info(f"A 层交集为空，降级使用最大filter结果: {len(codes)} 只")
 
         self._pool_cache[cache_key] = codes
         logger.info(f"A 层预筛完成: {len(codes)} 只入池")
@@ -102,13 +108,14 @@ class LayerAPrescreener:
             conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
 
+            # 使用 stock_fundamentals 表，筛选 profit_yoy > 阈值
             cur.execute("""
                 SELECT DISTINCT ts_code
-                FROM financial_data
-                WHERE indicator = 'net_profit_yoy'
-                  AND report_period >= '2025-03-31'
-                  AND value > %s
-            """, (self.cfg.a_profit_growth_min,))
+                FROM stock_fundamentals
+                WHERE profit_yoy IS NOT NULL
+                  AND profit_yoy > %s
+                  AND report_date >= '2025-01-01'
+            """, (self.cfg.a_profit_growth_min * 100,))
             for row in cur.fetchall():
                 codes.add(row['ts_code'])
             cur.close()
