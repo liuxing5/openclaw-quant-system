@@ -70,12 +70,12 @@ class MetaStrategyConfig:
 
     # Layer 1: 多因子扫描
     layer1_enabled: bool = True
-    layer1_min_total_score: float = 0.40
+    layer1_min_total_score: float = 0.30
     layer1_top_n: int = 500
     layer1_momentum_min: float = 0.0
     layer1_rsi_max: float = 75.0
-    layer1_macd_bullish: bool = True
-    layer1_sar_support: bool = True
+    layer1_macd_bullish: bool = False
+    layer1_sar_support: bool = False
     layer1_industry_rotation: bool = True
     layer1_industry_top_n: int = 5
 

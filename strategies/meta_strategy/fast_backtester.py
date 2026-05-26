@@ -296,17 +296,18 @@ class FastBacktester:
                         signal_close = row.get('close', 0)
                         signal_pct = float(row.get('pct_chg', 0))
 
-                        # 信号衰减保护：信号14:30产生，14:50买入，如果次日开盘相对信号日收盘跌>3%，信号作废
+                        # 信号衰减保护：信号14:30产生，14:50买入，如果次日开盘相对信号日收盘跌>阈值，信号作废
                         # 防止涨停后连续下跌时仍买入（如000030: 3/31涨停→4/1跌-6.47%→4/2仍买入）
+                        # 创业板/科创板波动大，阈值放宽到-5%；主板-3%
+                        is_kcb_or_cyb = ts_code.startswith('300') or ts_code.startswith('301') or ts_code.startswith('688')
+                        decay_threshold = -0.05 if is_kcb_or_cyb else -0.03
                         if signal_close > 0:
                             gap_pct = (entry_price - signal_close) / signal_close
-                            if gap_pct < -0.03:
-                                logger.info(f"  {ts_code} 信号衰减: 次日开盘{entry_price:.2f}比信号日收盘{signal_close:.2f}跌{gap_pct:+.2%}>3%, 放弃买入")
+                            if gap_pct < decay_threshold:
+                                logger.info(f"  {ts_code} 信号衰减: 次日开盘{entry_price:.2f}比信号日收盘{signal_close:.2f}跌{gap_pct:+.2%}>{decay_threshold:.0%}, 放弃买入")
                                 continue
 
                         # 涨停板保护：如果信号日已涨停（主板≥9.8% / 创业板≥19.8%），次日不追涨
-                        # 创业板代码以300/301开头，科创板以688开头（涨跌幅20%）
-                        is_kcb_or_cyb = ts_code.startswith('300') or ts_code.startswith('301') or ts_code.startswith('688')
                         limit_pct = 19.8 if is_kcb_or_cyb else 9.8
                         if signal_pct >= limit_pct:
                             logger.info(f"  {ts_code} 涨停板保护: 信号日涨{signal_pct:+.2f}%已达涨停(>={limit_pct}%), 不追涨")
