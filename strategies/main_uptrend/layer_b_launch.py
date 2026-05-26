@@ -279,27 +279,29 @@ class LayerBLaunchDetector:
         # ---- B4: 封单质量 ----
         limit_pct = np.where(quick['is_kcb_cyb'], 0.197, 0.097)
         is_zt = quick['pct_chg'].fillna(0) >= limit_pct - 0.003
+        # 放宽：涨停给高分，非涨停但涨幅>3%也给基础分
         seal_quality_score = np.where(
             is_zt,
             np.minimum(1.0, quick['seal_quality_est'].fillna(0) / (self.cfg.b_seal_amount_ratio_min * 2)),
-            0.0  # 收紧：非涨停不给分
+            np.where(quick['pct_chg'].fillna(0) > 3.0, 0.3, 0.0)  # 非涨停但涨幅>3%给基础分
         )
 
         # 反转评分权重：涨停质量最重要，主力最低（高分信号反而亏损）
         total_score = (vol_breakout_score.values * 1.0 + price_breakout_score * 1.0 + 
                       main_force_score.values * 0.8 + seal_quality_score * 1.5)
 
-        # 通过条件：B1-B4中至少3个有分，且必须有主力流入(B3)或涨停(B4>0)
-        # 收紧：必须涨停才能通过（确保强势启动）
+        # 通过条件：B1-B4中至少3个有分
+        # 放宽：不再强制要求涨停，改为综合评分门槛
         has_score = ((vol_breakout_score.values > 0).astype(int) +
                      (price_breakout_score > 0).astype(int) +
                      (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
         
-        # 新增：要求近5日涨幅>5%（动量确认，避免刚启动就信号）
-        momentum_confirm = quick.get('pct_chg_5d', pd.Series(0, index=quick.index)).fillna(0) > 0.05
+        # 新增：要求近5日涨幅>3%（动量确认，放宽从5%到3%）
+        momentum_confirm = quick.get('pct_chg_5d', pd.Series(0, index=quick.index)).fillna(0) > 0.03
         
-        passed = (has_score >= 3) & (seal_quality_score > 0) & momentum_confirm  # 必须涨停+动量确认
+        # 放宽：至少3个维度有分 + 动量确认，不再强制要求涨停
+        passed = (has_score >= 3) & momentum_confirm
 
         # 组装结果到DataFrame
         quick['total_score'] = total_score
