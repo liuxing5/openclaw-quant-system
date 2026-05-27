@@ -80,6 +80,14 @@ class MainUptrendEngine:
             pool_a = self.layer_a.prescreen(eval_date)
             stats['a_pool_size'] = len(pool_a)
             logger.info(f"[Layer A] 预筛池: {len(pool_a)} 只")
+            # A 层返回空时降级为全市场（避免所有filter都失败导致无候选）
+            if not pool_a:
+                logger.warning("[Layer A] 预筛池为空，降级使用全市场")
+                snapshot = self.loader.get_market_snapshot(eval_date)
+                pool_a = set(snapshot['ts_code'].tolist()) if not snapshot.empty else set()
+                stats['a_pool_size'] = len(pool_a)
+                stats['a_fallback'] = True
+                logger.info(f"[Layer A] 全市场: {len(pool_a)} 只")
         else:
             # 跳过 A 层时用全市场
             snapshot = self.loader.get_market_snapshot(eval_date)
