@@ -255,17 +255,18 @@ class LayerBLaunchDetector:
         )
 
         # ---- B2: 价格突破 ----
-        # 突破60日箱体高点，且突破幅度>2%（避免假突破）
-        # 新增：要求MA120向上（趋势确认），避免盘整期误判
+        # 突破60日箱体高点，且突破幅度>1%（避免假突破）
         box_high = quick['box_60_high'].fillna(0)
         ma120_up = quick.get('ma_120_slope', pd.Series(0, index=quick.index)).fillna(0) > 0
+        # 放宽：MA120向上是加分项而非强制条件
         breakout_box = (quick['close'] > box_high) & \
-                       ((quick['close'] - box_high) / np.where(box_high != 0, box_high, 1) > 0.02) & \
-                       (quick['pct_chg'].fillna(0) > 3.0) & \
-                       ma120_up  # 新增：MA120必须向上
-        # 或刚站上120日均线（偏离<3%，避免盘整期误判）
-        # 收紧：取消above_ma路径，只保留真突破
-        above_ma = pd.Series(False, index=quick.index)  # 禁用MA120路径
+                       ((quick['close'] - box_high) / np.where(box_high != 0, box_high, 1) > 0.01) & \
+                       (quick['pct_chg'].fillna(0) > 2.0)  # 放宽：涨幅门槛 3→2%
+        # 或刚站上120日均线（偏离<5%，放宽从3%到5%）
+        ma120_val = quick.get('ma_120', pd.Series(0, index=quick.index)).fillna(0)
+        above_ma = (ma120_val > 0) & (quick['close'] > ma120_val) & \
+                   ((quick['close'] - ma120_val) / ma120_val < 0.05) & \
+                   (quick['pct_chg'].fillna(0) > 1.0)  # 放宽：涨幅门槛 2→1%
         b2_pass = breakout_box | above_ma
         price_breakout_score = np.where(breakout_box, 0.8, np.where(above_ma, 0.6, 0.0))
 
@@ -290,18 +291,17 @@ class LayerBLaunchDetector:
         total_score = (vol_breakout_score.values * 1.0 + price_breakout_score * 1.0 + 
                       main_force_score.values * 0.8 + seal_quality_score * 1.5)
 
-        # 通过条件：B1-B4中至少3个有分
-        # 放宽：不再强制要求涨停，改为综合评分门槛
+        # 通过条件：B1-B4中至少2个有分（放宽从3到2）
         has_score = ((vol_breakout_score.values > 0).astype(int) +
                      (price_breakout_score > 0).astype(int) +
                      (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
         
-        # 新增：要求近5日涨幅>3%（动量确认，放宽从5%到3%）
-        momentum_confirm = quick.get('pct_chg_5d', pd.Series(0, index=quick.index)).fillna(0) > 0.03
+        # 放宽动量确认：近5日涨幅>0%即可（只要有正向动量）
+        momentum_confirm = quick.get('pct_chg_5d', pd.Series(0, index=quick.index)).fillna(0) > 0
         
-        # 放宽：至少3个维度有分 + 动量确认，不再强制要求涨停
-        passed = (has_score >= 3) & momentum_confirm
+        # 放宽：至少2个维度有分 + 正向动量
+        passed = (has_score >= 2) & momentum_confirm
 
         # 组装结果到DataFrame
         quick['total_score'] = total_score
