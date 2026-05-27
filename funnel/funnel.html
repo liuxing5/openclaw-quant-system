@@ -131,7 +131,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-05-26 | 生成: 2026-05-27 10:02:29
+        报告日期: 2026-05-26 | 生成: 2026-05-27 10:12:34
         <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           <option value="2026-05-26" selected>2026-05-26</option><option value="2026-05-25" >2026-05-25</option><option value="2026-05-22" >2026-05-22</option><option value="2026-05-20" >2026-05-20</option><option value="2026-05-19" >2026-05-19</option><option value="2026-05-18" >2026-05-18</option><option value="2026-05-15" >2026-05-15</option><option value="2026-05-12" >2026-05-12</option>
@@ -469,34 +469,104 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
     <!-- ========== 主升浪 ========== -->
     <div class="section">
-      <h2>📈 主升浪检测<span class="section-subtitle">2026-05-27 09:59:59</span></h2>
+      <h2>📈 主升浪检测<span class="section-subtitle">2026-05-27 10:10:00</span></h2>
       <div class="steps-area">
         <div class="step-row">
-          <span class="step-name">运行时间</span>
-          <span class="step-pass">2026-05-27 09:59:59</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">A 层预筛池</span>
-          <span class="step-pass">3346 只</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">B 层启动信号</span>
-          <span class="step-pass">50 只</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">C 层持续性</span>
-          <span class="step-pass">0 只</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">D 层通过</span>
-          <span class="step-pass">0 只</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">最终候选</span>
-          <span class="step-pass">0 只</span>
+          <span class="step-name">今日运行</span>
+          <span class="step-pass">✓</span>
         </div></div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">今日候选</h3>
-      <div class="cards-grid"><div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div></div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">今日候选 (5只)</h3>
+      <div class="cards-grid">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000725','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000725" target="_blank" style="color:inherit;text-decoration:none">000725.SZ</a></span>
+              <span class="cand-name">京东方Ａ</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">主升浪</span>
+              
+            </div>
+            <span class="cand-score">5</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">—</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">—</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">—</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">5</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">主升浪</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000926','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000926" target="_blank" style="color:inherit;text-decoration:none">000926.SZ</a></span>
+              <span class="cand-name">福星股份</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">主升浪</span>
+              
+            </div>
+            <span class="cand-score">5</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">—</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">—</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">—</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">5</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">主升浪</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-002585','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-002585" target="_blank" style="color:inherit;text-decoration:none">002585.SZ</a></span>
+              <span class="cand-name">双星新材</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">主升浪</span>
+              
+            </div>
+            <span class="cand-score">5</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">—</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">—</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">—</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">5</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">主升浪</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-001225','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-001225" target="_blank" style="color:inherit;text-decoration:none">001225.SZ</a></span>
+              <span class="cand-name">和泰机电</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">主升浪</span>
+              
+            </div>
+            <span class="cand-score">4</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">—</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">—</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">—</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">4</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">主升浪</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000536','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000536" target="_blank" style="color:inherit;text-decoration:none">000536.SZ</a></span>
+              <span class="cand-name">华映科技</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">主升浪</span>
+              
+            </div>
+            <span class="cand-score">4</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">—</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">—</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">—</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">4</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">主升浪</div>
+        </div></div>
     </div>
   </div>
 
