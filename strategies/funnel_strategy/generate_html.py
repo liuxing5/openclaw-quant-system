@@ -565,6 +565,44 @@ def generate_unified_html(output_dir=None, trade_date=None):
     # ── 主升浪步骤与回测展示 ──
     uptrend_steps_html = ""
     top10_html = ""
+
+    # 优先显示运行统计（A/B/C/D 层结果 + 运行时间）
+    run_stats_parts = []
+    if uptrend_run_stats:
+        rs = uptrend_run_stats
+        run_time = rs.get('run_timestamp', '—')
+        run_stats_parts.append(f"""
+        <div class="step-row">
+          <span class="step-name">运行时间</span>
+          <span class="step-pass">{run_time}</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">A 层预筛池</span>
+          <span class="step-pass">{rs.get('a_pool_size', 0)} 只</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">B 层启动信号</span>
+          <span class="step-pass">{rs.get('b_signals', 0)} 只</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">C 层持续性</span>
+          <span class="step-pass">{rs.get('c_signals', 0)} 只</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">D 层通过</span>
+          <span class="step-pass">{rs.get('d_passed', 0)} 只</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">最终候选</span>
+          <span class="step-pass">{rs.get('candidates', 0)} 只</span>
+        </div>""")
+    elif uptrend_daily:
+        run_stats_parts.append("""
+        <div class="step-row">
+          <span class="step-name">今日运行</span>
+          <span class="step-pass">✓</span>
+        </div>""")
+
     if uptrend_backtest:
         bt = uptrend_backtest
         signal_count = bt.get('total_signals', 0)
@@ -595,7 +633,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
               <td>{a10:.1%}</td>
             </tr>"""
 
-        uptrend_steps_html = f"""
+        backtest_html = f"""
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:6px;">📊 回测统计</div>
         <div class="step-row">
           <span class="step-name">回测区间</span>
           <span class="rule-inline">{period}</span>
@@ -611,6 +651,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         </tr></thead>
         <tbody>{table_rows}</tbody>
         </table>
+        </div>
         </div>"""
 
         top10_html = ""
@@ -656,42 +697,12 @@ def generate_unified_html(output_dir=None, trade_date=None):
               </div>
               {f'<div class="cand-tags">{_tags_str}</div>' if _tags_str else ''}
             </div>"""
-    elif uptrend_daily:
-        uptrend_steps_html = """
-        <div class="step-row">
-          <span class="step-name">今日运行</span>
-          <span class="step-pass">✓</span>
-        </div>"""
-    elif uptrend_run_stats:
-        rs = uptrend_run_stats
-        details = rs.get('details') or {}
-        uptrend_steps_html = f"""
-        <div class="step-row">
-          <span class="step-name">运行时间</span>
-          <span class="step-pass">{rs.get('run_timestamp', '—')}</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">A 层预筛池</span>
-          <span class="step-pass">{rs.get('a_pool_size', 0)} 只</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">B 层启动信号</span>
-          <span class="step-pass">{rs.get('b_signals', 0)} 只</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">C 层持续性</span>
-          <span class="step-pass">{rs.get('c_signals', 0)} 只</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">D 层通过</span>
-          <span class="step-pass">{rs.get('d_passed', 0)} 只</span>
-        </div>
-        <div class="step-row">
-          <span class="step-name">最终候选</span>
-          <span class="step-pass">{rs.get('candidates', 0)} 只</span>
-        </div>"""
+
+        uptrend_steps_html = "".join(run_stats_parts) + backtest_html if run_stats_parts else backtest_html
+    elif run_stats_parts:
+        uptrend_steps_html = "".join(run_stats_parts)
     else:
-        uptrend_steps_html = '<div class="no-data">暂无回测数据<br><small>运行全量回测后自动展示</small></div>'
+        uptrend_steps_html = '<div class="no-data">暂无数据<br><small>运行主升浪检测后自动展示</small></div>'
 
     # ── 候选卡片渲染 ──
     def render_candidate_card(c, badge_class='', badge_text=''):
