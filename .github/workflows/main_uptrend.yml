@@ -58,6 +58,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Apply DB schema migrations
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_SSLMODE: require
+        run: |
+          pip install psycopg2-binary python-dotenv
+          python -m core.db.apply_schema || echo "⚠️ apply_schema 失败，继续执行"
+
       - name: Check if trading day
         id: check_trading
         run: |
