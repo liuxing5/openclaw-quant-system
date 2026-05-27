@@ -70,7 +70,7 @@ class LayerBLaunchDetector:
         today_volume = float(last["volume"])
         today_amount = float(last["amount"])
         today_pct = float(last["pct_chg"])
-        today_turn = float(last.get("turnover_rate", 0))
+        today_turn = float(last.get("turnover_rate") or 0)
 
         scores = {}
         details = {}
@@ -389,9 +389,9 @@ class LayerBLaunchDetector:
             if code not in snap_map:
                 continue
             row = snap_map[code]
-            today_amount = float(row.get('amount', 0))
-            today_turn = float(row.get('turnover_rate', 0))
-            today_pct = float(row.get('pct_chg', 0))
+            today_amount = float(row.get('amount') or 0)
+            today_turn = float(row.get('turnover_rate') or 0)
+            today_pct = float(row.get('pct_chg') or 0)
 
             # 快速预筛：至少满足量能或涨幅门槛之一
             if today_amount < 1e8 and abs(today_pct) < 3:
