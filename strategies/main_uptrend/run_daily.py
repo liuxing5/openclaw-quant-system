@@ -103,9 +103,13 @@ def main():
         print("\n无候选标的")
 
     # 写入数据库
-    if args.write_db and not args.no_write_db and result['candidates']:
-        engine.write_to_db(result['candidates'], run_mode="afternoon")
-        print(f"\n✅ 已写入 daily_candidates (source=main_uptrend)")
+    if args.write_db and not args.no_write_db:
+        # 始终写入运行统计（即使无候选）
+        engine.write_run_stats(result)
+        if result['candidates']:
+            engine.write_to_db(result['candidates'], run_mode="afternoon")
+            print(f"\n✅ 已写入 daily_candidates (source=main_uptrend)")
+        print(f"✅ 已写入 main_uptrend_runs")
 
     # 输出文件
     if args.output:

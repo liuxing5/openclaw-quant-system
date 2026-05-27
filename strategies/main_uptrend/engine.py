@@ -252,3 +252,46 @@ class MainUptrendEngine:
 
         write_candidates(records) if records else None
         logger.info(f"写入 daily_candidates: {len(records)} 条 (source=main_uptrend)")
+
+    # ================================================================
+    # 写入运行统计（用于 HTML 报告展示）
+    # ================================================================
+    def write_run_stats(self, result: Dict):
+        """保存每日运行统计到 main_uptrend_runs 表"""
+        conn = None
+        try:
+            conn = get_db_fresh()
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO main_uptrend_runs (run_date, a_pool_size, b_signals, c_signals, d_passed, candidates, details)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (run_date) DO UPDATE SET
+                    a_pool_size = EXCLUDED.a_pool_size,
+                    b_signals = EXCLUDED.b_signals,
+                    c_signals = EXCLUDED.c_signals,
+                    d_passed = EXCLUDED.d_passed,
+                    candidates = EXCLUDED.candidates,
+                    details = EXCLUDED.details,
+                    created_at = NOW()
+            """, (
+                result['date'],
+                result['a_pool_size'],
+                result['b_signals'],
+                result['c_signals'],
+                result['d_passed'],
+                len(result['candidates']),
+                json.dumps(result.get('stats', {})),
+            ))
+            conn.commit()
+            cur.close()
+            logger.info(f"已写入 main_uptrend_runs: {result['date']}")
+        except Exception as e:
+            logger.warning(f"写入 main_uptrend_runs 失败: {e}")
+            if conn:
+                try:
+                    conn.rollback()
+                except:
+                    pass
+        finally:
+            if conn and not conn.closed:
+                conn.close()

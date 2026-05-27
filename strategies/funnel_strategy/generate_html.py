@@ -279,6 +279,36 @@ def load_main_uptrend_backtest():
     return clean_nan(data)
 
 
+def load_main_uptrend_run_stats(trade_date=None):
+    """从 main_uptrend_runs 加载当日运行统计和运行时间"""
+    try:
+        if trade_date:
+            row = query_one("""
+                SELECT run_date, a_pool_size, b_signals, c_signals, d_passed, candidates, details, created_at
+                FROM main_uptrend_runs WHERE run_date = %s;
+            """, (trade_date,))
+        else:
+            row = query_one("""
+                SELECT run_date, a_pool_size, b_signals, c_signals, d_passed, candidates, details, created_at
+                FROM main_uptrend_runs ORDER BY run_date DESC LIMIT 1;
+            """)
+        if row:
+            result = dict(row)
+            ct = result.get('created_at')
+            if ct and hasattr(ct, 'astimezone'):
+                ct = ct.astimezone(BEIJING_TZ)
+            elif ct and hasattr(ct, 'replace'):
+                ct = ct.replace(tzinfo=timezone.utc).astimezone(BEIJING_TZ)
+            if ct and hasattr(ct, 'strftime'):
+                result['run_timestamp'] = ct.strftime('%Y-%m-%d %H:%M:%S')
+            else:
+                result['run_timestamp'] = str(ct) if ct else None
+            return result
+    except Exception as e:
+        print(f"  ⚠ 加载 main_uptrend run stats 失败: {e}")
+    return None
+
+
 def load_main_uptrend_daily(trade_date=None):
     """从 daily_candidates 加载 main_uptrend 当日候选，补充 stock_name"""
     try:
@@ -346,6 +376,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     uptrend_daily, uptrend_date = load_main_uptrend_daily(trade_date=trade_date)
     uptrend_backtest = load_main_uptrend_backtest()
+    uptrend_run_stats = load_main_uptrend_run_stats(trade_date=trade_date)
 
     display_date = str(funnel_date or llm_date or eight_date or get_beijing_date())
 
@@ -630,6 +661,34 @@ def generate_unified_html(output_dir=None, trade_date=None):
         <div class="step-row">
           <span class="step-name">今日运行</span>
           <span class="step-pass">✓</span>
+        </div>"""
+    elif uptrend_run_stats:
+        rs = uptrend_run_stats
+        details = rs.get('details') or {}
+        uptrend_steps_html = f"""
+        <div class="step-row">
+          <span class="step-name">运行时间</span>
+          <span class="step-pass">{rs.get('run_timestamp', '—')}</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">A 层预筛池</span>
+          <span class="step-pass">{rs.get('a_pool_size', 0)} 只</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">B 层启动信号</span>
+          <span class="step-pass">{rs.get('b_signals', 0)} 只</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">C 层持续性</span>
+          <span class="step-pass">{rs.get('c_signals', 0)} 只</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">D 层通过</span>
+          <span class="step-pass">{rs.get('d_passed', 0)} 只</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">最终候选</span>
+          <span class="step-pass">{rs.get('candidates', 0)} 只</span>
         </div>"""
     else:
         uptrend_steps_html = '<div class="no-data">暂无回测数据<br><small>运行全量回测后自动展示</small></div>'
@@ -978,7 +1037,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 
     <!-- ========== 主升浪 ========== -->
     <div class="section">
-      <h2>📈 主升浪检测<span class="section-subtitle">{uptrend_backtest.get('backtest_start', '') if uptrend_backtest else (uptrend_date or '—')}</span></h2>
+      <h2>📈 主升浪检测<span class="section-subtitle">{uptrend_run_stats.get('run_timestamp', '') if uptrend_run_stats else (uptrend_backtest.get('backtest_start', '') if uptrend_backtest else (uptrend_date or '—'))}</span></h2>
       <div class="steps-area">{uptrend_steps_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('回测 Top 5 (' + str(uptrend_backtest.get('total_signals', 0)) + '只)' if uptrend_backtest and not uptrend_daily else '今日候选') + (' (' + str(len(uptrend_daily)) + '只)' if uptrend_daily else '')}</h3>
       <div class="cards-grid">{uptrend_cards}</div>
