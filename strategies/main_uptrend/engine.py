@@ -75,6 +75,16 @@ class MainUptrendEngine:
         logger.info(f"主升浪检测引擎 - {eval_date}")
         logger.info(f"=" * 60)
 
+        # 预加载数据（加速 A/B/C/D 层查询）
+        import time
+        preload_start = time.time()
+        lookback_days = 300  # 覆盖 120日均线 + 60日箱体 + 52周高点
+        preload_start_date = (
+            datetime.strptime(eval_date, "%Y-%m-%d") - timedelta(days=lookback_days)
+        ).strftime("%Y-%m-%d")
+        self.loader.preload_for_backtest(preload_start_date, eval_date)
+        logger.info(f"数据预加载完成，耗时 {time.time()-preload_start:.1f}s")
+
         # ---------- Layer A: 预筛池 ----------
         if self.cfg.a_enabled:
             pool_a = self.layer_a.prescreen(eval_date)

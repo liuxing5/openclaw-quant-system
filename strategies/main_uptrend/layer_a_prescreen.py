@@ -235,19 +235,19 @@ class LayerAPrescreener:
                 timedelta(days=self.cfg.a_industry_momentum_days * 2)
             ).strftime("%Y-%m-%d")
 
+            # 优化：只查询有行业数据的股票，减少JOIN开销
             cur.execute("""
                 SELECT d.ts_code, sf.industry, d.trade_date, d.pct_chg
                 FROM daily_quotes d
-                LEFT JOIN (
+                INNER JOIN (
                     SELECT DISTINCT ON (ts_code) ts_code, industry
                     FROM stock_fundamentals
                     WHERE industry IS NOT NULL
                     ORDER BY ts_code, report_date DESC
                 ) sf ON d.ts_code = sf.ts_code
                 WHERE d.trade_date BETWEEN %s AND %s
-                  AND sf.industry IS NOT NULL
                   AND d.pct_chg IS NOT NULL
-                ORDER BY d.ts_code, d.trade_date
+                ORDER BY sf.industry, d.ts_code, d.trade_date
             """, (start_date, as_of_date))
             rows = cur.fetchall()
             cur.close()

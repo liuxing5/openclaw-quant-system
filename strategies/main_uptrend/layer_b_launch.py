@@ -398,6 +398,16 @@ class LayerBLaunchDetector:
                 continue
             quick_candidates.append(code)
 
+        # 限制预筛数量，避免全市场扫描超时
+        if len(quick_candidates) > 200:
+            # 按成交额排序，取最强的200只
+            quick_candidates.sort(
+                key=lambda c: float(snap_map[c].get('amount') or 0),
+                reverse=True
+            )
+            quick_candidates = quick_candidates[:200]
+            logger.info(f"B 层预筛结果过多，截断至 Top 200")
+
         logger.info(f"B 层扫描 {len(pool)} 只，快照命中 {len(quick_candidates)} 只，进入详细评估")
 
         # ---- 详细评估（只对预筛通过的） ----
