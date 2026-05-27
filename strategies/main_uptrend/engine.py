@@ -268,7 +268,7 @@ class MainUptrendEngine:
                 'source': 'main_uptrend',
             })
 
-        write_candidates(records, snapshot_date=eval_date, source='main_uptrend', run_mode=run_mode) if records else None
+        write_candidates(records, snapshot_date=records[0]['snapshot_date'], source='main_uptrend', run_mode=run_mode) if records else None
         logger.info(f"写入 daily_candidates: {len(records)} 条 (source=main_uptrend)")
 
     # ================================================================
