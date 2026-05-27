@@ -131,9 +131,9 @@ class LayerCSustainAnalyzer:
             industry_rising = pool_df['industry_rising_count'].fillna(0).values
         else:
             industry_rising = np.zeros(len(pool_df))
-        # 放宽：行业平均涨幅>2%，至少2只同涨
-        c5_pass = (industry_avg > 2.0) & (industry_rising >= 2)
-        sector_score = np.minimum(1.0, industry_avg / 5.0)
+        # 放宽：行业平均涨幅>1%，至少1只同涨
+        c5_pass = (industry_avg > 1.0) & (industry_rising >= 1)
+        sector_score = np.minimum(1.0, industry_avg / 3.0)
 
         # ---- 综合判定 ----
         passed_count = c1_pass.astype(int) + c2_pass.astype(int) + c3_pass.astype(int) + \
@@ -144,8 +144,12 @@ class LayerCSustainAnalyzer:
                       vol_shrink_score * 1.2 + seal_quality_score * 1.2 + 
                       sector_score * 1.0)
         
-        # 放宽：2/5通过即可，综合分阈值降至3.0
-        passed = (passed_count >= 2) & (total_score >= 3.0)
+        # 调试日志
+        logger.info(f"C层调试: C1={c1_pass.sum()}/50, C2={c2_pass.sum()}/50, C3={c3_pass.sum()}/50, C4={c4_pass.sum()}/50, C5={c5_pass.sum()}/50")
+        logger.info(f"C层调试: passed_count>=2: {(passed_count >= 2).sum()}, total_score>=3.0: {(total_score >= 3.0).sum()}")
+        
+        # 放宽：2/5通过即可，综合分阈值降至2.5
+        passed = (passed_count >= 2) & (total_score >= 2.5)
 
         # 过滤通过的，取Top N
         pool_df['total_score'] = total_score
