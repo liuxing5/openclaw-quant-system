@@ -89,8 +89,8 @@ class LayerCSustainAnalyzer:
 
         # ---- C1: 分时形态质量（回测模式用日线近似） ----
         if self.skip_1min:
-            c1_pass = pct_chg > 4.0  # 适度放宽：5→4
-            intraday_score = np.minimum(1.0, pct_chg / 6.0)  # 适度放宽：7→6
+            c1_pass = pct_chg > 2.0  # 放宽：4→2%，只要明显上涨即可
+            intraday_score = np.minimum(1.0, pct_chg / 5.0)  # 放宽：6→5
             intraday_score = np.where(pct_chg > 0, intraday_score, 0.0)
         else:
             intraday_score = np.zeros(len(pool_df))
@@ -98,22 +98,26 @@ class LayerCSustainAnalyzer:
 
         # ---- C2: 大单买入占比 ----
         amount_ratio = pool_df['amount_ratio_20'].fillna(0).values
-        c2_pass = (amount_ratio > 2.5) & (pct_chg > 3.0)  # 适度放宽：3→2.5倍
-        big_order_score = np.minimum(1.0, amount_ratio / 5.0)  # 恢复：6→5
+        c2_pass = (amount_ratio > 1.5) & (pct_chg > 2.0)  # 放宽：2.5→1.5倍, 3→2%
+        big_order_score = np.minimum(1.0, amount_ratio / 4.0)  # 放宽：5→4
 
         # ---- C3: 缩量上涨 ----
         vol_shrink = pool_df['volume_shrink_ratio'].fillna(0).values
-        c3_pass = (pct_chg > 0) & (vol_shrink >= self.cfg.c_volume_shrink_ratio_min) & \
-                  (vol_shrink <= self.cfg.c_volume_shrink_ratio_max)
-        vol_shrink_score = c3_pass.astype(float)
+        # 放宽：缩量范围 0.3~0.85，只要不异常放量即可
+        c3_pass = (pct_chg > 0) & (vol_shrink >= 0.3) & (vol_shrink <= 0.85)
+        # 给部分通过：量比在合理区间内也给分
+        vol_shrink_score = np.where((vol_shrink >= 0.3) & (vol_shrink <= 0.85), 1.0,
+                           np.where((vol_shrink > 0.85) & (vol_shrink <= 1.2), 0.5, 0.0))
+        c3_pass = c3_pass | ((pct_chg > 0) & (vol_shrink > 0.85) & (vol_shrink <= 1.2))  # 放量上涨也算
 
         # ---- C4: 板上量比 ----
         is_kcb_cyb = pool_df['is_kcb_cyb'].values if 'is_kcb_cyb' in pool_df.columns else np.zeros(len(pool_df), dtype=bool)
-        limit_pct = np.where(is_kcb_cyb, 0.197, 0.097)
-        is_zt = pct_chg >= limit_pct - 0.003
+        limit_pct_arr = np.where(is_kcb_cyb, 0.197, 0.097)
+        is_zt = pct_chg >= limit_pct_arr - 0.003
         if self.skip_1min:
-            c4_pass = is_zt
-            seal_quality_score = np.where(is_zt, 1.0, 0.0)
+            # 放宽：涨停给满分，涨幅>5%也给基础分
+            c4_pass = is_zt | (pct_chg > 5.0)
+            seal_quality_score = np.where(is_zt, 1.0, np.where(pct_chg > 5.0, 0.5, 0.0))
         else:
             c4_pass = np.zeros(len(pool_df), dtype=bool)
             seal_quality_score = np.zeros(len(pool_df))
@@ -127,25 +131,21 @@ class LayerCSustainAnalyzer:
             industry_rising = pool_df['industry_rising_count'].fillna(0).values
         else:
             industry_rising = np.zeros(len(pool_df))
-        c5_pass = (industry_avg > self.cfg.c_sector_rise_min_pct * 100) & \
-                  (industry_rising >= self.cfg.c_sector_peer_count_min)
-        sector_score = c5_pass.astype(float)
+        # 放宽：行业平均涨幅>2%，至少2只同涨
+        c5_pass = (industry_avg > 2.0) & (industry_rising >= 2)
+        sector_score = np.minimum(1.0, industry_avg / 5.0)
 
         # ---- 综合判定 ----
         passed_count = c1_pass.astype(int) + c2_pass.astype(int) + c3_pass.astype(int) + \
                        c4_pass.astype(int) + c5_pass.astype(int)
         
-        # 优化评分权重：给关键条件更高权重
-        # C1(分时)和C2(大单)最重要，权重1.5x
-        # C3(缩量)和C4(封板)次重要，权重1.2x
-        # C5(板块)权重1.0x
+        # 评分权重
         total_score = (intraday_score * 1.5 + big_order_score * 1.5 + 
                       vol_shrink_score * 1.2 + seal_quality_score * 1.2 + 
                       sector_score * 1.0)
         
-        # 恢复通过条件为3/5，但配合综合分阈值过滤
-        # 加权后理论最高分约6.4，设置阈值4.8为最优平衡点
-        passed = (passed_count >= 3) & (total_score >= 4.8)
+        # 放宽：2/5通过即可，综合分阈值降至3.0
+        passed = (passed_count >= 2) & (total_score >= 3.0)
 
         # 过滤通过的，取Top N
         pool_df['total_score'] = total_score
