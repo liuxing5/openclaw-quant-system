@@ -5,6 +5,7 @@ session reuse ONE TCP+TLS connection.  Layers' .close() calls are intercepted
 as no-ops; the real close only happens via close_db_session().
 """
 import os
+import time
 import threading
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -13,23 +14,46 @@ _session_conn = None
 _session_lock = threading.Lock()
 
 
-def _connect():
-    conn = psycopg2.connect(
-        host=os.getenv('POSTGRES_HOST'),
-        port=int(os.getenv('POSTGRES_PORT') or '5432'),
-        user=os.getenv('POSTGRES_USER'),
-        password=os.getenv('POSTGRES_PASSWORD'),
-        dbname=os.getenv('POSTGRES_DB'),
-        sslmode=os.getenv('POSTGRES_SSLMODE', 'require'),
-        # TCP keepalive to prevent pooler from closing idle connections
-        keepalives=1,
-        keepalives_idle=30,
-        keepalives_interval=10,
-        keepalives_count=3,
-        connect_timeout=15,
-        options='-c statement_timeout=60000',
-    )
-    return conn
+def _connect(max_retries: int = 10, retry_delay: int = 10):
+    """Create a new database connection with retry on pool exhaustion.
+    
+    Supabase session mode has a limited pool (default 15). When multiple
+    GitHub Actions workflows run concurrently, connections may be exhausted.
+    This function retries with exponential backoff to wait for available slots.
+    """
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            conn = psycopg2.connect(
+                host=os.getenv('POSTGRES_HOST'),
+                port=int(os.getenv('POSTGRES_PORT') or '5432'),
+                user=os.getenv('POSTGRES_USER'),
+                password=os.getenv('POSTGRES_PASSWORD'),
+                dbname=os.getenv('POSTGRES_DB'),
+                sslmode=os.getenv('POSTGRES_SSLMODE', 'require'),
+                keepalives=1,
+                keepalives_idle=30,
+                keepalives_interval=10,
+                keepalives_count=3,
+                connect_timeout=15,
+                options='-c statement_timeout=60000',
+            )
+            return conn
+        except psycopg2.OperationalError as e:
+            last_error = e
+            err_str = str(e)
+            is_pool_exhausted = (
+                "EMAXCONNSESSION" in err_str or
+                "max clients reached" in err_str.lower() or
+                "connection to server" in err_str.lower()
+            )
+            if is_pool_exhausted and attempt < max_retries - 1:
+                delay = retry_delay * (attempt + 1)  # 10s, 20s, 30s, ...
+                print(f"  ⚠ DB pool exhausted, waiting {delay}s for available slot ({attempt+1}/{max_retries})...")
+                time.sleep(delay)
+                continue
+            raise
+    raise last_error
 
 
 class _NoCloseConnection:

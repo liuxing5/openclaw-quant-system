@@ -23,33 +23,8 @@ from core.db.connection import get_db
 from psycopg2.extras import RealDictCursor
 
 
-def _get_conn_with_retry(max_retries=8):
-    """获取数据库连接，带连接池耗尽重试逻辑。"""
-    for attempt in range(max_retries):
-        try:
-            conn = get_db()
-            # 验证连接是否可用
-            if hasattr(conn, 'closed') and conn.closed:
-                raise Exception("Connection is closed")
-            return conn
-        except Exception as e:
-            err_str = str(e)
-            is_retryable = (
-                "SSL connection" in err_str or
-                "closed" in err_str.lower() or
-                "EMAXCONNSESSION" in err_str or
-                "max clients reached" in err_str.lower()
-            )
-            if is_retryable and attempt < max_retries - 1:
-                delay = 5 * (attempt + 1)
-                print(f"  ⚠ DB error ({err_str[:80]}), retrying in {delay}s ({attempt+1}/{max_retries})...")
-                time.sleep(delay)
-                continue
-            raise
-
-
 def build_message() -> str:
-    conn = _get_conn_with_retry()
+    conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("SELECT * FROM funnel_results ORDER BY trade_date DESC LIMIT 1;")

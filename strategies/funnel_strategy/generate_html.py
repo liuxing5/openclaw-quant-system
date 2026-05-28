@@ -33,40 +33,17 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
-def query_dicts(sql, params=None, max_retries=8):
-    """Execute query with retry on SSL/connection pool errors (Supabase pooler issue).
+def query_dicts(sql, params=None):
+    """Execute query using session-cached connection.
     
-    使用 get_db() 复用 session 缓存连接，避免每次查询都创建新连接。
-    当多个 workflow 并发运行时，Supabase pool_size: 15 可能被占满，
-    此时需要等待其他 workflow 释放连接后重试。
+    Connection pool exhaustion retry is handled at _connect() level in core/db/connection.py.
     """
-    import time as _t
-    for attempt in range(max_retries):
-        try:
-            conn = get_db(use_dict_cursor=True)
-            # Verify connection is alive before executing
-            if conn.closed:
-                raise psycopg2.OperationalError("Connection is closed")
-            cur = conn.cursor()
-            cur.execute(sql, params)
-            rows = [dict(r) for r in cur.fetchall()]
-            cur.close()
-            return rows
-        except Exception as e:
-            err_str = str(e)
-            # Retry on: SSL errors, connection closed, or pool exhaustion (EMAXCONNSESSION)
-            is_retryable = (
-                "SSL connection" in err_str or
-                "closed" in err_str.lower() or
-                "EMAXCONNSESSION" in err_str or
-                "max clients reached" in err_str.lower()
-            )
-            if is_retryable and attempt < max_retries - 1:
-                delay = 5 * (attempt + 1)  # 5s, 10s, 15s, 20s, 25s, 30s, 35s, 40s
-                print(f"  ⚠ DB error ({err_str[:80]}), retrying in {delay}s ({attempt+1}/{max_retries})...")
-                _t.sleep(delay)
-                continue
-            raise
+    conn = get_db(use_dict_cursor=True)
+    cur = conn.cursor()
+    cur.execute(sql, params)
+    rows = [dict(r) for r in cur.fetchall()]
+    cur.close()
+    return rows
 
 
 def query_one(sql, params=None):

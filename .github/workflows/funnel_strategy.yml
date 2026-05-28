@@ -8,11 +8,7 @@ on:
       - 'core/**'
       - '.github/workflows/funnel_strategy.yml'
   schedule:
-    - cron: '20 8 * * 1-5'  # UTC 8:20 = 北京时间 16:20 (晚于 LLM盘后/overnight 1h，确保连接池空闲)
-  workflow_run:
-    workflows: ["llm_multisource"]
-    types: [completed]
-    branches: [master]
+    - cron: '20 8 * * 1-5'  # UTC 8:20 = 北京时间 16:20 (独立调度，避免与其他 workflow 并发)
   workflow_dispatch:
     inputs:
       date:
