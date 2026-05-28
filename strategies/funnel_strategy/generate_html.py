@@ -33,11 +33,12 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
-def query_dicts(sql, params=None, max_retries=5):
-    """Execute query with retry on SSL connection errors (Supabase pooler issue).
+def query_dicts(sql, params=None, max_retries=8):
+    """Execute query with retry on SSL/connection pool errors (Supabase pooler issue).
     
-    使用 get_db() 复用 session 缓存连接，避免每次查询都创建新连接
-    导致 Supabase pool_size: 15 连接池耗尽。
+    使用 get_db() 复用 session 缓存连接，避免每次查询都创建新连接。
+    当多个 workflow 并发运行时，Supabase pool_size: 15 可能被占满，
+    此时需要等待其他 workflow 释放连接后重试。
     """
     import time as _t
     for attempt in range(max_retries):
@@ -52,9 +53,17 @@ def query_dicts(sql, params=None, max_retries=5):
             cur.close()
             return rows
         except Exception as e:
-            if ("SSL connection" in str(e) or "closed" in str(e).lower()) and attempt < max_retries - 1:
-                delay = 3 * (attempt + 1)  # 3s, 6s, 9s, 12s, 15s
-                print(f"  ⚠ DB query SSL error, retrying in {delay}s ({attempt+1}/{max_retries})...")
+            err_str = str(e)
+            # Retry on: SSL errors, connection closed, or pool exhaustion (EMAXCONNSESSION)
+            is_retryable = (
+                "SSL connection" in err_str or
+                "closed" in err_str.lower() or
+                "EMAXCONNSESSION" in err_str or
+                "max clients reached" in err_str.lower()
+            )
+            if is_retryable and attempt < max_retries - 1:
+                delay = 5 * (attempt + 1)  # 5s, 10s, 15s, 20s, 25s, 30s, 35s, 40s
+                print(f"  ⚠ DB error ({err_str[:80]}), retrying in {delay}s ({attempt+1}/{max_retries})...")
                 _t.sleep(delay)
                 continue
             raise
