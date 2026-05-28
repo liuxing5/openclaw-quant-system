@@ -20,7 +20,7 @@ for _env_path in [Path('.env'), Path('strategies/llm_multisource/.env')]:
         load_dotenv(_env_path)
         break
 
-from core.db.connection import get_db_fresh
+from core.db.connection import get_db
 from core.utils.env import load_project_env
 from psycopg2.extras import RealDictCursor
 
@@ -34,12 +34,15 @@ def get_beijing_date():
 
 
 def query_dicts(sql, params=None, max_retries=5):
-    """Execute query with retry on SSL connection errors (Supabase pooler issue)."""
+    """Execute query with retry on SSL connection errors (Supabase pooler issue).
+    
+    使用 get_db() 复用 session 缓存连接，避免每次查询都创建新连接
+    导致 Supabase pool_size: 15 连接池耗尽。
+    """
     import time as _t
     for attempt in range(max_retries):
-        conn = None
         try:
-            conn = get_db_fresh(use_dict_cursor=True)
+            conn = get_db(use_dict_cursor=True)
             # Verify connection is alive before executing
             if conn.closed:
                 raise psycopg2.OperationalError("Connection is closed")
@@ -55,12 +58,6 @@ def query_dicts(sql, params=None, max_retries=5):
                 _t.sleep(delay)
                 continue
             raise
-        finally:
-            if conn and not conn.closed:
-                try:
-                    conn.close()
-                except:
-                    pass
 
 
 def query_one(sql, params=None):
@@ -136,12 +133,11 @@ def load_funnel_data(trade_date=None):
     codes_missing_name = [c.get('ts_code', '') for c in candidates if not c.get('stock_name')]
     if codes_missing_name:
         try:
-            conn = get_db_fresh(use_dict_cursor=True)
+            conn = get_db(use_dict_cursor=True)
             cur = conn.cursor()
             cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes_missing_name,))
             name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
             cur.close()
-            conn.close()
             for c in candidates:
                 if not c.get('stock_name'):
                     c['stock_name'] = name_map.get(c.get('ts_code', ''), '')
@@ -156,9 +152,8 @@ def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, m
     """Load candidates with SSL retry logic."""
     import time as _t
     for attempt in range(max_retries):
-        conn = None
         try:
-            conn = get_db_fresh(use_dict_cursor=True)
+            conn = get_db(use_dict_cursor=True)
             if conn.closed:
                 raise psycopg2.OperationalError("Connection is closed")
             cur = conn.cursor()
@@ -202,12 +197,6 @@ def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, m
                 _t.sleep(delay)
                 continue
             raise
-        finally:
-            if conn and not conn.closed:
-                try:
-                    conn.close()
-                except:
-                    pass
 
 
 def load_scan_stats(strategy, snapshot_date=None):
@@ -317,12 +306,11 @@ def load_main_uptrend_daily(trade_date=None):
             codes = [c.get('ts_code', '') for c in candidates if not c.get('stock_name')]
             if codes:
                 try:
-                    conn = get_db_fresh(use_dict_cursor=True)
+                    conn = get_db(use_dict_cursor=True)
                     cur = conn.cursor()
                     cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes,))
                     name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
                     cur.close()
-                    conn.close()
                     for c in candidates:
                         if not c.get('stock_name'):
                             c['stock_name'] = name_map.get(c.get('ts_code', ''), '')
