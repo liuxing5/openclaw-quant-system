@@ -8,7 +8,7 @@ on:
       - 'core/**'
       - '.github/workflows/main_uptrend.yml'
   schedule:
-    - cron: '0 8 * * 1-5'  # UTC 8:00 = 北京时间 16:00 (错开 llm_multisource 50min，避免连接池竞争)
+    - cron: '30 8 * * 1-5'  # UTC 8:30 = 北京时间 16:30 (错开 funnel_strategy 10min)
   workflow_dispatch:
     inputs:
       date:
