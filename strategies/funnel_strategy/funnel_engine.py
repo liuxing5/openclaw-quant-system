@@ -46,11 +46,39 @@ from psycopg2.extras import RealDictCursor
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 
+def _get_conn_with_retry(max_retries=8):
+    """获取数据库连接，带连接池耗尽重试逻辑。
+    
+    当多个 workflow 并发运行时，Supabase pool_size: 15 可能被占满，
+    此时需要等待其他 workflow 释放连接后重试。
+    """
+    for attempt in range(max_retries):
+        try:
+            conn = get_db_fresh()
+            if hasattr(conn, 'closed') and conn.closed:
+                raise Exception("Connection is closed")
+            return conn
+        except Exception as e:
+            err_str = str(e)
+            is_retryable = (
+                "SSL connection" in err_str or
+                "closed" in err_str.lower() or
+                "EMAXCONNSESSION" in err_str or
+                "max clients reached" in err_str.lower()
+            )
+            if is_retryable and attempt < max_retries - 1:
+                delay = 5 * (attempt + 1)
+                print(f"  ⚠ DB error ({err_str[:80]}), retrying in {delay}s ({attempt+1}/{max_retries})...")
+                time.sleep(delay)
+                continue
+            raise
+
+
 def load_universe(trade_date: date, min_amount: float = 1e8) -> List[str]:
     """从 daily_quotes 加载全市场初筛股票池（日成交额>1亿）"""
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = _get_conn_with_retry()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT DISTINCT ts_code
@@ -133,7 +161,7 @@ class FunnelEngine:
             today = datetime.now(BEIJING_TZ).date()
             conn = None
             try:
-                conn = get_db_fresh()
+                conn = _get_conn_with_retry()
                 cur = conn.cursor(cursor_factory=RealDictCursor)
                 cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
                 row = cur.fetchone()
@@ -464,7 +492,7 @@ class FunnelEngine:
         """将漏斗结果保存到数据库"""
         conn = None
         try:
-            conn = get_db_fresh()
+            conn = _get_conn_with_retry()
             cur = conn.cursor()
 
             s = self._stats
@@ -566,8 +594,7 @@ class FunnelEngine:
         codes_missing_name = [c.get('ts_code', '') for c in candidates if not c.get('stock_name')]
         if codes_missing_name:
             try:
-                from core.db.connection import get_db_fresh
-                _conn = get_db_fresh()
+                _conn = _get_conn_with_retry()
                 _cur = _conn.cursor()
                 _cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes_missing_name,))
                 for _r in _cur.fetchall():
