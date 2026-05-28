@@ -1,0 +1,10 @@
+Connecting...
+Connected in 1.6s
+Executing SELECT 1...
+Error: SSL connection has been closed unexpectedly
+
+Traceback (most recent call last):
+  File "D:\pythonProject\openclaw-quant-system\test_db_conn5.py", line 28, in <module>
+    cur.execute("SELECT 1")
+psycopg2.OperationalError: SSL connection has been closed unexpectedly
+

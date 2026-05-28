@@ -1,0 +1,8 @@
+Process exiting at 1779943887.8124948
+Traceback:
+  File "D:\pythonProject\openclaw-quant-system\backfill_step1_fetch_klines.py", line 201, in _on_exit
+    traceback.print_stack(file=f)
+Process exiting at 1779943963.6593003
+Traceback:
+  File "D:\pythonProject\openclaw-quant-system\backfill_step1_fetch_klines.py", line 201, in _on_exit
+    traceback.print_stack(file=f)

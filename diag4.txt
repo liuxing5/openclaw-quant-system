@@ -1,0 +1,10 @@
+Connecting with timeout...
+Connected!
+Executing simple query...
+ERROR: SSL connection has been closed unexpectedly
+
+Traceback (most recent call last):
+  File "D:\pythonProject\openclaw-quant-system\diag4.py", line 30, in <module>
+    cur.execute("SELECT 1")
+psycopg2.OperationalError: SSL connection has been closed unexpectedly
+

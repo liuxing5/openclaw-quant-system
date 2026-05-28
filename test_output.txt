@@ -1,0 +1,2 @@
+Python is working!
+Current dir: D:\pythonProject\openclaw-quant-system

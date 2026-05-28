@@ -80,21 +80,25 @@ def _check_exit_conditions(pos: SimplePosition, current_price: float,
     pnl_pct = (current_price - pos.entry_price) / pos.entry_price
     holding_days = (eval_date - pos.entry_date).days
 
-    # E1: 硬止损 8%
-    if pnl_pct <= -0.08:
+    # E1: 硬止损 7%
+    if pnl_pct <= -0.07:
         return f'硬止损({pnl_pct:.1%})'
 
-    # E2: 移动止盈 - 盈利>8%后从高点回撤>5%
+    # E2: 移动止盈 - 盈利>3%后从高点回撤>2.5%
     if current_price > pos.highest_price:
         pos.highest_price = current_price
-    if pnl_pct >= 0.08:
+    if pnl_pct >= 0.03:
         drawdown = (pos.highest_price - current_price) / pos.highest_price
-        if drawdown >= 0.05:
+        if drawdown >= 0.025:
             return f'移动止盈(回撤{drawdown:.1%})'
 
-    # E3: 时间止损 - 持仓>=15天
-    if holding_days >= 15:
+    # E3: 时间止损 - 持仓>=14天
+    if holding_days >= 14:
         return f'时间止损({holding_days}天)'
+
+    # E7: 止盈 - 盈利>=25%
+    if pnl_pct >= 0.25:
+        return f'止盈({pnl_pct:.1%})'
 
     # E4: MACD死叉
     if len(prices_df) >= 30:
@@ -126,7 +130,7 @@ def _check_exit_conditions(pos: SimplePosition, current_price: float,
 
 def run_optimized_backtest(start_date: str, end_date: str,
                            initial_capital: float = 1_000_000,
-                           max_positions: int = 5):
+                           max_positions: int = 3):
     """优化的融合元策略回测"""
 
     start = date.fromisoformat(start_date)
@@ -155,6 +159,7 @@ def run_optimized_backtest(start_date: str, end_date: str,
     daily_equity = []
     all_trades = []
     layer_stats = {'L0_reject': 0, 'L1_pass': [], 'final': []}
+    recent_pnls = []  # 反马丁格尔：追踪最近盈亏
 
     t_start = time.time()
 
@@ -232,6 +237,9 @@ def run_optimized_backtest(start_date: str, end_date: str,
                             'commission': round(commission, 2),
                         })
                         capital += exit_price_adj * pos.shares - commission
+                        recent_pnls.append(pnl_pct)
+                        if len(recent_pnls) > 5:
+                            recent_pnls = recent_pnls[-5:]
                         del positions[ts_code]
 
             # ── 2. Layer 0: 大盘风控 ──
@@ -258,9 +266,9 @@ def run_optimized_backtest(start_date: str, end_date: str,
                 SELECT ts_code, pct_chg, amount, close
                 FROM daily_quotes
                 WHERE trade_date = %s
-                  AND amount > 200000000
-                  AND pct_chg > 0.5
-                  AND pct_chg < 8
+                  AND amount > 300000000
+                  AND pct_chg > 1.0
+                  AND pct_chg < 7
                 ORDER BY amount DESC
                 LIMIT 30
             """, (trade_date,))
@@ -397,11 +405,11 @@ def run_optimized_backtest(start_date: str, end_date: str,
                 ls = float(sar[-1])
                 r['sar_score'] = round(min(1.0, max(0.3, 1.0 - (lc - ls) / lc * 10)), 3) if ls < lc else 0.0
 
-                # 因子总分
+                # 因子总分（动量+量能为重）
                 r['factor_score'] = round(
-                    r['momentum_score'] * 0.20 + r['volume_score'] * 0.20 +
+                    r['momentum_score'] * 0.25 + r['volume_score'] * 0.20 +
                     r['rsi_score'] * 0.15 + r['macd_score'] * 0.15 +
-                    r['ema_score'] * 0.15 + r['adx_score'] * 0.10 +
+                    r['ema_score'] * 0.10 + r['adx_score'] * 0.10 +
                     r['sar_score'] * 0.05, 4)
 
                 # ── Layer 3: 启动信号 ──
@@ -445,13 +453,27 @@ def run_optimized_backtest(start_date: str, end_date: str,
                 r['llm_score'] = 0
 
                 r['meta_score'] = round(
-                    r['factor_score_100'] * 0.30 +
-                    r['launch_score_100'] * 0.20 +
-                    r['llm_score'] * 0.15 +
-                    r['overnight_score'] * 0.35, 2)
+                    r['factor_score_100'] * 0.45 +
+                    r['launch_score_100'] * 0.25 +
+                    r['overnight_score'] * 0.30, 2)
 
-                # 最低门槛
-                if r['factor_score'] >= 0.35 and (r['launch_score'] > 0 or r['overnight_score'] > 30):
+                # 多层门槛：突破+动量+放量+趋势
+                if n < 20:
+                    continue
+                ma20 = float(close[-20:].mean())
+                ma20_ok = float(close[-1]) > ma20
+                high20 = float(close[-21:-1].max())
+                breakout = float(close[-1]) > high20 * 0.95
+                mom5 = float((close[-1] - close[-6]) / (close[-6] + 1e-9)) if n >= 6 else 0
+                mom20_val = float((close[-1] - close[-21]) / (close[-21] + 1e-9)) if n >= 21 else 0
+                multi_mom = mom5 > 0 and mom20_val > 0.03
+                vol20_mean = float(amount[-21:-1].mean()) if n >= 21 else float(amount.mean())
+                vol_boom = float(amount[-1]) > vol20_mean * 1.3
+                rsi_ok = 35 <= rsi <= 75
+                score_ok = (r['factor_score'] >= 0.40 and r['launch_score'] >= 0.3
+                          and r['overnight_score'] >= 35)
+                signal_ok = breakout or vol_boom
+                if score_ok and ma20_ok and multi_mom and rsi_ok and signal_ok:
                     results.append(r)
 
             layer_stats['L1_pass'].append(len(results))
@@ -497,7 +519,10 @@ def run_optimized_backtest(start_date: str, end_date: str,
                     if entry_price is None or entry_price <= 0:
                         continue
 
-                    position_value = initial_capital * 0.20
+                    current_eq = capital + sum(
+                        (open_prices.get(p.ts_code, p.entry_price) * p.shares)
+                        for p in positions.values())
+                    position_value = current_eq * 0.30
                     shares = int(position_value / (entry_price * 100)) * 100
                     if shares <= 0:
                         shares = 100
@@ -690,4 +715,24 @@ def _build_summary(trades, daily_equity, layer_stats, elapsed, start_date, end_d
 
 
 if __name__ == "__main__":
-    run_optimized_backtest("2025-06-01", "2026-05-15")
+    import traceback
+    out_path = r"D:\pythonProject\openclaw-quant-system\backtest_result.txt"
+    out = open(out_path, "w", encoding="utf-8")
+    def w(msg):
+        out.write(str(msg) + "\n")
+        out.flush()
+        print(msg)
+    
+    try:
+        w("Starting backtest...")
+        result = run_optimized_backtest("2026-01-01", "2026-05-25")
+        w("Backtest completed.")
+        if result and result.get('trades'):
+            w(f"\nTotal trades: {len(result['trades'])}")
+            for t in result['trades']:
+                w(f"{t['ts_code']} | entry: {t['entry_date']} @ {t['entry_price']} | exit: {t['exit_date']} @ {t['exit_price']} | PnL: {t['pnl_pct']:.2%} | {t['exit_reason']}")
+    except Exception as e:
+        w(f"FATAL ERROR: {e}")
+        w(traceback.format_exc())
+    finally:
+        out.close()

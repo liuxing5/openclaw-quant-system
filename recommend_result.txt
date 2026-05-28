@@ -1,0 +1,12 @@
+ERROR: SSL connection has been closed unexpectedly
+
+Traceback (most recent call last):
+  File "D:\pythonProject\openclaw-quant-system\check_rec_simple.py", line 47, in <module>
+    log(f"Starting at: {__import__('datetime').datetime.now()}")
+               ^^^^^^^^
+  File "D:\pythonProject\openclaw-quant-system\check_rec_simple.py", line 39, in get_db
+    raise last_err
+  File "D:\pythonProject\openclaw-quant-system\check_rec_simple.py", line 22, in get_db
+    cur.execute("SELECT 1")
+psycopg2.OperationalError: SSL connection has been closed unexpectedly
+

@@ -1,0 +1,18 @@
+Starting backtest...
+FATAL ERROR: SSL connection has been closed unexpectedly
+
+Traceback (most recent call last):
+  File "D:\pythonProject\openclaw-quant-system\run_meta_backtest.py", line 728, in <module>
+    result = run_optimized_backtest("2026-01-01", "2026-05-25")
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\pythonProject\openclaw-quant-system\run_meta_backtest.py", line 141, in run_optimized_backtest
+    row = _query_one("""
+          ^^^^^^^^^^^^^^
+  File "D:\pythonProject\openclaw-quant-system\run_meta_backtest.py", line 71, in _query_one
+    cur.execute(sql, params)
+  File "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\Lib\site-packages\psycopg2\extras.py", line 236, in execute
+    return super().execute(query, vars)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+psycopg2.OperationalError: SSL connection has been closed unexpectedly
+
+

@@ -1,11 +1,11 @@
 """
-Layer 5: 人气精选
+Layer 5: 人气精�?
 ==================
-决策逻辑：
-  近5日综合评分（含涨幅3~5%，贴线，分时平稳）≥80；
-  人气榜排名≤100可加分。
+决策逻辑�?
+  �?日综合评分（含涨�?~5%，贴线，分时平稳）≥80�?
+  人气榜排名≤100可加分�?
 
-吸收策略：③隔夜八步法  ⑥人气榜前30
+吸收策略：③隔夜八步�? ⑥人气榜�?0
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ LAYER5_WORKERS = min(8, (os.cpu_count() or 4))
 def _batch_load_ohlcv(
     stock_list: List[str], trade_date: date, db_conn, days: int = 30
 ) -> Dict[str, pd.DataFrame]:
-    """批量加载OHLCV数据（1次SQL替代N次单股查询）"""
+    """批量加载OHLCV数据�?次SQL替代N次单股查询）"""
     if not stock_list:
         return {}
 
@@ -71,7 +71,7 @@ def _batch_load_ohlcv(
 
 
 def _load_popularity_ranks(trade_date: date, db_conn) -> Dict[str, int]:
-    """从 strong_stock_rank 加载人气排名"""
+    """�?strong_stock_rank 加载人气排名"""
     rank_map = {}
     try:
         cur = db_conn.cursor(cursor_factory=RealDictCursor)
@@ -90,7 +90,7 @@ def _load_popularity_ranks(trade_date: date, db_conn) -> Dict[str, int]:
 
 
 def _load_valuation_data(stock_list: List[str], trade_date: date, db_conn) -> Dict[str, dict]:
-    """从 daily_quotes 加载 PE/PB 估值数据"""
+    """�?daily_quotes 加载 PE/PB 估值数�?""
     val_map = {}
     if not stock_list:
         return val_map
@@ -113,7 +113,7 @@ def _load_valuation_data(stock_list: List[str], trade_date: date, db_conn) -> Di
 
 
 def _load_llm_candidates(trade_date: date, db_conn) -> Dict[str, dict]:
-    """从 daily_candidates 加载 LLM 多源候选（source='llm_multisource'）"""
+    """�?daily_candidates 加载 LLM 多源候选（source='llm_multisource'�?""
     llm_map = {}
     try:
         cur = db_conn.cursor(cursor_factory=RealDictCursor)
@@ -145,7 +145,7 @@ def _load_llm_candidates(trade_date: date, db_conn) -> Dict[str, dict]:
 
 
 def _load_concept_map(stock_list: List[str], db_conn) -> Dict[str, list]:
-    """加载股票的概念标签"""
+    """加载股票的概念标�?""
     concept_map = {}
     if not stock_list:
         return concept_map
@@ -172,7 +172,7 @@ def _score_single(
     rank_map: Dict[str, int], trend_bonus: float = 0.0, momentum_bonus: float = 0.0,
     llm_map: Dict[str, dict] = None, concept_map: Dict[str, list] = None,
 ) -> dict:
-    """单股综合评分（从内存缓存读取，无DB访问）"""
+    """单股综合评分（从内存缓存读取，无DB访问�?""
     if llm_map is None:
         llm_map = {}
     if concept_map is None:
@@ -199,7 +199,7 @@ def _score_single(
     today = df.iloc[-1]
     close = today['close']
 
-    # A. 涨幅评分（3~5%满分20，1~7范围给分）
+    # A. 涨幅评分�?~5%满分20�?~7范围给分�?
     pct = today.get('pct_chg', 0)
     if pd.isna(pct) or pct is None:
         pct = 0.0
@@ -231,7 +231,7 @@ def _score_single(
             result['bias_score'] = 3
             result['tags'].append('乖离偏大')
 
-    # C. 分时平稳（振幅倒数，越小越平稳）
+    # C. 分时平稳（振幅倒数，越小越平稳�?
     amplitude = today.get('amplitude', 0)
     if pd.isna(amplitude) or amplitude is None:
         amplitude = 0.0
@@ -246,7 +246,7 @@ def _score_single(
     elif amplitude < 12.0:
         result['stability_score'] = 2
 
-    # D. 人气榜加分
+    # D. 人气榜加�?
     rank = rank_map.get(ts_code, 999)
     if rank <= cfg.layer5_popularity_rank_threshold:
         result['popularity_bonus'] = cfg.layer5_bonus_popularity_rank
@@ -265,7 +265,7 @@ def _score_single(
                 llm_details['consensus'] = round(llm_data['consensus_score'], 1)
                 result['tags'].append(f'LLM共识{llm_data["consensus_score"]:.0f}')
 
-            # E2. LLM最终评分
+            # E2. LLM最终评�?
             if llm_data['final_score'] >= cfg.layer5_llm_finalscore_threshold:
                 llm_bonus += cfg.layer5_llm_finalscore_bonus
                 llm_details['final_score'] = round(llm_data['final_score'], 1)
@@ -277,11 +277,11 @@ def _score_single(
                 llm_details['mention'] = llm_data['mention_count']
                 result['tags'].append(f'多源×{llm_data["mention_count"]}')
 
-            # E4. LLM标记为精选(selected)
+            # E4. LLM标记为精�?selected)
             if llm_data['selected']:
                 llm_bonus += cfg.layer5_llm_selected_bonus
                 llm_details['selected'] = True
-                result['tags'].append('LLM精选')
+                result['tags'].append('LLM精�?)
 
             result['llm_bonus'] = round(llm_bonus, 1)
             result['llm_details'] = llm_details
@@ -289,7 +289,7 @@ def _score_single(
         # E5. 概念共振：当前股票的概念是否与LLM热门概念匹配
         stock_concepts = set(concept_map.get(ts_code, []))
         if stock_concepts:
-            # 收集LLM候选的热门概念（出现次数最多的概念）
+            # 收集LLM候选的热门概念（出现次数最多的概念�?
             llm_concept_counts = {}
             for code, info in llm_map.items():
                 for name in concept_map.get(code, []):
@@ -328,7 +328,7 @@ def compute_popularity_score(
 ) -> dict:
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db()
         cache = _batch_load_ohlcv([ts_code], trade_date, conn, days=30)
     finally:
         if conn and not conn.closed:
@@ -343,10 +343,10 @@ def run_layer5_popularity_filter(
     verbose: bool = True,
 ) -> List[dict]:
     """
-    人气精选，返回通过评分阈值的股票详情。
+    人气精选，返回通过评分阈值的股票详情�?
 
-    优化: 批量加载OHLCV(1次SQL) + ThreadPoolExecutor并行评分，
-          154只从 ~131s 降至 ~2s。
+    优化: 批量加载OHLCV(1次SQL) + ThreadPoolExecutor并行评分�?
+          154只从 ~131s 降至 ~2s�?
     """
     if cfg is None:
         from .funnel_config import DEFAULT_FUNNEL_CONFIG
@@ -358,7 +358,7 @@ def run_layer5_popularity_filter(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db_fresh()
+            conn = get_db()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -372,7 +372,7 @@ def run_layer5_popularity_filter(
 
     if verbose:
         print(f"\n{'─'*60}")
-        print(f"  [Layer 5] 人气精选  — 待评分 {n_total} 只")
+        print(f"  [Layer 5] 人气精�? �?待评�?{n_total} �?)
         print(f"{'─'*60}")
         print(f"  综合评分≥{cfg.layer5_min_composite_score}  "
               f"涨幅{cfg.layer5_pct_range_low}~{cfg.layer5_pct_range_high}%  "
@@ -380,17 +380,17 @@ def run_layer5_popularity_filter(
         if cfg.layer5_llm_bonus_enabled:
             print(f"  🤖 LLM联动: 共识≥{cfg.layer5_llm_consensus_threshold}加分"
                   f"  终评≥{cfg.layer5_llm_finalscore_threshold}加分"
-                  f"  提及≥{cfg.layer5_llm_mention_threshold}源加分"
-                  f"  精选+{cfg.layer5_llm_selected_bonus}"
+                  f"  提及≥{cfg.layer5_llm_mention_threshold}源加�?
+                  f"  精�?{cfg.layer5_llm_selected_bonus}"
                   f"  概念共振+{cfg.layer5_llm_concept_bonus}")
 
     stock_list_all = [item['ts_code'] for item in stock_items]
     db_conn = None
     try:
-        db_conn = get_db_fresh()
+        db_conn = get_db()
         if verbose:
-            llm_note = " + LLM候选 + 概念" if cfg.layer5_llm_bonus_enabled else ""
-            print(f"  ⏳ 加载人气排名{llm_note} + 估值 + 批量K线 ({n_total} 只)...")
+            llm_note = " + LLM候�?+ 概念" if cfg.layer5_llm_bonus_enabled else ""
+            print(f"  �?加载人气排名{llm_note} + 估�?+ 批量K�?({n_total} �?...")
         rank_map = _load_popularity_ranks(trade_date, db_conn)
         llm_map = _load_llm_candidates(trade_date, db_conn) if cfg.layer5_llm_bonus_enabled else {}
         concept_map = _load_concept_map(stock_list_all, db_conn) if cfg.layer5_llm_bonus_enabled else {}
@@ -401,8 +401,8 @@ def run_layer5_popularity_filter(
             db_conn.close()
 
     if verbose:
-        llm_info = f", LLM候选{len(llm_map)}只, 概念{len(concept_map)}只" if cfg.layer5_llm_bonus_enabled else ""
-        print(f"  ✓ 数据就绪: 人气{len(rank_map)}只, 估值{len(val_map)}只, K线{len(ohlcv_cache)}只{llm_info}")
+        llm_info = f", LLM候选{len(llm_map)}�? 概念{len(concept_map)}�? if cfg.layer5_llm_bonus_enabled else ""
+        print(f"  �?数据就绪: 人气{len(rank_map)}�? 估值{len(val_map)}�? K线{len(ohlcv_cache)}只{llm_info}")
 
     # ── 阶段1.5: PE/PB 估值预筛（在评分前剔除高估股票）──
     stock_items_filtered = []
@@ -424,7 +424,7 @@ def run_layer5_popularity_filter(
         stock_items_filtered.append(item)
 
     if verbose and (pe_reject > 0 or pb_reject > 0):
-        print(f"  ⚡ 估值预筛淘汰: PE>{cfg.layer5_max_pe} ({pe_reject}只) + PB>{cfg.layer5_max_pb} ({pb_reject}只)")
+        print(f"  �?估值预筛淘�? PE>{cfg.layer5_max_pe} ({pe_reject}�? + PB>{cfg.layer5_max_pb} ({pb_reject}�?")
 
     stock_list = [item['ts_code'] for item in stock_items_filtered]
 
@@ -433,7 +433,7 @@ def run_layer5_popularity_filter(
     n_filtered = len(stock_items_filtered)
 
     if n_filtered > 50:
-        # 多线程并行
+        # 多线程并�?
         with ThreadPoolExecutor(max_workers=LAYER5_WORKERS) as executor:
             futures = {}
             for item in stock_items_filtered:
@@ -484,8 +484,8 @@ def run_layer5_popularity_filter(
     scored.sort(key=lambda x: x['score'], reverse=True)
 
     if verbose:
-        print(f"  ✓ 通过: {len(scored)} 只")
+        print(f"  �?通过: {len(scored)} �?)
         total_rejected = n_total - len(scored)
-        print(f"  ✗ 淘汰: {total_rejected} 只 (含估值{pe_reject + pb_reject} + 评分{total_rejected - pe_reject - pb_reject})")
+        print(f"  �?淘汰: {total_rejected} �?(含估值{pe_reject + pb_reject} + 评分{total_rejected - pe_reject - pb_reject})")
 
     return scored

@@ -1,0 +1,66 @@
+{
+  "trade_date": "2025-05-06",
+  "version": "2.0",
+  "stats": {
+    "trade_date": "2025-05-06",
+    "layer0": {
+      "passed": true,
+      "advancers": 2855,
+      "decliners": 158,
+      "breadth_ratio": 0.9379,
+      "breadth_ema": 0.5472,
+      "position_cap": 1.0,
+      "regime": "oscillate",
+      "regime_score": 0.0,
+      "weights": {
+        "factor": 0.25,
+        "launch": 0.15,
+        "llm": 0.2,
+        "overnight": 0.4
+      },
+      "reason": ""
+    },
+    "layer1_count": 1,
+    "layer2_count": 1,
+    "layer3_count": 0,
+    "layer4_covered": 0,
+    "layer4_vetoed": 0,
+    "layer5_count": 1,
+    "layer6_count": 1,
+    "total_elapsed": 37.4,
+    "final_count": 1
+  },
+  "candidates": [
+    {
+      "ts_code": "300100.SZ",
+      "factor_raw": 0.4683,
+      "launch_raw": 0.5,
+      "llm_raw": 0,
+      "llm_veto": false,
+      "overnight_raw": 47.0,
+      "sustain_raw": 0.7,
+      "factor_score": 46.83,
+      "launch_score": 50.0,
+      "llm_score": 0.0,
+      "overnight_score": 39.166666666666664,
+      "sustain_score": 70.0,
+      "meta_score": 17.435,
+      "veto_reason": NaN,
+      "pct_chg": -0.09,
+      "turnover": 8.81,
+      "vol_ratio": 0.88,
+      "tags": [
+        "贴线",
+        "情绪好"
+      ],
+      "pool": "stable",
+      "momentum": 0.2856,
+      "rsi": 68.8,
+      "macd_signal": "DIF>DEA",
+      "ema_signal": "完美多头",
+      "adx_signal": "强趋势(ADX=36)",
+      "close": 78.97,
+      "llm_sources": []
+    }
+  ]
+}

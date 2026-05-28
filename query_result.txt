@@ -1,0 +1,11 @@
+Importing psycopg2...
+Connecting...
+Connected!
+SELECT 1: (1,), 0.17s
+Market overview: adv=498, dec=2548, total=3076, 0.24s
+AVG(pct_chg) 2mo: 33 rows, 1.11s
+AVG(pct_chg) 5mo: 89 rows, 4.94s
+5 stocks batch: 96 rows, 0.13s
+Top 50 by amount: 50 codes, 0.75s
+50 stocks history: 2900 rows, 0.43s
+Done!

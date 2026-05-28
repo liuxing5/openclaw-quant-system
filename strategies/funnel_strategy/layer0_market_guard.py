@@ -1,15 +1,15 @@
 """
 Layer 0: 大盘风控（盘前）
 ========================
-决策逻辑：
-  今日两市上涨≥2500家，且市场广度(上涨占比)>20EMA。
-  否则当日不荐股或仓位≤50%。
+决策逻辑�?
+  今日两市上涨�?500家，且市场广�?上涨占比)>20EMA�?
+  否则当日不荐股或仓位�?0%�?
 
 吸收策略：③看大盘控仓位
 
-数据来源：
-  - 上涨家数/下跌家数: daily_quotes 表直接 SQL 统计
-  - 市场广度EMA: 每日上涨占比的20日EMA（替代失效的指数EMA）
+数据来源�?
+  - 上涨家数/下跌家数: daily_quotes 表直�?SQL 统计
+  - 市场广度EMA: 每日上涨占比�?0日EMA（替代失效的指数EMA�?
 """
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ import pandas as pd
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db_fresh
+from core.db.connection import get_db
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -31,7 +31,7 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 def _fetch_market_breadth(trade_date=None) -> Tuple[int, int]:
     conn = None
     try:
-        conn = get_db_fresh()
+        conn = get_db()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         if trade_date is None:
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
@@ -58,12 +58,12 @@ def _fetch_market_breadth(trade_date=None) -> Tuple[int, int]:
 
 def _fetch_breadth_series(trade_date: date, days: int = 50) -> pd.DataFrame:
     """
-    获取过去N天的市场广度时间序列（上涨家数占比）。
-    用于计算广度EMA，替代失效的指数EMA。
+    获取过去N天的市场广度时间序列（上涨家数占比）�?
+    用于计算广度EMA，替代失效的指数EMA�?
     """
     start_date = trade_date - timedelta(days=days)
     try:
-        conn = get_db_fresh()
+        conn = get_db()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT trade_date,
@@ -105,17 +105,17 @@ def check_market_environment(
     use_breadth_ema: bool = True,
 ) -> dict:
     """
-    大盘风控决策。
+    大盘风控决策�?
     
     返回:
       {
         'passed': bool,              # 全部条件通过
-        'can_trade': bool,            # 是否可以交易（含部分仓位）
-        'max_position_pct': float,   # 最大仓位比例
+        'can_trade': bool,            # 是否可以交易（含部分仓位�?
+        'max_position_pct': float,   # 最大仓位比�?
         'advancers': int,            # 上涨家数
         'decliners': int,            # 下跌家数
         'index_close': float,        # 广度占比%（替代原指数收盘价）
-        'index_ema': float,          # 广度EMA%（替代原指数EMA）
+        'index_ema': float,          # 广度EMA%（替代原指数EMA�?
         'index_above_ema': bool,     # 广度是否在EMA上方
         'reason': str,              # 判定理由
       }
@@ -136,7 +136,7 @@ def check_market_environment(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db_fresh()
+            conn = get_db()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -157,7 +157,7 @@ def check_market_environment(
         print(f"  [Layer 0] 上涨: {advancers}  下跌: {decliners}  "
               f"要求上涨≥{min_advancers}")
 
-    # 2. 计算市场广度EMA（替代失效的指数EMA）
+    # 2. 计算市场广度EMA（替代失效的指数EMA�?
     index_above_ema = False
     index_close = 0.0
     index_ema = 0.0
@@ -191,7 +191,7 @@ def check_market_environment(
     else:
         conn = None
         try:
-            conn = get_db_fresh()
+            conn = get_db()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
                 SELECT trade_date, close as market_close
@@ -254,12 +254,12 @@ def check_market_environment(
         result['passed'] = True
         result['can_trade'] = True
         result['max_position_pct'] = 1.0
-        result['reason'] = f'大盘偏强(涨{advancers}/{indicator_label}{index_close:.1f}%>{ema_period}EMA)，满仓操作'
+        result['reason'] = f'大盘偏强(涨{advancers}/{indicator_label}{index_close:.1f}%>{ema_period}EMA)，满仓操�?
     elif breadth_condition or index_above_ema:
         result['passed'] = False
         result['can_trade'] = True
         result['max_position_pct'] = partial_cap
-        result['reason'] = (f'大盘偏弱(涨{advancers}/{indicator_label}{index_close:.1f}%{"上" if index_above_ema else "下"}穿{ema_period}EMA)，'
+        result['reason'] = (f'大盘偏弱(涨{advancers}/{indicator_label}{index_close:.1f}%{"�? if index_above_ema else "�?}穿{ema_period}EMA)�?
                            f'仓位≤{int(partial_cap*100)}%')
     else:
         result['passed'] = False
@@ -268,8 +268,8 @@ def check_market_environment(
         result['reason'] = f'大盘弱势(涨{advancers}/{indicator_label}{index_close:.1f}%<{ema_period}EMA)，当日不荐股'
 
     if verbose:
-        status = '✅全仓' if result['passed'] else ('⚠️半仓' if result['can_trade'] else '❌休战')
-        print(f"    {indicator_label}: {index_close:.1f}%  {ema_period}EMA: {index_ema:.1f}%  ➜  {status}")
+        status = '✅全�? if result['passed'] else ('⚠️半仓' if result['can_trade'] else '❌休�?)
+        print(f"    {indicator_label}: {index_close:.1f}%  {ema_period}EMA: {index_ema:.1f}%  �? {status}")
         print(f"    {result['reason']}")
 
     return result

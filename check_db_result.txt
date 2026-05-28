@@ -1,0 +1,7 @@
+ERROR: SSL connection has been closed unexpectedly
+
+Traceback (most recent call last):
+  File "D:\pythonProject\openclaw-quant-system\check_db_for_backfill.py", line 14, in <module>
+    cur.execute('SELECT MIN(snapshot_date), MAX(snapshot_date), COUNT(*) FROM daily_candidates')
+psycopg2.OperationalError: SSL connection has been closed unexpectedly
+

@@ -287,7 +287,8 @@ def get_stock_industry(code: str) -> str:
         if rs.error_code == '0':
             row = rs.get_row_data()
             if row and len(row) > 0:
-                industry = row[0] if row[0] else ""
+                # row: [updateDate, code, code_name, industry, industryClassification]
+                industry = row[3] if len(row) > 3 and row[3] else (row[0] if row[0] else "")
                 _industry_cache[code] = industry
                 return industry
         else:

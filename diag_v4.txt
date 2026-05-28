@@ -1,0 +1,30 @@
+Connecting...
+  Connected in 1.0s
+Step 1: Trading days...
+  33 days, 0.5s
+Step 2: Index proxy (2 months)...
+  55 days, 0.8s
+Step 3: Market overview 2026-04-02...
+  adv=498, dec=2548, breadth=0.162, 0.2s
+Step 4: Daily data 2026-04-02...
+  2457 stocks, 0.6s
+Step 5: L1 scoring...
+  Top 50, 0.0s
+  Top5 scores: [0.40991130757398486, 0.3848298284932028, 0.3606644443090905, 0.3563203727865485, 0.35102419441655086]
+  Top5 codes: ['002560.SZ', '300086.SZ', '001257.SZ', '301188.SZ', '300834.SZ']
+Step 6: L2 filter...
+  0 passed L2
+Step 7: L3 launch signals...
+  No L2 stocks
+Step 8: Overnight scoring...
+
+=== SUMMARY ===
+L0 passed: breadth=0.162 (>0.40 = NO)
+L1: 50 stocks
+L2: 0 stocks
+L3: 0 launch signals
+L5: 0 overnight candidates
+
+*** L0 BLOCKS! Market breadth too low. Need to lower L0 threshold. ***
+
+Done!

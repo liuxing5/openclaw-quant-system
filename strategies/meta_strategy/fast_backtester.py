@@ -289,8 +289,12 @@ class FastBacktester:
                         next_date = trading_days[next_idx]
 
                         entry_price = self._get_price(ts_code, next_date, 'open')
-                        if entry_price is None:
+                        if entry_price is None or (isinstance(entry_price, float) and entry_price != entry_price):  # NaN check
                             logger.debug(f"  {ts_code} 无T+1开盘价: {next_date}")
+                            continue
+
+                        if entry_price <= 0:
+                            logger.debug(f"  {ts_code} 开盘价无效: {entry_price}")
                             continue
 
                         signal_close = row.get('close', 0)
@@ -313,7 +317,7 @@ class FastBacktester:
                             logger.info(f"  {ts_code} 涨停板保护: 信号日涨{signal_pct:+.2f}%已达涨停(>={limit_pct}%), 不追涨")
                             continue
 
-                        position_value = self.bt_cfg.initial_capital * self.bt_cfg.single_position_pct
+                        position_value = capital * self.bt_cfg.single_position_pct
                         shares = int(position_value / (entry_price * 100)) * 100
                         if shares <= 0:
                             shares = 100
@@ -397,7 +401,7 @@ class FastBacktester:
         lines.append("")
 
         if trades:
-            pnls = [t['pnl_pct'] for t in trades]
+            pnls = [t['pnl_pct'] for t in trades if isinstance(t.get('pnl_pct'), (int, float)) and t['pnl_pct'] == t['pnl_pct']]  # filter NaN
             wins = [p for p in pnls if p > 0]
             losses = [p for p in pnls if p <= 0]
 
@@ -438,17 +442,20 @@ class FastBacktester:
 
         if daily_equity:
             eq_df = pd.DataFrame(daily_equity)
-            initial = self.bt_cfg.initial_capital
-            final = eq_df['equity'].iloc[-1]
-            total_return = (final - initial) / initial
-            max_dd = ((eq_df['equity'] - eq_df['equity'].cummax()) / eq_df['equity'].cummax()).min()
+            eq_df['equity'] = pd.to_numeric(eq_df['equity'], errors='coerce')
+            eq_df = eq_df.dropna(subset=['equity'])
+            if not eq_df.empty:
+                initial = self.bt_cfg.initial_capital
+                final = eq_df['equity'].iloc[-1]
+                total_return = (final - initial) / initial
+                max_dd = ((eq_df['equity'] - eq_df['equity'].cummax()) / eq_df['equity'].cummax()).min()
 
-            lines.append("--- 权益曲线 ---")
-            lines.append(f"  初始权益: {initial:,.0f}")
-            lines.append(f"  最终权益: {final:,.0f}")
-            lines.append(f"  总收益率: {total_return:.2%}")
-            lines.append(f"  最大回撤: {max_dd:.2%}")
-            lines.append("")
+                lines.append("--- 权益曲线 ---")
+                lines.append(f"  初始权益: {initial:,.0f}")
+                lines.append(f"  最终权益: {final:,.0f}")
+                lines.append(f"  总收益率: {total_return:.2%}")
+                lines.append(f"  最大回撤: {max_dd:.2%}")
+                lines.append("")
 
         lines.append("--- 各层漏斗平均通过数 ---")
         for layer, counts in layer_stats.items():
@@ -468,7 +475,7 @@ def run_backtest():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
 
     meta_cfg = MetaStrategyConfig(
-        layer0_min_advancers=2000,
+        layer0_min_advancers=1200,
         layer1_min_total_score=0.45,
         layer1_rsi_max=70.0,
         layer2_min_avg_amount_20d=5e7,
@@ -476,31 +483,31 @@ def run_backtest():
         layer2_turn_rate_max=20.0,
         layer3_volume_breakout_mult=2.0,
         layer3_min_launch_score=0.25,
-        layer5_min_quant_score=75,
+        layer5_min_quant_score=85,
         layer6_hard_stop_loss_pct=0.05,
-        layer6_overnight_stop_pct=0.02,
-        layer6_trailing_activate_pct=0.05,
-        layer6_trailing_stop_pct=0.03,
-        layer6_max_holding_days=10,
-        max_final_candidates=8,
+        layer6_overnight_stop_pct=0.03,
+        layer6_trailing_activate_pct=0.08,
+        layer6_trailing_stop_pct=0.05,
+        layer6_max_holding_days=20,
+        max_final_candidates=5,
     )
 
     pm_cfg = PositionManagerConfig(
         hard_stop_loss_pct=0.05,
-        trailing_activate_pct=0.05,
-        trailing_stop_pct=0.03,
-        max_holding_days=10,
-        overnight_stop_pct=0.02,
-        max_positions=8,
-        single_position_pct=0.125,
+        trailing_activate_pct=0.08,
+        trailing_stop_pct=0.05,
+        max_holding_days=20,
+        overnight_stop_pct=0.03,
+        max_positions=5,
+        single_position_pct=0.20,
     )
 
     bt_cfg = BacktestConfig(
-        start_date="2026-04-01",
-        end_date="2026-05-15",
+        start_date="2025-05-01",
+        end_date="2026-05-26",
         initial_capital=1_000_000.0,
-        max_positions=8,
-        single_position_pct=0.125,
+        max_positions=5,
+        single_position_pct=0.20,
     )
 
     backtester = FastBacktester(meta_cfg, pm_cfg, bt_cfg)
@@ -518,10 +525,33 @@ def run_backtest():
         logger.info(f"报告已保存: {report_path}")
 
         if result['trades']:
+            # JSON 格式保存
             trades_path = output_dir / f"meta_bt_trades_{ts}.json"
             with open(trades_path, 'w', encoding='utf-8') as f:
                 json.dump(result['trades'], f, ensure_ascii=False, indent=2, default=str)
             logger.info(f"交易明细已保存: {trades_path}")
+
+            # CSV 格式保存
+            import pandas as pd
+            trades_df = pd.DataFrame(result['trades'])
+            csv_path = output_dir / f"meta_bt_trades_{ts}.csv"
+            trades_df.to_csv(csv_path, index=False, encoding='utf-8-sig')
+            logger.info(f"交易CSV已保存: {csv_path}")
+
+            # 控制台输出逐笔交易
+            print("\n" + "=" * 100)
+            print("  逐笔交易明细")
+            print("=" * 100)
+            print(f"{'序号':<5} {'代码':<12} {'买入日期':<12} {'买入价':<10} {'卖出日期':<12} {'卖出价':<10} {'收益%':<10} {'持仓天':<8} {'退出原因':<20}")
+            print("-" * 100)
+            for idx, t in enumerate(result['trades'], 1):
+                pnl = t.get('pnl_pct', 0)
+                if isinstance(pnl, float) and pnl == pnl:  # not NaN
+                    pnl_str = f"{pnl:+.2%}"
+                else:
+                    pnl_str = "N/A"
+                print(f"{idx:<5} {t.get('ts_code',''):<12} {str(t.get('entry_date','')):<12} {t.get('entry_price',0):<10.2f} {str(t.get('exit_date','')):<12} {t.get('exit_price',0):<10.2f} {pnl_str:<10} {t.get('holding_days',0):<8} {t.get('exit_reason',''):<20}")
+            print("=" * 100)
 
 
 if __name__ == '__main__':

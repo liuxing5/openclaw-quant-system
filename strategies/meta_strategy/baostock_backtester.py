@@ -1,14 +1,23 @@
 """
-融合元策略 - Baostock回测引擎 v1.0
+融合元策略 - Baostock回测引擎 v2.0
 ====================================
 使用 baostock 在线数据源，不依赖 PostgreSQL。
 严格 PIT 回测：
-  - T 日收盘后产生信号（六层漏斗）
+  - T 日收盘后产生信号（七层漏斗 v2.0）
   - T+1 日开盘买入
-  - 持仓管理模块每日评估退出
+  - 持仓管理模块每日评估退出（含 Layer6 持续性评估）
   - T+N 日开盘卖出
 
-输出：胜率、平均收益、最大回撤、退出原因分布、各层漏斗通过率
+v2.0 升级：
+  - Layer 0: 大盘风控 + 市场状态识别（牛市/震荡/熊市）+ 动态权重
+  - Layer 1: 多因子扫描 + 行业轮动因子
+  - Layer 3: 启动信号 + 封单质量 + 主力资金代理
+  - Layer 5: 八步法评分 + 双池分治 + 情绪感知 + 行业评分
+  - Layer 6: 持续性评估（新增）
+  - 归一化: 动态权重 + 持续性调节 + LLM否决
+  - 策略对比回测: 单独策略 vs 融合策略
+
+输出：胜率、平均收益、最大回撤、退出原因分布、各层漏斗通过率、策略对比
 """
 from __future__ import annotations
 
@@ -43,7 +52,7 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 
 @dataclass
 class MetaBacktestConfig:
-    """回测配置"""
+    """回测配置 v2.0"""
     start_date: str = "2025-06-01"
     end_date: str = "2026-05-15"
     initial_capital: float = 1_000_000.0
@@ -52,14 +61,18 @@ class MetaBacktestConfig:
     max_positions: int = 5
     single_position_pct: float = 0.20
 
-    # Layer 0: 大盘风控
+    # Layer 0: 大盘风控 + 市场状态
     layer0_enabled: bool = True
-    layer0_min_advancers_ratio: float = 0.50  # 上涨家数占比>50%
+    layer0_min_advancers_ratio: float = 0.50
+    layer0_regime_lookback: int = 60
+    layer0_bull_threshold: float = 0.03
+    layer0_bear_threshold: float = -0.05
 
     # Layer 1: 多因子扫描
     layer1_enabled: bool = True
     layer1_min_total_score: float = 0.40
     layer1_top_n: int = 50
+    layer1_industry_rotation: bool = True
 
     # Layer 2: 基本面+流动性
     layer2_enabled: bool = True
@@ -71,8 +84,10 @@ class MetaBacktestConfig:
     layer3_enabled: bool = True
     layer3_volume_breakout_mult: float = 2.0
     layer3_price_breakout_pct: float = 0.03
+    layer3_seal_quality_min: float = 0.6
+    layer3_min_launch_score: float = 0.3
 
-    # Layer 4: LLM事件加成（回测中简化为随机模拟）
+    # Layer 4: LLM事件加成（回测中简化为基本面代理）
     layer4_enabled: bool = False
     layer4_simulated_bonus_range: Tuple[float, float] = (0, 10)
 
@@ -81,6 +96,29 @@ class MetaBacktestConfig:
     layer5_pct_range_low: float = 2.0
     layer5_pct_range_high: float = 7.0
     layer5_vol_ratio_min: float = 1.5
+    layer5_stable_pool_pct_max: float = 5.0
+    layer5_upper_pool_pct_max: float = 9.5
+    layer5_sentiment_enabled: bool = True
+    layer5_industry_score_enabled: bool = True
+
+    # Layer 6: 持续性评估
+    layer6_enabled: bool = True
+    layer6_adx_trend_min: float = 20.0
+    layer6_sustain_score_min: float = 0.3
+
+    # 动态权重
+    weights_bull: Dict[str, float] = field(default_factory=lambda: {
+        'factor': 0.35, 'launch': 0.25, 'llm': 0.10, 'overnight': 0.30
+    })
+    weights_oscillate: Dict[str, float] = field(default_factory=lambda: {
+        'factor': 0.25, 'launch': 0.15, 'llm': 0.20, 'overnight': 0.40
+    })
+    weights_bear: Dict[str, float] = field(default_factory=lambda: {
+        'factor': 0.20, 'launch': 0.10, 'llm': 0.25, 'overnight': 0.45
+    })
+
+    # 策略对比
+    strategy_compare_enabled: bool = True
 
     # 输出
     output_dir: str = './results'
@@ -105,7 +143,7 @@ def _ema(arr: np.ndarray, span: int) -> np.ndarray:
 
 def compute_factors(close: np.ndarray, high: np.ndarray, low: np.ndarray,
                    amount: np.ndarray) -> Dict:
-    """计算7个技术因子得分"""
+    """计算7+1个技术因子得分（含行业轮动代理）"""
     n = len(close)
     if n < 30:
         return {'total_score': 0}
@@ -115,13 +153,23 @@ def compute_factors(close: np.ndarray, high: np.ndarray, low: np.ndarray,
     # 1. 动量 (20日涨幅)
     mom = float((close[-1] - close[-21]) / (close[-21] + 1e-9)) if n >= 21 else 0
     r['momentum'] = round(mom, 4)
-    r['momentum_score'] = round(min(max(mom / 0.15, 0), 1.0) if mom > 0 else 0, 3)
+    r['momentum_score'] = round(min(max(mom / 0.15, 0), 1.0) if mom > 0 else 0.0, 3)
 
     # 2. 量比
     vol_mean = float(amount[-21:-1].mean()) if n >= 21 else float(amount.mean())
     vr = float(amount[-1]) / (vol_mean + 1e-9)
     r['volume_ratio'] = round(vr, 2)
-    r['volume_score'] = round(min((vr - 1.5) / 8.5, 1.0) * 0.7 if 1.5 <= vr <= 10 else 0, 3)
+    cw = 10
+    if n >= cw:
+        cp = close[-cw:] - close[-cw:].mean()
+        cv = amount[-cw:] - amount[-cw:].mean()
+        pv_corr = float((cp * cv).sum() / (np.sqrt((cp**2).sum() * (cv**2).sum()) + 1e-9))
+    else:
+        pv_corr = 0.0
+    r['pv_corr'] = round(pv_corr, 3)
+    r['volume_score'] = round(
+        (min((vr - 1.5) / 8.5, 1.0) * 0.7 + min(pv_corr, 1.0) * 0.3)
+        if 1.5 <= vr <= 10.0 and pv_corr > 0 else 0.0, 3)
 
     # 3. RSI(6)
     d = np.diff(close)
@@ -129,7 +177,7 @@ def compute_factors(close: np.ndarray, high: np.ndarray, low: np.ndarray,
     al = _ema(np.where(d < 0, -d, 0.0), 6)
     rsi = float(100 - 100 / (1 + ag[-1] / (al[-1] + 1e-9)))
     r['rsi'] = round(rsi, 1)
-    r['rsi_score'] = 0 if rsi >= 75 else (1.0 if rsi <= 35 else round((75 - rsi) / 40, 3))
+    r['rsi_score'] = (0.0 if rsi >= 75 else 1.0 if rsi <= 35 else round((75 - rsi) / 40, 3))
 
     # 4. MACD
     dif = _ema(close, 12) - _ema(close, 26)
@@ -137,14 +185,16 @@ def compute_factors(close: np.ndarray, high: np.ndarray, low: np.ndarray,
     hist = (dif - dea) * 2
     ld, la = float(dif[-1]), float(dea[-1])
     lh, ph = float(hist[-1]), float(hist[-2]) if n > 1 else 0
+    r['macd_dif'] = round(ld, 4)
+    r['macd_dea'] = round(la, 4)
     if ld > la and ph <= 0 and lh > 0:
-        r['macd_score'] = 1.0
+        r['macd_score'] = 1.0; r['macd_signal'] = '金叉'
     elif ld > la and lh > 0 and lh > ph:
-        r['macd_score'] = 0.7
+        r['macd_score'] = 0.7; r['macd_signal'] = '多头'
     elif ld > la:
-        r['macd_score'] = 0.4
+        r['macd_score'] = 0.4; r['macd_signal'] = 'DIF>DEA'
     else:
-        r['macd_score'] = 0.1
+        r['macd_score'] = 0.1; r['macd_signal'] = '空头'
 
     # 5. EMA排列
     e5 = float(_ema(close, 5)[-1])
@@ -152,112 +202,148 @@ def compute_factors(close: np.ndarray, high: np.ndarray, low: np.ndarray,
     e20 = float(_ema(close, 20)[-1])
     lc = float(close[-1])
     if lc > e5 > e10 > e20:
-        r['ema_score'] = 1.0
+        r['ema_score'] = 1.0; r['ema_signal'] = '完美多头'
     elif lc > e10 > e20:
-        r['ema_score'] = 0.7
+        r['ema_score'] = 0.7; r['ema_signal'] = '中期多头'
     elif lc > e20:
-        r['ema_score'] = 0.4
+        r['ema_score'] = 0.4; r['ema_signal'] = '站上均线'
     else:
-        r['ema_score'] = 0.0
+        r['ema_score'] = 0.0; r['ema_signal'] = '空头排列'
 
     # 6. ADX
     p = 14
     tr = np.maximum(high[1:] - low[1:],
                     np.maximum(np.abs(high[1:] - close[:-1]),
                                np.abs(low[1:] - close[:-1])))
-    up = high[1:] - high[:-1]
-    dn = low[:-1] - low[1:]
+    up = high[1:] - high[:-1]; dn = low[:-1] - low[1:]
     atr = _ema(tr, p)
     pdi = 100 * _ema(np.where((up > dn) & (up > 0), up, 0.0), p) / (atr + 1e-9)
     mdi = 100 * _ema(np.where((dn > up) & (dn > 0), dn, 0.0), p) / (atr + 1e-9)
     adx_v = float(_ema(100 * np.abs(pdi - mdi) / (pdi + mdi + 1e-9), p)[-1])
-    lpdi = float(pdi[-1])
-    lmdi = float(mdi[-1])
+    lpdi = float(pdi[-1]); lmdi = float(mdi[-1])
+    r['plus_di'] = round(lpdi, 1); r['minus_di'] = round(lmdi, 1)
+    r['adx'] = round(adx_v, 1)
     if adx_v >= 20 and lpdi > lmdi:
         r['adx_score'] = round(min(adx_v / 50, 1.0), 3)
+        r['adx_signal'] = f'强趋势(ADX={adx_v:.0f})'
     elif lpdi > lmdi:
-        r['adx_score'] = 0.3
+        r['adx_score'] = 0.3; r['adx_signal'] = f'弱趋势(ADX={adx_v:.0f})'
     else:
-        r['adx_score'] = 0.0
+        r['adx_score'] = 0.0; r['adx_signal'] = f'偏空(ADX={adx_v:.0f})'
 
     # 7. SAR
     af_i, af_m = 0.02, 0.2
-    sar = np.zeros(n)
-    trend = 1
-    ep = high[0]
-    af = af_i
-    sar[0] = low[0]
+    sar = np.zeros(n); trend = 1; ep = high[0]; af = af_i; sar[0] = low[0]
     for i in range(1, n):
-        ps = sar[i - 1]
+        ps = sar[i-1]
         if trend == 1:
-            sar[i] = min(ps + af * (ep - ps), low[i - 1], low[max(0, i - 2)])
+            sar[i] = min(ps + af * (ep - ps), low[i-1], low[max(0, i-2)])
             if low[i] < sar[i]:
-                trend = -1
-                sar[i] = ep
-                ep = low[i]
-                af = af_i
+                trend = -1; sar[i] = ep; ep = low[i]; af = af_i
             elif high[i] > ep:
-                ep = high[i]
-                af = min(af + af_i, af_m)
+                ep = high[i]; af = min(af + af_i, af_m)
         else:
-            sar[i] = max(ps + af * (ep - ps), high[i - 1], high[max(0, i - 2)])
+            sar[i] = max(ps + af * (ep - ps), high[i-1], high[max(0, i-2)])
             if high[i] > sar[i]:
-                trend = 1
-                sar[i] = ep
-                ep = high[i]
-                af = af_i
+                trend = 1; sar[i] = ep; ep = high[i]; af = af_i
             elif low[i] < ep:
-                ep = low[i]
-                af = min(af + af_i, af_m)
+                ep = low[i]; af = min(af + af_i, af_m)
     ls = float(sar[-1])
+    r['sar'] = round(ls, 2)
     if ls < lc:
-        r['sar_score'] = round(min(1.0, max(0.3, 1.0 - (lc - ls) / lc * 10)), 3)
+        sd = (lc - ls) / lc
+        r['sar_score'] = round(min(1.0, max(0.3, 1.0 - sd * 10)), 3)
+        r['sar_signal'] = f'SAR支撑({sd*100:.1f}%)'
     else:
-        r['sar_score'] = 0.0
+        r['sar_score'] = 0.0; r['sar_signal'] = 'SAR压制'
 
-    # 加权总分
+    # 8. 行业轮动代理 (v2.0)
+    if n >= 6:
+        stock_5d_ret = (close[-1] - close[-6]) / (close[-6] + 1e-9)
+        r['industry_rotation_score'] = round(
+            min(max(stock_5d_ret / 0.10, 0), 1.0) if stock_5d_ret > 0 else 0.0, 3)
+    else:
+        r['industry_rotation_score'] = 0.0
+
+    # 加权总分 (v2.0: 行业轮动占10%)
     r['total_score'] = round(
-        r['momentum_score'] * 0.20 +
-        r['volume_score'] * 0.20 +
-        r['rsi_score'] * 0.15 +
-        r['macd_score'] * 0.15 +
-        r['ema_score'] * 0.15 +
-        r['adx_score'] * 0.10 +
-        r['sar_score'] * 0.05, 4)
+        r['momentum_score'] * 0.18 + r['volume_score'] * 0.18 +
+        r['rsi_score'] * 0.13 + r['macd_score'] * 0.13 +
+        r['ema_score'] * 0.13 + r['adx_score'] * 0.10 +
+        r['sar_score'] * 0.05 + r['industry_rotation_score'] * 0.10, 4)
 
     return r
 
 
+
 # ============================================================
-# 六层漏斗
+# 七层漏斗
 # ============================================================
 
 def layer0_market_risk(trade_date: date, cfg: MetaBacktestConfig) -> Dict:
-    """Layer 0: 大盘风控"""
+    """Layer 0: 大盘风控 + 市场状态识别"""
     if not cfg.layer0_enabled:
-        return {'passed': True, 'position_cap': 1.0, 'reason': 'Layer0禁用'}
+        return {'passed': True, 'position_cap': 1.0, 'regime': 'oscillate',
+                'regime_score': 0.0, 'weights': cfg.weights_oscillate,
+                'reason': 'Layer0禁用'}
 
     overview = get_market_overview(trade_date)
     ratio = overview['breadth_ratio']
     passed = ratio >= cfg.layer0_min_advancers_ratio
 
+    # 市场状态识别
+    regime = 'oscillate'
+    regime_score = 0.0
+    try:
+        start = trade_date - timedelta(days=cfg.layer0_regime_lookback + 30)
+        df_idx = get_daily_quotes_cached('sh.000001', start, trade_date,
+                                          fields="date,close")
+        if not df_idx.empty and len(df_idx) >= 20:
+            closes = df_idx['close'].values.astype(float)
+            lookback = min(cfg.layer0_regime_lookback, len(closes) - 1)
+            ret = (closes[-1] - closes[-lookback - 1]) / (closes[-lookback - 1] + 1e-9)
+            if ret >= cfg.layer0_bull_threshold:
+                regime = 'bull'
+                regime_score = min(1.0, ret / 0.10)
+            elif ret <= cfg.layer0_bear_threshold:
+                regime = 'bear'
+                regime_score = max(-1.0, ret / 0.10)
+            else:
+                regime = 'oscillate'
+                regime_score = ret / 0.05
+    except Exception as e:
+        logger.debug(f"市场状态识别失败: {e}")
+
+    if regime == 'bull':
+        weights = cfg.weights_bull
+    elif regime == 'bear':
+        weights = cfg.weights_bear
+    else:
+        weights = cfg.weights_oscillate
+
+    position_cap = 1.0 if passed else 0.5
+    if regime == 'bear' and position_cap > 0.3:
+        position_cap = 0.3
+
     return {
         'passed': passed,
-        'position_cap': 1.0 if passed else 0.5,
+        'position_cap': position_cap,
         'advancers': overview['advancers'],
         'decliners': overview['decliners'],
         'breadth_ratio': round(ratio, 4),
+        'regime': regime,
+        'regime_score': round(regime_score, 3),
+        'weights': weights,
         'reason': '' if passed else f'上涨占比{ratio:.1%}<{cfg.layer0_min_advancers_ratio:.0%}',
     }
 
 
 def layer1_multi_factor_scan(trade_date: date, cfg: MetaBacktestConfig,
                               stock_pool: List[str] = None) -> pd.DataFrame:
-    """Layer 1: 多因子全市场扫描（两阶段：快速预筛 + 精细计算）"""
+    """Layer 1: 多因子全市场扫描 v2.0（含行业轮动）"""
     if not cfg.layer1_enabled:
         return pd.DataFrame()
 
-    # 获取活跃标的
     if stock_pool is None:
         stock_pool = get_active_stocks(trade_date, min_amount=cfg.layer2_min_amount)
 
@@ -266,7 +352,7 @@ def layer1_multi_factor_scan(trade_date: date, cfg: MetaBacktestConfig,
 
     start_date = trade_date - timedelta(days=120)
 
-    # ── 阶段1: 快速预筛（仅用最近5日数据判断动量+量比） ──
+    # ── 阶段1: 快速预筛 ──
     quick_start = trade_date - timedelta(days=10)
     prefiltered = []
 
@@ -276,40 +362,29 @@ def layer1_multi_factor_scan(trade_date: date, cfg: MetaBacktestConfig,
                                           fields="date,open,high,low,close,volume,amount,pctChg")
             if df.empty or len(df) < 3:
                 continue
-
             close = df['close'].values.astype(float)
             pct_chg = df['pct_chg'].values.astype(float) if 'pct_chg' in df.columns else None
-
-            # 快速条件：近3日至少1日上涨，且收盘价>0
             if close[-1] <= 0:
                 continue
-
-            # 最近涨幅 > -5%（排除大跌）
-            if pct_chg is not None and len(pct_chg) > 0:
-                last_pct = float(pct_chg[-1])
-                if last_pct < -5:
-                    continue
-
+            if pct_chg is not None and len(pct_chg) > 0 and float(pct_chg[-1]) < -5:
+                continue
             prefiltered.append(ts_code)
         except Exception:
             pass
 
     logger.info(f"Layer1 预筛: {len(stock_pool)} -> {len(prefiltered)} 只")
 
-    # ── 阶段2: 精细因子计算（仅对预筛通过的标的） ──
+    # ── 阶段2: 精细因子计算 ──
     results = []
-
     for i, ts_code in enumerate(prefiltered):
         try:
             df = get_daily_quotes_cached(ts_code, start_date, trade_date)
             if df.empty or len(df) < 30:
                 continue
-
             close = df['close'].values.astype(float)
             high = df['high'].values.astype(float)
             low = df['low'].values.astype(float)
             amount = df['amount'].values.astype(float) if 'amount' in df.columns else np.zeros(len(df))
-
             if close[-1] <= 0:
                 continue
 
@@ -320,8 +395,6 @@ def layer1_multi_factor_scan(trade_date: date, cfg: MetaBacktestConfig,
                 results.append(factors)
         except Exception as e:
             logger.debug(f"Layer1 {ts_code} 计算失败: {e}")
-
-        # 节流
         if (i + 1) % 30 == 0:
             time.sleep(0.1)
 
@@ -330,10 +403,8 @@ def layer1_multi_factor_scan(trade_date: date, cfg: MetaBacktestConfig,
 
     df_result = pd.DataFrame(results)
     df_result = df_result.sort_values('total_score', ascending=False)
-
     if len(df_result) > cfg.layer1_top_n:
         df_result = df_result.head(cfg.layer1_top_n)
-
     return df_result.reset_index(drop=True)
 
 
@@ -350,25 +421,17 @@ def layer2_fundamental_filter(stock_list: List[str], trade_date: date,
     for ts_code in stock_list:
         try:
             fund = get_fundamental_data(ts_code, year, quarter)
-
-            # 债务比率过滤
             debt_ratio = fund.get('debt_ratio')
             if debt_ratio is not None and debt_ratio > cfg.layer2_max_debt_ratio:
                 continue
-
-            # 流动比率过滤
             current_ratio = fund.get('current_ratio')
             if current_ratio is not None and current_ratio < cfg.layer2_min_current_ratio:
                 continue
-
-            # 净利润为负过滤
             net_margin = fund.get('net_margin')
             if net_margin is not None and net_margin < -10:
                 continue
-
             passed.append(ts_code)
         except Exception:
-            # 无基本面数据时放行
             passed.append(ts_code)
 
     return passed
@@ -376,7 +439,7 @@ def layer2_fundamental_filter(stock_list: List[str], trade_date: date,
 
 def layer3_launch_signals(stock_list: List[str], trade_date: date,
                            cfg: MetaBacktestConfig) -> pd.DataFrame:
-    """Layer 3: 启动信号识别"""
+    """Layer 3: 启动信号识别 v2.0（含封单质量+主力资金代理）"""
     if not cfg.layer3_enabled:
         return pd.DataFrame({'ts_code': stock_list, 'launch_score': [0.5] * len(stock_list)})
 
@@ -391,6 +454,8 @@ def layer3_launch_signals(stock_list: List[str], trade_date: date,
 
             close = df['close'].values.astype(float)
             amount = df['amount'].values.astype(float) if 'amount' in df.columns else np.zeros(len(df))
+            pct_chg = df['pct_chg'].values.astype(float) if 'pct_chg' in df.columns else np.zeros(len(df))
+            turnover = df['turnover_rate'].values.astype(float) if 'turnover_rate' in df.columns else np.zeros(len(df))
             n = len(close)
 
             launch_score = 0.0
@@ -402,14 +467,16 @@ def layer3_launch_signals(stock_list: List[str], trade_date: date,
                 if vol_ma20 > 0:
                     vol_ratio = amount[-1] / vol_ma20
                     if vol_ratio >= cfg.layer3_volume_breakout_mult:
-                        launch_score += 0.4
+                        launch_score += 0.30
                         signals.append(f'放量{vol_ratio:.1f}倍')
+                    elif vol_ratio >= cfg.layer3_volume_breakout_mult * 0.7:
+                        launch_score += 0.15
 
             # 2. 价格突破
             if n >= 20:
                 high_20 = close[-21:-1].max()
                 if close[-1] > high_20 * (1 + cfg.layer3_price_breakout_pct):
-                    launch_score += 0.3
+                    launch_score += 0.25
                     signals.append('突破20日高点')
 
             # 3. MACD金叉
@@ -417,10 +484,37 @@ def layer3_launch_signals(stock_list: List[str], trade_date: date,
                 dif = _ema(close, 12) - _ema(close, 26)
                 dea = _ema(dif, 9)
                 if len(dif) >= 2 and dif[-2] <= dea[-2] and dif[-1] > dea[-1]:
-                    launch_score += 0.3
+                    launch_score += 0.15
                     signals.append('MACD金叉')
 
-            if launch_score > 0:
+            # 4. 主力资金代理 (v2.0)
+            if n >= 1:
+                last_pct = float(pct_chg[-1]) if len(pct_chg) > 0 else 0
+                last_turnover = float(turnover[-1]) if len(turnover) > 0 else 0
+                if last_turnover > 5 and last_pct > 0 and n >= 20:
+                    vol_ma = amount[-21:-1].mean()
+                    if vol_ma > 0 and amount[-1] > vol_ma * 1.5:
+                        main_force_score = min(1.0, (last_pct / 5.0) * (last_turnover / 8.0))
+                        if main_force_score >= 0.05:
+                            launch_score += 0.15
+                            signals.append(f'主力资金{main_force_score:.2f}')
+
+            # 5. 封单质量 (v2.0)
+            if n >= 1:
+                last_pct = float(pct_chg[-1]) if len(pct_chg) > 0 else 0
+                last_turnover = float(turnover[-1]) if len(turnover) > 0 else 0
+                seal_quality = 0.0
+                if 7.0 <= last_pct < 9.8:
+                    seal_quality = (0.8 if 3.0 <= last_turnover <= 15.0
+                                    else (0.5 if last_turnover > 15.0 else 0.3))
+                elif last_pct >= 9.8:
+                    seal_quality = (1.0 if last_turnover < 5.0
+                                    else (0.9 if last_turnover < 10.0 else 0.6))
+                if seal_quality >= cfg.layer3_seal_quality_min:
+                    launch_score += 0.15
+                    signals.append(f'封单{seal_quality:.1f}')
+
+            if launch_score >= cfg.layer3_min_launch_score:
                 results.append({
                     'ts_code': ts_code,
                     'launch_score': round(min(launch_score, 1.0), 3),
@@ -431,17 +525,16 @@ def layer3_launch_signals(stock_list: List[str], trade_date: date,
 
     if not results:
         return pd.DataFrame()
-
     return pd.DataFrame(results)
 
 
 def layer4_llm_boost(stock_list: List[str], trade_date: date,
-                      cfg: MetaBacktestConfig) -> Dict[str, float]:
-    """Layer 4: LLM事件驱动加成（回测中简化为基于基本面质量的模拟）"""
+                      cfg: MetaBacktestConfig) -> Dict[str, Dict]:
+    """Layer 4: LLM事件驱动加成 v2.0（回测中用基本面代理，含否决机制）"""
     if not cfg.layer4_enabled:
-        return {code: 0.0 for code in stock_list}
+        return {code: {'llm_bonus': 0.0, 'llm_veto': False, 'veto_reason': ''}
+                for code in stock_list}
 
-    # 回测中用基本面质量作为LLM加成的代理
     year = trade_date.year - (1 if trade_date.month < 5 else 0)
     quarter = 4 if trade_date.month < 5 else (trade_date.month - 1) // 3
 
@@ -449,30 +542,53 @@ def layer4_llm_boost(stock_list: List[str], trade_date: date,
     for ts_code in stock_list:
         try:
             fund = get_fundamental_data(ts_code, year, quarter)
-            # 基本面越好，LLM加成越高
             roe = fund.get('roe') or 0
             rev_yoy = fund.get('revenue_yoy') or 0
+            net_margin = fund.get('net_margin') or 0
             bonus = 0
             if roe and roe > 15:
                 bonus += 5
             if rev_yoy and rev_yoy > 20:
                 bonus += 5
-            boosts[ts_code] = min(bonus, 15)
+
+            # 否决机制（代理：净利率极低或亏损严重）
+            llm_veto = False
+            veto_reason = ''
+            if net_margin < -20:
+                llm_veto = True
+                veto_reason = 'LLM否决: 严重亏损'
+                bonus = 0
+
+            boosts[ts_code] = {
+                'llm_bonus': min(bonus, 15),
+                'llm_veto': llm_veto,
+                'veto_reason': veto_reason,
+            }
         except Exception:
-            boosts[ts_code] = 0.0
+            boosts[ts_code] = {'llm_bonus': 0.0, 'llm_veto': False, 'veto_reason': ''}
 
     return boosts
 
 
 def layer5_overnight_score(stock_list: List[str], trade_date: date,
                             cfg: MetaBacktestConfig) -> pd.DataFrame:
-    """Layer 5: 八步法精细评分"""
+    """Layer 5: 八步法精细评分 v2.0（双池分治+情绪感知+行业评分）"""
     if not cfg.layer5_enabled:
         return pd.DataFrame({'ts_code': stock_list,
-                             'overnight_score': [50] * len(stock_list)})
+                             'overnight_score': [50] * len(stock_list),
+                             'pool': ['stable'] * len(stock_list)})
 
     start_date = trade_date - timedelta(days=60)
     results = []
+
+    # 情绪感知
+    sentiment_score = 0.0
+    if cfg.layer5_sentiment_enabled:
+        overview = get_market_overview(trade_date)
+        if overview['breadth_ratio'] > 0.6:
+            sentiment_score = 5.0
+        elif overview['breadth_ratio'] > 0.5:
+            sentiment_score = 2.5
 
     for ts_code in stock_list:
         try:
@@ -485,17 +601,32 @@ def layer5_overnight_score(stock_list: List[str], trade_date: date,
             pct_chg = df['pct_chg'].values.astype(float) if 'pct_chg' in df.columns else np.zeros(len(df))
             n = len(close)
 
-            score = 0
+            score = 0.0
 
-            # 1. 涨幅评分 (2%-7%最佳)
-            if n >= 1:
-                pct = float(pct_chg[-1]) if len(pct_chg) > 0 else 0
-                if cfg.layer5_pct_range_low <= pct <= cfg.layer5_pct_range_high:
+            # 双池分类
+            last_pct = float(pct_chg[-1]) if len(pct_chg) > 0 else 0
+            if last_pct <= cfg.layer5_stable_pool_pct_max:
+                pool = 'stable'
+            elif last_pct <= cfg.layer5_upper_pool_pct_max:
+                pool = 'upper'
+            else:
+                pool = 'extreme'
+
+            # 涨幅评分（双池差异化）
+            if pool == 'stable':
+                if 2.0 <= last_pct <= 4.0:
                     score += 30
-                elif pct > 0:
+                elif 4.0 < last_pct <= 5.0:
+                    score += 25
+                elif 0 < last_pct < 2.0:
                     score += 15
+            elif pool == 'upper':
+                if 5.0 < last_pct <= 7.0:
+                    score += 22
+                elif 7.0 < last_pct <= 9.5:
+                    score += 12
 
-            # 2. 量比评分
+            # 量比评分
             if n >= 20:
                 vol_mean = amount[-21:-1].mean()
                 if vol_mean > 0:
@@ -505,7 +636,7 @@ def layer5_overnight_score(stock_list: List[str], trade_date: date,
                     elif vr > 1:
                         score += 10
 
-            # 3. MA5距离评分
+            # MA5距离评分
             if n >= 5:
                 ma5 = close[-5:].mean()
                 dist = (close[-1] - ma5) / (ma5 + 1e-9)
@@ -514,74 +645,211 @@ def layer5_overnight_score(stock_list: List[str], trade_date: date,
                 elif dist < 0:
                     score += 5
 
-            # 4. 连涨天数评分
+            # 连涨天数评分
             if n >= 3:
                 up_days = sum(1 for i in range(-3, 0) if pct_chg[i] > 0)
                 if up_days >= 2:
                     score += 15
 
-            # 5. 换手率评分
+            # 换手率评分
             if 'turnover_rate' in df.columns:
                 tr = float(df['turnover_rate'].iloc[-1])
                 if 3 <= tr <= 15:
                     score += 10
 
+            # 情绪加成
+            score += sentiment_score
+
+            # 高位风险扣分
+            if pool == 'upper' and last_pct > 8.0:
+                score -= 10
+            elif pool == 'extreme':
+                score -= 20
+
             results.append({
                 'ts_code': ts_code,
-                'overnight_score': min(score, 100),
+                'overnight_score': min(score, 120),
+                'pool': pool,
+                'pct_chg': round(last_pct, 2),
             })
         except Exception as e:
             logger.debug(f"Layer5 {ts_code} 失败: {e}")
 
     if not results:
         return pd.DataFrame()
-
     return pd.DataFrame(results)
 
 
+def layer6_sustain_eval(stock_list: List[str], trade_date: date,
+                         cfg: MetaBacktestConfig) -> pd.DataFrame:
+    """Layer 6: 持续性评估 v2.0（ADX趋势+连涨+量能+均线）"""
+    if not cfg.layer6_enabled:
+        return pd.DataFrame({'ts_code': stock_list, 'sustain_score': [0.5] * len(stock_list)})
+
+    start_date = trade_date - timedelta(days=120)
+    results = []
+
+    for ts_code in stock_list:
+        try:
+            df = get_daily_quotes_cached(ts_code, start_date, trade_date)
+            if df.empty or len(df) < 30:
+                continue
+
+            close = df['close'].values.astype(float)
+            high = df['high'].values.astype(float)
+            low = df['low'].values.astype(float)
+            amount = df['amount'].values.astype(float) if 'amount' in df.columns else np.zeros(len(df))
+            pct_chg = df['pct_chg'].values.astype(float) if 'pct_chg' in df.columns else np.zeros(len(df))
+            n = len(close)
+
+            sustain_score = 0.0
+
+            # ADX趋势强度
+            p = 14
+            tr = np.maximum(high[1:] - low[1:],
+                            np.maximum(np.abs(high[1:] - close[:-1]),
+                                       np.abs(low[1:] - close[:-1])))
+            up = high[1:] - high[:-1]; dn = low[:-1] - low[1:]
+            atr = _ema(tr, p)
+            pdi = 100 * _ema(np.where((up > dn) & (up > 0), up, 0.0), p) / (atr + 1e-9)
+            mdi = 100 * _ema(np.where((dn > up) & (dn > 0), dn, 0.0), p) / (atr + 1e-9)
+            adx_arr = _ema(100 * np.abs(pdi - mdi) / (pdi + mdi + 1e-9), p)
+            adx_val = float(adx_arr[-1])
+            pdi_val = float(pdi[-1]); mdi_val = float(mdi[-1])
+
+            if adx_val >= cfg.layer6_adx_trend_min and pdi_val > mdi_val:
+                sustain_score += 0.30
+            elif pdi_val > mdi_val:
+                sustain_score += 0.15
+
+            # 连涨天数
+            consecutive_up = 0
+            for i in range(-1, -min(n, 15), -1):
+                if pct_chg[i] > 0:
+                    consecutive_up += 1
+                else:
+                    break
+            if consecutive_up <= 3:
+                sustain_score += 0.15
+            elif consecutive_up <= 7:
+                sustain_score += 0.08
+            else:
+                sustain_score -= 0.10
+
+            # 量能配合
+            if n >= 10:
+                up_mask = pct_chg[-10:] > 0
+                down_mask = pct_chg[-10:] < 0
+                up_vol = amount[-10:][up_mask].mean() if up_mask.any() else 0
+                down_vol = amount[-10:][down_mask].mean() if down_mask.any() else 1e-9
+                if up_vol > down_vol * 1.2:
+                    sustain_score += 0.15
+                elif up_vol > down_vol:
+                    sustain_score += 0.08
+                else:
+                    sustain_score -= 0.05
+
+            # 均线支撑
+            if n >= 20:
+                ma5 = close[-6:-1].mean() if n >= 6 else close.mean()
+                ma10 = close[-11:-1].mean() if n >= 11 else close.mean()
+                ma20 = close[-21:-1].mean() if n >= 21 else close.mean()
+                last_close = float(close[-1])
+                ma_support = sum(1 for m in [ma5, ma10, ma20] if last_close > m)
+                if ma_support == 3:
+                    sustain_score += 0.10
+                elif ma_support >= 2:
+                    sustain_score += 0.05
+                else:
+                    sustain_score -= 0.05
+
+            sustain_score = max(0, min(1, sustain_score))
+            results.append({
+                'ts_code': ts_code,
+                'sustain_score': round(sustain_score, 3),
+            })
+        except Exception as e:
+            logger.debug(f"Layer6 {ts_code} 失败: {e}")
+
+    if not results:
+        return pd.DataFrame()
+    return pd.DataFrame(results)
+
+
+
+# ============================================================
+# 融合评分归一化 v2.0（动态权重+持续性调节+LLM否决）
+# ============================================================
+
 def normalize_and_fuse(factor_df: pd.DataFrame, launch_df: pd.DataFrame,
-                       llm_boosts: Dict[str, float],
-                       overnight_df: pd.DataFrame) -> pd.DataFrame:
-    """统一评分归一化 + 加权融合"""
+                       llm_data: Dict[str, Dict], overnight_df: pd.DataFrame,
+                       sustain_df: pd.DataFrame = None,
+                       weights: Dict[str, float] = None) -> pd.DataFrame:
+    """统一评分归一化 v2.0"""
     if factor_df.empty:
         return pd.DataFrame()
 
-    merged = factor_df[['ts_code', 'total_score', 'close']].copy()
-    merged = merged.rename(columns={'total_score': 'factor_score'})
+    if weights is None:
+        weights = {'factor': 0.25, 'launch': 0.15, 'llm': 0.20, 'overnight': 0.40}
 
-    # 归一化到0-100
-    if merged['factor_score'].max() > merged['factor_score'].min():
+    merged = factor_df[['ts_code', 'total_score', 'close']].copy()
+    merged = merged.rename(columns={'total_score': 'factor_raw'})
+
+    # 归一化因子分到0-100
+    if merged['factor_raw'].max() > merged['factor_raw'].min():
         merged['factor_score'] = (
-            (merged['factor_score'] - merged['factor_score'].min()) /
-            (merged['factor_score'].max() - merged['factor_score'].min()) * 100
+            (merged['factor_raw'] - merged['factor_raw'].min()) /
+            (merged['factor_raw'].max() - merged['factor_raw'].min()) * 100
         ).round(2)
     else:
         merged['factor_score'] = 50.0
 
-    # 合并launch_score
-    if not launch_df.empty:
+    # launch_score
+    if not launch_df.empty and 'launch_score' in launch_df.columns:
         launch_map = dict(zip(launch_df['ts_code'], launch_df['launch_score']))
         merged['launch_score'] = merged['ts_code'].map(launch_map).fillna(0)
         merged['launch_score'] = (merged['launch_score'] * 100).round(2)
     else:
         merged['launch_score'] = 0
 
-    # 合并llm_score
-    merged['llm_score'] = merged['ts_code'].map(llm_boosts).fillna(0).round(2)
+    # llm_score + veto
+    merged['llm_score'] = merged['ts_code'].map(
+        lambda c: llm_data.get(c, {}).get('llm_bonus', 0)).fillna(0).round(2)
+    merged['llm_veto'] = merged['ts_code'].map(
+        lambda c: llm_data.get(c, {}).get('llm_veto', False)).fillna(False)
 
-    # 合并overnight_score
-    if not overnight_df.empty:
+    # overnight_score
+    if not overnight_df.empty and 'overnight_score' in overnight_df.columns:
         ov_map = dict(zip(overnight_df['ts_code'], overnight_df['overnight_score']))
         merged['overnight_score'] = merged['ts_code'].map(ov_map).fillna(0).round(2)
+        pool_map = dict(zip(overnight_df['ts_code'], overnight_df.get('pool', pd.Series())))
+        merged['pool'] = merged['ts_code'].map(pool_map).fillna('stable')
     else:
         merged['overnight_score'] = 0
+        merged['pool'] = 'stable'
+
+    # sustain_score
+    if sustain_df is not None and not sustain_df.empty and 'sustain_score' in sustain_df.columns:
+        merged['sustain_raw'] = merged['ts_code'].map(
+            dict(zip(sustain_df['ts_code'], sustain_df['sustain_score']))
+        ).fillna(0.5)
+    else:
+        merged['sustain_raw'] = 0.5
 
     # 加权融合
     merged['meta_score'] = round(
-        merged['factor_score'] * 0.30 +
-        merged['launch_score'] * 0.20 +
-        merged['llm_score'] * 0.15 +
-        merged['overnight_score'] * 0.35, 2)
+        merged['factor_score'] * weights.get('factor', 0.25) +
+        merged['launch_score'] * weights.get('launch', 0.15) +
+        merged['llm_score'] * weights.get('llm', 0.20) +
+        merged['overnight_score'] * weights.get('overnight', 0.40), 2)
+
+    # 持续性调节
+    sustain_penalty = merged['sustain_raw'].apply(
+        lambda s: -10 * (0.3 - s) if s < 0.3 else 0)
+    merged['meta_score'] = (merged['meta_score'] + sustain_penalty).round(2)
+
+    # LLM否决
+    merged.loc[merged['llm_veto'], 'meta_score'] = 0
 
     # 只保留有启动信号或隔夜评分的
     merged = merged[(merged['launch_score'] > 0) | (merged['overnight_score'] > 0)]
@@ -590,11 +858,144 @@ def normalize_and_fuse(factor_df: pd.DataFrame, launch_df: pd.DataFrame,
 
 
 # ============================================================
+# 策略对比回测
+# ============================================================
+
+def run_single_strategy_backtest(strategy_name: str, trading_days: List[date],
+                                  cfg: MetaBacktestConfig) -> Dict:
+    """运行单个策略的回测用于对比"""
+    capital = cfg.initial_capital
+    all_trades = []
+    max_positions = cfg.max_positions
+    position_value = cfg.initial_capital * cfg.single_position_pct
+
+    positions: Dict[str, Dict] = {}
+
+    for i, trade_date in enumerate(trading_days):
+        # 评估退出
+        for ts_code in list(positions.keys()):
+            pos = positions[ts_code]
+            holding_days = (trade_date - pos['entry_date']).days
+            # 简单退出：硬止损8% + 时间止损15天
+            start = trade_date - timedelta(days=5)
+            df = get_daily_quotes_cached(ts_code, start, trade_date, fields="date,close")
+            if df.empty:
+                continue
+            current_price = float(df['close'].iloc[-1])
+            pnl_pct = (current_price - pos['entry_price']) / pos['entry_price']
+
+            should_exit = False
+            exit_reason = ''
+            if pnl_pct <= -0.08:
+                should_exit = True; exit_reason = '硬止损'
+            elif holding_days >= 15:
+                should_exit = True; exit_reason = '时间止损'
+
+            if should_exit:
+                shares = pos['shares']
+                exit_price = current_price * (1 - cfg.slippage_pct)
+                commission = exit_price * shares * cfg.commission_rate
+                capital += exit_price * shares - commission
+                all_trades.append({
+                    'ts_code': ts_code,
+                    'entry_date': str(pos['entry_date']),
+                    'exit_date': str(trade_date),
+                    'entry_price': pos['entry_price'],
+                    'exit_price': exit_price,
+                    'pnl_pct': round(pnl_pct, 4),
+                    'holding_days': holding_days,
+                    'exit_reason': exit_reason,
+                })
+                del positions[ts_code]
+
+        # 生成信号
+        if strategy_name == 'multi_factor_only':
+            factor_df = layer1_multi_factor_scan(trade_date, cfg)
+            candidates = factor_df['ts_code'].tolist() if not factor_df.empty else []
+        elif strategy_name == 'overnight_only':
+            stock_pool = get_active_stocks(trade_date, min_amount=cfg.layer2_min_amount)
+            overnight_df = layer5_overnight_score(stock_pool, trade_date, cfg)
+            candidates = overnight_df.nlargest(10, 'overnight_score')['ts_code'].tolist() if not overnight_df.empty else []
+        elif strategy_name == 'no_layer0':
+            factor_df = layer1_multi_factor_scan(trade_date, cfg)
+            l1_codes = factor_df['ts_code'].tolist() if not factor_df.empty else []
+            if not l1_codes:
+                continue
+            l2_codes = layer2_fundamental_filter(l1_codes, trade_date, cfg)
+            launch_df = layer3_launch_signals(l2_codes, trade_date, cfg)
+            llm_data = layer4_llm_boost(l2_codes, trade_date, cfg)
+            overnight_df = layer5_overnight_score(l2_codes, trade_date, cfg)
+            result_df = normalize_and_fuse(factor_df, launch_df, llm_data, overnight_df)
+            candidates = result_df['ts_code'].tolist() if not result_df.empty else []
+        else:
+            candidates = []
+
+        # 开仓
+        for ts_code in candidates:
+            if len(positions) >= max_positions:
+                break
+            if ts_code in positions:
+                continue
+            next_idx = i + 1
+            if next_idx >= len(trading_days):
+                continue
+            next_date = trading_days[next_idx]
+            entry_price = _get_open_price_simple(ts_code, next_date)
+            if entry_price is None or entry_price <= 0:
+                continue
+            shares = int(position_value / (entry_price * 100)) * 100
+            if shares <= 0:
+                shares = 100
+            entry_price_adj = entry_price * (1 + cfg.slippage_pct)
+            commission = entry_price_adj * shares * cfg.commission_rate
+            cost = entry_price_adj * shares + commission
+            if cost > capital:
+                continue
+            capital -= cost
+            positions[ts_code] = {
+                'entry_date': next_date,
+                'entry_price': entry_price_adj,
+                'shares': shares,
+            }
+
+    # 强制平仓
+    for ts_code in list(positions.keys()):
+        pos = positions[ts_code]
+        start = trading_days[-1] - timedelta(days=5) if trading_days else pos['entry_date']
+        df = get_daily_quotes_cached(ts_code, start, trading_days[-1], fields="date,close")
+        if not df.empty:
+            current_price = float(df['close'].iloc[-1])
+            pnl_pct = (current_price - pos['entry_price']) / pos['entry_price']
+            all_trades.append({
+                'ts_code': ts_code,
+                'entry_date': str(pos['entry_date']),
+                'exit_date': str(trading_days[-1]),
+                'entry_price': pos['entry_price'],
+                'exit_price': current_price,
+                'pnl_pct': round(pnl_pct, 4),
+                'holding_days': (trading_days[-1] - pos['entry_date']).days,
+                'exit_reason': '回测结束',
+            })
+
+    return {'trades': all_trades, 'strategy': strategy_name}
+
+
+def _get_open_price_simple(ts_code: str, trade_date: date) -> Optional[float]:
+    """简单获取开盘价"""
+    start = trade_date - timedelta(days=5)
+    df = get_daily_quotes(ts_code, start, trade_date, fields="date,open")
+    if df.empty:
+        return None
+    last = df.iloc[-1]
+    return float(last['open']) if pd.notna(last['open']) else None
+
+
+# ============================================================
 # 回测主类
 # ============================================================
 
 class BaostockBacktester:
-    """基于 Baostock 的融合元策略回测器"""
+    """基于 Baostock 的融合元策略回测器 v2.0"""
 
     def __init__(self, cfg: MetaBacktestConfig = None,
                  pm_cfg: PositionManagerConfig = None):
@@ -602,9 +1003,9 @@ class BaostockBacktester:
         self.pm_cfg = pm_cfg or DEFAULT_PM_CONFIG
 
     def run(self) -> Dict:
-        """运行回测"""
+        """运行回测 v2.0"""
         logger.info("=" * 70)
-        logger.info(f"融合元策略回测 (Baostock) {self.cfg.start_date} ~ {self.cfg.end_date}")
+        logger.info(f"融合元策略回测 v2.0 (Baostock) {self.cfg.start_date} ~ {self.cfg.end_date}")
         logger.info("=" * 70)
 
         ensure_login()
@@ -626,16 +1027,19 @@ class BaostockBacktester:
         capital = self.cfg.initial_capital
         daily_equity = []
         all_trades = []
-        layer_stats = {'L0_reject': 0, 'L1_count': [], 'L2_count': [],
-                       'L3_count': [], 'L4_covered': [], 'L5_count': [],
-                       'final_count': []}
+        layer_stats = {
+            'L0_reject': 0, 'L0_regime': {'bull': 0, 'oscillate': 0, 'bear': 0},
+            'L1_count': [], 'L2_count': [], 'L3_count': [],
+            'L4_covered': [], 'L4_vetoed': 0,
+            'L5_count': [], 'L5_pool': {'stable': 0, 'upper': 0, 'extreme': 0},
+            'L6_count': [], 'final_count': [],
+        }
 
         t_start = time.time()
 
         for i, trade_date in enumerate(trading_days):
             try:
                 # ── 1. 评估退出条件 ──
-                # 用baostock数据更新持仓的价格
                 self._update_position_prices(pm, trade_date)
                 exit_signals = pm.evaluate_exits(trade_date)
 
@@ -656,13 +1060,18 @@ class BaostockBacktester:
                         all_trades.append(record)
                         capital += exit_price_adj * shares - commission
 
-                # ── 2. Layer 0: 大盘风控 ──
+                # ── 2. Layer 0: 大盘风控 + 市场状态 ──
                 market_risk = layer0_market_risk(trade_date, self.cfg)
+                regime = market_risk.get('regime', 'oscillate')
+                layer_stats['L0_regime'][regime] = layer_stats['L0_regime'].get(regime, 0) + 1
+                weights = market_risk.get('weights', self.cfg.weights_oscillate)
+
                 if not market_risk['passed']:
                     layer_stats['L0_reject'] += 1
                     equity = self._calc_equity(pm, capital, trade_date)
                     daily_equity.append({'date': str(trade_date), 'equity': equity,
-                                         'positions': pm.open_position_count})
+                                         'positions': pm.open_position_count,
+                                         'regime': regime})
                     continue
 
                 # ── 3. Layer 1: 多因子扫描 ──
@@ -673,7 +1082,8 @@ class BaostockBacktester:
                 if not l1_codes:
                     equity = self._calc_equity(pm, capital, trade_date)
                     daily_equity.append({'date': str(trade_date), 'equity': equity,
-                                         'positions': pm.open_position_count})
+                                         'positions': pm.open_position_count,
+                                         'regime': regime})
                     continue
 
                 # ── 4. Layer 2: 基本面过滤 ──
@@ -683,7 +1093,8 @@ class BaostockBacktester:
                 if not l2_codes:
                     equity = self._calc_equity(pm, capital, trade_date)
                     daily_equity.append({'date': str(trade_date), 'equity': equity,
-                                         'positions': pm.open_position_count})
+                                         'positions': pm.open_position_count,
+                                         'regime': regime})
                     continue
 
                 # ── 5. Layer 3: 启动信号 ──
@@ -692,21 +1103,40 @@ class BaostockBacktester:
                 layer_stats['L3_count'].append(len(l3_codes))
 
                 # ── 6. Layer 4: LLM加成 ──
-                llm_boosts = layer4_llm_boost(l2_codes, trade_date, self.cfg)
-                l4_covered = sum(1 for v in llm_boosts.values() if v > 0)
+                llm_data = layer4_llm_boost(l2_codes, trade_date, self.cfg)
+                l4_covered = sum(1 for v in llm_data.values() if v.get('llm_bonus', 0) > 0)
+                l4_vetoed = sum(1 for v in llm_data.values() if v.get('llm_veto', False))
                 layer_stats['L4_covered'].append(l4_covered)
+                layer_stats['L4_vetoed'] += l4_vetoed
 
                 # ── 7. Layer 5: 八步法评分 ──
-                # 对L2通过的标的都做评分（不限于L3通过的）
                 overnight_df = layer5_overnight_score(l2_codes, trade_date, self.cfg)
                 l5_codes = overnight_df['ts_code'].tolist() if not overnight_df.empty else []
                 layer_stats['L5_count'].append(len(l5_codes))
+                if not overnight_df.empty and 'pool' in overnight_df.columns:
+                    for pool_type in ['stable', 'upper', 'extreme']:
+                        count = (overnight_df['pool'] == pool_type).sum()
+                        layer_stats['L5_pool'][pool_type] += count
 
-                # ── 8. 融合评分 ──
-                result_df = normalize_and_fuse(factor_df, launch_df, llm_boosts, overnight_df)
+                # ── 8. Layer 6: 持续性评估 ──
+                sustain_df = layer6_sustain_eval(l2_codes, trade_date, self.cfg)
+                layer_stats['L6_count'].append(len(sustain_df))
+
+                # ── 9. 融合评分 ──
+                result_df = normalize_and_fuse(
+                    factor_df, launch_df, llm_data, overnight_df,
+                    sustain_df=sustain_df, weights=weights)
                 layer_stats['final_count'].append(len(result_df))
 
-                # ── 9. 开仓 ──
+                # LLM否决过滤
+                vetoed_codes = set()
+                for ts_code, data in llm_data.items():
+                    if data.get('llm_veto', False):
+                        vetoed_codes.add(ts_code)
+                if vetoed_codes:
+                    result_df = result_df[~result_df['ts_code'].isin(vetoed_codes)]
+
+                # ── 10. 开仓 ──
                 if not result_df.empty:
                     for _, row in result_df.iterrows():
                         if pm.open_position_count >= self.cfg.max_positions:
@@ -714,7 +1144,6 @@ class BaostockBacktester:
                         if row['ts_code'] in pm.positions:
                             continue
 
-                        # T+1开盘价
                         next_idx = i + 1
                         if next_idx >= len(trading_days):
                             continue
@@ -723,8 +1152,9 @@ class BaostockBacktester:
                         if entry_price is None or entry_price <= 0:
                             continue
 
-                        # 仓位
-                        position_value = self.cfg.initial_capital * self.cfg.single_position_pct
+                        # 仓位（根据市场状态调整）
+                        position_pct = self.cfg.single_position_pct * market_risk.get('position_cap', 1.0)
+                        position_value = self.cfg.initial_capital * position_pct
                         shares = int(position_value / (entry_price * 100)) * 100
                         if shares <= 0:
                             shares = 100
@@ -747,10 +1177,11 @@ class BaostockBacktester:
                             factor_score=row.get('factor_score', 0),
                         )
 
-                # ── 10. 记录权益 ──
+                # ── 11. 记录权益 ──
                 equity = self._calc_equity(pm, capital, trade_date)
                 daily_equity.append({'date': str(trade_date), 'equity': equity,
-                                     'positions': pm.open_position_count})
+                                     'positions': pm.open_position_count,
+                                     'regime': regime})
 
                 # 进度
                 if (i + 1) % 5 == 0 or i == len(trading_days) - 1:
@@ -760,7 +1191,7 @@ class BaostockBacktester:
                     logger.info(
                         f"进度 {i+1}/{len(trading_days)} ({trade_date}): "
                         f"持仓{pm.open_position_count}只 权益{equity:,.0f} "
-                        f"剩余{remaining:.0f}s")
+                        f"市场{regime} 剩余{remaining:.0f}s")
 
                 # 定期清理缓存
                 if (i + 1) % 10 == 0:
@@ -781,27 +1212,41 @@ class BaostockBacktester:
                     all_trades.append(record)
 
         total_elapsed = time.time() - t_start
+
+        # ── 策略对比回测 ──
+        compare_results = {}
+        if cfg.strategy_compare_enabled:
+            logger.info("\n运行策略对比回测...")
+            for strategy_name in ['multi_factor_only', 'overnight_only', 'no_layer0']:
+                try:
+                    logger.info(f"  对比策略: {strategy_name}")
+                    cmp_result = run_single_strategy_backtest(
+                        strategy_name, trading_days, self.cfg)
+                    compare_results[strategy_name] = cmp_result
+                except Exception as e:
+                    logger.warning(f"  {strategy_name} 对比失败: {e}")
+
         logout()
 
         # 汇总
-        summary = self._build_summary(all_trades, daily_equity, layer_stats, total_elapsed)
+        summary = self._build_summary(
+            all_trades, daily_equity, layer_stats, total_elapsed, compare_results)
 
         return {
             'trades': all_trades,
             'daily_equity': pd.DataFrame(daily_equity),
             'summary': summary,
             'layer_stats': layer_stats,
+            'compare_results': compare_results,
         }
 
     def _update_position_prices(self, pm: PositionManager, trade_date: date):
-        """更新持仓的当前价格（供退出评估用）"""
+        """更新持仓的当前价格"""
         start_date = trade_date - timedelta(days=60)
         for ts_code in list(pm.positions.keys()):
             try:
                 df = get_daily_quotes_cached(ts_code, start_date, trade_date)
                 if not df.empty:
-                    # 更新position manager内部需要的价格数据
-                    # position_manager.evaluate_exits 会自己加载价格
                     pass
             except Exception:
                 pass
@@ -809,19 +1254,16 @@ class BaostockBacktester:
     def _get_open_price(self, ts_code: str, trade_date: date) -> Optional[float]:
         """获取开盘价"""
         start = trade_date - timedelta(days=5)
-        df = get_daily_quotes(ts_code, start, trade_date,
-                              fields="date,open,close")
+        df = get_daily_quotes(ts_code, start, trade_date, fields="date,open,close")
         if df.empty:
             return None
-        # 取最后一天
         last = df.iloc[-1]
         return float(last['open']) if pd.notna(last['open']) else None
 
     def _get_close_price(self, ts_code: str, trade_date: date) -> Optional[float]:
         """获取收盘价"""
         start = trade_date - timedelta(days=5)
-        df = get_daily_quotes(ts_code, start, trade_date,
-                              fields="date,close")
+        df = get_daily_quotes(ts_code, start, trade_date, fields="date,close")
         if df.empty:
             return None
         last = df.iloc[-1]
@@ -840,11 +1282,12 @@ class BaostockBacktester:
         return equity
 
     def _build_summary(self, trades: List[Dict], daily_equity: List[Dict],
-                       layer_stats: Dict, elapsed: float) -> str:
-        """构建回测汇总"""
+                       layer_stats: Dict, elapsed: float,
+                       compare_results: Dict = None) -> str:
+        """构建回测汇总 v2.0"""
         lines = []
         lines.append("=" * 70)
-        lines.append("  融合元策略回测汇总 (Baostock)")
+        lines.append("  融合元策略回测汇总 v2.0 (Baostock)")
         lines.append("=" * 70)
         lines.append(f"  回测区间: {self.cfg.start_date} ~ {self.cfg.end_date}")
         lines.append(f"  初始资金: {self.cfg.initial_capital:,.0f}")
@@ -909,6 +1352,24 @@ class BaostockBacktester:
             lines.append(f"  最大回撤: {max_dd:.2%}")
             lines.append("")
 
+        # 市场状态分布
+        if 'L0_regime' in layer_stats:
+            lines.append("--- 市场状态分布 ---")
+            total_days = sum(layer_stats['L0_regime'].values())
+            for regime, count in layer_stats['L0_regime'].items():
+                if count > 0:
+                    lines.append(f"  {regime}: {count}天 ({count/total_days:.1%})" if total_days > 0 else f"  {regime}: {count}天")
+            lines.append("")
+
+        # 双池分布
+        if 'L5_pool' in layer_stats:
+            lines.append("--- 双池分布 ---")
+            total_pool = sum(layer_stats['L5_pool'].values())
+            for pool_type, count in layer_stats['L5_pool'].items():
+                if count > 0:
+                    lines.append(f"  {pool_type}: {count}只 ({count/total_pool:.1%})" if total_pool > 0 else f"  {pool_type}: {count}只")
+            lines.append("")
+
         # 各层漏斗统计
         lines.append("--- 各层漏斗平均通过数 ---")
         for layer, counts in layer_stats.items():
@@ -919,8 +1380,35 @@ class BaostockBacktester:
                 lines.append(f"  {layer}: {counts}")
         lines.append("")
 
+        # 策略对比
+        if compare_results:
+            lines.append("--- 策略对比 ---")
+            lines.append(f"  {'策略':<25} {'交易数':>6} {'胜率':>8} {'平均收益':>10} {'总收益':>10}")
+            lines.append(f"  {'─'*65}")
+
+            # 融合策略
+            if trades:
+                pnls = [t['pnl_pct'] for t in trades]
+                win_rate = len([p for p in pnls if p > 0]) / len(pnls) if pnls else 0
+                avg_ret = np.mean(pnls) if pnls else 0
+                total_ret = sum(pnls) if pnls else 0
+                lines.append(f"  {'融合策略(v2.0)':<25} {len(trades):>6} {win_rate:>8.1%} {avg_ret:>10.2%} {total_ret:>10.2%}")
+
+            for strategy_name, cmp in compare_results.items():
+                cmp_trades = cmp.get('trades', [])
+                if cmp_trades:
+                    cmp_pnls = [t['pnl_pct'] for t in cmp_trades]
+                    cmp_win = len([p for p in cmp_pnls if p > 0]) / len(cmp_pnls) if cmp_pnls else 0
+                    cmp_avg = np.mean(cmp_pnls) if cmp_pnls else 0
+                    cmp_total = sum(cmp_pnls) if cmp_pnls else 0
+                    lines.append(f"  {strategy_name:<25} {len(cmp_trades):>6} {cmp_win:>8.1%} {cmp_avg:>10.2%} {cmp_total:>10.2%}")
+                else:
+                    lines.append(f"  {strategy_name:<25} {'0':>6} {'N/A':>8} {'N/A':>10} {'N/A':>10}")
+            lines.append("")
+
         lines.append("=" * 70)
         return "\n".join(lines)
+
 
 
 # ============================================================
@@ -941,25 +1429,45 @@ def run_backtest():
     if result:
         print(result['summary'])
 
-        out_dir = Path('./results')
+        out_dir = Path(cfg.output_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(BEIJING_TZ).strftime('%Y%m%d_%H%M')
 
         if result['trades']:
             trades_df = pd.DataFrame(result['trades'])
-            trades_path = out_dir / f"meta_bt_trades_{timestamp}.csv"
+            trades_path = out_dir / f"meta_bt_v2_trades_{timestamp}.csv"
             trades_df.to_csv(trades_path, index=False, encoding='utf-8-sig')
             print(f"\n  交易记录: {trades_path}")
 
         if not result['daily_equity'].empty:
-            eq_path = out_dir / f"meta_bt_equity_{timestamp}.csv"
+            eq_path = out_dir / f"meta_bt_v2_equity_{timestamp}.csv"
             result['daily_equity'].to_csv(eq_path, index=False, encoding='utf-8-sig')
             print(f"  权益曲线: {eq_path}")
 
-        report_path = out_dir / f"meta_bt_report_{timestamp}.txt"
+        report_path = out_dir / f"meta_bt_v2_report_{timestamp}.txt"
         with open(report_path, 'w', encoding='utf-8') as f:
             f.write(result['summary'])
         print(f"  回测报告: {report_path}")
+
+        # 保存策略对比结果
+        if result.get('compare_results'):
+            compare_path = out_dir / f"meta_bt_v2_compare_{timestamp}.json"
+            compare_data = {}
+            for strategy_name, cmp in result['compare_results'].items():
+                trades = cmp.get('trades', [])
+                if trades:
+                    pnls = [t['pnl_pct'] for t in trades]
+                    compare_data[strategy_name] = {
+                        'total_trades': len(trades),
+                        'win_rate': round(len([p for p in pnls if p > 0]) / len(pnls), 4) if pnls else 0,
+                        'avg_return': round(float(np.mean(pnls)), 4) if pnls else 0,
+                        'total_return': round(float(sum(pnls)), 4) if pnls else 0,
+                    }
+                else:
+                    compare_data[strategy_name] = {'total_trades': 0}
+            with open(compare_path, 'w', encoding='utf-8') as f:
+                json.dump(compare_data, f, ensure_ascii=False, indent=2)
+            print(f"  策略对比: {compare_path}")
 
     return result
 

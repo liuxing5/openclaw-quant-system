@@ -1,0 +1,48 @@
+============================================================
+  K-line fetch: 2026-03
+  Range: 2025-12-31 ~ 2026-03-31
+  Dir: D:\pythonProject\openclaw-quant-system\data\klines\2026-03
+============================================================
+Stock pool: 800 codes
+Already have 384 stocks
+Need to fetch 416 stocks...
+  [10/416] ok=394 fail=0 (28s, ETA 1145s)
+  [20/416] ok=404 fail=0 (57s, ETA 1138s)
+  [30/416] ok=414 fail=0 (87s, ETA 1122s)
+  [40/416] ok=424 fail=0 (114s, ETA 1073s)
+  [50/416] ok=434 fail=0 (141s, ETA 1035s)
+  [60/416] ok=444 fail=0 (170s, ETA 1007s)
+  [70/416] ok=454 fail=0 (198s, ETA 979s)
+  [80/416] ok=464 fail=0 (229s, ETA 962s)
+  [90/416] ok=474 fail=0 (257s, ETA 931s)
+  [100/416] ok=484 fail=0 (285s, ETA 901s)
+  [110/416] ok=494 fail=0 (313s, ETA 871s)
+  [120/416] ok=504 fail=0 (337s, ETA 832s)
+  [130/416] ok=514 fail=0 (362s, ETA 797s)
+  [140/416] ok=524 fail=0 (392s, ETA 773s)
+  [150/416] ok=534 fail=0 (420s, ETA 744s)
+  [160/416] ok=544 fail=0 (447s, ETA 715s)
+  [170/416] ok=554 fail=0 (477s, ETA 691s)
+  [180/416] ok=564 fail=0 (503s, ETA 660s)
+  [190/416] ok=574 fail=0 (533s, ETA 634s)
+  [200/416] ok=584 fail=0 (558s, ETA 603s)
+  [210/416] ok=594 fail=0 (588s, ETA 577s)
+  [220/416] ok=604 fail=0 (612s, ETA 545s)
+  [230/416] ok=614 fail=0 (637s, ETA 515s)
+  [240/416] ok=624 fail=0 (664s, ETA 487s)
+  [250/416] ok=634 fail=0 (688s, ETA 457s)
+  [260/416] ok=644 fail=0 (713s, ETA 428s)
+  [270/416] ok=654 fail=0 (744s, ETA 402s)
+  [280/416] ok=664 fail=0 (770s, ETA 374s)
+  [290/416] ok=674 fail=0 (796s, ETA 346s)
+  [300/416] ok=684 fail=0 (823s, ETA 318s)
+  [310/416] ok=694 fail=0 (849s, ETA 290s)
+  [320/416] ok=704 fail=0 (874s, ETA 262s)
+  [330/416] ok=714 fail=0 (901s, ETA 235s)
+  [340/416] ok=724 fail=0 (929s, ETA 208s)
+  [350/416] ok=734 fail=0 (979s, ETA 185s)
+  [360/416] ok=744 fail=0 (1008s, ETA 157s)
+  [370/416] ok=754 fail=0 (1039s, ETA 129s)
+  [380/416] ok=764 fail=0 (1071s, ETA 101s)
+  [390/416] ok=774 fail=0 (1103s, ETA 74s)
+  [400/416] ok=784 fail=0 (1132s, ETA 45s)

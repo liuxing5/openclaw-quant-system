@@ -1,0 +1,8 @@
+Step 1: DB connection...
+ERROR: SSL connection has been closed unexpectedly
+
+Traceback (most recent call last):
+  File "D:\pythonProject\openclaw-quant-system\diag2.py", line 20, in <module>
+    cur.execute("SELECT count(*) FROM daily_quotes WHERE trade_date = '2026-04-01'")
+psycopg2.OperationalError: SSL connection has been closed unexpectedly
+

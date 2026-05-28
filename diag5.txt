@@ -1,0 +1,5 @@
+Connecting direct (port 5432)...
+Connected!
+Result: (1,)
+Count: 3076
+Done!

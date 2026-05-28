@@ -1,0 +1,17 @@
+﻿Connecting via DB_URL...
+Connected in 0.6s
+Error: SSL connection has been closed unexpectedly
+
+python : Traceback (most recent call last):
+所在位置 行:1 字符: 44
++ ... roject\openclaw-quant-system; python -u test_db_conn2.py 2>&1 | Out-F ...
++                                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last) 
+   ::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "D:\pythonProject\openclaw-quant-system\test_db_conn2.py", line 20, in <
+module>
+    cur.execute("SELECT 1")
+psycopg2.OperationalError: SSL connection has been closed unexpectedly
+

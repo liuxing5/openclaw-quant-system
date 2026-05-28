@@ -1,0 +1,10 @@
+Loaded 800 stocks
+Trading days: 20
+Day 2026-01-05: 800 stocks with klines
+Industries: 957
+Picks: 2
+Items to write: 2
+  300418.SZ score=62.5
+  300570.SZ score=60.3
+Writing to DB...
+Written: 2 in 2.2s

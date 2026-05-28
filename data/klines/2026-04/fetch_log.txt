@@ -1,0 +1,41 @@
+============================================================
+  K-line fetch: 2026-04
+  Range: 2026-01-31 ~ 2026-04-30
+  Dir: D:\pythonProject\openclaw-quant-system\data\klines\2026-04
+============================================================
+Stock pool: 800 codes
+Already have 384 stocks
+Need to fetch 416 stocks...
+  [10/416] ok=394 fail=0 (32s, ETA 1313s)
+  [20/416] ok=404 fail=0 (60s, ETA 1182s)
+  [30/416] ok=414 fail=0 (91s, ETA 1169s)
+  [40/416] ok=424 fail=0 (118s, ETA 1109s)
+  [50/416] ok=434 fail=0 (143s, ETA 1049s)
+  [60/416] ok=444 fail=0 (176s, ETA 1046s)
+  [70/416] ok=454 fail=0 (204s, ETA 1009s)
+  [80/416] ok=464 fail=0 (231s, ETA 972s)
+  [90/416] ok=474 fail=0 (256s, ETA 927s)
+  [100/416] ok=484 fail=0 (287s, ETA 905s)
+  [110/416] ok=494 fail=0 (314s, ETA 875s)
+  [120/416] ok=504 fail=0 (350s, ETA 863s)
+  [130/416] ok=514 fail=0 (380s, ETA 837s)
+  [140/416] ok=524 fail=0 (410s, ETA 808s)
+  [150/416] ok=534 fail=0 (443s, ETA 786s)
+  [160/416] ok=544 fail=0 (471s, ETA 754s)
+  [170/416] ok=554 fail=0 (504s, ETA 729s)
+  [180/416] ok=564 fail=0 (534s, ETA 701s)
+  [190/416] ok=574 fail=0 (562s, ETA 668s)
+  [200/416] ok=584 fail=0 (593s, ETA 640s)
+  [210/416] ok=594 fail=0 (620s, ETA 608s)
+  [220/416] ok=604 fail=0 (651s, ETA 580s)
+  [230/416] ok=614 fail=0 (683s, ETA 552s)
+  [240/416] ok=624 fail=0 (717s, ETA 526s)
+  [250/416] ok=634 fail=0 (747s, ETA 496s)
+  [260/416] ok=644 fail=0 (775s, ETA 465s)
+  [270/416] ok=654 fail=0 (829s, ETA 448s)
+  [280/416] ok=664 fail=0 (862s, ETA 419s)
+  [290/416] ok=674 fail=0 (889s, ETA 386s)
+  [300/416] ok=684 fail=0 (915s, ETA 354s)
+  [310/416] ok=694 fail=0 (943s, ETA 323s)
+  [320/416] ok=704 fail=0 (971s, ETA 291s)
+  [330/416] ok=714 fail=0 (1002s, ETA 261s)

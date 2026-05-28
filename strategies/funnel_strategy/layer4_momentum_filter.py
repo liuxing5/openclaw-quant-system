@@ -1,12 +1,12 @@
 """
-Layer 4: 动能与买入信号
+Layer 4: 动能与买入信�?
 ========================
-决策逻辑：
-  出现【需求吸收K线（EMA12附近锤子/刺透+放量）】或
+决策逻辑�?
+  出现【需求吸收K线（EMA12附近锤子/刺�?放量）】或
   【强势接力（昨日首板，今日回踩VWAP翘头）】；
-  同时量比1.5~3；乖离率<6%；未出现天量上轨禁止信号。
+  同时量比1.5~3；乖离率<6%；未出现天量上轨禁止信号�?
 
-吸收策略：⑤价格行为/VWAP/一进二改良/红三兵限制/布林上轨反用/箱体反转K线
+吸收策略：⑤价格行为/VWAP/一进二改良/红三兵限�?布林上轨反用/箱体反转K�?
 """
 from __future__ import annotations
 
@@ -33,10 +33,10 @@ except ImportError:
 BEIJING_TZ = timezone(timedelta(hours=8))
 LAYER4_WORKERS = min(8, (os.cpu_count() or 4))
 
-# ── 纯 Python 计算（避开 pandas 开销，适合小数据集） ──
+# ── �?Python 计算（避开 pandas 开销，适合小数据集�?──
 
 def _fast_ema_last(values: np.ndarray, period: int) -> float:
-    """快速计算 EMA 最后一个值（纯 Python，5点数据比 pandas.ewm 快10x）"""
+    """快速计�?EMA 最后一个值（�?Python�?点数据比 pandas.ewm �?0x�?""
     n = len(values)
     if n == 0:
         return 0.0
@@ -48,7 +48,7 @@ def _fast_ema_last(values: np.ndarray, period: int) -> float:
 
 
 def _fast_boll_upper(values: np.ndarray, period: int = 20) -> float:
-    """快速计算布林上轨最后一个值"""
+    """快速计算布林上轨最后一个�?""
     n = len(values)
     if n < period:
         return float('nan')
@@ -58,16 +58,16 @@ def _fast_boll_upper(values: np.ndarray, period: int = 20) -> float:
     return mid + std * 2.0
 
 
-# ── 批量加载 + 预计算指标 ──
+# ── 批量加载 + 预计算指�?──
 
 def _batch_load_and_precompute(
     stock_list: List[str], trade_date: date, db_conn, cfg, days: int = 30
 ) -> Tuple[Dict, Dict]:
     """
-    批量加载 OHLCV + 预计算所有股票的技术指标。
+    批量加载 OHLCV + 预计算所有股票的技术指标�?
 
     返回:
-      ohlcv_cache: {ts_code: arr_dict}  — 仅保留最后5行用于K线形态检测
+      ohlcv_cache: {ts_code: arr_dict}  �?仅保留最�?行用于K线形态检�?
       precomputed:  {ts_code: {ema12, bias_pct, vol_ratio, boll_upper, ...}}
     """
     if not stock_list:
@@ -102,7 +102,7 @@ def _batch_load_and_precompute(
         if len(group) < 3:
             continue
 
-        # 转为 numpy 数组（纯 Python 计算，避免 pandas 开销）
+        # 转为 numpy 数组（纯 Python 计算，避�?pandas 开销�?
         close_arr = group['close'].values
         volume_arr = group['volume'].values
         n = len(close_arr)
@@ -131,7 +131,7 @@ def _batch_load_and_precompute(
             avg_vol = volume_arr[-6:-1].mean() if n >= 6 else volume_arr[:-1].mean()
             vol_ratio = today_vol / avg_vol if avg_vol > 0 else 0.0
 
-        # 布林上轨 + 20日均量（仅数据充足时计算）
+        # 布林上轨 + 20日均量（仅数据充足时计算�?
         boll_upper = float('nan')
         avg_vol_20 = 0.0
         if n >= 20:
@@ -150,7 +150,7 @@ def _batch_load_and_precompute(
             'volume': today_vol,
         }
 
-        # 保留最后 5 行用于 K 线形态检测（转成 list of dict 方便并行处理）
+        # 保留最�?5 行用�?K 线形态检测（转成 list of dict 方便并行处理�?
         tail_rows = []
         start_idx = max(0, n - 5)
         for i in range(start_idx, n):
@@ -167,7 +167,7 @@ def _batch_load_and_precompute(
     return ohlcv_cache, precomputed
 
 
-# ── K 线形态检测（纯 Python，无 pandas 依赖） ──
+# ── K 线形态检测（�?Python，无 pandas 依赖�?──
 
 def _is_hammer(row: dict) -> bool:
     body = abs(row['close'] - row['open'])
@@ -204,7 +204,7 @@ def _get_limit_pct(ts_code: str) -> float:
 def _check_single(
     ts_code: str, cfg, ohlcv_cache: Dict, precomputed: Dict
 ) -> dict:
-    """单股检查（纯 Python，无 pandas，适合多线程并行）"""
+    """单股检查（�?Python，无 pandas，适合多线程并行）"""
     result = {
         'passed': False, 'signal_type': 'none',
         'score_bonus': 0.0, 'details': {}, 'reject_reason': '',
@@ -219,7 +219,7 @@ def _check_single(
 
     today = rows[-1]
 
-    # 0. 涨跌幅
+    # 0. 涨跌�?
     result['pct_chg'] = today.get('pct_chg', 0.0)
 
     # 1. 量比验证（从预计算读取）
@@ -234,16 +234,16 @@ def _check_single(
         result['reject_reason'] = f'量比={vol_ratio:.1f}>{cfg.layer4_volume_ratio_max}'
         return result
 
-    # 2. 乖离率检查（从预计算读取）
+    # 2. 乖离率检查（从预计算读取�?
     bias_pct = pre['bias_pct']
     result['bias_pct'] = round(bias_pct, 2)
     result['details']['bias_pct'] = round(bias_pct, 2)
 
     if abs(bias_pct) > cfg.layer4_max_bias_pct:
-        result['reject_reason'] = f'乖离率={bias_pct:.1f}%>{cfg.layer4_max_bias_pct}%'
+        result['reject_reason'] = f'乖离�?{bias_pct:.1f}%>{cfg.layer4_max_bias_pct}%'
         return result
 
-    # 3. 天量上轨禁止（从预计算读取 avg_vol_20，避免 ohlcv_cache 截断导致死代码）
+    # 3. 天量上轨禁止（从预计算读�?avg_vol_20，避�?ohlcv_cache 截断导致死代码）
     if cfg.layer4_require_no_upper_boll_blowout:
         boll_upper = pre['boll_upper']
         avg_vol_20 = pre.get('avg_vol_20', 0.0)
@@ -254,7 +254,7 @@ def _check_single(
                 result['reject_reason'] = '天量上轨禁止'
                 return result
 
-    # 4. K线形态信号识别
+    # 4. K线形态信号识�?
     limit_pct = _get_limit_pct(ts_code)
     signal_found = False
 
@@ -321,7 +321,7 @@ def _check_single(
                 signal_found = True
 
     if not signal_found:
-        result['reject_reason'] = '无买入信号(K线形态不符)'
+        result['reject_reason'] = '无买入信�?K线形态不�?'
         return result
 
     result['passed'] = True
@@ -333,12 +333,12 @@ def _check_single(
 def check_momentum_entry(
     ts_code: str, trade_date: date, limit_pct: float, cfg, db_conn, verbose: bool = False,
 ) -> dict:
-    """单股动能检查（兼容接口）"""
+    """单股动能检查（兼容接口�?""
     ohlcv, pre = _batch_load_and_precompute([ts_code], trade_date, db_conn, cfg, days=30)
     return _check_single(ts_code, cfg, ohlcv, pre)
 
 
-# ── 主流程 ──
+# ── 主流�?──
 
 def run_layer4_momentum_filter(
     stock_list: List[str],
@@ -346,7 +346,7 @@ def run_layer4_momentum_filter(
     cfg=None,
     verbose: bool = True,
 ) -> List[dict]:
-    """动能与买入信号过滤。"""
+    """动能与买入信号过滤�?""
     if cfg is None:
         from .funnel_config import DEFAULT_FUNNEL_CONFIG
         cfg = DEFAULT_FUNNEL_CONFIG
@@ -357,7 +357,7 @@ def run_layer4_momentum_filter(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db_fresh()
+            conn = get_db()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -371,19 +371,19 @@ def run_layer4_momentum_filter(
 
     if verbose:
         print(f"\n{'─'*60}")
-        print(f"  [Layer 4] 动能与买入信号  — 待筛选 {n_total} 只")
+        print(f"  [Layer 4] 动能与买入信�? �?待筛�?{n_total} �?)
         print(f"{'─'*60}")
         print(f"  量比{cfg.layer4_volume_ratio_min}~{cfg.layer4_volume_ratio_max}  "
               f"乖离<{cfg.layer4_max_bias_pct}%  "
-              f"信号: 需求吸收{'✅' if cfg.layer4_enable_demand_absorption else '⏭️'}"
-              f" 强势接力{'✅' if cfg.layer4_enable_strong_relay else '⏭️'}"
-              f" 回踩反弹{'✅' if getattr(cfg, 'layer4_enable_pullback_bounce', False) else '⏭️'}")
+              f"信号: 需求吸收{'�? if cfg.layer4_enable_demand_absorption else '⏭️'}"
+              f" 强势接力{'�? if cfg.layer4_enable_strong_relay else '⏭️'}"
+              f" 回踩反弹{'�? if getattr(cfg, 'layer4_enable_pullback_bounce', False) else '⏭️'}")
 
-    # ── 阶段1: 批量加载 + 预计算指标 ──
-    db_conn = get_db_fresh()
+    # ── 阶段1: 批量加载 + 预计算指�?──
+    db_conn = get_db()
     try:
         if verbose:
-            print(f"  ⏳ 批量加载K线 + 预计算指标 ({n_total} 只)...")
+            print(f"  �?批量加载K�?+ 预计算指�?({n_total} �?...")
         ohlcv_cache, precomputed = _batch_load_and_precompute(
             stock_list, trade_date, db_conn, cfg, days=30)
     finally:
@@ -392,30 +392,30 @@ def run_layer4_momentum_filter(
 
     n_loaded = len(ohlcv_cache)
     if verbose:
-        print(f"  ✓ 数据就绪: {n_loaded}/{n_total} 只 (EMA/乖离/布林已预计算)")
+        print(f"  �?数据就绪: {n_loaded}/{n_total} �?(EMA/乖离/布林已预计算)")
 
     # ── 阶段2: 快速预筛选（量比 + 乖离，纯 dict 查找）──
     quick_pass = []
-    reject_stats = {'量比不符': 0, '乖离超标': 0, '天量上轨': 0, '无买入信号': 0, '数据不足': 0}
+    reject_stats = {'量比不符': 0, '乖离超标': 0, '天量上轨': 0, '无买入信�?: 0, '数据不足': 0}
 
     for ts_code in stock_list:
         pre = precomputed.get(ts_code)
         if pre is None:
             reject_stats['数据不足'] += 1
             continue
-        # 量比快速过滤
+        # 量比快速过�?
         vr = pre['vol_ratio']
         if pd.isna(vr) or vr < cfg.layer4_volume_ratio_min or vr > cfg.layer4_volume_ratio_max:
             reject_stats['量比不符'] += 1
             continue
-        # 乖离快速过滤
+        # 乖离快速过�?
         if pd.isna(pre['bias_pct']) or abs(pre['bias_pct']) > cfg.layer4_max_bias_pct:
             reject_stats['乖离超标'] += 1
             continue
         quick_pass.append(ts_code)
 
     if verbose:
-        print(f"  ⚡ 快速预筛: {len(quick_pass)} 只通过量比+乖离 "
+        print(f"  �?快速预�? {len(quick_pass)} 只通过量比+乖离 "
               f"(淘汰量比{reject_stats['量比不符']} + 乖离{reject_stats['乖离超标']})")
 
     # ── 阶段3: K线形态并行检测（仅对预筛选通过的股票）──
@@ -423,21 +423,21 @@ def run_layer4_momentum_filter(
     if not quick_pass:
         return passed
 
-    # 纯 Python 检查极快（~0.01ms/只），串行即可避免线程调度开销
+    # �?Python 检查极快（~0.01ms/只），串行即可避免线程调度开销
     _run_serial(quick_pass, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose)
 
     if verbose:
-        print(f"  ✓ 通过: {len(passed)} 只")
-        print(f"  ✗ 淘汰: {n_total - len(passed)} 只")
+        print(f"  �?通过: {len(passed)} �?)
+        print(f"  �?淘汰: {n_total - len(passed)} �?)
         for reason, count in reject_stats.items():
             if count > 0:
-                print(f"    {reason}: {count} 只")
+                print(f"    {reason}: {count} �?)
 
     return passed
 
 
 def _run_parallel(stock_list, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose):
-    """多线程并行（纯 Python 数据，无 GIL 竞争）"""
+    """多线程并行（�?Python 数据，无 GIL 竞争�?""
     n_total = len(stock_list)
 
     with ThreadPoolExecutor(max_workers=LAYER4_WORKERS) as executor:
@@ -500,4 +500,4 @@ def _count_reject(reason: str, stats: dict):
     elif '不足' in reason:
         stats['数据不足'] += 1
     else:
-        stats['无买入信号'] += 1
+        stats['无买入信�?] += 1

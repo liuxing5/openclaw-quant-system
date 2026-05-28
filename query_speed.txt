@@ -1,0 +1,4 @@
+﻿AVG(pct_chg) GROUP BY: 89 rows, 8.44s
+Market overview: adv=498, dec=2548, total=3076, 4.96s
+3 stocks batch: 72 rows, 0.14s
+Done!
