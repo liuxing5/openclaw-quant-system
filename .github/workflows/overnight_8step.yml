@@ -55,6 +55,7 @@ jobs:
         POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
         POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
         POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        POSTGRES_POOL_SIZE: 5
       run: |
         # 双 workflow 都运行 apply_schema，避免某天 LLM workflow 失败导致 schema drift
         # 模块未配置 DB 时 apply_schema 自动 noop（依赖 db_configured）
@@ -174,6 +175,7 @@ jobs:
         POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
         POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
         POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        POSTGRES_POOL_SIZE: 5
       run: |
         set +e  # Don't exit on error
         echo "Running: ${{ steps.task.outputs.script }}"
@@ -256,6 +258,7 @@ jobs:
         POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
         POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
         POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        POSTGRES_POOL_SIZE: 5
       run: |
         pip install jinja2 psycopg2-binary
         python strategies/llm_multisource/generate_report.py
@@ -268,4 +271,28 @@ jobs:
         personal_token: ${{ secrets.GH_PAT }}
         publish_dir: ./strategies/llm_multisource/docs
         destination_dir: 8step
+        keep_files: true
+
+    - name: Generate unified HTML report (funnel page)
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
+      env:
+        POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+        POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+        POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        POSTGRES_POOL_SIZE: 5
+      run: |
+        pip install jinja2 psycopg2-binary python-dotenv
+        python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs || echo "⚠️ funnel HTML generation failed, continuing..."
+
+    - name: Deploy unified HTML to GitHub Pages (funnel)
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
+      uses: peaceiris/actions-gh-pages@v3
+      with:
+        personal_token: ${{ secrets.GH_PAT }}
+        publish_dir: ./strategies/funnel_strategy/docs
+        destination_dir: funnel
         keep_files: true

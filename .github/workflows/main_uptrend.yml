@@ -42,6 +42,7 @@ jobs:
       POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
       POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
       POSTGRES_SSLMODE: require
+      POSTGRES_POOL_SIZE: 5
       TZ: Asia/Shanghai
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -66,6 +67,7 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
           POSTGRES_SSLMODE: require
+          POSTGRES_POOL_SIZE: 5
         run: |
           pip install psycopg2-binary python-dotenv
           python -m core.db.apply_schema || echo "⚠️ apply_schema 失败，继续执行"
@@ -147,6 +149,7 @@ jobs:
       POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
       POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
       POSTGRES_SSLMODE: require
+      POSTGRES_POOL_SIZE: 5
       TZ: Asia/Shanghai
 
     steps:
@@ -171,6 +174,7 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
           POSTGRES_SSLMODE: require
+          POSTGRES_POOL_SIZE: 5
         run: |
           python -m core.db.apply_schema || echo "Schema apply skipped"
 
@@ -183,6 +187,7 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
           POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
           POSTGRES_SSLMODE: require
+          POSTGRES_POOL_SIZE: 5
         run: |
           START_DATE="${{ inputs.date }}"
           END_DATE="${{ inputs.end_date }}"

@@ -29,6 +29,7 @@ jobs:
       POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
       POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
       POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_POOL_SIZE: 5
       TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
       TZ: Asia/Shanghai
     
@@ -68,6 +69,7 @@ jobs:
       POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
       POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
       POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_POOL_SIZE: 5
       # LLM
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
       LLM_BASE_URL: ${{ secrets.LLM_BASE_URL }}
@@ -130,4 +132,26 @@ jobs:
         with:
           personal_token: ${{ secrets.GH_PAT }}
           publish_dir: ./strategies/llm_multisource/docs
+          keep_files: true
+
+      - name: Generate unified HTML report (funnel page)
+        continue-on-error: true
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_POOL_SIZE: 5
+        run: |
+          pip install jinja2 psycopg2-binary python-dotenv
+          python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs || echo "⚠️ funnel HTML generation failed, continuing..."
+
+      - name: Deploy unified HTML to GitHub Pages (funnel)
+        continue-on-error: true
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.GH_PAT }}
+          publish_dir: ./strategies/funnel_strategy/docs
+          destination_dir: funnel
           keep_files: true
