@@ -254,12 +254,12 @@ def check_market_environment(
         result['passed'] = True
         result['can_trade'] = True
         result['max_position_pct'] = 1.0
-        result['reason'] = f'大盘偏强(涨{advancers}/{indicator_label}{index_close:.1f}%>{ema_period}EMA)，满仓操作
+        result['reason'] = f'大盘偏强(涨{advancers}/{indicator_label}{index_close:.1f}%>{ema_period}EMA)，满仓操作'
     elif breadth_condition or index_above_ema:
         result['passed'] = False
         result['can_trade'] = True
         result['max_position_pct'] = partial_cap
-        result['reason'] = (f'大盘偏弱(涨{advancers}/{indicator_label}{index_close:.1f}%{"上穿" if index_above_ema else "跌穿"}{ema_period}EMA)，
+        result['reason'] = (f'大盘偏弱(涨{advancers}/{indicator_label}{index_close:.1f}%{"上穿" if index_above_ema else "跌穿"}{ema_period}EMA)，'
                            f'仓位≤{int(partial_cap*100)}%')
     else:
         result['passed'] = False
@@ -268,7 +268,7 @@ def check_market_environment(
         result['reason'] = f'大盘弱势(涨{advancers}/{indicator_label}{index_close:.1f}%<{ema_period}EMA)，当日不荐股'
 
     if verbose:
-        status = '✅全仓 if result['passed'] else ('⚠️半仓' if result['can_trade'] else '❌休�?)
+        status = '✅全仓' if result['passed'] else ('⚠️半仓' if result['can_trade'] else '❌休市')
         print(f"    {indicator_label}: {index_close:.1f}%  {ema_period}EMA: {index_ema:.1f}%  判断: {status}")
         print(f"    {result['reason']}")
 
