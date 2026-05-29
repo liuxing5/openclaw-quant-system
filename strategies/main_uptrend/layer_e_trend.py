@@ -229,31 +229,37 @@ class LayerETrendDetector:
     def evaluate(self, ts_code: str, eval_date: str) -> TrendSignal:
         sig = TrendSignal(ts_code=ts_code, eval_date=eval_date)
 
-        df = self.loader.get_daily(ts_code, start_date="2020-01-01", end_date=eval_date, min_days=120)
-        if df is None or len(df) < 120:
-            sig.details["error"] = "数据不足(需120日)"
+        df = self.loader.get_daily(ts_code, start_date="2020-01-01", end_date=eval_date, min_days=10)
+        if df is None or len(df) < 10:
+            sig.details["error"] = f"数据不足(需10日,仅有{len(df) if df is not None else 0}日)"
             return sig
 
         df = df.reset_index(drop=True)
         close = df['close'].astype(float)
         volume = df['volume'].astype(float)
         pct_chg = df['pct_chg'].astype(float)
+        n = len(df)
+        has_ma60 = n >= 60
 
         scores = {}
         details = {}
         passed_count = 0
 
-        # E1: 均线多头排列
         ma5 = close.rolling(5).mean()
         ma10 = close.rolling(10).mean()
         ma20 = close.rolling(20).mean()
-        ma60 = close.rolling(60).mean()
+        ma60 = close.rolling(60).mean() if has_ma60 else None
 
-        alignment = (ma5 > ma10) & (ma10 > ma20) & (ma20 > ma60)
-        alignment_days = alignment.iloc[-self.cfg.e_ma_alignment_days:].sum()
-        e1_pass = alignment.iloc[-1] and alignment_days >= self.cfg.e_ma_alignment_days * 0.6
+        # E1: 均线多头排列
+        if has_ma60:
+            alignment = (ma5 > ma10) & (ma10 > ma20) & (ma20 > ma60)
+        else:
+            alignment = (ma5 > ma10) & (ma10 > ma20)
+        alignment_days = alignment.iloc[-min(self.cfg.e_ma_alignment_days, n):].sum()
+        e1_pass = alignment.iloc[-1] and alignment_days >= min(self.cfg.e_ma_alignment_days, n) * 0.6
         scores['e1_ma_alignment'] = 1.0 if e1_pass else (0.5 if alignment.iloc[-1] else 0)
-        details['e1_ma_alignment'] = f"多头{alignment_days:.0f}/{self.cfg.e_ma_alignment_days}日"
+        detail_suffix = "" if has_ma60 else "(短模式)"
+        details['e1_ma_alignment'] = f"多头{alignment_days:.0f}日{detail_suffix}"
         if e1_pass:
             passed_count += 1
 
@@ -273,52 +279,68 @@ class LayerETrendDetector:
             passed_count += 1
 
         # E3: 回撤控制
-        recent_high = close.iloc[-20:].max()
-        recent_low = close.iloc[-20:].min()
+        lookback = min(20, n)
+        recent_high = close.iloc[-lookback:].max()
+        recent_low = close.iloc[-lookback:].min()
         max_dd = (recent_low - recent_high) / recent_high if recent_high > 0 else 0
         e3_pass = -self.cfg.e_max_drawdown_20d < max_dd < 0
         scores['e3_drawdown'] = 1.0 if max_dd > -0.05 else (0.7 if max_dd > -self.cfg.e_max_drawdown_20d else 0.3)
-        details['e3_drawdown'] = f"20日最大回撤={max_dd*100:.1f}%"
+        details['e3_drawdown'] = f"{lookback}日最大回撤={max_dd*100:.1f}%"
         if e3_pass:
             passed_count += 1
 
         # E4: 阶梯式放量
         vol_ma5 = volume.iloc[-5:].mean()
-        vol_ma20 = volume.iloc[-20:].mean()
-        vol_ma60 = volume.iloc[-60:].mean()
-        staircase = (vol_ma5 > vol_ma20 * self.cfg.e_volume_staircase_min) and \
-                    (vol_ma20 > vol_ma60 * self.cfg.e_volume_staircase_min) and (vol_ma60 > 0)
-        scores['e4_volume_staircase'] = 1.0 if staircase else (0.5 if vol_ma5 > vol_ma20 else 0)
-        details['e4_volume_staircase'] = f"5/20/60均量比={vol_ma5/vol_ma20:.1f}x/{vol_ma20/vol_ma60:.1f}x"
+        vol_ma20 = volume.iloc[-min(20, n):].mean()
+        vol_ma60 = volume.iloc[-min(60, n):].mean() if n >= 20 else 0
+        if has_ma60 and vol_ma60 > 0:
+            staircase = (vol_ma5 > vol_ma20 * self.cfg.e_volume_staircase_min) and \
+                        (vol_ma20 > vol_ma60 * self.cfg.e_volume_staircase_min)
+            scores['e4_volume_staircase'] = 1.0 if staircase else (0.5 if vol_ma5 > vol_ma20 else 0)
+            details['e4_volume_staircase'] = f"5/20/60均量比={vol_ma5/vol_ma20:.1f}x/{vol_ma20/vol_ma60:.1f}x"
+        else:
+            staircase = vol_ma5 > vol_ma20 * self.cfg.e_volume_staircase_min
+            scores['e4_volume_staircase'] = 0.8 if staircase else (0.4 if vol_ma5 > vol_ma20 else 0)
+            details['e4_volume_staircase'] = f"5/20均量比={vol_ma5/vol_ma20:.1f}x(短模式)"
         if staircase:
             passed_count += 1
 
         # E5: 动量一致性
-        ret_10 = float(pct_chg.iloc[-10:].sum()) if len(pct_chg) >= 10 else 0
-        ret_20 = float(pct_chg.iloc[-20:].sum()) if len(pct_chg) >= 20 else 0
-        ret_60 = float(pct_chg.iloc[-60:].sum()) if len(pct_chg) >= 60 else 0
+        ret_10 = float(pct_chg.iloc[-10:].sum()) if n >= 10 else 0
+        ret_20 = float(pct_chg.iloc[-20:].sum()) if n >= 20 else 0
+        ret_60 = float(pct_chg.iloc[-60:].sum()) if n >= 60 else 0
+        momentum_list = [r for r in [ret_10, ret_20, ret_60] if r != 0 or n >= 10]
         positive_count = sum(1 for r in [ret_10, ret_20, ret_60] if r > 0)
-        e5_pass = positive_count >= self.cfg.e_momentum_positive_min
+        total_periods = 3 if has_ma60 else (2 if n >= 20 else 1)
+        e5_pass = positive_count >= min(self.cfg.e_momentum_positive_min, total_periods)
         scores['e5_momentum'] = positive_count / 3.0
         details['e5_momentum'] = f"10/20/60日涨幅={ret_10:.1f}%/{ret_20:.1f}%/{ret_60:.1f}%"
         if e5_pass:
             passed_count += 1
 
-        # E6: ADX
-        adx_val = self._calc_adx(df, period=14)
-        e6_pass = adx_val > self.cfg.e_adx_threshold
-        scores['e6_adx'] = min(1.0, adx_val / 50.0)
-        details['e6_adx'] = f"ADX={adx_val:.1f}"
-        if e6_pass:
-            passed_count += 1
+        # E6: ADX (需要至少30日数据)
+        if n >= 30:
+            adx_val = self._calc_adx(df, period=14)
+            e6_pass = adx_val > self.cfg.e_adx_threshold
+            scores['e6_adx'] = min(1.0, adx_val / 50.0)
+            details['e6_adx'] = f"ADX={adx_val:.1f}"
+            if e6_pass:
+                passed_count += 1
+        else:
+            scores['e6_adx'] = 0.5
+            details['e6_adx'] = "数据不足(短模式默认0.5)"
 
         # E7: RSI
-        rsi_val = self._calc_rsi(close, period=14)
-        e7_pass = self.cfg.e_rsi_range_min < rsi_val < self.cfg.e_rsi_range_max
-        scores['e7_rsi'] = 1.0 if e7_pass else (0.3 if rsi_val > 80 or rsi_val < 45 else 0.6)
-        details['e7_rsi'] = f"RSI={rsi_val:.1f}"
-        if e7_pass:
-            passed_count += 1
+        if n >= 20:
+            rsi_val = self._calc_rsi(close, period=14)
+            e7_pass = self.cfg.e_rsi_range_min < rsi_val < self.cfg.e_rsi_range_max
+            scores['e7_rsi'] = 1.0 if e7_pass else (0.3 if rsi_val > 80 or rsi_val < 45 else 0.6)
+            details['e7_rsi'] = f"RSI={rsi_val:.1f}"
+            if e7_pass:
+                passed_count += 1
+        else:
+            scores['e7_rsi'] = 0.5
+            details['e7_rsi'] = "数据不足(短模式默认0.5)"
 
         # E8: 趋势持续时间
         above_ma20 = close > ma20
@@ -344,7 +366,8 @@ class LayerETrendDetector:
         sig.factors = scores
         sig.details = details
         sig.score = sum(scores.get(k, 0) * w for k, w in weights.items())
-        sig.passed = (e1_pass or e5_pass) and passed_count >= 3 and sig.score > 4.0
+        min_pass_count = 3 if has_ma60 else 2
+        sig.passed = (e1_pass or e5_pass) and passed_count >= min_pass_count and sig.score > 3.5
 
         return sig
 

@@ -313,6 +313,14 @@ class MainUptrendBacktester:
         对单只标的做深度回测分析，看策略能否在启动后 5 日内选出
         """
         logger.info(f"单票深度分析: {ts_code}")
+
+        preload_start = (
+            datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=150)
+        ).strftime("%Y-%m-%d")
+        self.loader.preload_for_backtest(preload_start, end_date)
+        self.engine.layer_c.skip_1min = True
+        self.engine.layer_d.preload_for_backtest(start_date, end_date)
+
         trading_days = self.loader.get_trading_days(start_date, end_date)
         if not trading_days:
             return {}

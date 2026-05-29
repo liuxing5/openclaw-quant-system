@@ -259,6 +259,8 @@ class MainUptrendEngine:
         if pool_a is None:
             snapshot = self.loader.get_market_snapshot(eval_date)
             pool_a = set(snapshot['ts_code'].tolist()) if not snapshot.empty else set()
+        else:
+            pool_a = {self.loader.normalize_ts_code(c) for c in pool_a}
 
         if not pool_a:
             return []

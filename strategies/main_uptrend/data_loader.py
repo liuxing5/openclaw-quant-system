@@ -34,6 +34,16 @@ BEIJING_TZ = ZoneInfo("Asia/Shanghai")
 class DataLoader:
     """从 Supabase daily_quotes 加载行情数据"""
 
+    @staticmethod
+    def normalize_ts_code(ts_code: str) -> str:
+        if ts_code.startswith('sh.'):
+            return ts_code[3:] + '.SH'
+        if ts_code.startswith('sz.'):
+            return ts_code[3:] + '.SZ'
+        if ts_code.startswith('bj.'):
+            return ts_code[3:] + '.BJ'
+        return ts_code
+
     def __init__(self, cache_dir: Optional[str] = None):
         self._cache: Dict[str, pd.DataFrame] = {}
         # 批量预加载存储
@@ -535,14 +545,14 @@ class DataLoader:
         return snap
 
     def get_preloaded_close(self, ts_code: str, trade_date: str) -> Optional[float]:
-        """从预加载数据快速获取收盘价 - O(1)"""
+        ts_code = self.normalize_ts_code(ts_code)
         if self._preloaded_close_map and ts_code in self._preloaded_close_map:
             return self._preloaded_close_map[ts_code].get(trade_date)
         return None
 
     def get_preloaded_daily(self, ts_code: str, start_date: str = "2020-01-01",
                             end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
-        """从预加载数据获取单只股票日线 - O(1)查找+日期过滤"""
+        ts_code = self.normalize_ts_code(ts_code)
         if self._preloaded_by_code is None or ts_code not in self._preloaded_by_code:
             return None
         df = self._preloaded_by_code[ts_code]
@@ -567,7 +577,7 @@ class DataLoader:
 
     def get_preloaded_main_flow(self, ts_code: str, start_date: str = "2025-01-01",
                                 end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
-        """从预加载数据获取主力资金流 - O(1)查找"""
+        ts_code = self.normalize_ts_code(ts_code)
         if self._preloaded_main_flow_by_code is None or ts_code not in self._preloaded_main_flow_by_code:
             return None
         df = self._preloaded_main_flow_by_code[ts_code]
@@ -585,6 +595,7 @@ class DataLoader:
     def get_daily(self, ts_code: str, start_date: str = "2020-01-01",
                   end_date: Optional[str] = None,
                   min_days: int = 100) -> Optional[pd.DataFrame]:
+        ts_code = self.normalize_ts_code(ts_code)
         # 优先使用预加载数据
         if self._preloaded_by_code is not None and ts_code in self._preloaded_by_code:
             df = self.get_preloaded_daily(ts_code, start_date, end_date)
@@ -684,6 +695,7 @@ class DataLoader:
     def get_main_force_flow(self, ts_code: str,
                             start_date: str = "2025-01-01",
                             end_date: Optional[str] = None) -> Optional[pd.DataFrame]:
+        ts_code = self.normalize_ts_code(ts_code)
         if self._preloaded_main_flow_by_code is not None:
             df = self.get_preloaded_main_flow(ts_code, start_date, end_date)
             if df is not None:
