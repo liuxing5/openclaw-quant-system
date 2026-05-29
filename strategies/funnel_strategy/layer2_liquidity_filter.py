@@ -1,12 +1,12 @@
 """
-Layer 2: 流动性筛�?
+Layer 2: 流动性筛通
 ====================
-决策逻辑�?
-  20日日均成交额>1亿，流通市�?20亿，换手3~15%�?
+决策逻辑：
+  20日日均成交额>1亿，流通市值20亿，换手3~15%。
 
-吸收策略：③八步法成交额+市�?换手  ⑥人气替代散户版
+吸收策略：③八步法成交额+市值换手  ⑥人气替代散户版
 
-数据来源：daily_quotes �?
+数据来源：daily_quotes 行
 """
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 
 def _load_liquidity_data(stock_list: List[str], trade_date: date) -> Dict:
     """
-    批量加载流动性数据�?
+    批量加载流动性数据。
     返回 {ts_code: {amount, pct_chg, turnover_rate, circulating_market_cap, total_market_cap}}
     """
     if not stock_list:
@@ -53,7 +53,7 @@ def _load_liquidity_data(stock_list: List[str], trade_date: date) -> Dict:
             }
         cur.close()
     except Exception as e:
-        print(f"  ⚠️ Layer2 流动性数据加载失�? {e}")
+        print(f"  ⚠️ Layer2 流动性数据加载失财 {e}")
     finally:
         if conn and not conn.closed:
             conn.close()
@@ -102,7 +102,7 @@ def run_layer2_liquidity_filter(
     verbose: bool = True,
 ) -> List[str]:
     """
-    流动性过滤，返回通过过滤的股票代码列表�?
+    流动性过滤，返回通过过滤的股票代码列表。
     """
     if cfg is None:
         from .funnel_config import DEFAULT_FUNNEL_CONFIG
@@ -128,9 +128,9 @@ def run_layer2_liquidity_filter(
         min_amt_yi = cfg.layer2_min_avg_amount_20d / 1e8
         min_mcap_yi = cfg.layer2_min_circulating_mcap / 1e8
         print(f"\n{'─'*60}")
-        print(f"  [Layer 2] 流动性筛�? �?待筛�?{len(stock_list)} �?)
+        print(f"  [Layer 2] 流动性筛通 —待筛通{len(stock_list)} 只)")
         print(f"{'─'*60}")
-        print(f"  20日均�?{min_amt_yi:.0f}�? 流通市�?{min_mcap_yi:.0f}�? "
+        print(f"  20日均额{min_amt_yi:.0f}亏 流通市值{min_mcap_yi:.0f}亏 "
               f"换手{cfg.layer2_turn_rate_min}~{cfg.layer2_turn_rate_max}%")
 
     # 并行执行两个独立查询（节省一半DB往返时间）
@@ -140,13 +140,13 @@ def run_layer2_liquidity_filter(
         liq_cache = f_liq.result()
         avg_amount_cache = f_avg.result()
 
-    # 数据完整性检测：turnover_rate 全部�?说明数据管道未填充此字段
+    # 数据完整性检测：turnover_rate 全部为说明数据管道未填充此字段
     has_turnover = any(v.get('turnover_rate', 0) > 0 for v in liq_cache.values())
     if not has_turnover and verbose:
-        print(f"  ⚠️ turnover_rate 数据缺失，跳过换手率和市值过�?)
+        print(f"  ⚠️ turnover_rate 数据缺失，跳过换手率和市值过滤")
 
     passed = []
-    reject_stats = {'成交额不�?: 0, '市值不�?: 0, '换手不符': 0}
+    reject_stats = {'成交额不足': 0, '市值不足': 0, '换手不符': 0}
 
     for ts_code in stock_list:
         liq = liq_cache.get(ts_code, {})
@@ -154,7 +154,7 @@ def run_layer2_liquidity_filter(
 
         # 20日均成交额（始终检查）
         if avg_amount < cfg.layer2_min_avg_amount_20d:
-            reject_stats['成交额不�?] += 1
+            reject_stats['成交额不足'] += 1
             continue
 
         if has_turnover:
@@ -166,10 +166,10 @@ def run_layer2_liquidity_filter(
                 if amount > 0 and turn > 0:
                     circ_mcap = amount / (turn / 100.0)
             if circ_mcap < cfg.layer2_min_circulating_mcap:
-                reject_stats['市值不�?] += 1
+                reject_stats['市值不足'] += 1
                 continue
 
-            # 换手�?
+            # 换手率
             turn = liq.get('turnover_rate', 0)
             if turn < cfg.layer2_turn_rate_min or turn > cfg.layer2_turn_rate_max:
                 reject_stats['换手不符'] += 1
@@ -178,10 +178,10 @@ def run_layer2_liquidity_filter(
         passed.append(ts_code)
 
     if verbose:
-        print(f"  �?通过: {len(passed)} �?)
-        print(f"  �?淘汰: {len(stock_list) - len(passed)} �?)
+        print(f"  ✅通过: {len(passed)} 只")
+        print(f"  ✅淘汰: {len(stock_list) - len(passed)} 只")
         for reason, count in reject_stats.items():
             if count > 0:
-                print(f"    {reason}: {count} �?)
+                print(f"    {reason}: {count} 只")
 
     return passed

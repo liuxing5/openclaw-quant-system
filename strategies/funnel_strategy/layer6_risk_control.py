@@ -1,11 +1,11 @@
 """
-Layer 6: 刚性风�?
+Layer 6: 刚性风控
 ==================
-决策逻辑�?
-  买入时段14:30后；初始止损=入场�?1ATR�?
-  次日移动止盈参考EMA12或分时VWAP；盈亏比�?:1才允许推荐�?
+决策逻辑：
+  买入时段14:30后；初始止损=入场代1ATR：
+  次日移动止盈参考EMA12或分时VWAP；盈亏比≥:1才允许推荐。
 
-吸收策略：③固定时段  ⑦ATR止损/五日均线持仓/海龟风控比例�?
+吸收策略：③固定时段  ⑦ATR止损/五日均线持仓/海龟风控比例区
 """
 from __future__ import annotations
 
@@ -82,7 +82,7 @@ def _load_history(ts_code: str, trade_date: date, days: int = 60) -> Optional[pd
 
 def check_time_window(cfg) -> dict:
     """
-    检查当前时间是否在允许买入时段(14:30�?�?
+    检查当前时间是否在允许买入时段(14:30否。
     
     返回:
       {
@@ -99,7 +99,7 @@ def check_time_window(cfg) -> dict:
     hour, minute = map(int, entry_after.split(':'))
     in_window = now.hour > hour or (now.hour == hour and now.minute >= minute)
 
-    message = (f'当前{current_time}，{"�? if in_window else "不在"}买入时段(≥{entry_after})'
+    message = (f'当前{current_time}，{"在" if in_window else "不在"}买入时段(≥{entry_after})'
                if in_window else f'不在买入时段(当前{current_time}<{entry_after})')
 
     return {
@@ -150,14 +150,14 @@ def compute_risk_params(
     ohlcv_cache: Dict[str, pd.DataFrame],
 ) -> dict:
     """
-    计算单只股票的ATR风控参数（从内存缓存读取）�?
+    计算单只股票的ATR风控参数（从内存缓存读取）。
     
     返回:
       {
         'atr': float,
         'atr_pct': float,
         'stop_loss': float,
-        'stop_loss_type': str,       # 'atr' �?'structural'
+        'stop_loss_type': str,       # 'atr' 成'structural'
         'stop_loss_pct': float,
         'trailing_ref': float,
         'target_price': float,
@@ -183,7 +183,7 @@ def compute_risk_params(
 
     # ATR计算（自适应周期：数据不足时用可用数据）
     atr_period = min(cfg.layer6_atr_period, len(df) - 1)
-    atr_period = max(atr_period, 5)  # 最�?�?
+    atr_period = max(atr_period, 5)  # 最小失
     atr = _calc_atr(df, atr_period)
     if atr <= 0 or entry_price <= 0:
         return result
@@ -191,17 +191,17 @@ def compute_risk_params(
     result['atr'] = round(atr, 3)
     result['atr_pct'] = round(atr / entry_price * 100, 2)
 
-    # ATR止损 = 入场�?- N*ATR（作为最小止损距离下限，防噪声触发）
+    # ATR止损 = 入场代- N*ATR（作为最小止损距离下限，防噪声触发）
     atr_stop = entry_price - atr * cfg.layer6_initial_stop_atr
 
-    # 结构性止�?= �?日最低价 - 缓冲（反映真实支撑位风险�?
+    # 结构性止换= 连日最低价 - 缓冲（反映真实支撑位风险：
     structural_stop = atr_stop
     if getattr(cfg, 'layer6_structural_stop_enabled', False) and len(df) >= 5:
         recent_low = float(df['low'].iloc[-5:].min())
         buffer_pct = getattr(cfg, 'layer6_structural_stop_buffer_pct', 0.5) / 100.0
         structural_stop = recent_low * (1 - buffer_pct)
 
-    # 以结构性止损为主，ATR止损为最小距离下�?
+    # 以结构性止损为主，ATR止损为最小距离下除
     if structural_stop >= entry_price:
         stop_loss = atr_stop
         stop_type = 'atr'
@@ -212,7 +212,7 @@ def compute_risk_params(
         stop_loss = structural_stop
         stop_type = 'structural'
 
-    # 止损幅度过大则拒�?
+    # 止损幅度过大则拒统
     max_stop_pct = getattr(cfg, 'layer6_max_stop_loss_pct', 8.0)
     stop_loss_pct_val = (entry_price - stop_loss) / entry_price * 100
     if stop_loss_pct_val > max_stop_pct:
@@ -233,7 +233,7 @@ def compute_risk_params(
     ema12 = _calc_ema(df['close'], 12)
     result['trailing_ref'] = round(ema12.iloc[-1], 2) if len(ema12) > 0 else entry_price
 
-    # 目标�?= 风险定价法：根据实际止损反推
+    # 目标代= 风险定价法：根据实际止损反推
     risk_amount = entry_price - stop_loss
     min_ratio = cfg.layer6_min_profit_loss_ratio
     target_from_ratio = entry_price + risk_amount * min_ratio
@@ -256,7 +256,7 @@ def run_layer6_risk_control(
     verbose: bool = True,
 ) -> List[dict]:
     """
-    刚性风控，返回通过风控的最终推荐列表�?
+    刚性风控，返回通过风控的最终推荐列表。
     每项附加 {atr, stop_loss, target_price, profit_loss_ratio, ...}
     """
     if cfg is None:
@@ -279,21 +279,21 @@ def run_layer6_risk_control(
             if conn and not conn.closed:
                 conn.close()
 
-    # 时段检�?
+    # 时段检查
     time_check = check_time_window(cfg)
 
     if verbose:
         print(f"\n{'─'*60}")
-        print(f"  [Layer 6] 刚性风�? �?待检�?{len(stock_items)} �?)
+        print(f"  [Layer 6] 刚性风控 —待检查{len(stock_items)} 只)")
         print(f"{'─'*60}")
         print(f"  时段: {time_check['message']}  "
               f"ATR周期: {cfg.layer6_atr_period}  止损: {cfg.layer6_initial_stop_atr}ATR  "
               f"盈亏比≥{cfg.layer6_min_profit_loss_ratio}:1")
 
     passed = []
-    reject_stats = {'盈亏比不�?: 0, 'ATR异常': 0, '止损幅度过大': 0}
+    reject_stats = {'盈亏比不足': 0, 'ATR异常': 0, '止损幅度过大': 0}
 
-    # 批量加载历史数据 + 收盘�?
+    # 批量加载历史数据 + 收盘代
     stock_codes = [item['ts_code'] for item in stock_items]
     db_conn = None
     try:
@@ -333,18 +333,18 @@ def run_layer6_risk_control(
             elif risk['stop_loss_pct'] > getattr(cfg, 'layer6_max_stop_loss_pct', 8.0):
                 reject_stats['止损幅度过大'] += 1
             else:
-                reject_stats['盈亏比不�?] += 1
+                reject_stats['盈亏比不足'] += 1
             continue
 
         passed.append(item)
 
-    # 限制最终推荐数�?
+    # 限制最终推荐数重
     passed = passed[:cfg.max_final_candidates]
 
     if verbose:
-        print(f"  �?通过: {len(passed)} �?(最终推荐≤{cfg.max_final_candidates})")
+        print(f"  ✅通过: {len(passed)} 只(最终推荐≤{cfg.max_final_candidates})")
         for reason, count in reject_stats.items():
             if count > 0:
-                print(f"  �?{reason}: {count} �?)
+                print(f"  ❌{reason}: {count} 只")
 
     return passed

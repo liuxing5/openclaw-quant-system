@@ -1,9 +1,9 @@
 """
 Layer 3: 趋势结构过滤
 ======================
-决策逻辑�?
-  周线CLOSE>20MA；日线EMA12>26>50，且股价在EMA12上方�?
-  股价>200EMA可加分；结构为上升平台或回踩支撑�?
+决策逻辑：
+  周线CLOSE>20MA；日线EMA12>26>50，且股价在EMA12上方：
+  股价>200EMA可加分；结构为上升平台或回踩支撑。
 
 吸收策略：②20周保命法/均线多头/年线定海神针/右侧交易
 """
@@ -41,7 +41,7 @@ def _calc_ema(values: pd.Series, period: int) -> pd.Series:
 def _batch_load_history(
     stock_list: List[str], trade_date: date, db_conn, days: int = 300
 ) -> Dict[str, pd.DataFrame]:
-    """批量加载所有股票的OHLCV历史数据�?次SQL查询�?""
+    """批量加载所有股票的OHLCV历史数据：一次SQL查询"""
     if not stock_list:
         return {}
 
@@ -74,14 +74,14 @@ def _batch_load_history(
 
 
 def _detect_trend_structure(df: pd.DataFrame, cfg) -> dict:
-    """识别趋势结构：上升平�?/ 回踩支撑 / 未知"""
+    """识别趋势结构：上升平可/ 回踩支撑 / 未知"""
     if len(df) < 30:
         return {'structure': 'unknown'}
 
     close = df['close']
     ema12 = _calc_ema(close, 12)
 
-    # 回踩支撑：近5日最低价一度贴近EMA12（�?%），然后收回
+    # 回踩支撑：近5日最低价一度贴近EMA12（±%），然后收回
     if len(df) >= 5:
         recent_low_5 = df['low'].iloc[-5:].min()
         ema12_latest = ema12.iloc[-1]
@@ -89,7 +89,7 @@ def _detect_trend_structure(df: pd.DataFrame, cfg) -> dict:
             if close.iloc[-1] > ema12_latest:
                 return {'structure': 'pullback_support'}
 
-    # 上升平台：前9日高低点区间收窄（振�?8%），今日突破上沿
+    # 上升平台：前9日高低点区间收窄（振平8%），今日突破上沿
     if len(df) >= 10:
         hi_9 = df['high'].iloc[-10:-1].max()
         lo_9 = df['low'].iloc[-10:-1].min()
@@ -103,7 +103,7 @@ def _detect_trend_structure(df: pd.DataFrame, cfg) -> dict:
 def _check_single(
     ts_code: str, cfg, ohlcv_cache: Dict[str, pd.DataFrame]
 ) -> dict:
-    """单股趋势结构检查（从内存缓存读取，无DB访问�?""
+    """单股趋势结构检查（从内存缓存读取，无DB访问）"""
     result = {
         'passed': False,
         'score_bonus': 0.0,
@@ -113,18 +113,18 @@ def _check_single(
 
     df = ohlcv_cache.get(ts_code)
     if df is None or len(df) < 5:
-        result['reject_reason'] = '历史数据不足(<5�?'
+        result['reject_reason'] = '历史数据不足(<5失'
         return result
 
     close = df['close'].dropna()
     if len(close) < 5:
-        result['reject_reason'] = '有效数据不足(<5�?'
+        result['reject_reason'] = '有效数据不足(<5失'
         return result
 
     close_now = close.iloc[-1]
     data_days = len(close)
 
-    # 1. 周线CLOSE > 20周MA（≈100日线�?
+    # 1. 周线CLOSE > 20周MA（≈100日线：
     # 数据不足100天时降级：用可用数据均线代替
     weekly_ma_period = cfg.layer3_weekly_ma_period * 5
     if data_days >= weekly_ma_period:
@@ -133,24 +133,24 @@ def _check_single(
         result['details']['weekly_ma'] = round(ma_weekly_now, 2)
         result['details']['weekly_above'] = close_now > ma_weekly_now
         if close_now <= ma_weekly_now:
-            result['reject_reason'] = '周线CLOSE�?0MA'
+            result['reject_reason'] = '周线CLOSE≥0MA'
             return result
     elif data_days >= 10:
-        # 降级：用全量数据均值近�?
+        # 降级：用全量数据均值近估
         ma_weekly_now = float(close.mean())
         result['details']['weekly_ma'] = round(ma_weekly_now, 2)
         result['details']['weekly_above'] = close_now > ma_weekly_now
         result['details']['weekly_ma_degraded'] = True
         if close_now <= ma_weekly_now:
-            result['reject_reason'] = '收盘≤全量均�?数据不足100�?'
+            result['reject_reason'] = '收盘≤全量均代数据不足100失'
             return result
     else:
-        # 数据极少，跳过周线检�?
+        # 数据极少，跳过周线检查
         result['details']['weekly_ma'] = 0
         result['details']['weekly_ma_degraded'] = True
         result['details']['weekly_ma_skipped'] = True
 
-    # 2. EMA对齐检查（数据量自适应�?
+    # 2. EMA对齐检查（数据量自适应：
     fast = cfg.layer3_ema_fast
     mid = cfg.layer3_ema_mid
     slow = cfg.layer3_ema_slow
@@ -160,7 +160,7 @@ def _check_single(
     result['details']['ema12'] = round(ema12_now, 2)
 
     if data_days >= slow:
-        # 数据充足：完�?EMA12 > EMA26 > EMA50
+        # 数据充足：完整EMA12 > EMA26 > EMA50
         ema26 = _calc_ema(close, mid)
         ema50 = _calc_ema(close, slow)
         ema26_now = ema26.iloc[-1]
@@ -170,10 +170,10 @@ def _check_single(
         alignment_ok = ema12_now > ema26_now > ema50_now
         result['details']['ema_alignment'] = 'bullish' if alignment_ok else 'mixed'
         if not alignment_ok:
-            result['reject_reason'] = 'EMA未多头排�?12>26>50)'
+            result['reject_reason'] = 'EMA未多头排利12>26>50)'
             return result
     elif data_days >= 5:
-        # 数据不足：仅检�?EMA12 趋势方向（至少需当前>3天前�?
+        # 数据不足：仅检查EMA12 趋势方向（至少需当前>3天前：
         if data_days >= 4:
             ema12_3d_ago = ema12.iloc[-4] if len(ema12) > 3 else ema12.iloc[0]
             trending_up = ema12_now > ema12_3d_ago
@@ -217,7 +217,7 @@ def _check_single(
 
 
 def check_trend_structure(ts_code: str, trade_date: date, cfg, verbose: bool = False) -> dict:
-    """单股趋势结构检查（兼容接口，内部用batch load�?""
+    """单股趋势结构检查（兼容接口，内部用batch load）"""
     conn = get_db()
     try:
         cache = _batch_load_history([ts_code], trade_date, conn, days=300)
@@ -234,9 +234,9 @@ def run_layer3_trend_filter(
     verbose: bool = True,
 ) -> List[dict]:
     """
-    趋势结构过滤，返回通过过滤的股票详情列表�?
+    趋势结构过滤，返回通过过滤的股票详情列表。
 
-    优化: 批量加载OHLCV(1次SQL) + ThreadPoolExecutor并行分析�?
+    优化: 批量加载OHLCV(1次SQL) + ThreadPoolExecutor并行分析。
     """
     if cfg is None:
         from .funnel_config import DEFAULT_FUNNEL_CONFIG
@@ -262,23 +262,23 @@ def run_layer3_trend_filter(
 
     if verbose:
         print(f"\n{'─'*60}")
-        print(f"  [Layer 3] 趋势结构过滤  �?待筛�?{n_total} �?)
+        print(f"  [Layer 3] 趋势结构过滤  —待筛通{n_total} 只)")
         print(f"{'─'*60}")
         print(f"  周线>20MA  EMA{cfg.layer3_ema_fast}>{cfg.layer3_ema_mid}>{cfg.layer3_ema_slow}  "
               f"股价>EMA{cfg.layer3_ema_fast}  结构: {cfg.layer3_trend_structure_modes}")
 
-    # ── 阶段1: 批量加载 OHLCV�? �?SQL）──
+    # ── 阶段1: 批量加载 OHLCV： 次SQL）──
     conn = get_db()
     try:
         if verbose:
-            print(f"  �?批量加载K线数�?({n_total} �?...")
+            print(f"  ⏳批量加载K线数换({n_total} 可...")
         ohlcv_cache = _batch_load_history(stock_list, trade_date, conn, days=300)
     finally:
         if conn and not conn.closed:
             conn.close()
 
     if verbose:
-        print(f"  �?数据加载完成: {len(ohlcv_cache)}/{n_total} 只有效K�?)
+        print(f"  ✅数据加载完成: {len(ohlcv_cache)}/{n_total} 只有效K线")
 
     # ── 阶段2: 并行分析 ──
     passed = []
@@ -290,17 +290,17 @@ def run_layer3_trend_filter(
         _run_serial(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose)
 
     if verbose:
-        print(f"  �?通过: {len(passed)} �?)
-        print(f"  �?淘汰: {n_total - len(passed)} �?)
+        print(f"  ✅通过: {len(passed)} 只")
+        print(f"  ✅淘汰: {n_total - len(passed)} 只")
         for reason, count in reject_stats.items():
             if count > 0:
-                print(f"    {reason}: {count} �?)
+                print(f"    {reason}: {count} 只")
 
     return passed
 
 
 def _run_parallel(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose):
-    """多线程并行分析（>100只时启用�?""
+    """多线程并行分析（>100只时启用）"""
     n_total = len(stock_list)
     passed_codes = set()
 
@@ -343,7 +343,7 @@ def _run_parallel(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose):
 
 
 def _run_serial(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose):
-    """串行分析（≤100只时使用�?""
+    """串行分析（≤100只时使用）"""
     n_total = len(stock_list)
     for i, ts_code in enumerate(stock_list):
         if verbose and (i + 1) % 50 == 0:

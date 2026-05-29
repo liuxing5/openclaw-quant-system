@@ -1,15 +1,15 @@
 """
-Layer 1: 硬性防�?
+Layer 1: 硬性防零
 ==================
-决策逻辑�?
-  剔除ST、立案、大额减持；流动比率>1.2，负债率<65%�?
-  经营现金�?净利润>=0.5，商�?净资产<=50%�?
-  �?0天无减持公告，质押比�?=50%�?
-  应收账款/营收<=50%或营收增�?5%，存�?营收<=60%或营收增�?5%�?
+决策逻辑：
+  剔除ST、立案、大额减持；流动比率>1.2，负债率<65%：
+  经营现金测净利润>=0.5，商誉净资产<=50%：
+  连0天无减持公告，质押比例=50%：
+  应收账款/营收<=50%或营收增通5%，存财营收<=60%或营收增通5%。
 
-吸收策略：①巴菲特准�?基本�? ③八步法ST过滤
+吸收策略：①巴菲特准利基本非 ③八步法ST过滤
 
-数据来源�?
+数据来源：
   - stock_basic_info: ST标记
   - stock_fundamentals: 财务数据
   - stock_announcements: 减持公告
@@ -134,7 +134,7 @@ def _load_reduction_announcements(trade_date: date, lookback_days: int = 60) -> 
 
 
 def compute_current_ratio(fin: dict) -> Optional[float]:
-    """流动比率 = 流动资产/流动负债；数据不足时降级为总资�?总负�?""
+    """流动比率 = 流动资产/流动负债；数据不足时降级为总资亏总负值"""
     ca = fin.get('current_assets')
     cl = fin.get('current_liabilities')
     if ca is not None and cl is not None and cl > 0:
@@ -147,7 +147,7 @@ def compute_current_ratio(fin: dict) -> Optional[float]:
 
 
 def compute_cashflow_ratio(fin: dict) -> Optional[float]:
-    """经营现金�?/ 净利润"""
+    """经营现金测/ 净利润"""
     cf = fin.get('operating_cashflow')
     np_ = fin.get('net_profit')
     if cf is not None and np_ is not None and np_ > 0:
@@ -165,7 +165,7 @@ def compute_goodwill_pct(fin: dict) -> Optional[float]:
 
 
 def check_ar_anomaly(fin: dict) -> Optional[bool]:
-    """应收账款异常: 应收/营收 > 50% 且营收增�?< 5%"""
+    """应收账款异常: 应收/营收 > 50% 且营收增通< 5%"""
     ar = fin.get('accounts_receivable')
     rev = fin.get('revenue')
     rev_yoy = fin.get('revenue_yoy')
@@ -176,7 +176,7 @@ def check_ar_anomaly(fin: dict) -> Optional[bool]:
 
 
 def check_inventory_anomaly(fin: dict) -> Optional[bool]:
-    """存货异常: 存货/营收 > 60% 且营收增�?< 5%"""
+    """存货异常: 存货/营收 > 60% 且营收增通< 5%"""
     inv = fin.get('inventory')
     rev = fin.get('revenue')
     rev_yoy = fin.get('revenue_yoy')
@@ -195,27 +195,27 @@ def check_fundamental(
     reduction_codes: set = None,
     verbose: bool = True,
 ) -> dict:
-    """单只股票防雷检查。返�?{'passed': bool, 'reject_reason': str, 'details': dict}"""
+    """单只股票防雷检查。返回{'passed': bool, 'reject_reason': str, 'details': dict}"""
     if reduction_codes is None:
         reduction_codes = set()
 
     result = {'passed': True, 'reject_reason': '', 'details': {}}
 
-    # 1. ST检�?
+    # 1. ST检查
     if cfg.layer1_exclude_st and stock_info.get('is_st'):
         result['passed'] = False
-        result['reject_reason'] = 'ST/退�?
+        result['reject_reason'] = 'ST/退市'
         result['details']['st'] = True
         return result
 
     name = stock_info.get('stock_name', '')
     if cfg.layer1_exclude_st and ('ST' in name or '*ST' in name or '退' in name):
         result['passed'] = False
-        result['reject_reason'] = 'ST/退�?
+        result['reject_reason'] = 'ST/退市'
         result['details']['st'] = True
         return result
 
-    # 2. 次新股检�?
+    # 2. 次新股检查
     if cfg.layer1_exclude_new_ipo_days > 0 and stock_info.get('list_date'):
         list_date = stock_info['list_date']
         if isinstance(list_date, str):
@@ -225,7 +225,7 @@ def check_fundamental(
                 list_date = None
         if list_date and (today - list_date).days < cfg.layer1_exclude_new_ipo_days:
             result['passed'] = False
-            result['reject_reason'] = f'次新�?上市<{cfg.layer1_exclude_new_ipo_days}�?'
+            result['reject_reason'] = f'次新股上市<{cfg.layer1_exclude_new_ipo_days}失'
             result['details']['new_ipo'] = True
             return result
 
@@ -258,15 +258,15 @@ def check_fundamental(
         result['reject_reason'] = f'营收同比={revenue_yoy:.1f}%<{cfg.layer1_min_revenue_yoy}%'
         return result
 
-    # 3d. P0: 亏损检测（净利润为负直接淘汰�?
+    # 3d. P0: 亏损检测（净利润为负直接淘汰：
     net_profit = fin.get('net_profit')
     if net_profit is not None and net_profit <= 0:
         result['passed'] = False
-        result['reject_reason'] = f'净利润为负({net_profit:.1f}�?'
+        result['reject_reason'] = f'净利润为负({net_profit:.1f}亏'
         result['details']['net_profit_negative'] = True
         return result
 
-    # 3e. P0: 现金流质�?
+    # 3e. P0: 现金流质重
     cashflow_ratio = compute_cashflow_ratio(fin)
     result['details']['cashflow_ratio'] = round(cashflow_ratio, 2) if cashflow_ratio is not None else None
     if cashflow_ratio is not None and cashflow_ratio < cfg.layer1_min_cashflow_ratio:
@@ -284,7 +284,7 @@ def check_fundamental(
         result['reject_reason'] = f'商誉/净资产={goodwill_pct:.1f}%>{cfg.layer1_max_goodwill_pct}%'
         return result
 
-    # 3f. P1: 减持检�?
+    # 3f. P1: 减持检测
     if cfg.layer1_check_reduction and ts_code in reduction_codes:
         result['passed'] = False
         result['reject_reason'] = f'近{cfg.layer1_reduction_days}天有减持公告'
@@ -305,7 +305,7 @@ def check_fundamental(
         result['details']['ar_anomaly'] = ar_anomaly
         if ar_anomaly:
             result['passed'] = False
-            result['reject_reason'] = '应收/营收>50%且营收低�?坏账风险)'
+            result['reject_reason'] = '应收/营收>50%且营收低增坏账风险)'
             return result
 
     # 3i. P2: 存货异常
@@ -314,7 +314,7 @@ def check_fundamental(
         result['details']['inventory_anomaly'] = inv_anomaly
         if inv_anomaly:
             result['passed'] = False
-            result['reject_reason'] = '存货/营收>60%且营收低�?滞销风险)'
+            result['reject_reason'] = '存货/营收>60%且营收低增滞销风险)'
             return result
 
     return result
@@ -326,7 +326,7 @@ def run_layer1_fundamental_filter(
     cfg=None,
     verbose: bool = True,
 ) -> List[str]:
-    """对股票列表执行防雷过滤，返回通过过滤的股票代码列表�?""
+    """对股票列表执行防雷过滤，返回通过过滤的股票代码列表。"""
     if cfg is None:
         from .funnel_config import DEFAULT_FUNNEL_CONFIG
         cfg = DEFAULT_FUNNEL_CONFIG
@@ -339,20 +339,20 @@ def run_layer1_fundamental_filter(
 
     if verbose:
         print(f"\n{'─'*60}")
-        print(f"  [Layer 1] 硬性防�? �?待筛�?{len(stock_list)} �?)
+        print(f"  [Layer 1] 硬性防雷 —待筛通{len(stock_list)} 只)")
         print(f"{'─'*60}")
-        print(f"  ST过滤: {'�? if cfg.layer1_exclude_st else '⏭️'}  "
-              f"次新: {'�? if cfg.layer1_exclude_new_ipo_days else '⏭️'}  "
+        print(f"  ST过滤: {'✅' if cfg.layer1_exclude_st else '⏭️'}  "
+              f"次新: {'✅' if cfg.layer1_exclude_new_ipo_days else '⏭️'}  "
               f"流动比率>{cfg.layer1_min_current_ratio}  负债率<{cfg.layer1_max_debt_ratio}%")
         print(f"  现金流比≥{cfg.layer1_min_cashflow_ratio}  商誉/净资产≤{cfg.layer1_max_goodwill_pct}%")
         if cfg.layer1_check_reduction:
-            print(f"  减持检�? �?(近{cfg.layer1_reduction_days}�?")
+            print(f"  减持检测 ✅(近{cfg.layer1_reduction_days}失")
         if cfg.layer1_check_pledge:
-            print(f"  质押检�? �?(≤{cfg.layer1_max_pledge_ratio}%)")
+            print(f"  质押检测 ✅(≤{cfg.layer1_max_pledge_ratio}%)")
         if cfg.layer1_check_ar_anomaly:
-            print(f"  应收异常: �?)
+            print(f"  应收异常: ✅")
         if cfg.layer1_check_inventory_anomaly:
-            print(f"  存货异常: �?)
+            print(f"  存货异常: ✅")
 
     st_cache = _load_st_basic_info()
     fin_cache = _load_fundamentals_cache(trade_date)
@@ -362,8 +362,8 @@ def run_layer1_fundamental_filter(
 
     passed = []
     reject_stats = {
-        'ST/退�?: 0, '次新�?: 0, '流动比率': 0, '负债率': 0, '营收同比': 0,
-        '现金流质�?: 0, '商誉风险': 0, '减持': 0, '质押': 0,
+        'ST/退市': 0, '次新股': 0, '流动比率': 0, '负债率': 0, '营收同比': 0,
+        '现金流质量': 0, '商誉风险': 0, '减持': 0, '质押': 0,
         '应收异常': 0, '存货异常': 0,
     }
 
@@ -380,18 +380,18 @@ def run_layer1_fundamental_filter(
             passed.append(ts_code)
         else:
             reason = check['reject_reason']
-            if 'ST' in reason or '退�? in reason:
-                reject_stats['ST/退�?] += 1
+            if 'ST' in reason or '退市' in reason:
+                reject_stats['ST/退市'] += 1
             elif '次新' in reason:
-                reject_stats['次新�?] += 1
+                reject_stats['次新股'] += 1
             elif '流动比率' in reason:
                 reject_stats['流动比率'] += 1
             elif '负债率' in reason:
                 reject_stats['负债率'] += 1
             elif '营收' in reason:
                 reject_stats['营收同比'] += 1
-            elif '现金�? in reason:
-                reject_stats['现金流质�?] += 1
+            elif '现金流' in reason:
+                reject_stats['现金流质量'] += 1
             elif '商誉' in reason:
                 reject_stats['商誉风险'] += 1
             elif '减持' in reason:
@@ -404,10 +404,10 @@ def run_layer1_fundamental_filter(
                 reject_stats['存货异常'] += 1
 
     if verbose:
-        print(f"  �?通过: {len(passed)} �?)
-        print(f"  �?淘汰: {len(stock_list) - len(passed)} �?)
+        print(f"  ✅通过: {len(passed)} 只")
+        print(f"  ✅淘汰: {len(stock_list) - len(passed)} 只")
         for reason, count in reject_stats.items():
             if count > 0:
-                print(f"    {reason}: {count} �?)
+                print(f"    {reason}: {count} 只")
 
     return passed
