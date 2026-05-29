@@ -89,15 +89,17 @@ class LayerETrendDetector:
             np.where(ma_alignment, "部分多头", "非多头排列"))
 
         # E2: 价格站稳短期均线
-        above_ma5 = (close > ma5.fillna(0).values) & (ma5.fillna(0).values > 0)
-        deviation = np.where(ma5.fillna(0).values > 0,
-                           (close - ma5.fillna(0).values) / ma5.fillna(0).values, 0)
+        ma5_safe = ma5.fillna(0).values
+        ma5_positive = ma5_safe > 0
+        above_ma5 = (close > ma5_safe) & ma5_positive
+        deviation = np.zeros_like(close)
+        np.divide(close - ma5_safe, ma5_safe, out=deviation, where=ma5_positive)
         e2_pass = above_ma5 & (deviation < self.cfg.e_price_above_short_ma_pct) & (deviation > -0.03)
         e2_score = np.where(e2_pass, 1.0,
                    np.where(above_ma5, 0.5, 0.0))
         scores['e2_price_stability'] = e2_score
         details_map['e2_price_stability'] = np.where(
-            e2_pass, f"站稳MA5",
+            e2_pass, "站稳MA5",
             np.where(above_ma5, "MA5上方偏离大", "MA5下方"))
 
         # E3: 回撤控制
@@ -145,8 +147,9 @@ class LayerETrendDetector:
         e6_score = np.minimum(1.0, adx / 50.0)
         scores['e6_adx'] = e6_score
         details_map['e6_adx'] = np.where(
-            e6_pass, f"趋势强(ADX={adx:.0f})",
-            f"趋势弱(ADX={adx:.0f})")
+            e6_pass,
+            ["趋势强(ADX={:.0f})".format(v) for v in adx],
+            ["趋势弱(ADX={:.0f})".format(v) for v in adx])
 
         # E7: RSI 区间
         rsi = pool_df.get('rsi_14', pd.Series(50, index=pool_df.index)).fillna(50).values
@@ -156,8 +159,11 @@ class LayerETrendDetector:
                    np.where(rsi < 45, 0.3, 0.6)))
         scores['e7_rsi'] = e7_score
         details_map['e7_rsi'] = np.where(
-            e7_pass, f"RSI健康({rsi:.0f})",
-            np.where(rsi > 80, f"超买(RSI={rsi:.0f})", f"偏弱(RSI={rsi:.0f})"))
+            e7_pass,
+            ["RSI健康({:.0f})".format(v) for v in rsi],
+            np.where(rsi > 80,
+                     ["超买(RSI={:.0f})".format(v) for v in rsi],
+                     ["偏弱(RSI={:.0f})".format(v) for v in rsi]))
 
         # E8: 趋势持续时间
         above_ma20_days = pool_df.get('above_ma20_days', pd.Series(0, index=pool_df.index)).fillna(0).values
@@ -165,8 +171,9 @@ class LayerETrendDetector:
         e8_score = np.minimum(1.0, above_ma20_days / 30.0)
         scores['e8_trend_duration'] = e8_score
         details_map['e8_trend_duration'] = np.where(
-            e8_pass, f"趋势持续{above_ma20_days:.0f}日",
-            f"趋势仅{above_ma20_days:.0f}日")
+            e8_pass,
+            ["趋势持续{:.0f}日".format(v) for v in above_ma20_days],
+            ["趋势仅{:.0f}日".format(v) for v in above_ma20_days])
 
         # 综合评分
         weights = {

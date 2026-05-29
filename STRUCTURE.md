@@ -77,7 +77,7 @@ UNIQUE 约束：`(snapshot_date, ts_code, run_mode, source)` —— 同一日同
 ## 七步漏斗策略 (funnel_strategy v1.0)
 
 ```
-Layer 0: 大盘风控 → 上涨≥2500家 + 全A指数>20EMA → 否则仓位≤50%
+Layer 0: 大盘风控 → 上涨≥1500家 + 全A指数>20EMA → 否则仓位≤50%
 Layer 1: 硬性防雷 → ST/次新/流动比率/负债率/营收
 Layer 2: 流动性筛选 → 20日均额/市值/换手
 Layer 3: 趋势结构 → 周线MA/EMA排列/年线/右侧
