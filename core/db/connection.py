@@ -50,7 +50,8 @@ def _connect_kwargs():
         keepalives_interval=10,
         keepalives_count=3,
         connect_timeout=15,
-        options='-c statement_timeout=60000',
+        # 关键：设置连接超时，防止僵尸连接
+        options='-c statement_timeout=60000 -c idle_in_transaction_session_timeout=300000',
     )
 
 
