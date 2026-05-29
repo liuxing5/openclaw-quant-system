@@ -1,0 +1,384 @@
+"""
+Layer E: 趋势持续型检测（日频）
+=================================
+检测"慢牛/趋势上行"型标的 — 与 B 层"启动信号"互补：
+
+  B 层检测：某天突然爆发（量能3.5x + 涨停 + 主力涌入）
+  E 层检测：连续1-2个月温和上涨（均线多头 + 阶梯放量 + 回撤可控）
+
+E1 均线多头排列：MA5 > MA10 > MA20 > MA60，持续 N 日
+E2 价格站稳短期均线：收盘价 > MA5，偏离 < 2%
+E3 回撤控制：近20日最大回撤 < 12%
+E4 阶梯式放量：5日均量 > 20日均量 > 60日均量
+E5 动量一致性：近10/20/60日涨幅至少3个为正
+E6 ADX 趋势强度：ADX > 25（趋势明确）
+E7 RSI 区间：45 < RSI < 80（趋势健康，非超买超卖）
+E8 趋势持续时间：连续站上MA20超过10日
+"""
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional, Set
+
+import numpy as np
+import pandas as pd
+
+from .config import MainUptrendConfig
+from .data_loader import DataLoader
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TrendSignal:
+    ts_code: str
+    eval_date: str
+    score: float = 0.0
+    factors: Dict[str, float] = field(default_factory=dict)
+    details: Dict[str, str] = field(default_factory=dict)
+    passed: bool = False
+    trend_type: str = "sustained"
+
+
+class LayerETrendDetector:
+    """E 层：趋势持续型检测"""
+
+    def __init__(self, cfg: MainUptrendConfig,
+                 loader: Optional[DataLoader] = None):
+        self.cfg = cfg
+        self.loader = loader or DataLoader()
+
+    def scan_pool(self, pool: Set[str], eval_date: str,
+                  top_n: int = 20) -> List[TrendSignal]:
+        if self.loader._indicators_by_date:
+            return self._scan_vectorized(pool, eval_date, top_n)
+        return self._scan_fallback(pool, eval_date, top_n)
+
+    def _scan_vectorized(self, pool: Set[str], eval_date: str,
+                         top_n: int = 20) -> List[TrendSignal]:
+        ind_df = self.loader.get_indicators_snapshot(eval_date)
+        if ind_df.empty:
+            return []
+
+        pool_df = ind_df[ind_df['ts_code'].isin(pool)].copy()
+        if pool_df.empty:
+            return []
+
+        pct_chg = pool_df['pct_chg'].fillna(0).values
+        close = pool_df['close'].fillna(0).values
+
+        scores = {}
+        details_map = {}
+
+        # E1: 均线多头排列
+        ma5 = pool_df.get('ma_5', pd.Series(np.nan, index=pool_df.index))
+        ma10 = pool_df.get('ma_10', pd.Series(np.nan, index=pool_df.index))
+        ma20 = pool_df.get('ma_20', pd.Series(np.nan, index=pool_df.index))
+        ma60 = pool_df.get('ma_60', pd.Series(np.nan, index=pool_df.index))
+
+        ma_alignment = (ma5 > ma10) & (ma10 > ma20) & (ma20 > ma60)
+        ma_alignment_count = pool_df.get('ma_alignment_days', pd.Series(0, index=pool_df.index))
+        e1_pass = ma_alignment & (ma_alignment_count >= self.cfg.e_ma_alignment_days)
+        e1_score = np.where(e1_pass, 1.0,
+                   np.where(ma_alignment, 0.6, 0.0))
+        scores['e1_ma_alignment'] = e1_score
+        details_map['e1_ma_alignment'] = np.where(
+            e1_pass, "均线多头排列",
+            np.where(ma_alignment, "部分多头", "非多头排列"))
+
+        # E2: 价格站稳短期均线
+        above_ma5 = (close > ma5.fillna(0).values) & (ma5.fillna(0).values > 0)
+        deviation = np.where(ma5.fillna(0).values > 0,
+                           (close - ma5.fillna(0).values) / ma5.fillna(0).values, 0)
+        e2_pass = above_ma5 & (deviation < self.cfg.e_price_above_short_ma_pct) & (deviation > -0.03)
+        e2_score = np.where(e2_pass, 1.0,
+                   np.where(above_ma5, 0.5, 0.0))
+        scores['e2_price_stability'] = e2_score
+        details_map['e2_price_stability'] = np.where(
+            e2_pass, f"站稳MA5",
+            np.where(above_ma5, "MA5上方偏离大", "MA5下方"))
+
+        # E3: 回撤控制
+        max_dd = pool_df.get('max_drawdown_20d', pd.Series(0, index=pool_df.index)).fillna(0).values
+        e3_pass = (max_dd > -self.cfg.e_max_drawdown_20d) & (max_dd < 0)
+        e3_score = np.where(max_dd > -0.05, 1.0,
+                   np.where(max_dd > -self.cfg.e_max_drawdown_20d, 0.7,
+                   np.where(max_dd > -0.20, 0.3, 0.0)))
+        scores['e3_drawdown'] = e3_score
+        details_map['e3_drawdown'] = np.where(
+            max_dd > -0.05, "回撤<5%",
+            np.where(max_dd > -self.cfg.e_max_drawdown_20d, f"回撤可控",
+                     "回撤过大"))
+
+        # E4: 阶梯式放量
+        vol_5 = pool_df.get('vol_ma_5', pd.Series(0, index=pool_df.index)).fillna(0).values
+        vol_20 = pool_df.get('vol_ma_20', pd.Series(0, index=pool_df.index)).fillna(0).values
+        vol_60 = pool_df.get('vol_ma_60', pd.Series(0, index=pool_df.index)).fillna(0).values
+        staircase = (vol_5 > vol_20 * self.cfg.e_volume_staircase_min) & \
+                    (vol_20 > vol_60 * self.cfg.e_volume_staircase_min) & \
+                    (vol_60 > 0)
+        e4_pass = staircase
+        e4_score = np.where(staircase, 1.0,
+                   np.where(vol_5 > vol_20, 0.5, 0.0))
+        scores['e4_volume_staircase'] = e4_score
+        details_map['e4_volume_staircase'] = np.where(
+            staircase, "阶梯放量",
+            np.where(vol_5 > vol_20, "短期放量", "量能不足"))
+
+        # E5: 动量一致性
+        ret_10 = pool_df.get('pct_chg_10d', pd.Series(0, index=pool_df.index)).fillna(0).values
+        ret_20 = pool_df.get('pct_chg_20d', pd.Series(0, index=pool_df.index)).fillna(0).values
+        ret_60 = pool_df.get('pct_chg_60d', pd.Series(0, index=pool_df.index)).fillna(0).values
+        positive_count = ((ret_10 > 0).astype(int) + (ret_20 > 0).astype(int) + (ret_60 > 0).astype(int))
+        e5_pass = positive_count >= self.cfg.e_momentum_positive_min
+        e5_score = positive_count / 3.0
+        scores['e5_momentum'] = e5_score
+        details_map['e5_momentum'] = np.where(
+            e5_pass, f"多周期动量一致",
+            np.where(positive_count > 0, "部分动量正", "动量不足"))
+
+        # E6: ADX 趋势强度
+        adx = pool_df.get('adx_14', pd.Series(0, index=pool_df.index)).fillna(0).values
+        e6_pass = adx > self.cfg.e_adx_threshold
+        e6_score = np.minimum(1.0, adx / 50.0)
+        scores['e6_adx'] = e6_score
+        details_map['e6_adx'] = np.where(
+            e6_pass, f"趋势强(ADX={adx:.0f})",
+            f"趋势弱(ADX={adx:.0f})")
+
+        # E7: RSI 区间
+        rsi = pool_df.get('rsi_14', pd.Series(50, index=pool_df.index)).fillna(50).values
+        e7_pass = (rsi > self.cfg.e_rsi_range_min) & (rsi < self.cfg.e_rsi_range_max)
+        e7_score = np.where(e7_pass, 1.0,
+                   np.where(rsi > 80, 0.2,
+                   np.where(rsi < 45, 0.3, 0.6)))
+        scores['e7_rsi'] = e7_score
+        details_map['e7_rsi'] = np.where(
+            e7_pass, f"RSI健康({rsi:.0f})",
+            np.where(rsi > 80, f"超买(RSI={rsi:.0f})", f"偏弱(RSI={rsi:.0f})"))
+
+        # E8: 趋势持续时间
+        above_ma20_days = pool_df.get('above_ma20_days', pd.Series(0, index=pool_df.index)).fillna(0).values
+        e8_pass = above_ma20_days >= self.cfg.e_trend_duration_min
+        e8_score = np.minimum(1.0, above_ma20_days / 30.0)
+        scores['e8_trend_duration'] = e8_score
+        details_map['e8_trend_duration'] = np.where(
+            e8_pass, f"趋势持续{above_ma20_days:.0f}日",
+            f"趋势仅{above_ma20_days:.0f}日")
+
+        # 综合评分
+        weights = {
+            'e1_ma_alignment': 1.5,
+            'e2_price_stability': 1.0,
+            'e3_drawdown': 1.2,
+            'e4_volume_staircase': 1.0,
+            'e5_momentum': 1.5,
+            'e6_adx': 1.0,
+            'e7_rsi': 0.8,
+            'e8_trend_duration': 1.5,
+        }
+
+        total_score = np.zeros(len(pool_df))
+        for key, weight in weights.items():
+            total_score += scores[key] * weight
+
+        # 通过条件：E1或E5至少一个通过 + 总分 > 阈值
+        passed = (e1_pass | e5_pass) & (total_score > 4.0)
+
+        pool_df['e_total_score'] = total_score
+        pool_df['e_passed'] = passed
+
+        passed_df = pool_df[pool_df['e_passed']].sort_values('e_total_score', ascending=False)
+        top = passed_df.head(top_n)
+
+        results = []
+        for i in range(len(top)):
+            idx = top.index[i]
+            code = top.iloc[i]['ts_code']
+            score = float(top.iloc[i]['e_total_score'])
+
+            sig = TrendSignal(
+                ts_code=code,
+                eval_date=eval_date,
+                score=score,
+                factors={k: float(v[idx]) if idx < len(v) else 0 for k, v in scores.items()},
+                details={k: str(v[idx]) if idx < len(v) else "" for k, v in details_map.items()},
+                passed=True,
+                trend_type="sustained",
+            )
+            results.append(sig)
+
+        logger.info(f"E层向量化扫描 {len(pool)} 只，通过 {len(passed_df)} 只，输出 Top {len(results)} 只")
+        return results
+
+    def _scan_fallback(self, pool: Set[str], eval_date: str,
+                       top_n: int = 20) -> List[TrendSignal]:
+        results = []
+        for code in pool:
+            sig = self.evaluate(code, eval_date)
+            if sig.passed:
+                results.append(sig)
+
+        results.sort(key=lambda x: x.score, reverse=True)
+        top = results[:top_n]
+        logger.info(f"E层扫描 {len(pool)} 只，通过 {len(results)} 只，输出 Top {len(top)} 只")
+        return top
+
+    def evaluate(self, ts_code: str, eval_date: str) -> TrendSignal:
+        sig = TrendSignal(ts_code=ts_code, eval_date=eval_date)
+
+        df = self.loader.get_daily(ts_code, start_date="2020-01-01", end_date=eval_date, min_days=120)
+        if df is None or len(df) < 120:
+            sig.details["error"] = "数据不足(需120日)"
+            return sig
+
+        df = df.reset_index(drop=True)
+        close = df['close'].astype(float)
+        volume = df['volume'].astype(float)
+        pct_chg = df['pct_chg'].astype(float)
+
+        scores = {}
+        details = {}
+        passed_count = 0
+
+        # E1: 均线多头排列
+        ma5 = close.rolling(5).mean()
+        ma10 = close.rolling(10).mean()
+        ma20 = close.rolling(20).mean()
+        ma60 = close.rolling(60).mean()
+
+        alignment = (ma5 > ma10) & (ma10 > ma20) & (ma20 > ma60)
+        alignment_days = alignment.iloc[-self.cfg.e_ma_alignment_days:].sum()
+        e1_pass = alignment.iloc[-1] and alignment_days >= self.cfg.e_ma_alignment_days * 0.6
+        scores['e1_ma_alignment'] = 1.0 if e1_pass else (0.5 if alignment.iloc[-1] else 0)
+        details['e1_ma_alignment'] = f"多头{alignment_days:.0f}/{self.cfg.e_ma_alignment_days}日"
+        if e1_pass:
+            passed_count += 1
+
+        # E2: 价格站稳短期均线
+        last_close = float(close.iloc[-1])
+        last_ma5 = float(ma5.iloc[-1]) if pd.notna(ma5.iloc[-1]) else 0
+        if last_ma5 > 0:
+            deviation = (last_close - last_ma5) / last_ma5
+            e2_pass = -0.03 < deviation < self.cfg.e_price_above_short_ma_pct
+            scores['e2_price_stability'] = 1.0 if e2_pass else (0.5 if last_close > last_ma5 else 0)
+            details['e2_price_stability'] = f"偏离MA5={deviation*100:.1f}%"
+        else:
+            e2_pass = False
+            scores['e2_price_stability'] = 0
+            details['e2_price_stability'] = "MA5不可用"
+        if e2_pass:
+            passed_count += 1
+
+        # E3: 回撤控制
+        recent_high = close.iloc[-20:].max()
+        recent_low = close.iloc[-20:].min()
+        max_dd = (recent_low - recent_high) / recent_high if recent_high > 0 else 0
+        e3_pass = -self.cfg.e_max_drawdown_20d < max_dd < 0
+        scores['e3_drawdown'] = 1.0 if max_dd > -0.05 else (0.7 if max_dd > -self.cfg.e_max_drawdown_20d else 0.3)
+        details['e3_drawdown'] = f"20日最大回撤={max_dd*100:.1f}%"
+        if e3_pass:
+            passed_count += 1
+
+        # E4: 阶梯式放量
+        vol_ma5 = volume.iloc[-5:].mean()
+        vol_ma20 = volume.iloc[-20:].mean()
+        vol_ma60 = volume.iloc[-60:].mean()
+        staircase = (vol_ma5 > vol_ma20 * self.cfg.e_volume_staircase_min) and \
+                    (vol_ma20 > vol_ma60 * self.cfg.e_volume_staircase_min) and (vol_ma60 > 0)
+        scores['e4_volume_staircase'] = 1.0 if staircase else (0.5 if vol_ma5 > vol_ma20 else 0)
+        details['e4_volume_staircase'] = f"5/20/60均量比={vol_ma5/vol_ma20:.1f}x/{vol_ma20/vol_ma60:.1f}x"
+        if staircase:
+            passed_count += 1
+
+        # E5: 动量一致性
+        ret_10 = float(pct_chg.iloc[-10:].sum()) if len(pct_chg) >= 10 else 0
+        ret_20 = float(pct_chg.iloc[-20:].sum()) if len(pct_chg) >= 20 else 0
+        ret_60 = float(pct_chg.iloc[-60:].sum()) if len(pct_chg) >= 60 else 0
+        positive_count = sum(1 for r in [ret_10, ret_20, ret_60] if r > 0)
+        e5_pass = positive_count >= self.cfg.e_momentum_positive_min
+        scores['e5_momentum'] = positive_count / 3.0
+        details['e5_momentum'] = f"10/20/60日涨幅={ret_10:.1f}%/{ret_20:.1f}%/{ret_60:.1f}%"
+        if e5_pass:
+            passed_count += 1
+
+        # E6: ADX
+        adx_val = self._calc_adx(df, period=14)
+        e6_pass = adx_val > self.cfg.e_adx_threshold
+        scores['e6_adx'] = min(1.0, adx_val / 50.0)
+        details['e6_adx'] = f"ADX={adx_val:.1f}"
+        if e6_pass:
+            passed_count += 1
+
+        # E7: RSI
+        rsi_val = self._calc_rsi(close, period=14)
+        e7_pass = self.cfg.e_rsi_range_min < rsi_val < self.cfg.e_rsi_range_max
+        scores['e7_rsi'] = 1.0 if e7_pass else (0.3 if rsi_val > 80 or rsi_val < 45 else 0.6)
+        details['e7_rsi'] = f"RSI={rsi_val:.1f}"
+        if e7_pass:
+            passed_count += 1
+
+        # E8: 趋势持续时间
+        above_ma20 = close > ma20
+        above_ma20_days = 0
+        for i in range(len(above_ma20) - 1, -1, -1):
+            if above_ma20.iloc[i]:
+                above_ma20_days += 1
+            else:
+                break
+        e8_pass = above_ma20_days >= self.cfg.e_trend_duration_min
+        scores['e8_trend_duration'] = min(1.0, above_ma20_days / 30.0)
+        details['e8_trend_duration'] = f"站上MA20共{above_ma20_days}日"
+        if e8_pass:
+            passed_count += 1
+
+        weights = {
+            'e1_ma_alignment': 1.5, 'e2_price_stability': 1.0,
+            'e3_drawdown': 1.2, 'e4_volume_staircase': 1.0,
+            'e5_momentum': 1.5, 'e6_adx': 1.0,
+            'e7_rsi': 0.8, 'e8_trend_duration': 1.5,
+        }
+
+        sig.factors = scores
+        sig.details = details
+        sig.score = sum(scores.get(k, 0) * w for k, w in weights.items())
+        sig.passed = (e1_pass or e5_pass) and passed_count >= 3 and sig.score > 4.0
+
+        return sig
+
+    @staticmethod
+    def _calc_rsi(close: pd.Series, period: int = 14) -> float:
+        delta = close.diff()
+        gain = delta.where(delta > 0, 0).rolling(period).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+        rs = gain / loss.replace(0, np.nan)
+        rsi = 100 - (100 / (1 + rs))
+        return float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else 50.0
+
+    @staticmethod
+    def _calc_adx(df: pd.DataFrame, period: int = 14) -> float:
+        high = df['high'].astype(float)
+        low = df['low'].astype(float)
+        close = df['close'].astype(float)
+
+        tr1 = high - low
+        tr2 = (high - close.shift(1)).abs()
+        tr3 = (low - close.shift(1)).abs()
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+        plus_dm = high.diff()
+        minus_dm = low.diff().abs()
+
+        plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+        minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
+
+        atr = tr.rolling(period).mean()
+        plus_di = 100 * (plus_dm.rolling(period).mean() / atr.replace(0, np.nan))
+        minus_di = 100 * (minus_dm.rolling(period).mean() / atr.replace(0, np.nan))
+
+        dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan))
+        adx = dx.rolling(period).mean()
+
+        return float(adx.iloc[-1]) if pd.notna(adx.iloc[-1]) else 0.0

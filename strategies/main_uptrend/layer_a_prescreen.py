@@ -71,16 +71,21 @@ class LayerAPrescreener:
             codes.update(codes_3)
             logger.info(f"A3 行业景气: {len(codes_3)} 只通过")
 
-        # 合并逻辑：通过的filter取交集，失败的filter自动跳过
+        # 合并逻辑：根据 a_use_union 配置决定取交集还是并集
         active_filters = [f for f in [codes_1, codes_2, codes_3] if f is not None and len(f) > 0]
 
         if not active_filters:
             codes = set()
         elif len(active_filters) == 1:
-            # 只有一个filter有数据，直接用
             codes = active_filters[0]
+        elif self.cfg.a_use_union:
+            # 并集模式：通过任一filter即可入池（适合趋势股，放宽入池条件）
+            codes = active_filters[0]
+            for f in active_filters[1:]:
+                codes = codes | f
+            logger.info(f"A 层并集模式: {len(codes)} 只入池")
         else:
-            # 多个filter有数据，取交集
+            # 交集模式：必须通过所有filter
             codes = active_filters[0]
             for f in active_filters[1:]:
                 codes = codes & f

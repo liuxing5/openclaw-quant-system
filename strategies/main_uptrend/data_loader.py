@@ -275,6 +275,112 @@ class DataLoader:
         close_20 = self._fast_rolling_mean_shifted(close_arr, group_starts, group_ends, 20)
         df['pct_chg_20d'] = (close_arr - close_20) / np.where(close_20 != 0, close_20, np.nan) * 100
 
+        # ---- Layer E: 趋势持续型指标 ----
+        logger.info("    E层趋势指标...")
+        ma_5 = self._fast_rolling_mean(close_arr, group_starts, group_ends, 5)
+        ma_10 = self._fast_rolling_mean(close_arr, group_starts, group_ends, 10)
+        ma_20 = self._fast_rolling_mean(close_arr, group_starts, group_ends, 20)
+        df['ma_5'] = ma_5
+        df['ma_10'] = ma_10
+        df['ma_20'] = ma_20
+
+        df['ma_alignment'] = (ma_5 > ma_10) & (ma_10 > ma_20) & (ma_20 > ma_120)
+
+        ma_alignment_days = np.zeros(len(df), dtype=np.float64)
+        for i in range(len(group_starts)):
+            s, e = group_starts[i], group_ends[i]
+            chunk = df['ma_alignment'].values[s:e].astype(float)
+            count = 0
+            for j in range(len(chunk)):
+                if chunk[j]:
+                    count += 1
+                else:
+                    count = 0
+                ma_alignment_days[s + j] = count
+        df['ma_alignment_days'] = ma_alignment_days
+
+        vol_ma_5 = self._fast_rolling_mean(volume_arr, group_starts, group_ends, 5)
+        vol_ma_20_e = self._fast_rolling_mean(volume_arr, group_starts, group_ends, 20)
+        df['vol_ma_5'] = vol_ma_5
+        df['vol_ma_20'] = vol_ma_20_e
+
+        max_dd_20d = np.zeros(len(df), dtype=np.float64)
+        for i in range(len(group_starts)):
+            s, e = group_starts[i], group_ends[i]
+            chunk = close_arr[s:e]
+            n = len(chunk)
+            if n < 20:
+                continue
+            for j in range(20, n):
+                window = chunk[j-20:j]
+                high_val = np.max(window)
+                low_val = np.min(window)
+                if high_val > 0:
+                    max_dd_20d[s + j] = (low_val - high_val) / high_val
+        df['max_drawdown_20d'] = max_dd_20d
+
+        above_ma20_days = np.zeros(len(df), dtype=np.float64)
+        for i in range(len(group_starts)):
+            s, e = group_starts[i], group_ends[i]
+            chunk = close_arr[s:e]
+            ma20_chunk = ma_20[s:e]
+            above = chunk > ma20_chunk
+            count = 0
+            for j in range(len(above)):
+                if above[j] and not np.isnan(ma20_chunk[j]):
+                    count += 1
+                else:
+                    count = 0
+                above_ma20_days[s + j] = count
+        df['above_ma20_days'] = above_ma20_days
+
+        close_10 = self._fast_rolling_mean_shifted(close_arr, group_starts, group_ends, 10)
+        df['pct_chg_10d'] = (close_arr - close_10) / np.where(close_10 != 0, close_10, np.nan) * 100
+
+        close_60 = self._fast_rolling_mean_shifted(close_arr, group_starts, group_ends, 60)
+        df['pct_chg_60d'] = (close_arr - close_60) / np.where(close_60 != 0, close_60, np.nan) * 100
+
+        logger.info("    E层 RSI/ADX...")
+        rsi_14 = np.full(len(df), 50.0, dtype=np.float64)
+        adx_14 = np.full(len(df), 0.0, dtype=np.float64)
+        for i in range(len(group_starts)):
+            s, e = group_starts[i], group_ends[i]
+            chunk_close = close_arr[s:e]
+            chunk_high = high_arr[s:e]
+            chunk_low = low_arr[s:e]
+            n = len(chunk_close)
+            if n < 30:
+                continue
+            try:
+                s_close = pd.Series(chunk_close)
+                delta = s_close.diff()
+                gain = delta.where(delta > 0, 0).rolling(14).mean()
+                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+                rs = gain / loss.replace(0, np.nan)
+                rsi_vals = 100 - (100 / (1 + rs))
+                rsi_14[s:e] = rsi_vals.fillna(50).values
+
+                s_high = pd.Series(chunk_high)
+                s_low = pd.Series(chunk_low)
+                tr1 = s_high - s_low
+                tr2 = (s_high - s_close.shift(1)).abs()
+                tr3 = (s_low - s_close.shift(1)).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                plus_dm = s_high.diff()
+                minus_dm = s_low.diff().abs()
+                plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+                minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
+                atr = tr.rolling(14).mean()
+                plus_di = 100 * (plus_dm.rolling(14).mean() / atr.replace(0, np.nan))
+                minus_di = 100 * (minus_dm.rolling(14).mean() / atr.replace(0, np.nan))
+                dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan))
+                adx_vals = dx.rolling(14).mean()
+                adx_14[s:e] = adx_vals.fillna(0).values
+            except Exception:
+                pass
+        df['rsi_14'] = rsi_14
+        df['adx_14'] = adx_14
+
         # ---- 辅助列 ----
         df['is_kcb_cyb'] = df['ts_code'].str.startswith(('300', '688'))
 

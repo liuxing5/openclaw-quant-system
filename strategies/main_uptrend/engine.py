@@ -31,6 +31,8 @@ from .layer_a_prescreen import LayerAPrescreener
 from .layer_b_launch import LayerBLaunchDetector, LaunchSignal
 from .layer_c_sustain import LayerCSustainAnalyzer, SustainSignal
 from .layer_d_risk import LayerDRiskFilter, RiskVerdict
+from .layer_e_trend import LayerETrendDetector, TrendSignal
+from .llm_refiner import LLMRefiner
 
 logger = logging.getLogger(__name__)
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
@@ -48,6 +50,8 @@ class MainUptrendEngine:
         self.layer_b = LayerBLaunchDetector(self.cfg, self.loader)
         self.layer_c = LayerCSustainAnalyzer(self.cfg, self.loader)
         self.layer_d = LayerDRiskFilter(self.cfg, self.loader)
+        self.layer_e = LayerETrendDetector(self.cfg, self.loader)
+        self.llm_refiner = LLMRefiner(self.cfg, self.loader)
 
     # ================================================================
     # 日频运行（实盘/模拟）
@@ -114,13 +118,29 @@ class MainUptrendEngine:
         stats['b_signals'] = len(b_signals)
         logger.info(f"[Layer B] 启动信号: {len(b_signals)} 只")
 
-        if not b_signals:
-            logger.info("无 B 层信号，退出")
+        # ---------- Layer E: 趋势持续型检测（与B层并行） ----------
+        e_signals: List[TrendSignal] = []
+        if self.cfg.e_enabled and pool_a:
+            e_signals = self.layer_e.scan_pool(
+                pool_a, eval_date, top_n=self.cfg.e_top_n_daily
+            )
+        stats['e_signals'] = len(e_signals)
+        logger.info(f"[Layer E] 趋势持续: {len(e_signals)} 只")
+
+        # 合并 B 层和 E 层的候选
+        b_codes = {s.ts_code for s in b_signals}
+        e_only_signals = [s for s in e_signals if s.ts_code not in b_codes]
+        all_signal_codes = b_codes | {s.ts_code for s in e_signals}
+        logger.info(f"[合并] B层{len(b_signals)}只 + E层独有{len(e_only_signals)}只 = {len(all_signal_codes)}只")
+
+        if not b_signals and not e_signals:
+            logger.info("无 B/E 层信号，退出")
             return {
                 'date': eval_date,
                 'a_pool_size': stats.get('a_pool_size', 0),
                 'b_signals': 0,
                 'c_signals': 0,
+                'e_signals': 0,
                 'd_passed': 0,
                 'candidates': [],
                 'stats': stats,
@@ -128,7 +148,7 @@ class MainUptrendEngine:
 
         # ---------- Layer C: 持续性判定 ----------
         c_signals: List[SustainSignal] = []
-        if self.cfg.c_enabled:
+        if self.cfg.c_enabled and b_signals:
             c_signals = self.layer_c.scan_b_signals(
                 b_signals, top_n=self.cfg.c_top_n_daily
             )
@@ -140,13 +160,25 @@ class MainUptrendEngine:
         stats['c_signals'] = len(c_signals)
         logger.info(f"[Layer C] 持续性判定: {len(c_signals)} 只")
 
-        if not c_signals:
-            logger.info("无 C 层信号，退出")
+        # E 层信号自带持续性判定，直接进入 D 层
+        e_passed_codes = {s.ts_code for s in e_only_signals if s.passed}
+        e_score_map = {s.ts_code: s.score for s in e_only_signals if s.passed}
+        e_detail_map = {s.ts_code: s.details for s in e_only_signals if s.passed}
+        logger.info(f"[Layer E] 通过持续性: {len(e_passed_codes)} 只")
+
+        # 合并 C 层和 E 层通过的标的
+        c_codes_set = {s.ts_code for s in c_signals}
+        all_c_e_codes = list(c_codes_set | e_passed_codes)
+        logger.info(f"[合并C+E] C层{len(c_codes_set)}只 + E层{len(e_passed_codes)}只 = {len(all_c_e_codes)}只")
+
+        if not c_signals and not e_passed_codes:
+            logger.info("无 C/E 层信号，退出")
             return {
                 'date': eval_date,
                 'a_pool_size': stats.get('a_pool_size', 0),
                 'b_signals': len(b_signals),
                 'c_signals': 0,
+                'e_signals': len(e_signals),
                 'd_passed': 0,
                 'candidates': [],
                 'stats': stats,
@@ -154,10 +186,11 @@ class MainUptrendEngine:
 
         # ---------- Layer D: 风险过滤 ----------
         c_codes = [s.ts_code for s in c_signals]
+        all_codes_for_d = list(set(c_codes) | e_passed_codes)
         if self.cfg.d_enabled:
-            d_passed = self.layer_d.filter_list(c_codes, eval_date)
+            d_passed = self.layer_d.filter_list(all_codes_for_d, eval_date)
         else:
-            d_passed = c_codes
+            d_passed = all_codes_for_d
         stats['d_passed'] = len(d_passed)
         logger.info(f"[Layer D] 风险过滤: {len(d_passed)} 通过")
 
@@ -171,13 +204,39 @@ class MainUptrendEngine:
                     'eval_date': eval_date,
                     'b_score': c_sig.b_signal.score if c_sig.b_signal else 0,
                     'c_score': c_sig.score,
+                    'e_score': 0,
+                    'signal_type': 'launch',
                     'b_factors': c_sig.b_signal.factors if c_sig.b_signal else {},
                     'c_factors': c_sig.factors,
+                    'e_factors': {},
                     'b_details': c_sig.b_signal.details if c_sig.b_signal else {},
                     'c_details': c_sig.details,
+                    'e_details': {},
                 })
 
-        candidates.sort(key=lambda x: x['c_score'] + x['b_score'], reverse=True)
+        for code in e_passed_codes:
+            if code in d_set and code not in c_codes_set:
+                candidates.append({
+                    'ts_code': code,
+                    'eval_date': eval_date,
+                    'b_score': 0,
+                    'c_score': 0,
+                    'e_score': e_score_map.get(code, 0),
+                    'signal_type': 'trend',
+                    'b_factors': {},
+                    'c_factors': {},
+                    'e_factors': {},
+                    'b_details': {},
+                    'c_details': {},
+                    'e_details': e_detail_map.get(code, {}),
+                })
+
+        candidates.sort(key=lambda x: x['c_score'] + x['b_score'] + x['e_score'], reverse=True)
+
+        # ---------- LLM 优选 ----------
+        if self.cfg.llm_enabled and candidates:
+            candidates = self.llm_refiner.refine(candidates, eval_date)
+            logger.info(f"[LLM] 优选完成: {len(candidates)} 只")
 
         # ---------- 输出统计 ----------
         stats['total_candidates'] = len(candidates)
@@ -186,6 +245,7 @@ class MainUptrendEngine:
             'a_pool_size': stats.get('a_pool_size', 0),
             'b_signals': len(b_signals),
             'c_signals': len(c_signals),
+            'e_signals': len(e_signals),
             'd_passed': len(d_passed),
             'candidates': candidates,
             'stats': stats,
@@ -196,9 +256,6 @@ class MainUptrendEngine:
     # ================================================================
     def evaluate_single_day(self, eval_date: str,
                             pool_a: Optional[Set[str]] = None) -> List[Dict]:
-        """
-        回测用单日评估，返回候选列表（不做次日确认）
-        """
         if pool_a is None:
             snapshot = self.loader.get_market_snapshot(eval_date)
             pool_a = set(snapshot['ts_code'].tolist()) if not snapshot.empty else set()
@@ -207,18 +264,30 @@ class MainUptrendEngine:
             return []
 
         b_signals = self.layer_b.scan_pool(pool_a, eval_date, top_n=self.cfg.b_top_n_daily)
-        if not b_signals:
-            logger.info(f"[Engine调试] {eval_date}: B层返回0个信号")
+
+        e_signals = []
+        if self.cfg.e_enabled:
+            e_signals = self.layer_e.scan_pool(pool_a, eval_date, top_n=self.cfg.e_top_n_daily)
+
+        if not b_signals and not e_signals:
+            logger.info(f"[Engine调试] {eval_date}: B/E层均返回0个信号")
             return []
 
-        c_signals = self.layer_c.scan_b_signals(b_signals, top_n=self.cfg.c_top_n_daily)
-        if not c_signals:
-            logger.info(f"[Engine调试] {eval_date}: B层{len(b_signals)}个信号，C层返回0个")
+        c_signals = []
+        if b_signals:
+            c_signals = self.layer_c.scan_b_signals(b_signals, top_n=self.cfg.c_top_n_daily)
+
+        e_passed_codes = {s.ts_code for s in e_signals if s.passed}
+        e_score_map = {s.ts_code: s.score for s in e_signals if s.passed}
+
+        if not c_signals and not e_passed_codes:
+            logger.info(f"[Engine调试] {eval_date}: B层{len(b_signals)}个信号，C/E层均返回0个")
             return []
 
         c_codes = [s.ts_code for s in c_signals]
-        d_passed_set = set(self.layer_d.filter_list(c_codes, eval_date))
-        logger.info(f"[Engine调试] {eval_date}: B层{len(b_signals)}个, C层{len(c_signals)}个, D层通过{len(d_passed_set)}个")
+        all_codes_for_d = list(set(c_codes) | e_passed_codes)
+        d_passed_set = set(self.layer_d.filter_list(all_codes_for_d, eval_date))
+        logger.info(f"[Engine调试] {eval_date}: B层{len(b_signals)}个, C层{len(c_signals)}个, E层{len(e_signals)}个, D层通过{len(d_passed_set)}个")
 
         candidates = []
         for c_sig in c_signals:
@@ -228,7 +297,22 @@ class MainUptrendEngine:
                     'eval_date': eval_date,
                     'b_score': c_sig.b_signal.score if c_sig.b_signal else 0,
                     'c_score': c_sig.score,
+                    'e_score': 0,
                     'composite_score': (c_sig.b_signal.score if c_sig.b_signal else 0) + c_sig.score,
+                    'signal_type': 'launch',
+                })
+
+        c_codes_set = {s.ts_code for s in c_signals}
+        for code in e_passed_codes:
+            if code in d_passed_set and code not in c_codes_set:
+                candidates.append({
+                    'ts_code': code,
+                    'eval_date': eval_date,
+                    'b_score': 0,
+                    'c_score': 0,
+                    'e_score': e_score_map.get(code, 0),
+                    'composite_score': e_score_map.get(code, 0),
+                    'signal_type': 'trend',
                 })
 
         candidates.sort(key=lambda x: x['composite_score'], reverse=True)
@@ -298,7 +382,10 @@ class MainUptrendEngine:
                 result['c_signals'],
                 result['d_passed'],
                 len(result['candidates']),
-                json.dumps(result.get('stats', {})),
+                json.dumps({
+                    'e_signals': result.get('e_signals', 0),
+                    'stats': result.get('stats', {}),
+                }),
             ))
             conn.commit()
             cur.close()

@@ -56,6 +56,12 @@ def main():
                         help="跳过 C 层持续性判定")
     parser.add_argument("--no-d", action="store_true",
                         help="跳过 D 层风险过滤")
+    parser.add_argument("--no-e", action="store_true",
+                        help="跳过 E 层趋势持续检测")
+    parser.add_argument("--llm", action="store_true",
+                        help="启用 LLM 优选")
+    parser.add_argument("--no-llm", action="store_true",
+                        help="禁用 LLM 优选（默认）")
     parser.add_argument("--write-db", action="store_true", default=True,
                         help="写入 daily_candidates 表")
     parser.add_argument("--no-write-db", action="store_true",
@@ -69,6 +75,8 @@ def main():
         a_enabled=not args.no_a,
         c_enabled=not args.no_c,
         d_enabled=not args.no_d,
+        e_enabled=not args.no_e,
+        llm_enabled=args.llm and not args.no_llm,
     )
 
     eval_date = args.date or datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
@@ -82,6 +90,7 @@ def main():
     print(f"A 层预筛池: {result['a_pool_size']} 只")
     print(f"B 层启动信号: {result['b_signals']} 只")
     print(f"C 层持续性: {result['c_signals']} 只")
+    print(f"E 层趋势持续: {result.get('e_signals', 0)} 只")
     print(f"D 层通过: {result['d_passed']} 只")
     print(f"最终候选: {len(result['candidates'])} 只")
     print("=" * 60)
@@ -89,16 +98,24 @@ def main():
     if result['candidates']:
         print("\n--- 候选标的 ---")
         for i, c in enumerate(result['candidates'], 1):
-            print(f"\n  {i}. {c['ts_code']}")
-            print(f"     B层分: {c['b_score']:.1f}  C层分: {c['c_score']:.1f}")
+            sig_type = c.get('signal_type', 'launch')
+            type_label = "🚀启动" if sig_type == 'launch' else "📈趋势"
+            print(f"\n  {i}. {c['ts_code']} [{type_label}]")
+            print(f"     B层分: {c['b_score']:.1f}  C层分: {c['c_score']:.1f}  E层分: {c.get('e_score', 0):.1f}")
+            if c.get('llm_score'):
+                print(f"     LLM分: {c['llm_score']}  置信度: {c.get('llm_confidence', 0):.1f}  理由: {c.get('llm_reason', '')}")
             b_details = c.get('b_details', {})
             c_details = c.get('c_details', {})
+            e_details = c.get('e_details', {})
             for k, v in b_details.items():
                 if v:
-                    print(f"     [{k}] {v}")
+                    print(f"     [B:{k}] {v}")
             for k, v in c_details.items():
                 if v:
-                    print(f"     [{k}] {v}")
+                    print(f"     [C:{k}] {v}")
+            for k, v in e_details.items():
+                if v:
+                    print(f"     [E:{k}] {v}")
     else:
         print("\n无候选标的")
 
