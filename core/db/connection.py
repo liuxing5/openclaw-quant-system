@@ -8,13 +8,17 @@ Uses a ThreadedConnectionPool to respect Supabase's connection limit (pool_size=
 
 Set POSTGRES_POOL_SIZE (default 5) to control max connections per process.
 With 5 per process, up to 3 concurrent workflows stay within the 15-connection limit.
+
+When Supabase pool is exhausted (EMAXCONNSESSION), all connection acquisition
+automatically retries with linear backoff (10s, 20s, 30s ...) up to 5 attempts.
 """
 import os
+import time
 import threading
 import logging
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from psycopg2.pool import ThreadedConnectionPool
+from psycopg2.pool import ThreadedConnectionPool, PoolError
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +26,15 @@ _pool = None
 _pool_lock = threading.Lock()
 _session_conn = None
 _session_lock = threading.Lock()
+
+_MAX_RETRIES = 5
+_RETRY_DELAY = 10
+_POOL_EXHAUSTED_MARKERS = ("EMAXCONNSESSION", "max clients reached")
+
+
+def _is_pool_exhausted(exc):
+    err = str(exc).lower()
+    return any(m.lower() in err for m in _POOL_EXHAUSTED_MARKERS)
 
 
 def _connect_kwargs():
@@ -49,13 +62,60 @@ def _get_pool():
         if _pool is not None and not _pool.closed:
             return _pool
         max_conn = int(os.getenv('POSTGRES_POOL_SIZE', '5'))
-        _pool = ThreadedConnectionPool(
-            minconn=1,
-            maxconn=max_conn,
-            **_connect_kwargs(),
-        )
-        logger.info("DB connection pool created (max=%d)", max_conn)
+        for attempt in range(_MAX_RETRIES):
+            try:
+                _pool = ThreadedConnectionPool(
+                    minconn=0,
+                    maxconn=max_conn,
+                    **_connect_kwargs(),
+                )
+                logger.info("DB connection pool created (max=%d)", max_conn)
+                return _pool
+            except psycopg2.OperationalError as e:
+                if _is_pool_exhausted(e) and attempt < _MAX_RETRIES - 1:
+                    delay = _RETRY_DELAY * (attempt + 1)
+                    logger.warning(
+                        "DB pool creation failed (Supabase exhausted), "
+                        "retrying in %ds (%d/%d)...",
+                        delay, attempt + 1, _MAX_RETRIES,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise
     return _pool
+
+
+def _pool_getconn(pool):
+    """Get a connection from the pool with retry on exhaustion.
+
+    Handles two exhaustion scenarios:
+    1. Supabase EMAXCONNSESSION: other workflows hold all 15 connections
+    2. psycopg2 PoolError: this process already uses all pool slots
+    In both cases, wait and retry - the situation is temporary.
+    """
+    for attempt in range(_MAX_RETRIES):
+        try:
+            return pool.getconn()
+        except psycopg2.OperationalError as e:
+            if _is_pool_exhausted(e) and attempt < _MAX_RETRIES - 1:
+                delay = _RETRY_DELAY * (attempt + 1)
+                logger.warning(
+                    "DB pool exhausted (Supabase), waiting %ds for available slot (%d/%d)...",
+                    delay, attempt + 1, _MAX_RETRIES,
+                )
+                time.sleep(delay)
+                continue
+            raise
+        except PoolError as e:
+            if attempt < _MAX_RETRIES - 1:
+                delay = _RETRY_DELAY * (attempt + 1)
+                logger.warning(
+                    "DB pool exhausted (local), waiting %ds for available slot (%d/%d)...",
+                    delay, attempt + 1, _MAX_RETRIES,
+                )
+                time.sleep(delay)
+                continue
+            raise
 
 
 class _PooledConnection:
@@ -162,7 +222,7 @@ def get_db(use_dict_cursor: bool = False):
                 _session_conn = None
         if _session_conn is None or _session_conn.closed:
             pool = _get_pool()
-            _session_conn = pool.getconn()
+            _session_conn = _pool_getconn(pool)
         wrapped = _NoCloseConnection(_session_conn)
         if use_dict_cursor:
             wrapped.cursor_factory = RealDictCursor
@@ -176,7 +236,7 @@ def get_db_fresh(use_dict_cursor: bool = False):
     When done, call .close() to return it.
     """
     pool = _get_pool()
-    conn = pool.getconn()
+    conn = _pool_getconn(pool)
     wrapped = _PooledConnection(conn, pool)
     if use_dict_cursor:
         wrapped.cursor_factory = RealDictCursor
