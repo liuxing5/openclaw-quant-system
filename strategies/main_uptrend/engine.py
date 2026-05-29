@@ -197,8 +197,10 @@ class MainUptrendEngine:
         # ---------- 组装最终候选 ----------
         d_set = set(d_passed)
         candidates = []
+        seen_codes = set()  # 防止重复添加
+        
         for c_sig in c_signals:
-            if c_sig.ts_code in d_set:
+            if c_sig.ts_code in d_set and c_sig.ts_code not in seen_codes:
                 candidates.append({
                     'ts_code': c_sig.ts_code,
                     'eval_date': eval_date,
@@ -213,9 +215,10 @@ class MainUptrendEngine:
                     'c_details': c_sig.details,
                     'e_details': {},
                 })
+                seen_codes.add(c_sig.ts_code)
 
         for code in e_passed_codes:
-            if code in d_set and code not in c_codes_set:
+            if code in d_set and code not in c_codes_set and code not in seen_codes:
                 candidates.append({
                     'ts_code': code,
                     'eval_date': eval_date,
@@ -230,6 +233,7 @@ class MainUptrendEngine:
                     'c_details': {},
                     'e_details': e_detail_map.get(code, {}),
                 })
+                seen_codes.add(code)
 
         candidates.sort(key=lambda x: x['c_score'] + x['b_score'] + x['e_score'], reverse=True)
 

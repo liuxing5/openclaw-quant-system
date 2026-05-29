@@ -175,7 +175,7 @@ class LayerCSustainAnalyzer:
 
             vol_shrink_val = float(pool_df.loc[idx, 'volume_shrink_ratio']) if 'volume_shrink_ratio' in pool_df.columns else 0
             amt_ratio_val = float(pool_df.loc[idx, 'amount_ratio_20']) if 'amount_ratio_20' in pool_df.columns else 0
-            ind_avg_val = float(pool_df.loc[idx, 'industry_avg_pct']) if 'industry_avg_pct' in pool_df.columns else 0
+            ind_avg_val = float(pool_df.loc[idx, 'industry_avg_pct']) if 'industry_avg_pct' in pool_df.columns and pd.notna(pool_df.loc[idx, 'industry_avg_pct']) else 0
             ind_rise_val = float(pool_df.loc[idx, 'industry_rising_count']) if 'industry_rising_count' in pool_df.columns else 0
             pct_val = float(pool_df.loc[idx, 'pct_chg'])
             is_zt_val = bool(is_zt[pos]) if pos < len(is_zt) else False
@@ -196,7 +196,7 @@ class LayerCSustainAnalyzer:
                     'big_order': f"成交额倍数={amt_ratio_val:.1f}x, 涨幅={pct_val:.1f}%",
                     'vol_shrink': f"量比T-1={vol_shrink_val:.1f}x, 涨跌={pct_val:+.1f}%",
                     'seal_quality': f"回测模式, 涨停={pct_val:.1f}%" if is_zt_val else "非涨停日",
-                    'sector': f"板块均值={ind_avg_val:.1f}%, 上涨={ind_rise_val:.0f}只",
+                    'sector': f"板块均值={ind_avg_val:.1f}%, 上涨={ind_rise_val:.0f}只" if ind_avg_val != 0 or ind_rise_val > 0 else "板块数据不可用",
                 },
                 passed=True,
                 b_signal=b_sig,

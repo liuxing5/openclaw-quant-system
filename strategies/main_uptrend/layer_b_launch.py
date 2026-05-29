@@ -327,7 +327,8 @@ class LayerBLaunchDetector:
 
             # 构造detail字符串
             vol_ratio_val = float(quick.loc[idx, 'vol_breakout_ratio']) if idx in quick.index else 0
-            turn_val = float(quick.loc[idx, 'turnover_rate']) if idx in quick.index else 0
+            turn_val = float(quick.loc[idx, 'turnover_rate']) if idx in quick.index and 'turnover_rate' in quick.columns else 0
+            turn_display = f"{turn_val:.1f}" if not np.isnan(turn_val) else "N/A"
             above_pct_val = float(quick.loc[idx, 'above_ma_120_pct']) if idx in quick.index and 'above_ma_120_pct' in quick.columns else 0
 
             # 判断价格突破类型
@@ -356,7 +357,7 @@ class LayerBLaunchDetector:
                     'seal_quality': float(seal_quality_score[i]) if i < len(seal_quality_score) else 0,
                 },
                 details={
-                    'vol_breakout': f"量比MA60={vol_ratio_val:.1f}x, 换手={turn_val:.1f}%",
+                    'vol_breakout': f"量比MA60={vol_ratio_val:.1f}x, 换手={turn_display}%",
                     'price_breakout': price_detail,
                     'main_force': main_detail,
                     'seal_quality': "涨停日" if is_zt_val else "非涨停日",
