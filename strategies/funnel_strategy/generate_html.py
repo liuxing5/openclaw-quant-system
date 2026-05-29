@@ -1159,11 +1159,25 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="生成三策略对比 HTML 报告")
     parser.add_argument("--date", "-d", type=str, default=None, help="日期 (YYYY-MM-DD)")
     parser.add_argument("--output", "-o", type=str, default=None, help="输出目录")
+    parser.add_argument("--all-dates", action="store_true", help="生成所有历史日期的报告")
     args = parser.parse_args()
 
     output_dir = args.output
     try:
-        generate_unified_html(output_dir=output_dir, trade_date=args.date)
+        if args.all_dates:
+            history_dates_raw = query_dicts("""
+                SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC LIMIT 10;
+            """)
+            dates = [str(r['trade_date']) for r in history_dates_raw]
+            print(f"生成 {len(dates)} 个历史日期的报告...")
+            for d in dates:
+                print(f"  生成 {d}...")
+                generate_unified_html(output_dir=output_dir, trade_date=d)
+            # 最后生成不带日期的主页面（最新日期）
+            print("  生成主页面 funnel.html...")
+            generate_unified_html(output_dir=output_dir, trade_date=None)
+        else:
+            generate_unified_html(output_dir=output_dir, trade_date=args.date)
     except Exception as e:
         print(f"❌ funnel HTML generation failed: {e}")
         traceback.print_exc()

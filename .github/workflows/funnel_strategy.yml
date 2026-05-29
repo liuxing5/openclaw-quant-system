@@ -82,9 +82,9 @@ jobs:
 
       - name: Generate HTML report
         run: |
-          CMD="python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs"
+          CMD="python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs --all-dates"
           if [ -n "${{ inputs.date }}" ]; then
-            CMD="$CMD --date ${{ inputs.date }}"
+            CMD="python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs --date ${{ inputs.date }}"
           fi
           echo "Running: $CMD"
           $CMD
