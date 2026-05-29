@@ -825,6 +825,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
         llm_cards = '<div class="no-data">今日无推荐</div>'
 
     eight_cards = ""
+    stable_cards = ""
+    upper_cards = ""
     if eight_candidates:
         # 去重：同一 ts_code 可能同时出现在稳健和高位路径，保留评分更高的
         seen_codes = {}
