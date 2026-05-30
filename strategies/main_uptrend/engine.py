@@ -301,13 +301,17 @@ class MainUptrendEngine:
                 b_s = c_sig.b_signal.score if c_sig.b_signal else 0
                 c_s = c_sig.score
                 e_s = e_score_map.get(c_sig.ts_code, 0)
+                composite = e_s * 2.0 + c_s * 0.5 + b_s * 0.2
+                # launch信号必须有E层蓄势确认（e_s > 0）或综合分足够高
+                if e_s <= 0 and composite < 5.0:
+                    continue
                 candidates.append({
                     'ts_code': c_sig.ts_code,
                     'eval_date': eval_date,
                     'b_score': b_s,
                     'c_score': c_s,
                     'e_score': e_s,
-                    'composite_score': e_s * 2.0 + c_s * 0.5 + b_s * 0.2,
+                    'composite_score': composite,
                     'signal_type': 'launch',
                 })
 
@@ -315,13 +319,17 @@ class MainUptrendEngine:
         for code in e_passed_codes:
             if code in d_passed_set and code not in c_codes_set:
                 e_s = e_score_map.get(code, 0)
+                composite = e_s * 2.0
+                # trend信号综合分必须>4.0
+                if composite < 4.0:
+                    continue
                 candidates.append({
                     'ts_code': code,
                     'eval_date': eval_date,
                     'b_score': 0,
                     'c_score': 0,
                     'e_score': e_s,
-                    'composite_score': e_s * 2.0,
+                    'composite_score': composite,
                     'signal_type': 'trend',
                 })
 

@@ -207,6 +207,13 @@ class LayerETrendDetector:
         for key, weight in weights.items():
             total_score += scores[key] * weight
 
+        # 量价背离惩罚：价格在MA20上方但5日均量<20日均量的70%，扣分
+        vol_5_vals = pool_df.get('vol_ma_5', pd.Series(0, index=pool_df.index)).fillna(0).values
+        vol_20_vals = pool_df.get('vol_ma_20', pd.Series(0, index=pool_df.index)).fillna(0).values
+        above_ma20_vals = (close > pool_df.get('ma_20', pd.Series(0, index=pool_df.index)).fillna(0).values)
+        vol_divergence = above_ma20_vals & (vol_20_vals > 0) & (vol_5_vals < vol_20_vals * 0.7)
+        total_score = np.where(vol_divergence, total_score - 1.5, total_score)
+
         # 通过条件：(E1或E5通过) 或 (E9蓄势通过且E3回撤可控) + 总分 > 阈值
         trend_confirmed = (e1_pass | e5_pass)
         early_accumulation = e9_pass & e3_pass

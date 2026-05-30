@@ -146,10 +146,10 @@ class LayerCSustainAnalyzer:
         
         # 调试日志
         logger.info(f"C层调试: C1={c1_pass.sum()}/50, C2={c2_pass.sum()}/50, C3={c3_pass.sum()}/50, C4={c4_pass.sum()}/50, C5={c5_pass.sum()}/50")
-        logger.info(f"C层调试: passed_count>=2: {(passed_count >= 2).sum()}, total_score分布: min={total_score.min():.2f}, max={total_score.max():.2f}, mean={total_score.mean():.2f}")
+        logger.info(f"C层调试: passed_count>=3&score>3.0: {((passed_count >= 3) & (total_score > 3.0)).sum()}, total_score分布: min={total_score.min():.2f}, max={total_score.max():.2f}, mean={total_score.mean():.2f}")
         
-        # 放宽：只要2/5条件通过即可，不再要求综合分阈值
-        passed = (passed_count >= 2)
+        # 放宽：只要3/5条件通过即可，综合分>3.0
+        passed = (passed_count >= 3) & (total_score > 3.0)
 
         # 过滤通过的，取Top N
         pool_df['total_score'] = total_score
