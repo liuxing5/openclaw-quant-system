@@ -175,24 +175,40 @@ class LayerETrendDetector:
             np.array([f"趋势持续{v:.0f}日" for v in above_ma20_days]),
             np.array([f"趋势仅{v:.0f}日" for v in above_ma20_days]))
 
+        # E9: 蓄势信号（主升浪前兆）
+        consol_days = pool_df.get('consolidation_days', pd.Series(0, index=pool_df.index)).fillna(0).values
+        vol_dry = pool_df.get('volume_drying_days', pd.Series(0, index=pool_df.index)).fillna(0).values
+        squeeze = pool_df.get('price_squeeze_days', pd.Series(0, index=pool_df.index)).fillna(0).values
+        ma_conv = pool_df.get('ma_converging_score', pd.Series(0, index=pool_df.index)).fillna(0).values
+        e9_pass = (consol_days >= 5) | ((vol_dry >= 3) & (ma_conv > 0.5))
+        e9_score = np.where(e9_pass, 1.0,
+                   np.where((consol_days >= 3) | (vol_dry >= 2), 0.5, 0.0))
+        scores['e9_accumulation'] = e9_score
+        details_map['e9_accumulation'] = np.where(
+            e9_pass, "蓄势充分",
+            np.where(consol_days >= 3, "蓄势中", "无蓄势"))
+
         # 综合评分
         weights = {
-            'e1_ma_alignment': 1.5,
-            'e2_price_stability': 1.0,
+            'e1_ma_alignment': 1.0,
+            'e2_price_stability': 0.8,
             'e3_drawdown': 1.2,
-            'e4_volume_staircase': 1.0,
-            'e5_momentum': 1.5,
-            'e6_adx': 1.0,
-            'e7_rsi': 0.8,
-            'e8_trend_duration': 1.5,
+            'e4_volume_staircase': 0.8,
+            'e5_momentum': 1.0,
+            'e6_adx': 0.8,
+            'e7_rsi': 0.5,
+            'e8_trend_duration': 1.0,
+            'e9_accumulation': 2.0,
         }
 
         total_score = np.zeros(len(pool_df))
         for key, weight in weights.items():
             total_score += scores[key] * weight
 
-        # 通过条件：E1或E5至少一个通过 + 总分 > 阈值
-        passed = (e1_pass | e5_pass) & (total_score > 4.0)
+        # 通过条件：(E1或E5通过) 或 (E9蓄势通过且E3回撤可控) + 总分 > 阈值
+        trend_confirmed = (e1_pass | e5_pass)
+        early_accumulation = e9_pass & e3_pass
+        passed = (trend_confirmed | early_accumulation) & (total_score > 3.5)
 
         pool_df['e_total_score'] = total_score
         pool_df['e_passed'] = passed

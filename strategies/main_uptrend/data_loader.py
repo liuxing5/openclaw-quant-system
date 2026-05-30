@@ -463,6 +463,65 @@ class DataLoader:
         df['rsi_14'] = rsi_14
         df['adx_14'] = adx_14
 
+        # ---- 蓄势指标（主升浪前兆） ----
+        logger.info("    蓄势指标...")
+        ma_60_e = self._fast_rolling_mean(close_arr, group_starts, group_ends, 60)
+
+        consolidation_days = np.zeros(len(df), dtype=np.float64)
+        volume_drying = np.zeros(len(df), dtype=np.float64)
+        price_squeeze = np.zeros(len(df), dtype=np.float64)
+        ma_converging = np.zeros(len(df), dtype=np.float64)
+
+        for i in range(len(group_starts)):
+            s, e = group_starts[i], group_ends[i]
+            cc = close_arr[s:e]
+            vv = volume_arr[s:e]
+            n = len(cc)
+            if n < 30:
+                continue
+
+            m5 = ma_5[s:e]
+            m10 = ma_10[s:e]
+            m20 = ma_20[s:e]
+            m60 = ma_60_e[s:e]
+            vm5 = vol_ma_5[s:e]
+            vm20 = vol_ma_20_e[s:e]
+
+            for j in range(20, n):
+                if np.isnan(m20[j]) or np.isnan(m60[j]):
+                    continue
+
+                above_ma20 = cc[j] > m20[j]
+                near_ma20 = above_ma20 and (cc[j] - m20[j]) / m20[j] < 0.05
+                ma20_up = j > 0 and m20[j] > m20[j-1]
+                vol_shrink = vm5[j] < vm20[j] * 0.8 if vm20[j] > 0 else False
+                narrow_range = (m5[j] - m20[j]) / m20[j] < 0.03 if m20[j] > 0 else False
+
+                if near_ma20 and ma20_up:
+                    consolidation_days[s + j] = consolidation_days[s + j - 1] + 1 if j > 0 else 1
+                else:
+                    consolidation_days[s + j] = 0
+
+                if vol_shrink:
+                    volume_drying[s + j] = volume_drying[s + j - 1] + 1 if j > 0 else 1
+                else:
+                    volume_drying[s + j] = 0
+
+                if narrow_range and above_ma20:
+                    price_squeeze[s + j] = price_squeeze[s + j - 1] + 1 if j > 0 else 1
+                else:
+                    price_squeeze[s + j] = 0
+
+                if m5[j] > m20[j] and m20[j] > m60[j]:
+                    spread = (m5[j] - m60[j]) / m60[j] if m60[j] > 0 else 0
+                    if spread < 0.08:
+                        ma_converging[s + j] = 1.0 - spread / 0.08
+
+        df['consolidation_days'] = consolidation_days
+        df['volume_drying_days'] = volume_drying
+        df['price_squeeze_days'] = price_squeeze
+        df['ma_converging_score'] = ma_converging
+
         # ---- 辅助列 ----
         df['is_kcb_cyb'] = df['ts_code'].str.startswith(('300', '688'))
 

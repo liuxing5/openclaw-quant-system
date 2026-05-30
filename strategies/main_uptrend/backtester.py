@@ -103,6 +103,9 @@ class MainUptrendBacktester:
         t_day_start = 0
         t_total_start = time.time()
 
+        signal_cooldown: Dict[str, str] = {}
+        cooldown_days = 20
+
         for i, trade_date in enumerate(_safe_tqdm(trading_days, desc="回测进度")):
             try:
                 t1 = time.time()
@@ -112,11 +115,24 @@ class MainUptrendBacktester:
                 t2 = time.time()
 
                 if candidates:
-                    signals = self._calc_forward_returns(
-                        candidates, trade_date, trading_days, i,
-                        trading_day_idx,
-                    )
-                    all_signals.extend(signals)
+                    filtered = []
+                    for c in candidates:
+                        code = c['ts_code']
+                        if code in signal_cooldown:
+                            last_date = signal_cooldown[code]
+                            if last_date in trading_day_idx and trade_date in trading_day_idx:
+                                gap = trading_day_idx[trade_date] - trading_day_idx[last_date]
+                                if gap < cooldown_days:
+                                    continue
+                        filtered.append(c)
+                        signal_cooldown[code] = trade_date
+
+                    if filtered:
+                        signals = self._calc_forward_returns(
+                            filtered, trade_date, trading_days, i,
+                            trading_day_idx,
+                        )
+                        all_signals.extend(signals)
 
                     for s in signals:
                         for d in self.cfg.forward_return_days:
@@ -211,8 +227,59 @@ class MainUptrendBacktester:
                 signal[f'ret_{days}d'] = ret
                 signal[f'hit_{days}d'] = ret > 0.05
 
+            # 趋势跟踪退出：MA20止盈 + 8%止损
+            max_hold = 60
+            max_ret = 0.0
+            exit_ret = None
+            for offset in range(1, max_hold + 1):
+                idx = current_idx + offset
+                if idx >= len(trading_days):
+                    break
+                d = trading_days[idx]
+                price = self._get_close_price(ts_code, d)
+                if price is None:
+                    continue
+                ret = (price - entry_price) / entry_price
+                max_ret = max(max_ret, ret)
+                if ret < -0.08:
+                    exit_ret = ret
+                    signal['exit_type'] = 'stop_loss'
+                    signal['exit_day'] = offset
+                    signal['exit_ret'] = ret
+                    signal['max_ret'] = max_ret
+                    break
+                if offset >= 5:
+                    ma20_price = self._get_ma20_price(ts_code, d)
+                    if ma20_price is not None and price < ma20_price * 0.97:
+                        exit_ret = ret
+                        signal['exit_type'] = 'ma20_exit'
+                        signal['exit_day'] = offset
+                        signal['exit_ret'] = ret
+                        signal['max_ret'] = max_ret
+                        break
+
+            if exit_ret is None:
+                last_idx = min(current_idx + max_hold, len(trading_days) - 1)
+                last_price = self._get_close_price(ts_code, trading_days[last_idx])
+                if last_price is not None:
+                    exit_ret = (last_price - entry_price) / entry_price
+                    signal['exit_type'] = 'max_hold'
+                    signal['exit_day'] = last_idx - current_idx
+                    signal['exit_ret'] = exit_ret
+                    signal['max_ret'] = max_ret
+
             results.append(signal)
         return results
+
+    def _get_ma20_price(self, ts_code: str, trade_date: str) -> Optional[float]:
+        ind_df = self.loader.get_indicators_snapshot(trade_date)
+        if ind_df.empty:
+            return None
+        row = ind_df[ind_df['ts_code'] == ts_code]
+        if row.empty or 'ma_20' not in row.columns:
+            return None
+        val = row['ma_20'].iloc[0]
+        return float(val) if not pd.isna(val) else None
 
     def _get_close_price(self, ts_code: str, trade_date: str) -> Optional[float]:
         # 优先使用预加载的收盘价查找表
@@ -296,6 +363,29 @@ class MainUptrendBacktester:
                     for d in self.cfg.forward_return_days
                 )
                 lines.append(f"  {s['ts_code']} (score={s['composite_score']:.1f}) -> {rets_str}")
+
+        # 趋势跟踪退出统计
+        exit_rets = [s['exit_ret'] for s in all_signals if s.get('exit_ret') is not None]
+        exit_types = [s.get('exit_type', 'unknown') for s in all_signals if s.get('exit_ret') is not None]
+        max_rets = [s['max_ret'] for s in all_signals if s.get('max_ret') is not None]
+        exit_days = [s['exit_day'] for s in all_signals if s.get('exit_day') is not None]
+
+        if exit_rets:
+            er = np.array(exit_rets)
+            mr = np.array(max_rets)
+            lines.append("")
+            lines.append("--- 趋势跟踪退出统计 ---")
+            lines.append(f"  样本数: {len(er)}")
+            lines.append(f"  退出收益: 均值={er.mean():.2%}, 中位={np.median(er):.2%}, 胜率={np.mean(er>0):.1%}")
+            lines.append(f"  最大浮盈: 均值={mr.mean():.2%}, 中位={np.median(mr):.2%}")
+            lines.append(f"  盈利回吐: 均值={(mr-er).mean():.2%}")
+            lines.append(f"  平均持有: {np.mean(exit_days):.1f}天")
+            from collections import Counter
+            type_counts = Counter(exit_types)
+            for t, c in type_counts.most_common():
+                sub_er = [exit_rets[i] for i in range(len(exit_types)) if exit_types[i] == t]
+                if sub_er:
+                    lines.append(f"  {t}: {c}次({c/len(exit_types):.0%}), 均值收益={np.mean(sub_er):.2%}")
 
         lines.append("=" * 60)
         return "\n".join(lines)

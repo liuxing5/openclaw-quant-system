@@ -298,26 +298,30 @@ class MainUptrendEngine:
         candidates = []
         for c_sig in c_signals:
             if c_sig.ts_code in d_passed_set:
+                b_s = c_sig.b_signal.score if c_sig.b_signal else 0
+                c_s = c_sig.score
+                e_s = e_score_map.get(c_sig.ts_code, 0)
                 candidates.append({
                     'ts_code': c_sig.ts_code,
                     'eval_date': eval_date,
-                    'b_score': c_sig.b_signal.score if c_sig.b_signal else 0,
-                    'c_score': c_sig.score,
-                    'e_score': 0,
-                    'composite_score': (c_sig.b_signal.score if c_sig.b_signal else 0) + c_sig.score,
+                    'b_score': b_s,
+                    'c_score': c_s,
+                    'e_score': e_s,
+                    'composite_score': e_s * 2.0 + c_s * 0.5 + b_s * 0.2,
                     'signal_type': 'launch',
                 })
 
         c_codes_set = {s.ts_code for s in c_signals}
         for code in e_passed_codes:
             if code in d_passed_set and code not in c_codes_set:
+                e_s = e_score_map.get(code, 0)
                 candidates.append({
                     'ts_code': code,
                     'eval_date': eval_date,
                     'b_score': 0,
                     'c_score': 0,
-                    'e_score': e_score_map.get(code, 0),
-                    'composite_score': e_score_map.get(code, 0),
+                    'e_score': e_s,
+                    'composite_score': e_s * 2.0,
                     'signal_type': 'trend',
                 })
 
