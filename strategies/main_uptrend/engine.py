@@ -368,6 +368,25 @@ class MainUptrendEngine:
                         filtered.append(c)
                 candidates = filtered
 
+        # 个股动量过滤：5日涨幅为负的股票在弱势市场容易继续下跌
+        if candidates:
+            ind_df = self.loader.get_indicators_snapshot(eval_date)
+            if not ind_df.empty and 'pct_chg_5d' in ind_df.columns:
+                cand_codes = {c['ts_code'] for c in candidates}
+                sub = ind_df[ind_df['ts_code'].isin(cand_codes)][['ts_code', 'pct_chg_5d']]
+                mom_map = {}
+                for _, row in sub.iterrows():
+                    v = row.get('pct_chg_5d', 0)
+                    mom_map[row['ts_code']] = float(v) if v is not None and str(v) != 'nan' else 0
+                filtered = []
+                for c in candidates:
+                    m5 = mom_map.get(c['ts_code'], 0)
+                    if m5 > 0:
+                        c['pct_chg_5d'] = m5
+                        filtered.append(c)
+                if filtered:
+                    candidates = filtered
+
         # 行业集中度限制：同行业最多保留2只（按综合分排序）
         if candidates:
             ind_df = self.loader.get_indicators_snapshot(eval_date)
@@ -384,11 +403,35 @@ class MainUptrendEngine:
                         industry_count[ind] = industry_count.get(ind, 0) + 1
                 candidates = filtered
 
-        # 大盘过滤：当日E层通过率<1%时（市场极弱），只保留综合分最高的5个信号
-        if candidates and len(candidates) > 5 and len(e_passed_codes) > 0:
-            e_pass_rate = len(e_passed_codes) / max(len(pool_a), 1)
-            if e_pass_rate < 0.01:
-                candidates = candidates[:5]
+        # 大盘环境过滤：基于市场宽度+动量组合判断
+        if candidates:
+            breadth = self.loader.get_market_breadth(eval_date)
+            breadth_ma20 = breadth.get('breadth_ma20', 0.5)
+            breadth_ma5 = breadth.get('breadth_ma5', 0.5)
+            avg_pct_chg = breadth.get('avg_pct_chg', 0.0)
+            avg_pct_chg_5d = breadth.get('avg_pct_chg_5d', 0.0)
+            # 综合市场环境评分：0=极弱 1=弱 2=中性 3=强
+            env_score = 3
+            if breadth_ma20 < 0.35 or breadth_ma5 < 0.25:
+                env_score = 0
+            elif breadth_ma20 < 0.45 or breadth_ma5 < 0.35:
+                env_score = 1
+            if avg_pct_chg_5d < -0.03:
+                env_score = min(env_score, 0)
+            elif avg_pct_chg_5d < -0.015:
+                env_score = min(env_score, 1)
+            if avg_pct_chg < -0.02:
+                env_score = min(env_score, 0)
+            elif avg_pct_chg < -0.01:
+                env_score = min(env_score, 1)
+            limits = {0: 2, 1: 3, 2: 5, 3: 5}
+            limit = limits.get(env_score, 5)
+            logger.info(f"[大盘] {eval_date}: env={env_score}, b20={breadth_ma20:.3f}, b5={breadth_ma5:.3f}, chg={avg_pct_chg:.2%}, chg5d={avg_pct_chg_5d:.2%}, 候选{len(candidates)}->{min(limit, len(candidates))}只")
+            candidates = candidates[:limit]
+            for c in candidates:
+                c['breadth_ma20'] = round(breadth_ma20, 3)
+                c['breadth_ma5'] = round(breadth_ma5, 3)
+                c['env_score'] = env_score
 
         return candidates
 

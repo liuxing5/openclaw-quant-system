@@ -793,6 +793,30 @@ class DataLoader:
             if conn and not conn.closed:
                 conn.close()
 
+    def get_market_breadth(self, trade_date: str) -> dict:
+        """计算市场宽度指标：MA5/MA20上方占比、5日动量等"""
+        ind_df = self.get_indicators_snapshot(trade_date)
+        if ind_df.empty:
+            return {'breadth_ma20': 0.5, 'breadth_ma5': 0.5, 'avg_pct_chg': 0.0, 'avg_pct_chg_5d': 0.0, 'stock_count': 0}
+        close = ind_df.get('close', pd.Series(dtype=float))
+        ma5 = ind_df.get('ma_5', pd.Series(dtype=float))
+        ma20 = ind_df.get('ma_20', pd.Series(dtype=float))
+        pct_chg = ind_df.get('pct_chg', pd.Series(dtype=float))
+        pct_chg_5d = ind_df.get('pct_chg_5d', pd.Series(dtype=float))
+        valid20 = close.notna() & ma20.notna() & (ma20 > 0)
+        valid5 = close.notna() & ma5.notna() & (ma5 > 0)
+        above_ma20 = float((close[valid20] > ma20[valid20]).mean()) if valid20.sum() > 0 else 0.5
+        above_ma5 = float((close[valid5] > ma5[valid5]).mean()) if valid5.sum() > 0 else 0.5
+        avg_chg = float(pct_chg.dropna().mean()) / 100.0 if pct_chg.notna().any() else 0.0
+        avg_chg_5d = float(pct_chg_5d.dropna().mean()) if pct_chg_5d is not None and pct_chg_5d.notna().any() else 0.0
+        return {
+            'breadth_ma20': above_ma20,
+            'breadth_ma5': above_ma5,
+            'avg_pct_chg': avg_chg,
+            'avg_pct_chg_5d': avg_chg_5d,
+            'stock_count': int(valid20.sum()),
+        }
+
     # ----------------------------------------------------------
     # 全市场日线快照（某日的所有标的）
     # ----------------------------------------------------------

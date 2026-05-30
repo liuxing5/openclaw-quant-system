@@ -102,6 +102,9 @@ def _build_json_summary(result: dict, start: str, end: str) -> dict:
             'max_ret': round(float(s['max_ret']), 4) if s.get('max_ret') is not None else None,
             'exit_type': s.get('exit_type', ''),
             'exit_day': s.get('exit_day'),
+            'breadth_ma20': s.get('breadth_ma20'),
+            'breadth_ma5': s.get('breadth_ma5'),
+            'env_score': s.get('env_score'),
         }
         for d in [10, 20, 60]:
             key = f'ret_{d}d'
