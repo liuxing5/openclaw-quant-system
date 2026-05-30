@@ -230,6 +230,7 @@ class MainUptrendBacktester:
             # 趋势跟踪退出：移动止盈 + 利润保护 + MA10快线
             max_hold = 60
             peak_ret = 0.0
+            peak_day = 0
             exit_ret = None
             for offset in range(1, max_hold + 1):
                 idx = current_idx + offset
@@ -240,10 +241,12 @@ class MainUptrendBacktester:
                 if price is None:
                     continue
                 ret = (price - entry_price) / entry_price
-                peak_ret = max(peak_ret, ret)
+                if ret > peak_ret:
+                    peak_ret = ret
+                    peak_day = offset
 
-                # 1. 硬止损：亏损8%无条件退出
-                if ret < -0.08:
+                # 1. 硬止损：亏损6%无条件退出（收紧止损）
+                if ret < -0.06:
                     exit_ret = ret
                     signal['exit_type'] = 'stop_loss'
                     signal['exit_day'] = offset
@@ -252,29 +255,31 @@ class MainUptrendBacktester:
                     break
 
                 # 2. 移动止盈：从最高点回撤超过阈值则退出
-                #    浮盈<10%时回撤5%退出，浮盈10-20%时回撤7%退出，浮盈>20%时回撤10%退出
+                #    浮盈<5%时回撤3%退出，浮盈5-15%时回撤5%退出，浮盈>15%时回撤8%退出
                 drawdown_from_peak = peak_ret - ret
-                if peak_ret > 0.20:
-                    trailing_stop = 0.10
-                elif peak_ret > 0.10:
-                    trailing_stop = 0.07
-                else:
+                if peak_ret > 0.15:
+                    trailing_stop = 0.08
+                elif peak_ret > 0.05:
                     trailing_stop = 0.05
+                else:
+                    trailing_stop = 0.03
 
-                if peak_ret > 0.03 and drawdown_from_peak > trailing_stop:
-                    exit_ret = ret
-                    signal['exit_type'] = 'trailing_stop'
-                    signal['exit_day'] = offset
-                    signal['exit_ret'] = ret
-                    signal['max_ret'] = peak_ret
-                    break
+                if peak_ret > 0.02 and drawdown_from_peak > trailing_stop:
+                    # 至少持有3天，避免被日内波动洗出
+                    if offset >= 3:
+                        exit_ret = ret
+                        signal['exit_type'] = 'trailing_stop'
+                        signal['exit_day'] = offset
+                        signal['exit_ret'] = ret
+                        signal['max_ret'] = peak_ret
+                        break
 
-                # 3. MA10快线退出（第5天后启用）：收盘跌破MA10×0.98
-                if offset >= 5:
+                # 3. MA10快线退出（第3天后启用）：收盘跌破MA10×0.97
+                if offset >= 3:
                     ma10_price = self._get_ma_price(ts_code, d, 'ma_10')
-                    if ma10_price is not None and price < ma10_price * 0.98:
-                        # 利润保护：如果已有5%+浮盈，不轻易被MA10洗出
-                        if ret < 0.05:
+                    if ma10_price is not None and price < ma10_price * 0.97:
+                        # 利润保护：已有3%+浮盈时不被MA10洗出
+                        if ret < 0.03:
                             exit_ret = ret
                             signal['exit_type'] = 'ma10_exit'
                             signal['exit_day'] = offset
@@ -282,8 +287,8 @@ class MainUptrendBacktester:
                             signal['max_ret'] = peak_ret
                             break
 
-                # 4. MA20慢线退出（第10天后启用）：收盘跌破MA20×0.97
-                if offset >= 10:
+                # 4. MA20慢线退出（第8天后启用）：收盘跌破MA20×0.97
+                if offset >= 8:
                     ma20_price = self._get_ma_price(ts_code, d, 'ma_20')
                     if ma20_price is not None and price < ma20_price * 0.97:
                         exit_ret = ret

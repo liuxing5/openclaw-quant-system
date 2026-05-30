@@ -334,6 +334,35 @@ class MainUptrendEngine:
                 })
 
         candidates.sort(key=lambda x: x['composite_score'], reverse=True)
+
+        # 入场量能确认：过滤掉当日量比<1.2的候选（无量上涨不可靠）
+        if candidates:
+            ind_df = self.loader.get_indicators_snapshot(eval_date)
+            if not ind_df.empty:
+                cand_codes = {c['ts_code'] for c in candidates}
+                sub = ind_df[ind_df['ts_code'].isin(cand_codes)]
+                vol_ratio_map = {}
+                amt_ratio_map = {}
+                if 'volume_ratio_20' in sub.columns:
+                    for _, row in sub.iterrows():
+                        v = row.get('volume_ratio_20', 0)
+                        vol_ratio_map[row['ts_code']] = float(v) if v is not None and str(v) != 'nan' else 0
+                if 'amount_ratio_20' in sub.columns:
+                    for _, row in sub.iterrows():
+                        v = row.get('amount_ratio_20', 0)
+                        amt_ratio_map[row['ts_code']] = float(v) if v is not None and str(v) != 'nan' else 0
+
+                filtered = []
+                for c in candidates:
+                    vr = vol_ratio_map.get(c['ts_code'], 0)
+                    ar = amt_ratio_map.get(c['ts_code'], 0)
+                    # 至少量比>1.2 或 成交额比>1.5
+                    if vr > 1.2 or ar > 1.5:
+                        c['vol_ratio'] = vr
+                        c['amt_ratio'] = ar
+                        filtered.append(c)
+                candidates = filtered
+
         return candidates
 
     # ================================================================
