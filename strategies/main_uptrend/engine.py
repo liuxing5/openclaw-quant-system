@@ -363,6 +363,22 @@ class MainUptrendEngine:
                         filtered.append(c)
                 candidates = filtered
 
+        # 行业集中度限制：同行业最多保留2只（按综合分排序）
+        if candidates:
+            ind_df = self.loader.get_indicators_snapshot(eval_date)
+            if not ind_df.empty and 'industry' in ind_df.columns:
+                cand_codes = {c['ts_code'] for c in candidates}
+                sub = ind_df[ind_df['ts_code'].isin(cand_codes)][['ts_code', 'industry']]
+                industry_map = dict(zip(sub['ts_code'], sub['industry']))
+                industry_count = {}
+                filtered = []
+                for c in candidates:
+                    ind = industry_map.get(c['ts_code'], 'unknown')
+                    if industry_count.get(ind, 0) < 2:
+                        filtered.append(c)
+                        industry_count[ind] = industry_count.get(ind, 0) + 1
+                candidates = filtered
+
         return candidates
 
     # ================================================================

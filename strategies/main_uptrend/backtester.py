@@ -209,6 +209,25 @@ class MainUptrendBacktester:
 
             signal = {**c, 'entry_price': entry_price}
 
+            # 确认日检查：T+1收盘价仍站稳MA10才确认入场
+            if current_idx + 1 < len(trading_days):
+                next_date = trading_days[current_idx + 1]
+                next_price = self._get_close_price(ts_code, next_date)
+                next_ma10 = self._get_ma_price(ts_code, next_date, 'ma_10')
+                if next_price is not None and next_ma10 is not None:
+                    if next_price < next_ma10 * 0.98:
+                        # T+1跌破MA10，信号无效
+                        continue
+                    # 确认入场价用T+1收盘价（更真实）
+                    entry_price = next_price
+                    signal['entry_price'] = entry_price
+                    signal['confirmed'] = True
+                    signal['confirm_date'] = next_date
+                else:
+                    signal['confirmed'] = False
+            else:
+                signal['confirmed'] = False
+
             for days in self.cfg.forward_return_days:
                 target_idx = current_idx + days
                 if target_idx >= len(trading_days):
@@ -245,8 +264,8 @@ class MainUptrendBacktester:
                     peak_ret = ret
                     peak_day = offset
 
-                # 1. 硬止损：亏损6%无条件退出（收紧止损）
-                if ret < -0.06:
+                # 1. 硬止损：亏损7%无条件退出
+                if ret < -0.07:
                     exit_ret = ret
                     signal['exit_type'] = 'stop_loss'
                     signal['exit_day'] = offset
@@ -426,6 +445,54 @@ class MainUptrendBacktester:
                 sub_er = [exit_rets[i] for i in range(len(exit_types)) if exit_types[i] == t]
                 if sub_er:
                     lines.append(f"  {t}: {c}次({c/len(exit_types):.0%}), 均值收益={np.mean(sub_er):.2%}")
+
+        # 因子IC分析
+        if all_signals:
+            lines.append("")
+            lines.append("--- 因子IC分析（因子与20日收益的相关性）---")
+            score_cols = ['composite_score', 'b_score', 'c_score', 'e_score']
+            for days in [10, 20]:
+                ret_col = f'ret_{days}d'
+                valid_sigs = [s for s in all_signals if s.get(ret_col) is not None]
+                if len(valid_sigs) < 20:
+                    continue
+                rets = np.array([s[ret_col] for s in valid_sigs])
+                lines.append(f"  [{days}日收益]")
+                for col in score_cols:
+                    vals = np.array([s.get(col, 0) for s in valid_sigs])
+                    if np.std(vals) < 1e-8:
+                        continue
+                    ic = np.corrcoef(vals, rets)[0, 1]
+                    rank_ic = np.corrcoef(np.argsort(np.argsort(vals)), np.argsort(np.argsort(rets)))[0, 1]
+                    lines.append(f"    {col}: IC={ic:.4f}, RankIC={rank_ic:.4f}")
+
+            # 按综合分分组收益
+            lines.append("")
+            lines.append("--- 综合分分组收益（20日）---")
+            valid_20 = [s for s in all_signals if s.get('ret_20d') is not None]
+            if len(valid_20) >= 30:
+                scores_20 = np.array([s.get('composite_score', 0) for s in valid_20])
+                rets_20 = np.array([s['ret_20d'] for s in valid_20])
+                q33 = np.percentile(scores_20, 33)
+                q66 = np.percentile(scores_20, 66)
+                low = rets_20[scores_20 <= q33]
+                mid = rets_20[(scores_20 > q33) & (scores_20 <= q66)]
+                high = rets_20[scores_20 > q66]
+                lines.append(f"    低分组(≤{q33:.1f}): 胜率={np.mean(low>0):.1%}, 均值={np.mean(low):.2%}, n={len(low)}")
+                lines.append(f"    中分组({q33:.1f}-{q66:.1f}): 胜率={np.mean(mid>0):.1%}, 均值={np.mean(mid):.2%}, n={len(mid)}")
+                lines.append(f"    高分组(>{q66:.1f}): 胜率={np.mean(high>0):.1%}, 均值={np.mean(high):.2%}, n={len(high)}")
+
+            # 按信号类型分组
+            lines.append("")
+            lines.append("--- 信号类型分组收益（20日）---")
+            from collections import defaultdict
+            type_rets = defaultdict(list)
+            for s in valid_20:
+                st = s.get('signal_type', 'unknown')
+                type_rets[st].append(s['ret_20d'])
+            for st, rets_list in sorted(type_rets.items()):
+                arr = np.array(rets_list)
+                lines.append(f"    {st}: 胜率={np.mean(arr>0):.1%}, 均值={np.mean(arr):.2%}, n={len(arr)}")
 
         lines.append("=" * 60)
         return "\n".join(lines)
