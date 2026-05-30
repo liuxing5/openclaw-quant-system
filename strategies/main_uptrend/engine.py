@@ -337,6 +337,9 @@ class MainUptrendEngine:
 
         candidates.sort(key=lambda x: x['composite_score'], reverse=True)
 
+        # 过滤低综合分信号（保留综合分前15名）
+        candidates = candidates[:15]
+
         # 入场量能确认：过滤掉当日量比<1.2的候选（无量上涨不可靠）
         if candidates:
             ind_df = self.loader.get_indicators_snapshot(eval_date)
@@ -380,6 +383,12 @@ class MainUptrendEngine:
                         filtered.append(c)
                         industry_count[ind] = industry_count.get(ind, 0) + 1
                 candidates = filtered
+
+        # 大盘过滤：当日E层通过率<1%时（市场极弱），只保留综合分最高的5个信号
+        if candidates and len(candidates) > 5 and len(e_passed_codes) > 0:
+            e_pass_rate = len(e_passed_codes) / max(len(pool_a), 1)
+            if e_pass_rate < 0.01:
+                candidates = candidates[:5]
 
         return candidates
 

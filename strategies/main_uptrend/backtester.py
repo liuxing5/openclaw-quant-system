@@ -274,10 +274,10 @@ class MainUptrendBacktester:
                     break
 
                 # 2. 移动止盈：从最高点回撤超过阈值则退出
-                #    浮盈<5%时回撤3%退出，浮盈5-15%时回撤5%退出，浮盈>15%时回撤8%退出
+                #    浮盈<5%时回撤3%退出，浮盈5-10%时回撤5%退出，浮盈>10%时回撤7%退出
                 drawdown_from_peak = peak_ret - ret
-                if peak_ret > 0.15:
-                    trailing_stop = 0.08
+                if peak_ret > 0.10:
+                    trailing_stop = 0.07
                 elif peak_ret > 0.05:
                     trailing_stop = 0.05
                 else:
