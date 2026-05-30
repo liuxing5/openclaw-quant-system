@@ -302,8 +302,8 @@ class MainUptrendEngine:
                 c_s = c_sig.score
                 e_s = e_score_map.get(c_sig.ts_code, 0)
                 composite = e_s * 2.0 + c_s * 0.5 + b_s * 0.2
-                # launch信号必须有E层蓄势确认（e_s > 0）或综合分足够高
-                if e_s <= 0 and composite < 5.0:
+                # launch信号必须有E层确认（e_s > 0）
+                if e_s <= 0:
                     continue
                 candidates.append({
                     'ts_code': c_sig.ts_code,
@@ -320,8 +320,8 @@ class MainUptrendEngine:
             if code in d_passed_set and code not in c_codes_set:
                 e_s = e_score_map.get(code, 0)
                 composite = e_s * 2.0
-                # trend信号综合分必须>4.0
-                if composite < 4.0:
+                # trend信号综合分必须>2.0（蓄势信号可能分数较低）
+                if composite < 2.0:
                     continue
                 candidates.append({
                     'ts_code': code,

@@ -214,6 +214,12 @@ class LayerETrendDetector:
         vol_divergence = above_ma20_vals & (vol_20_vals > 0) & (vol_5_vals < vol_20_vals * 0.7)
         total_score = np.where(vol_divergence, total_score - 1.5, total_score)
 
+        # 趋势过热惩罚：RSI>70或ADX>40时扣分（趋势晚期信号）
+        rsi_vals = pool_df.get('rsi_14', pd.Series(50, index=pool_df.index)).fillna(50).values
+        adx_vals = pool_df.get('adx_14', pd.Series(20, index=pool_df.index)).fillna(20).values
+        overbought = (rsi_vals > 70) | (adx_vals > 40)
+        total_score = np.where(overbought, total_score - 2.0, total_score)
+
         # 通过条件：(E1或E5通过) 或 (E9蓄势通过且E3回撤可控) + 总分 > 阈值
         trend_confirmed = (e1_pass | e5_pass)
         early_accumulation = e9_pass & e3_pass

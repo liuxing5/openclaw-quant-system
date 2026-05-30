@@ -293,10 +293,10 @@ class MainUptrendBacktester:
                         signal['max_ret'] = peak_ret
                         break
 
-                # 3. MA10快线退出（第3天后启用）：收盘跌破MA10×0.97
-                if offset >= 3:
+                # 3. MA10快线退出（第5天后启用）：收盘跌破MA10×0.95
+                if offset >= 5:
                     ma10_price = self._get_ma_price(ts_code, d, 'ma_10')
-                    if ma10_price is not None and price < ma10_price * 0.97:
+                    if ma10_price is not None and price < ma10_price * 0.95:
                         # 利润保护：已有3%+浮盈时不被MA10洗出
                         if ret < 0.03:
                             exit_ret = ret
