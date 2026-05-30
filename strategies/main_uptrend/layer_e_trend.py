@@ -192,15 +192,15 @@ class LayerETrendDetector:
 
         # 综合评分
         weights = {
-            'e1_ma_alignment': 1.0,
-            'e2_price_stability': 0.8,
-            'e3_drawdown': 1.2,
-            'e4_volume_staircase': 0.8,
-            'e5_momentum': 1.0,
-            'e6_adx': 0.8,
-            'e7_rsi': 0.5,
-            'e8_trend_duration': 1.0,
-            'e9_accumulation': 2.0,
+            'e1_ma_alignment': 0.5,
+            'e2_price_stability': 0.5,
+            'e3_drawdown': 1.0,
+            'e4_volume_staircase': 0.5,
+            'e5_momentum': 0.5,
+            'e6_adx': 0.3,
+            'e7_rsi': 0.3,
+            'e8_trend_duration': 0.5,
+            'e9_accumulation': 3.0,
         }
 
         total_score = np.zeros(len(pool_df))

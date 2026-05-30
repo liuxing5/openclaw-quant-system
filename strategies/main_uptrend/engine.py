@@ -301,7 +301,8 @@ class MainUptrendEngine:
                 b_s = c_sig.b_signal.score if c_sig.b_signal else 0
                 c_s = c_sig.score
                 e_s = e_score_map.get(c_sig.ts_code, 0)
-                composite = e_s * 2.0 + c_s * 0.5 + b_s * 0.2
+                # launch信号：E层蓄势分主导，B/C层辅助
+                composite = e_s * 3.0 + c_s * 0.3 + b_s * 0.1
                 # launch信号必须有E层确认（e_s > 0）
                 if e_s <= 0:
                     continue
@@ -319,7 +320,8 @@ class MainUptrendEngine:
         for code in e_passed_codes:
             if code in d_passed_set and code not in c_codes_set:
                 e_s = e_score_map.get(code, 0)
-                composite = e_s * 2.0
+                # trend信号：纯蓄势分，权重最高
+                composite = e_s * 4.0
                 # trend信号综合分必须>2.0（蓄势信号可能分数较低）
                 if composite < 2.0:
                     continue

@@ -264,8 +264,9 @@ class MainUptrendBacktester:
                     peak_ret = ret
                     peak_day = offset
 
-                # 1. 硬止损：亏损7%无条件退出
-                if ret < -0.07:
+                # 1. 分档止损：前5天亏损7%退出，5天后亏损5%退出（越晚越紧）
+                stop_threshold = -0.07 if offset <= 5 else -0.05
+                if ret < stop_threshold:
                     exit_ret = ret
                     signal['exit_type'] = 'stop_loss'
                     signal['exit_day'] = offset
@@ -306,10 +307,10 @@ class MainUptrendBacktester:
                             signal['max_ret'] = peak_ret
                             break
 
-                # 4. MA20慢线退出（第8天后启用）：收盘跌破MA20×0.97
-                if offset >= 8:
+                # 4. MA20慢线退出（第10天后启用）：收盘跌破MA20×0.95
+                if offset >= 10:
                     ma20_price = self._get_ma_price(ts_code, d, 'ma_20')
-                    if ma20_price is not None and price < ma20_price * 0.97:
+                    if ma20_price is not None and price < ma20_price * 0.95:
                         exit_ret = ret
                         signal['exit_type'] = 'ma20_exit'
                         signal['exit_day'] = offset
