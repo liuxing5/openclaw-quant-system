@@ -97,44 +97,42 @@ jobs:
           echo "Running: $CMD"
           $CMD
 
-      - name: Send Telegram notification
+      - name: Generate unified HTML report (funnel page)
+        if: success()
+        continue-on-error: true
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_POOL_SIZE: 5
+        run: |
+          pip install jinja2 psycopg2-binary python-dotenv
+          python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs || echo "⚠️ funnel HTML generation failed, continuing..."
+
+      - name: Send Telegram daily summary (4策略汇总)
         if: success()
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_POOL_SIZE: 5
         run: |
-          pip install psycopg2-binary python-dotenv
-          python -c "
-          import sys, os, json
-          sys.path.insert(0, '.')
-          from core.db.connection import get_db_fresh
-          from psycopg2.extras import RealDictCursor
-          from datetime import datetime, timedelta, timezone
-          from zoneinfo import ZoneInfo
-          tz = ZoneInfo('Asia/Shanghai')
-          today = datetime.now(tz).date()
-          conn = get_db_fresh()
-          cur = conn.cursor(cursor_factory=RealDictCursor)
-          cur.execute('SELECT ts_code, stock_name, consensus_score FROM daily_candidates WHERE snapshot_date = %s AND source = %s AND selected = TRUE ORDER BY consensus_score DESC LIMIT 8', (today, 'main_uptrend'))
-          rows = cur.fetchall()
-          cur.close(); conn.close()
-          if not rows:
-              print('main_uptrend 无候选标的')
-          else:
-              lines = ['\u5347\u6d6a\u68c0\u6d4b ' + today.strftime('%m-%d')]
-              for i, r in enumerate(rows, 1):
-                  lines.append(f\"{i}. {r['ts_code']} {r['stock_name'] or ''} \u8bc4\u5206:{r['consensus_score']:.0f}\")
-              lines.append(f'\u5171 {len(rows)} \u53ea\u5019\u9009')
-              print('\n'.join(lines))
-          "
+          pip install psycopg2-binary python-dotenv requests
+          python -m strategies.shared.daily_notify || echo "⚠️ Telegram推送失败，继续"
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy to GitHub Pages (funnel统一页面)
         if: success()
         uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.GH_PAT }}
-          publish_dir: ./strategies/main_uptrend/docs
-          destination_dir: uptrend
+          publish_dir: ./strategies/funnel_strategy/docs
+          destination_dir: funnel
           keep_files: true
 
   backtest:

@@ -155,3 +155,18 @@ jobs:
           publish_dir: ./strategies/funnel_strategy/docs
           destination_dir: funnel
           keep_files: true
+
+      - name: Send Telegram daily summary
+        if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_POOL_SIZE: 5
+        run: |
+          pip install psycopg2-binary python-dotenv requests
+          python -m strategies.shared.daily_notify || echo "⚠️ Telegram推送失败，继续"
