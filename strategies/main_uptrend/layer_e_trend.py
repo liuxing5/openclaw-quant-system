@@ -220,6 +220,15 @@ class LayerETrendDetector:
         overbought = (rsi_vals > 70) | (adx_vals > 40)
         total_score = np.where(overbought, total_score - 2.0, total_score)
 
+        # 早期趋势奖励：仅E9蓄势通过（E1-E5不通过）时加分
+        # 这说明趋势还没被确认，是早期信号，反而更有价值
+        early_only = e9_pass & ~(e1_pass | e5_pass)
+        total_score = np.where(early_only, total_score + 1.5, total_score)
+
+        # 趋势成熟惩罚：E1-E5全部通过时扣分（趋势已过热）
+        mature_trend = e1_pass & e5_pass & e9_pass
+        total_score = np.where(mature_trend, total_score - 1.0, total_score)
+
         # 通过条件：(E1或E5通过) 或 (E9蓄势通过且E3回撤可控) + 总分 > 阈值
         trend_confirmed = (e1_pass | e5_pass)
         early_accumulation = e9_pass & e3_pass

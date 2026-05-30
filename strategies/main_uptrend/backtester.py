@@ -264,9 +264,8 @@ class MainUptrendBacktester:
                     peak_ret = ret
                     peak_day = offset
 
-                # 1. 分档止损：前5天亏损7%退出，5天后亏损5%退出（越晚越紧）
-                stop_threshold = -0.07 if offset <= 5 else -0.05
-                if ret < stop_threshold:
+                # 1. 硬止损：亏损7%无条件退出
+                if ret < -0.07:
                     exit_ret = ret
                     signal['exit_type'] = 'stop_loss'
                     signal['exit_day'] = offset
