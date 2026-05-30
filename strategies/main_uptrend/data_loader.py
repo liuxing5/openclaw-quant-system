@@ -67,44 +67,78 @@ class DataLoader:
         注意：调用方应负责扩展start_date以包含足够历史数据（B层需要60日均线等）
         """
         logger.info(f"预加载回测数据 {start_date} ~ {end_date} ...")
-        conn = None
+
+        all_rows = []
+        industry_map = {}
+        name_map = {}
+
         try:
             conn = get_db_fresh()
+
             cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("""
-                SELECT d.ts_code, d.trade_date, d.open, d.high, d.low, d.close,
-                       d.volume, d.amount, d.pct_chg, d.turnover_rate,
-                       sf.industry, sb.stock_name AS name
-                FROM daily_quotes d
-                LEFT JOIN (
-                    SELECT DISTINCT ON (ts_code) ts_code, industry
-                    FROM stock_fundamentals
-                    WHERE industry IS NOT NULL
-                    ORDER BY ts_code, report_date DESC
-                ) sf ON d.ts_code = sf.ts_code
-                LEFT JOIN stock_basic_info sb ON d.ts_code = sb.ts_code
-                WHERE d.trade_date >= %s
-                  AND d.trade_date <= %s
-                  AND d.amount IS NOT NULL
-                ORDER BY d.ts_code, d.trade_date
-            """, (start_date, end_date))
-            rows = cur.fetchall()
+            cur.execute("SET statement_timeout = '300000'")
+            cur.execute("SELECT ts_code, industry FROM stock_fundamentals WHERE industry IS NOT NULL")
+            for row in cur.fetchall():
+                if row['ts_code'] not in industry_map:
+                    industry_map[row['ts_code']] = row['industry']
             cur.close()
 
-            if rows:
-                self._preloaded_daily = pd.DataFrame(rows)
-                self._preloaded_daily['trade_date'] = self._preloaded_daily['trade_date'].astype(str)
-                n_stocks = self._preloaded_daily['ts_code'].nunique()
-                logger.info(f"  预加载日线: {len(self._preloaded_daily)} 条, {n_stocks} 只股票")
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SET statement_timeout = '300000'")
+            cur.execute("SELECT ts_code, stock_name FROM stock_basic_info")
+            for row in cur.fetchall():
+                name_map[row['ts_code']] = row['stock_name']
+            cur.close()
 
-                # 按股票分组构建索引（核心优化：O(1)查找）
+            from datetime import datetime as _dt, timedelta as _td
+            from dateutil.relativedelta import relativedelta
+            sd = _dt.strptime(start_date, "%Y-%m-%d")
+            ed = _dt.strptime(end_date, "%Y-%m-%d")
+            batch_start_dt = sd
+            batch_num = 0
+            total_batches = max(1, (ed - sd).days // 7)
+            while batch_start_dt < ed:
+                batch_end_dt = min(batch_start_dt + _td(days=7), ed)
+                batch_num += 1
+                bs = batch_start_dt.strftime("%Y-%m-%d")
+                be = batch_end_dt.strftime("%Y-%m-%d")
+
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute("SET statement_timeout = '300000'")
+                cur.execute("""
+                    SELECT ts_code, trade_date, open, high, low, close,
+                           volume, amount, pct_chg, turnover_rate,
+                           main_force_net AS main_net_inflow
+                    FROM daily_quotes
+                    WHERE trade_date >= %s
+                      AND trade_date < %s
+                      AND amount IS NOT NULL
+                    ORDER BY ts_code, trade_date
+                """, (bs, be))
+                batch_rows = cur.fetchall()
+                all_rows.extend(batch_rows)
+                cur.close()
+                if batch_num % 10 == 0 or batch_num == total_batches:
+                    logger.info(f"  已加载 {batch_num} 周, 累计 {len(all_rows)} 行")
+                batch_start_dt = batch_end_dt
+
+            conn.close()
+
+            if all_rows:
+                df = pd.DataFrame(all_rows)
+                df['trade_date'] = df['trade_date'].astype(str)
+                df['industry'] = df['ts_code'].map(industry_map)
+                df['name'] = df['ts_code'].map(name_map)
+                self._preloaded_daily = df
+                n_stocks = df['ts_code'].nunique()
+                logger.info(f"  预加载日线: {len(df)} 条, {n_stocks} 只股票")
+
                 logger.info("  构建股票索引...")
                 self._preloaded_by_code = {
                     code: grp.reset_index(drop=True)
-                    for code, grp in self._preloaded_daily.groupby('ts_code', sort=False)
+                    for code, grp in df.groupby('ts_code', sort=False)
                 }
 
-                # 构建收盘价快速查找表
                 logger.info("  构建收盘价查找表...")
                 self._preloaded_close_map = {}
                 for code, grp in self._preloaded_by_code.items():
@@ -112,11 +146,10 @@ class DataLoader:
                         zip(grp['trade_date'], grp['close'].astype(float))
                     )
 
-                # 构建快照索引
                 logger.info("  构建快照索引...")
                 self._snapshot_cache = {
                     date_val: grp.reset_index(drop=True)
-                    for date_val, grp in self._preloaded_daily.groupby('trade_date', sort=False)
+                    for date_val, grp in df.groupby('trade_date', sort=False)
                 }
 
                 logger.info("  索引构建完成")
@@ -125,27 +158,18 @@ class DataLoader:
                 self._preloaded_by_code = {}
                 self._preloaded_close_map = {}
 
-            # 预加载主力资金流
-            try:
-                cur = conn.cursor(cursor_factory=RealDictCursor)
-                cur.execute("""
-                    SELECT ts_code, trade_date, main_net_inflow
-                    FROM daily_quotes
-                    WHERE trade_date >= %s
-                      AND trade_date <= %s
-                      AND main_net_inflow IS NOT NULL
-                    ORDER BY ts_code, trade_date
-                """, (start_date, end_date))
-                flow_rows = cur.fetchall()
-                cur.close()
-                if flow_rows:
-                    self._preloaded_main_flow = pd.DataFrame(flow_rows)
-                    self._preloaded_main_flow['trade_date'] = self._preloaded_main_flow['trade_date'].astype(str)
+            if all_rows:
+                df_flow = self._preloaded_daily[self._preloaded_daily['main_net_inflow'].notna()].copy()
+                if not df_flow.empty:
+                    self._preloaded_main_flow = df_flow[['ts_code', 'trade_date', 'main_net_inflow']]
                     self._preloaded_main_flow_by_code = {}
                     for code, grp in self._preloaded_main_flow.groupby('ts_code'):
                         self._preloaded_main_flow_by_code[code] = grp.reset_index(drop=True)
-                    logger.info(f"  预加载主力资金: {len(self._preloaded_main_flow)} 条")
-            except Exception:
+                    logger.info(f"  主力资金: {len(self._preloaded_main_flow)} 条")
+                else:
+                    self._preloaded_main_flow = None
+                    self._preloaded_main_flow_by_code = None
+            else:
                 self._preloaded_main_flow = None
                 self._preloaded_main_flow_by_code = None
 
@@ -154,11 +178,7 @@ class DataLoader:
             self._preloaded_daily = pd.DataFrame()
             self._preloaded_by_code = {}
             self._preloaded_close_map = {}
-        finally:
-            if conn and not conn.closed:
-                conn.close()
 
-        # 预计算所有技术指标
         self._precompute_indicators()
 
     # ----------------------------------------------------------
@@ -188,7 +208,7 @@ class DataLoader:
         df.reset_index(drop=True, inplace=True)
 
         # 数值类型转换（一次性，用astype比pd.to_numeric快）
-        for col in ['close', 'high', 'low', 'volume', 'amount', 'pct_chg', 'turnover_rate']:
+        for col in ['close', 'high', 'low', 'volume', 'amount', 'pct_chg', 'turnover_rate', 'main_net_inflow']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
 
@@ -250,7 +270,8 @@ class DataLoader:
             # 用map替代merge：构建查找字典
             flow_map = {}
             for _, row in flow.iterrows():
-                flow_map[(row['ts_code'], row['trade_date'])] = row['main_net_inflow']
+                val = row['main_net_inflow']
+                flow_map[(row['ts_code'], row['trade_date'])] = float(val) if val is not None else np.nan
             df['main_net_inflow'] = [
                 flow_map.get((tc, td), np.nan)
                 for tc, td in zip(df['ts_code'].values, df['trade_date'].values)
@@ -297,16 +318,21 @@ class DataLoader:
         df['ma_alignment'] = (ma_5 > ma_10) & (ma_10 > ma_20) & (ma_20 > ma_120)
 
         ma_alignment_days = np.zeros(len(df), dtype=np.float64)
+        align_vals = df['ma_alignment'].values.astype(float)
         for i in range(len(group_starts)):
             s, e = group_starts[i], group_ends[i]
-            chunk = df['ma_alignment'].values[s:e].astype(float)
-            count = 0
-            for j in range(len(chunk)):
+            chunk = align_vals[s:e]
+            n = len(chunk)
+            if n == 0:
+                continue
+            result = np.zeros(n, dtype=np.float64)
+            result[0] = 1 if chunk[0] else 0
+            for j in range(1, n):
                 if chunk[j]:
-                    count += 1
+                    result[j] = result[j-1] + 1
                 else:
-                    count = 0
-                ma_alignment_days[s + j] = count
+                    result[j] = 0
+            ma_alignment_days[s:e] = result
         df['ma_alignment_days'] = ma_alignment_days
 
         vol_ma_5 = self._fast_rolling_mean(volume_arr, group_starts, group_ends, 5)
@@ -330,18 +356,21 @@ class DataLoader:
         df['max_drawdown_20d'] = max_dd_20d
 
         above_ma20_days = np.zeros(len(df), dtype=np.float64)
+        above_mask = (close_arr > ma_20) & ~np.isnan(ma_20)
         for i in range(len(group_starts)):
             s, e = group_starts[i], group_ends[i]
-            chunk = close_arr[s:e]
-            ma20_chunk = ma_20[s:e]
-            above = chunk > ma20_chunk
-            count = 0
-            for j in range(len(above)):
-                if above[j] and not np.isnan(ma20_chunk[j]):
-                    count += 1
+            chunk = above_mask[s:e].astype(float)
+            n = len(chunk)
+            if n == 0:
+                continue
+            result = np.zeros(n, dtype=np.float64)
+            result[0] = 1 if chunk[0] else 0
+            for j in range(1, n):
+                if chunk[j]:
+                    result[j] = result[j-1] + 1
                 else:
-                    count = 0
-                above_ma20_days[s + j] = count
+                    result[j] = 0
+            above_ma20_days[s:e] = result
         df['above_ma20_days'] = above_ma20_days
 
         close_10 = self._fast_rolling_mean_shifted(close_arr, group_starts, group_ends, 10)
@@ -355,37 +384,80 @@ class DataLoader:
         adx_14 = np.full(len(df), 0.0, dtype=np.float64)
         for i in range(len(group_starts)):
             s, e = group_starts[i], group_ends[i]
-            chunk_close = close_arr[s:e]
-            chunk_high = high_arr[s:e]
-            chunk_low = low_arr[s:e]
-            n = len(chunk_close)
+            cc = close_arr[s:e]
+            ch = high_arr[s:e]
+            cl = low_arr[s:e]
+            n = len(cc)
             if n < 30:
                 continue
             try:
-                s_close = pd.Series(chunk_close)
-                delta = s_close.diff()
-                gain = delta.where(delta > 0, 0).rolling(14).mean()
-                loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-                rs = gain / loss.replace(0, np.nan)
-                rsi_vals = 100 - (100 / (1 + rs))
-                rsi_14[s:e] = rsi_vals.fillna(50).values
+                delta = np.empty(n, dtype=np.float64)
+                delta[0] = 0
+                delta[1:] = cc[1:] - cc[:-1]
+                gain = np.where(delta > 0, delta, 0.0)
+                loss = np.where(delta < 0, -delta, 0.0)
+                avg_gain = np.full(n, np.nan, dtype=np.float64)
+                avg_loss = np.full(n, np.nan, dtype=np.float64)
+                if n > 14:
+                    avg_gain[14] = np.mean(gain[1:15])
+                    avg_loss[14] = np.mean(loss[1:15])
+                    for j in range(15, n):
+                        avg_gain[j] = (avg_gain[j-1] * 13 + gain[j]) / 14
+                        avg_loss[j] = (avg_loss[j-1] * 13 + loss[j]) / 14
+                    rs = np.where(avg_loss != 0, avg_gain / avg_loss, np.nan)
+                    rsi_vals = np.where(np.isnan(rs), 50.0, 100 - 100 / (1 + rs))
+                    rsi_vals[:14] = 50.0
+                    rsi_14[s:e] = rsi_vals
 
-                s_high = pd.Series(chunk_high)
-                s_low = pd.Series(chunk_low)
-                tr1 = s_high - s_low
-                tr2 = (s_high - s_close.shift(1)).abs()
-                tr3 = (s_low - s_close.shift(1)).abs()
-                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-                plus_dm = s_high.diff()
-                minus_dm = s_low.diff().abs()
-                plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
-                minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
-                atr = tr.rolling(14).mean()
-                plus_di = 100 * (plus_dm.rolling(14).mean() / atr.replace(0, np.nan))
-                minus_di = 100 * (minus_dm.rolling(14).mean() / atr.replace(0, np.nan))
-                dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan))
-                adx_vals = dx.rolling(14).mean()
-                adx_14[s:e] = adx_vals.fillna(0).values
+                tr = np.empty(n, dtype=np.float64)
+                tr[0] = ch[0] - cl[0]
+                tr[1:] = np.maximum(
+                    ch[1:] - cl[1:],
+                    np.maximum(
+                        np.abs(ch[1:] - cc[:-1]),
+                        np.abs(cl[1:] - cc[:-1])
+                    )
+                )
+                plus_dm_raw = np.empty(n, dtype=np.float64)
+                minus_dm_raw = np.empty(n, dtype=np.float64)
+                plus_dm_raw[0] = 0
+                minus_dm_raw[0] = 0
+                hdiff = np.empty(n, dtype=np.float64)
+                ldiff = np.empty(n, dtype=np.float64)
+                hdiff[0] = 0
+                ldiff[0] = 0
+                hdiff[1:] = ch[1:] - ch[:-1]
+                ldiff[1:] = cl[:-1] - cl[1:]
+                plus_dm_raw = np.where((hdiff > ldiff) & (hdiff > 0), hdiff, 0.0)
+                minus_dm_raw = np.where((ldiff > hdiff) & (ldiff > 0), ldiff, 0.0)
+
+                if n > 14:
+                    atr_vals = np.full(n, np.nan, dtype=np.float64)
+                    atr_vals[14] = np.mean(tr[1:15])
+                    for j in range(15, n):
+                        atr_vals[j] = (atr_vals[j-1] * 13 + tr[j]) / 14
+
+                    smooth_pdm = np.full(n, np.nan, dtype=np.float64)
+                    smooth_mdm = np.full(n, np.nan, dtype=np.float64)
+                    smooth_pdm[14] = np.mean(plus_dm_raw[1:15])
+                    smooth_mdm[14] = np.mean(minus_dm_raw[1:15])
+                    for j in range(15, n):
+                        smooth_pdm[j] = (smooth_pdm[j-1] * 13 + plus_dm_raw[j]) / 14
+                        smooth_mdm[j] = (smooth_mdm[j-1] * 13 + minus_dm_raw[j]) / 14
+
+                    plus_di = np.where(atr_vals != 0, 100 * smooth_pdm / atr_vals, 0.0)
+                    minus_di = np.where(atr_vals != 0, 100 * smooth_mdm / atr_vals, 0.0)
+                    dx = np.where(
+                        (plus_di + minus_di) != 0,
+                        100 * np.abs(plus_di - minus_di) / (plus_di + minus_di),
+                        0.0
+                    )
+                    adx_vals = np.full(n, 0.0, dtype=np.float64)
+                    if n > 28:
+                        adx_vals[28] = np.mean(dx[15:29])
+                        for j in range(29, n):
+                            adx_vals[j] = (adx_vals[j-1] * 13 + dx[j]) / 14
+                    adx_14[s:e] = adx_vals
             except Exception:
                 pass
         df['rsi_14'] = rsi_14

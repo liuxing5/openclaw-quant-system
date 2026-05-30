@@ -164,19 +164,16 @@ class MainUptrendBacktester:
         if target_stocks:
             return set(target_stocks)
 
-        week_key = trade_date[:7] + "_w" + str(
-            (datetime.strptime(trade_date, "%Y-%m-%d").isocalendar()[1] // 2)
-        )
-        if week_key in cache:
-            return cache[week_key]
+        if trade_date in cache:
+            return cache[trade_date]
 
         if self.cfg.a_enabled:
             pool = self.engine.layer_a.prescreen(trade_date)
         else:
-            snapshot = self.loader.get_market_snapshot(trade_date)
+            snapshot = self.loader.get_market_snapshot(trade_date, min_amount=0)
             pool = set(snapshot['ts_code'].tolist()) if not snapshot.empty else set()
 
-        cache[week_key] = pool
+        cache[trade_date] = pool
         return pool
 
     # ================================================================

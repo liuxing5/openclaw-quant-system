@@ -138,7 +138,7 @@ class LayerETrendDetector:
         e5_score = positive_count / 3.0
         scores['e5_momentum'] = e5_score
         details_map['e5_momentum'] = np.where(
-            e5_pass, f"多周期动量一致",
+            e5_pass, "多周期动量一致",
             np.where(positive_count > 0, "部分动量正", "动量不足"))
 
         # E6: ADX 趋势强度
@@ -148,8 +148,8 @@ class LayerETrendDetector:
         scores['e6_adx'] = e6_score
         details_map['e6_adx'] = np.where(
             e6_pass,
-            ["趋势强(ADX={:.0f})".format(v) for v in adx],
-            ["趋势弱(ADX={:.0f})".format(v) for v in adx])
+            np.array([f"趋势强(ADX={v:.0f})" for v in adx]),
+            np.array([f"趋势弱(ADX={v:.0f})" for v in adx]))
 
         # E7: RSI 区间
         rsi = pool_df.get('rsi_14', pd.Series(50, index=pool_df.index)).fillna(50).values
@@ -160,10 +160,10 @@ class LayerETrendDetector:
         scores['e7_rsi'] = e7_score
         details_map['e7_rsi'] = np.where(
             e7_pass,
-            ["RSI健康({:.0f})".format(v) for v in rsi],
+            np.array([f"RSI健康({v:.0f})" for v in rsi]),
             np.where(rsi > 80,
-                     ["超买(RSI={:.0f})".format(v) for v in rsi],
-                     ["偏弱(RSI={:.0f})".format(v) for v in rsi]))
+                     np.array([f"超买(RSI={v:.0f})" for v in rsi]),
+                     np.array([f"偏弱(RSI={v:.0f})" for v in rsi])))
 
         # E8: 趋势持续时间
         above_ma20_days = pool_df.get('above_ma20_days', pd.Series(0, index=pool_df.index)).fillna(0).values
@@ -172,8 +172,8 @@ class LayerETrendDetector:
         scores['e8_trend_duration'] = e8_score
         details_map['e8_trend_duration'] = np.where(
             e8_pass,
-            ["趋势持续{:.0f}日".format(v) for v in above_ma20_days],
-            ["趋势仅{:.0f}日".format(v) for v in above_ma20_days])
+            np.array([f"趋势持续{v:.0f}日" for v in above_ma20_days]),
+            np.array([f"趋势仅{v:.0f}日" for v in above_ma20_days]))
 
         # 综合评分
         weights = {
