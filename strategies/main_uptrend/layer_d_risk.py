@@ -182,8 +182,14 @@ class LayerDRiskFilter:
         pct_chg_5d = pool_df.get('pct_chg_5d', pd.Series(0, index=pool_df.index)).fillna(0)
         d6_fail = pct_chg_5d < -self.cfg.d_max_drop_5d
 
+        # ---- D7: 追高风险 ----
+        # 20日涨幅超过50%或60日涨幅超过80%，剔除（避免追高接盘）
+        pct_chg_20d = pool_df.get('pct_chg_20d', pd.Series(0, index=pool_df.index)).fillna(0)
+        pct_chg_60d = pool_df.get('pct_chg_60d', pd.Series(0, index=pool_df.index)).fillna(0)
+        d7_fail = (pct_chg_20d > 50) | (pct_chg_60d > 80)
+
         # ---- 综合判定 ----
-        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail | d5_fail | d6_fail)
+        all_pass = ~(d1_fail | d2_fail | d3_fail | d4_fail | d5_fail | d6_fail | d7_fail)
         passed_codes = pool_df.loc[all_pass, 'ts_code'].tolist()
 
         rejected = len(ts_codes) - len(passed_codes)

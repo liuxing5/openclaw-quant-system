@@ -471,6 +471,7 @@ class DataLoader:
         volume_drying = np.zeros(len(df), dtype=np.float64)
         price_squeeze = np.zeros(len(df), dtype=np.float64)
         ma_converging = np.zeros(len(df), dtype=np.float64)
+        breakout_signal = np.zeros(len(df), dtype=np.float64)
 
         for i in range(len(group_starts)):
             s, e = group_starts[i], group_ends[i]
@@ -486,6 +487,7 @@ class DataLoader:
             m60 = ma_60_e[s:e]
             vm5 = vol_ma_5[s:e]
             vm20 = vol_ma_20_e[s:e]
+            pct = pct_chg_arr[s:e] if 'pct_chg_arr' in dir() else np.zeros(n)
 
             for j in range(20, n):
                 if np.isnan(m20[j]) or np.isnan(m60[j]):
@@ -517,10 +519,21 @@ class DataLoader:
                     if spread < 0.08:
                         ma_converging[s + j] = 1.0 - spread / 0.08
 
+                # 放量突破：蓄势后放量站上MA20
+                if above_ma20 and vm20[j] > 0:
+                    vol_ratio = vm5[j] / vm20[j]
+                    price_above = (cc[j] - m20[j]) / m20[j]
+                    had_consolidation = consolidation_days[s + j - 1] >= 3 if j > 0 else False
+                    had_drying = volume_drying[s + j - 1] >= 2 if j > 0 else False
+                    if (vol_ratio > 1.5 and price_above > 0.01 and price_above < 0.05
+                            and (had_consolidation or had_drying)):
+                        breakout_signal[s + j] = min(1.0, vol_ratio / 3.0)
+
         df['consolidation_days'] = consolidation_days
         df['volume_drying_days'] = volume_drying
         df['price_squeeze_days'] = price_squeeze
         df['ma_converging_score'] = ma_converging
+        df['breakout_score'] = breakout_signal
 
         # ---- 辅助列 ----
         df['is_kcb_cyb'] = df['ts_code'].str.startswith(('300', '688'))

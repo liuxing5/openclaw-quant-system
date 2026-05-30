@@ -180,13 +180,15 @@ class LayerETrendDetector:
         vol_dry = pool_df.get('volume_drying_days', pd.Series(0, index=pool_df.index)).fillna(0).values
         squeeze = pool_df.get('price_squeeze_days', pd.Series(0, index=pool_df.index)).fillna(0).values
         ma_conv = pool_df.get('ma_converging_score', pd.Series(0, index=pool_df.index)).fillna(0).values
-        e9_pass = (consol_days >= 5) | ((vol_dry >= 3) & (ma_conv > 0.5))
+        breakout = pool_df.get('breakout_score', pd.Series(0, index=pool_df.index)).fillna(0).values
+        e9_pass = (consol_days >= 5) | ((vol_dry >= 3) & (ma_conv > 0.5)) | (breakout > 0.5)
         e9_score = np.where(e9_pass, 1.0,
-                   np.where((consol_days >= 3) | (vol_dry >= 2), 0.5, 0.0))
+                   np.where((consol_days >= 3) | (vol_dry >= 2) | (breakout > 0), 0.5, 0.0))
         scores['e9_accumulation'] = e9_score
         details_map['e9_accumulation'] = np.where(
-            e9_pass, "蓄势充分",
-            np.where(consol_days >= 3, "蓄势中", "无蓄势"))
+            breakout > 0.5, "放量突破",
+            np.where(e9_pass, "蓄势充分",
+            np.where(consol_days >= 3, "蓄势中", "无蓄势")))
 
         # 综合评分
         weights = {

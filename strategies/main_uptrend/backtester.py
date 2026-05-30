@@ -227,9 +227,9 @@ class MainUptrendBacktester:
                 signal[f'ret_{days}d'] = ret
                 signal[f'hit_{days}d'] = ret > 0.05
 
-            # 趋势跟踪退出：MA20止盈 + 8%止损
+            # 趋势跟踪退出：移动止盈 + 利润保护 + MA10快线
             max_hold = 60
-            max_ret = 0.0
+            peak_ret = 0.0
             exit_ret = None
             for offset in range(1, max_hold + 1):
                 idx = current_idx + offset
@@ -240,22 +240,57 @@ class MainUptrendBacktester:
                 if price is None:
                     continue
                 ret = (price - entry_price) / entry_price
-                max_ret = max(max_ret, ret)
+                peak_ret = max(peak_ret, ret)
+
+                # 1. 硬止损：亏损8%无条件退出
                 if ret < -0.08:
                     exit_ret = ret
                     signal['exit_type'] = 'stop_loss'
                     signal['exit_day'] = offset
                     signal['exit_ret'] = ret
-                    signal['max_ret'] = max_ret
+                    signal['max_ret'] = peak_ret
                     break
+
+                # 2. 移动止盈：从最高点回撤超过阈值则退出
+                #    浮盈<10%时回撤5%退出，浮盈10-20%时回撤7%退出，浮盈>20%时回撤10%退出
+                drawdown_from_peak = peak_ret - ret
+                if peak_ret > 0.20:
+                    trailing_stop = 0.10
+                elif peak_ret > 0.10:
+                    trailing_stop = 0.07
+                else:
+                    trailing_stop = 0.05
+
+                if peak_ret > 0.03 and drawdown_from_peak > trailing_stop:
+                    exit_ret = ret
+                    signal['exit_type'] = 'trailing_stop'
+                    signal['exit_day'] = offset
+                    signal['exit_ret'] = ret
+                    signal['max_ret'] = peak_ret
+                    break
+
+                # 3. MA10快线退出（第5天后启用）：收盘跌破MA10×0.98
                 if offset >= 5:
-                    ma20_price = self._get_ma20_price(ts_code, d)
+                    ma10_price = self._get_ma_price(ts_code, d, 'ma_10')
+                    if ma10_price is not None and price < ma10_price * 0.98:
+                        # 利润保护：如果已有5%+浮盈，不轻易被MA10洗出
+                        if ret < 0.05:
+                            exit_ret = ret
+                            signal['exit_type'] = 'ma10_exit'
+                            signal['exit_day'] = offset
+                            signal['exit_ret'] = ret
+                            signal['max_ret'] = peak_ret
+                            break
+
+                # 4. MA20慢线退出（第10天后启用）：收盘跌破MA20×0.97
+                if offset >= 10:
+                    ma20_price = self._get_ma_price(ts_code, d, 'ma_20')
                     if ma20_price is not None and price < ma20_price * 0.97:
                         exit_ret = ret
                         signal['exit_type'] = 'ma20_exit'
                         signal['exit_day'] = offset
                         signal['exit_ret'] = ret
-                        signal['max_ret'] = max_ret
+                        signal['max_ret'] = peak_ret
                         break
 
             if exit_ret is None:
@@ -266,19 +301,19 @@ class MainUptrendBacktester:
                     signal['exit_type'] = 'max_hold'
                     signal['exit_day'] = last_idx - current_idx
                     signal['exit_ret'] = exit_ret
-                    signal['max_ret'] = max_ret
+                    signal['max_ret'] = peak_ret
 
             results.append(signal)
         return results
 
-    def _get_ma20_price(self, ts_code: str, trade_date: str) -> Optional[float]:
+    def _get_ma_price(self, ts_code: str, trade_date: str, ma_col: str) -> Optional[float]:
         ind_df = self.loader.get_indicators_snapshot(trade_date)
         if ind_df.empty:
             return None
         row = ind_df[ind_df['ts_code'] == ts_code]
-        if row.empty or 'ma_20' not in row.columns:
+        if row.empty or ma_col not in row.columns:
             return None
-        val = row['ma_20'].iloc[0]
+        val = row[ma_col].iloc[0]
         return float(val) if not pd.isna(val) else None
 
     def _get_close_price(self, ts_code: str, trade_date: str) -> Optional[float]:
