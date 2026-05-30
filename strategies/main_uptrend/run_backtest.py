@@ -46,6 +46,7 @@ def _build_json_summary(result: dict, start: str, end: str) -> dict:
         'total_signals': len(result.get('signals', [])),
         'forward_returns': {},
         'top10_signals': [],
+        'all_signals': [],
     }
     for days, df in result.get('forward_returns', {}).items():
         if df.empty:
@@ -87,6 +88,26 @@ def _build_json_summary(result: dict, start: str, end: str) -> dict:
             if key in s and s[key] is not None:
                 top['forward_rets'][str(d)] = round(float(s[key]), 4)
         summary['top10_signals'].append(top)
+    for s in sorted_signals:
+        sig = {
+            'ts_code': s.get('ts_code', ''),
+            'eval_date': s.get('eval_date', ''),
+            'composite_score': round(s.get('composite_score', 0), 1),
+            'e_score': round(s.get('e_score', 0), 1),
+            'b_score': round(s.get('b_score', 0), 1),
+            'c_score': round(s.get('c_score', 0), 1),
+            'signal_type': s.get('signal_type', ''),
+            'entry_price': s.get('entry_price'),
+            'exit_ret': round(float(s['exit_ret']), 4) if s.get('exit_ret') is not None else None,
+            'max_ret': round(float(s['max_ret']), 4) if s.get('max_ret') is not None else None,
+            'exit_type': s.get('exit_type', ''),
+            'exit_day': s.get('exit_day'),
+        }
+        for d in [10, 20, 60]:
+            key = f'ret_{d}d'
+            if key in s and s[key] is not None:
+                sig[f'ret_{d}d'] = round(float(s[key]), 4)
+        summary['all_signals'].append(sig)
     return summary
 
 
