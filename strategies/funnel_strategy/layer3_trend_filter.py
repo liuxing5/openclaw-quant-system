@@ -20,7 +20,7 @@ import numpy as np
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db_fresh
+from core.db.connection import get_db_fresh, get_db
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
