@@ -881,16 +881,21 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if not uptrend_cards:
         uptrend_cards = '<div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div>'
 
-    # ── 历史日期 ──
+    # ── 历史日期范围（用于 date picker 的 min/max） ──
     history_dates_raw = query_dicts("""
-        SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC LIMIT 10;
+        SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC;
     """)
     hd_list = [str(r['trade_date']) for r in history_dates_raw]
     if funnel_date and funnel_date not in hd_list:
         hd_list.insert(0, funnel_date)
     if eight_date_str and eight_date_str not in hd_list:
         hd_list.insert(0, eight_date_str)
-    history_opts = ''.join(f'<option value="{d}" {("selected" if d == display_date else "")}>{d}</option>' for d in hd_list[:10])
+    # 去重并排序
+    hd_list = sorted(set(hd_list), reverse=True)
+    min_date = hd_list[-1] if hd_list else display_date
+    max_date = hd_list[0] if hd_list else display_date
+    # 将可用日期列表注入到 JS 中，用于提示用户
+    available_dates_json = json.dumps(hd_list)
 
     # ── 汇总统计 ──
     funnel_count = len(funnel['candidates']) if funnel and funnel.get('candidates') else 0
@@ -947,7 +952,8 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .header {{ background:var(--header-bg); color:var(--header-text); padding:28px 24px; border-radius:12px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; }}
 .header h1 {{ font-size:1.4rem; margin-bottom:6px; }}
 .header .sub {{ font-size:.82rem; opacity:.85; }}
-.header .date-select {{ padding:7px 14px; border-radius:6px; border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.15); color:var(--header-text); font-size:13px; cursor:pointer; }}
+.header .date-input {{ padding:7px 14px; border-radius:6px; border:1px solid rgba(255,255,255,.3); background:rgba(255,255,255,.15); color:var(--header-text); font-size:13px; cursor:pointer; }}
+.header .date-input::-webkit-calendar-picker-indicator {{ filter: invert(1); cursor:pointer; }}
 .theme-btn {{ background:rgba(255,255,255,.2); color:var(--header-text); border:none; padding:8px 16px; border-radius:20px; cursor:pointer; font-size:14px; transition:background .2s; }}
 .theme-btn:hover {{ background:rgba(255,255,255,.3); }}
 
@@ -1042,10 +1048,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
         报告日期: {display_date} | 生成: {gen_time}
-        <select class="date-select" onchange="switchDate(this.value)">
-          <option value="">历史日期</option>
-          {history_opts}
-        </select>
+        <input type="date" class="date-input" id="datePicker" value="{display_date}" min="{min_date}" max="{max_date}" onchange="switchDate(this.value)">
       </div>
     </div>
     <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">
@@ -1118,6 +1121,11 @@ function toggleTheme() {{
 }}
 function switchDate(dateVal) {{
   if (!dateVal) return;
+  var available = {available_dates_json};
+  if (available.indexOf(dateVal) === -1) {{
+    alert('该日期暂无数据\\n\\n可用日期: ' + available.join(', '));
+    return;
+  }}
   window.location.href = 'funnel-' + dateVal + '.html';
 }}
 (function() {{
@@ -1168,7 +1176,7 @@ if __name__ == "__main__":
     try:
         if args.all_dates:
             history_dates_raw = query_dicts("""
-                SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC LIMIT 10;
+                SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC;
             """)
             dates = [str(r['trade_date']) for r in history_dates_raw]
             print(f"生成 {len(dates)} 个历史日期的报告...")
