@@ -60,6 +60,28 @@ jobs:
           pip install psycopg2-binary python-dotenv
           python -m core.db.apply_schema || echo "⚠️ apply_schema 失败，继续执行"
 
+      - name: Check if trading day
+        id: check_trading
+        run: |
+          python3 -c "
+          from core.utils.trading_calendar import is_trading_day
+          from datetime import datetime, timedelta, timezone, date
+          utc_dt = datetime.now(timezone.utc)
+          beijing_dt = utc_dt + timedelta(hours=8)
+          beijing_date = beijing_dt.date()
+          is_trading = is_trading_day(beijing_date)
+          print(f'北京时间: {beijing_date} ({\"交易日\" if is_trading else \"休市日\"})')
+          with open('/tmp/is_trading.txt', 'w') as f:
+              f.write('true' if is_trading else 'false')
+          "
+          echo "is_trading=$(cat /tmp/is_trading.txt)" >> $GITHUB_OUTPUT
+
+      - name: Skip on non-trading day
+        if: steps.check_trading.outputs.is_trading == 'false' && inputs.date == ''
+        run: |
+          echo "⏭️ 今天不是 A 股交易日，跳过执行"
+          exit 0
+
       - name: Run funnel strategy
         run: |
           CMD="python -m strategies.funnel_strategy.run_funnel --output ./results"
