@@ -903,6 +903,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     # ── 历史日期范围（用于 date picker 的 min/max） ──
     # 收集所有策略的日期，确保日期选择器覆盖全部可用日期
+    # 注意：所有日期必须统一转换为字符串，否则 sorted() 会报类型错误
     history_dates_raw = query_dicts("""
         SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC;
     """)
@@ -911,16 +912,16 @@ def generate_unified_html(output_dir=None, trade_date=None):
         hd_set.add(str(r['trade_date']))
     # 加入漏斗策略日期
     if funnel_date:
-        hd_set.add(funnel_date)
+        hd_set.add(str(funnel_date))
     # 加入八步法日期
-    if eight_date_str:
-        hd_set.add(eight_date_str)
+    if eight_date:
+        hd_set.add(str(eight_date))
     # 加入LLM策略日期
     if llm_date:
-        hd_set.add(llm_date)
+        hd_set.add(str(llm_date))
     # 加入主升浪日期
     if uptrend_date:
-        hd_set.add(uptrend_date)
+        hd_set.add(str(uptrend_date))
     # 查询 daily_candidates 表中所有策略的日期（最全面的日期来源）
     all_candidate_dates = query_dicts("""
         SELECT DISTINCT snapshot_date FROM daily_candidates
