@@ -145,6 +145,11 @@ def run_layer2_liquidity_filter(
     if not has_turnover and verbose:
         print(f"  ⚠️ turnover_rate 数据缺失，跳过换手率和市值过滤")
 
+    # 检测20日均成交额数据是否有效
+    has_avg_amount = len(avg_amount_cache) > 0 and any(v > 0 for v in avg_amount_cache.values())
+    if not has_avg_amount and verbose:
+        print(f"  ⚠️ 20日均成交额数据缺失，降级使用当日成交额过滤")
+
     passed = []
     reject_stats = {'成交额不足': 0, '市值不足': 0, '换手不符': 0}
 
@@ -152,10 +157,17 @@ def run_layer2_liquidity_filter(
         liq = liq_cache.get(ts_code, {})
         avg_amount = avg_amount_cache.get(ts_code, 0)
 
-        # 20日均成交额（始终检查）
-        if avg_amount < cfg.layer2_min_avg_amount_20d:
-            reject_stats['成交额不足'] += 1
-            continue
+        # 20日均成交额检查（数据缺失时降级使用当日成交额）
+        if has_avg_amount:
+            if avg_amount < cfg.layer2_min_avg_amount_20d:
+                reject_stats['成交额不足'] += 1
+                continue
+        else:
+            # 降级：使用当日成交额代替20日均值
+            today_amount = liq.get('amount', 0)
+            if today_amount < cfg.layer2_min_avg_amount_20d:
+                reject_stats['成交额不足'] += 1
+                continue
 
         if has_turnover:
             # 流通市值（从表读取，缺失时用成交额/换手率估算）
