@@ -902,16 +902,35 @@ def generate_unified_html(output_dir=None, trade_date=None):
         uptrend_cards = '<div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div>'
 
     # ── 历史日期范围（用于 date picker 的 min/max） ──
+    # 收集所有策略的日期，确保日期选择器覆盖全部可用日期
     history_dates_raw = query_dicts("""
         SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC;
     """)
-    hd_list = [str(r['trade_date']) for r in history_dates_raw]
-    if funnel_date and funnel_date not in hd_list:
-        hd_list.insert(0, funnel_date)
-    if eight_date_str and eight_date_str not in hd_list:
-        hd_list.insert(0, eight_date_str)
-    # 去重并排序
-    hd_list = sorted(set(hd_list), reverse=True)
+    hd_set = set()
+    for r in history_dates_raw:
+        hd_set.add(str(r['trade_date']))
+    # 加入漏斗策略日期
+    if funnel_date:
+        hd_set.add(funnel_date)
+    # 加入八步法日期
+    if eight_date_str:
+        hd_set.add(eight_date_str)
+    # 加入LLM策略日期
+    if llm_date:
+        hd_set.add(llm_date)
+    # 加入主升浪日期
+    if uptrend_date:
+        hd_set.add(uptrend_date)
+    # 查询 daily_candidates 表中所有策略的日期（最全面的日期来源）
+    all_candidate_dates = query_dicts("""
+        SELECT DISTINCT snapshot_date FROM daily_candidates
+        WHERE snapshot_date >= CURRENT_DATE - INTERVAL '90 days'
+        ORDER BY snapshot_date DESC;
+    """)
+    for r in all_candidate_dates:
+        hd_set.add(str(r['snapshot_date']))
+    # 排序
+    hd_list = sorted(hd_set, reverse=True)
     min_date = hd_list[-1] if hd_list else display_date
     max_date = hd_list[0] if hd_list else display_date
     # 将可用日期列表注入到 JS 中，用于提示用户
@@ -1143,7 +1162,25 @@ function switchDate(dateVal) {{
   if (!dateVal) return;
   var available = {available_dates_json};
   if (available.indexOf(dateVal) === -1) {{
-    alert('该日期暂无数据\\n\\n可用日期: ' + available.join(', '));
+    // 自动跳转到最近的有数据的日期
+    var closest = null;
+    var minDiff = Infinity;
+    for (var i = 0; i < available.length; i++) {{
+      var diff = Math.abs(new Date(available[i]) - new Date(dateVal));
+      if (diff < minDiff) {{
+        minDiff = diff;
+        closest = available[i];
+      }}
+    }}
+    if (closest) {{
+      if (confirm('该日期暂无数据\\n\\n是否跳转到最近的有数据日期: ' + closest + '?')) {{
+        window.location.href = 'funnel-' + closest + '.html';
+      }}
+    }} else {{
+      alert('暂无可用数据');
+    }}
+    // 重置日期选择器到当前页面日期
+    document.getElementById('datePicker').value = '{display_date}';
     return;
   }}
   window.location.href = 'funnel-' + dateVal + '.html';
@@ -1195,10 +1232,13 @@ if __name__ == "__main__":
     output_dir = args.output
     try:
         if args.all_dates:
-            history_dates_raw = query_dicts("""
-                SELECT DISTINCT trade_date FROM funnel_results ORDER BY trade_date DESC;
+            # 收集所有策略的日期（从 daily_candidates 表获取最全面的日期列表）
+            all_dates_raw = query_dicts("""
+                SELECT DISTINCT snapshot_date FROM daily_candidates
+                WHERE snapshot_date >= CURRENT_DATE - INTERVAL '90 days'
+                ORDER BY snapshot_date DESC;
             """)
-            dates = [str(r['trade_date']) for r in history_dates_raw]
+            dates = sorted(set(str(r['snapshot_date']) for r in all_dates_raw), reverse=True)
             print(f"生成 {len(dates)} 个历史日期的报告...")
             for d in dates:
                 print(f"  生成 {d}...")
