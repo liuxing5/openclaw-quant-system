@@ -562,10 +562,16 @@ def aggregate_today():
                 mention_bonus = min(0.2, r['mention_count'] * 0.03)
                 llm_n = min(1.0, llm_n + mention_bonus)
                 quant_score = max(0, quant_score)  # 防止负分
+                # 量化评分上限100，防止评分膨胀
                 quant_n = min(quant_score / 100.0, 1.0)  # 上限1.0
 
+                # 最终评分公式：引入温度系数防止满分扎堆
+                # 当llm_n和quant_n都接近1时，final趋近但不到100
                 if llm_n > 0 and quant_n > 0:
-                    final = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus) * 100
+                    # 几何加权 * 共识因子 * 温度衰减
+                    base = (llm_n ** 0.4) * (quant_n ** 0.6) * (0.5 + 0.5 * consensus)
+                    # 温度衰减：高分段压缩，防止扎堆100
+                    final = base * 100 * (1 - 0.15 * base * base)
                 else:
                     final = 0
 
@@ -813,7 +819,9 @@ def aggregate_today():
 
                 quant_score = max(0, quant_score)
                 quant_n = min(quant_score / 100.0, 1.0)
-                final = quant_n * 100 * 0.9
+                # 纯量化分支也使用温度衰减公式，与LLM分支一致
+                base = quant_n * 0.9  # 无LLM信号，基础分打9折
+                final = base * 100 * (1 - 0.15 * base * base)
 
                 candidates.append({
                     'ts_code': ts_code, 'stock_name': name_cache.get(ts_code, ''),

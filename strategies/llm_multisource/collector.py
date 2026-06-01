@@ -105,6 +105,33 @@ def fetch_with_timeout(fetcher_func, timeout=FETCH_TIMEOUT, max_retries=1):
     return []
 
 
+# 全局AKShare可用性标记，避免每次调用都重复尝试已失败的接口
+_akshare_available = None
+_akshare_tested = False
+
+
+def _test_akshare():
+    """测试AKShare是否可用，只执行一次"""
+    global _akshare_available, _akshare_tested
+    if _akshare_tested:
+        return _akshare_available
+    try:
+        import akshare as ak
+        # 用一个轻量接口测试
+        df = ak.stock_zh_a_spot_em()
+        if df is not None and hasattr(df, 'empty') and not df.empty:
+            _akshare_available = True
+            logger.info(f"AKShare可用，版本={ak.__version__}，股票数={len(df)}")
+        else:
+            _akshare_available = False
+            logger.warning("AKShare返回空数据，标记为不可用")
+    except Exception as e:
+        _akshare_available = False
+        logger.warning(f"AKShare不可用: {e}")
+    _akshare_tested = True
+    return _akshare_available
+
+
 def make_signal(source, title, content, url='', pub_time=None, tier=2):
     _title = (title or '')
     _content = (content or '')
@@ -892,20 +919,27 @@ def main():
     logger.info(f"日期: {today}, 交易日: {is_trading}")
     logger.info("=" * 60)
 
+    # 测试AKShare可用性
+    ak_ok = _test_akshare()
+    if not ak_ok:
+        logger.warning("AKShare不可用，所有AKShare数据源将跳过")
+
     # ---- Layer 3: News (always run) ----
-    fetchers = [
-        (fetch_akshare_news, '财经新闻', FETCH_TIMEOUT),
-        (lambda: fetch_cls_telegraph(make_signal), '财联社电报', FETCH_TIMEOUT),
-    ]
+    fetchers = []
+    if ak_ok:
+        fetchers.append((fetch_akshare_news, '财经新闻', FETCH_TIMEOUT))
+    fetchers.append((lambda: fetch_cls_telegraph(make_signal), '财联社电报', FETCH_TIMEOUT))
 
     if is_trading:
         # ---- Layer 1: Market Data (trading day only) ----
+        if ak_ok:
+            fetchers.extend([
+                (fetch_akshare_lhb, '龙虎榜', FETCH_TIMEOUT),
+                (fetch_akshare_zt_pool, '涨停板', FETCH_TIMEOUT),
+                (fetch_akshare_concept_hot, '热点概念', CONCEPT_TIMEOUT),
+            ])
+        # NEW: Tencent + THS (structured)
         fetchers.extend([
-            # Existing
-            (fetch_akshare_lhb, '龙虎榜', FETCH_TIMEOUT),
-            (fetch_akshare_zt_pool, '涨停板', FETCH_TIMEOUT),
-            (fetch_akshare_concept_hot, '热点概念', CONCEPT_TIMEOUT),
-            # NEW: Tencent + THS (structured)
             (lambda: fetch_tencent_supplementary(make_signal), 'Tencent补充', FETCH_TIMEOUT),
             (lambda: fetch_ths_strong_stocks_structured(make_signal), 'THS强势股', FETCH_TIMEOUT),
             (lambda: fetch_concept_board_quotes(make_signal), 'THS概念板块', CONCEPT_TIMEOUT),
@@ -922,9 +956,12 @@ def main():
         #     )
 
     # ---- Layer 2: Research (always run) ----
+    if ak_ok:
+        fetchers.extend([
+            (fetch_akshare_research, '个股研报', FETCH_TIMEOUT),
+            (fetch_akshare_jgdy, '机构调研', FETCH_TIMEOUT),
+        ])
     fetchers.extend([
-        (fetch_akshare_research, '个股研报', FETCH_TIMEOUT),
-        (fetch_akshare_jgdy, '机构调研', FETCH_TIMEOUT),
         (lambda: fetch_em_profit_forecast(make_signal), '东财盈利预测', FETCH_TIMEOUT),
         (lambda: fetch_ths_profit_forecast(make_signal), 'THS盈利预测', FETCH_TIMEOUT),
         (lambda: fetch_earnings_forecast_structured(make_signal), '机构一致预期', FETCH_TIMEOUT),
