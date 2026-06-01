@@ -73,6 +73,9 @@ class FunnelConfig:
     layer3_trend_structure_modes: List[str] = field(
         default_factory=lambda: ['ascending_platform', 'pullback_support']
     )  # 上升平台 / 回踩支撑 [②右侧交易]
+    # P3: RSI 超买过滤（防止追高）
+    layer3_rsi_period: int = 14                   # RSI 计算周期
+    layer3_max_rsi: float = 75.0                  # RSI > 75 视为超买，剔除
 
     # ================================================================
     # Layer 4: 动能与买入信号 [⑤价格行为/VWAP/一进二改良/布林反用]
@@ -85,10 +88,15 @@ class FunnelConfig:
     layer4_pullback_bounce_vol_ratio_min: float = 1.0   # 回踩反弹最低量比
     layer4_volume_ratio_min: float = 1.5            # 最小量比 [③八步法]
     layer4_volume_ratio_max: float = 3.0            # 最大量比
-    layer4_max_bias_pct: float = 6.0                # 最大乖离率% [③八步法]
+    layer4_max_bias_pct: float = 4.0                # 最大乖离率% [③八步法]（从6%收紧到4%）
     layer4_vwap_tolerance: float = 0.01             # VWAP翘头容差 [⑤VWAP]
     layer4_require_no_upper_boll_blowout: bool = True  # 无天量上轨 [⑤布林反用]
     layer4_boll_blowout_vol_mult: float = 3.0       # 天量上轨量能倍数
+    # P4: 短期涨幅限制（防止追高）
+    layer4_max_recent_gain_pct: float = 15.0        # 近5日涨幅 > 15% 剔除
+    layer4_recent_gain_days: int = 5                # 近期涨幅计算天数
+    # P5: 均线距离检测（防止偏离过大）
+    layer4_max_ema12_distance_pct: float = 3.0      # 股价距离 EMA12 > 3% 剔除
 
     # ================================================================
     # Layer 5: 人气精选 [③隔夜八步法/⑥人气榜]

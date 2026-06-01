@@ -38,6 +38,18 @@ def _calc_ema(values: pd.Series, period: int) -> pd.Series:
     return values.ewm(span=period, adjust=False).mean()
 
 
+def _calc_rsi(values: pd.Series, period: int = 14) -> pd.Series:
+    """计算 RSI（Relative Strength Index）"""
+    delta = values.diff()
+    gain = delta.where(delta > 0, 0.0)
+    loss = (-delta).where(delta < 0, 0.0)
+    avg_gain = gain.ewm(alpha=1/period, min_periods=period).mean()
+    avg_loss = loss.ewm(alpha=1/period, min_periods=period).mean()
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+
 def _batch_load_history(
     stock_list: List[str], trade_date: date, db_conn, days: int = 300
 ) -> Dict[str, pd.DataFrame]:
@@ -204,7 +216,20 @@ def _check_single(
         if close_now > ma_annual_now:
             result['score_bonus'] += cfg.layer3_bonus_above_annual
 
-    # 5. 趋势结构识别
+    # 5. RSI 超买过滤（防止追高）
+    rsi_period = getattr(cfg, 'layer3_rsi_period', 14)
+    max_rsi = getattr(cfg, 'layer3_max_rsi', 75.0)
+    if data_days >= rsi_period + 1:
+        rsi = _calc_rsi(close, rsi_period)
+        rsi_now = rsi.iloc[-1]
+        result['details']['rsi'] = round(rsi_now, 1)
+        if rsi_now > max_rsi:
+            result['reject_reason'] = f'RSI超买({rsi_now:.1f}>{max_rsi:.0f})'
+            return result
+    else:
+        result['details']['rsi'] = None  # 数据不足，跳过RSI检查
+
+    # 6. 趋势结构识别
     structure = _detect_trend_structure(df, cfg)
     result['details']['trend_structure'] = structure['structure']
     if structure['structure'] in cfg.layer3_trend_structure_modes:

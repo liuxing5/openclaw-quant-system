@@ -125,6 +125,17 @@ def _batch_load_and_precompute(
         ema26 = _fast_ema_last(close_arr, 26)
         bias_pct = (today_close - ema12) / ema12 * 100.0 if ema12 > 0 and pd.notna(today_close) else 999.0
 
+        # 股价距离 EMA12 的百分比（用于均线距离检测）
+        ema12_distance_pct = abs(today_close - ema12) / ema12 * 100.0 if ema12 > 0 else 999.0
+
+        # 近 N 日涨幅（防止短期涨幅过大追高）
+        recent_gain_days = getattr(cfg, 'layer4_recent_gain_days', 5)
+        recent_gain_pct = 0.0
+        if n >= recent_gain_days + 1:
+            close_n_days_ago = float(close_arr[-(recent_gain_days + 1)])
+            if close_n_days_ago > 0:
+                recent_gain_pct = (today_close - close_n_days_ago) / close_n_days_ago * 100.0
+
         # 量比（后备计算）
         vol_ratio = today_vol_ratio
         if (pd.isna(vol_ratio) or vol_ratio <= 0) and n >= 5:
@@ -143,6 +154,8 @@ def _batch_load_and_precompute(
             'ema12': ema12,
             'ema26': ema26,
             'bias_pct': bias_pct,
+            'ema12_distance_pct': ema12_distance_pct,
+            'recent_gain_pct': recent_gain_pct,
             'vol_ratio': vol_ratio,
             'boll_upper': boll_upper,
             'avg_vol_20': avg_vol_20,
@@ -241,6 +254,22 @@ def _check_single(
 
     if abs(bias_pct) > cfg.layer4_max_bias_pct:
         result['reject_reason'] = f'乖离率{bias_pct:.1f}%>{cfg.layer4_max_bias_pct}%'
+        return result
+
+    # 2.1 短期涨幅限制（防止追高）
+    max_recent_gain = getattr(cfg, 'layer4_max_recent_gain_pct', 15.0)
+    recent_gain = pre.get('recent_gain_pct', 0.0)
+    result['details']['recent_gain_pct'] = round(recent_gain, 1)
+    if recent_gain > max_recent_gain:
+        result['reject_reason'] = f'近{getattr(cfg, "layer4_recent_gain_days", 5)}日涨幅{recent_gain:.1f}%>{max_recent_gain:.0f}%'
+        return result
+
+    # 2.2 均线距离检测（防止偏离过大）
+    max_ema12_dist = getattr(cfg, 'layer4_max_ema12_distance_pct', 3.0)
+    ema12_dist = pre.get('ema12_distance_pct', 999.0)
+    result['details']['ema12_distance_pct'] = round(ema12_dist, 1)
+    if ema12_dist > max_ema12_dist:
+        result['reject_reason'] = f'股价距EMA12{ema12_dist:.1f}%>{max_ema12_dist:.0f}%'
         return result
 
     # 3. 天量上轨禁止（从预计算读可avg_vol_20，避免ohlcv_cache 截断导致死代码）
