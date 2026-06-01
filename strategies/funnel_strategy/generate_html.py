@@ -144,6 +144,12 @@ def load_funnel_data(trade_date=None):
 def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, max_retries=5):
     """Load candidates with SSL retry logic."""
     import time as _t
+    # 确保 trade_date 是 date 对象，psycopg2 才能正确匹配 DATE 字段
+    if trade_date and isinstance(trade_date, str):
+        try:
+            trade_date = date.fromisoformat(trade_date)
+        except ValueError:
+            pass
     for attempt in range(max_retries):
         try:
             conn = get_db(use_dict_cursor=True)
@@ -338,18 +344,24 @@ def generate_unified_html(output_dir=None, trade_date=None):
     # 关键修复：即使有昨天的数据，也要等待今天的数据写入
     # 修复：生成历史日期报告时，用 trade_date 而不是 beijing_today 判断
     target_date = trade_date if trade_date else str(get_beijing_date())
-    need_retry = (not eight_candidates or not eight_date) or (eight_date and str(eight_date) < str(target_date))
+    # 统一转换为字符串比较，避免 date 对象和字符串类型不匹配
+    target_date_str = str(target_date)
+    eight_date_str_for_check = str(eight_date) if eight_date else None
+    
+    need_retry = (not eight_candidates or not eight_date_str_for_check) or (eight_date_str_for_check and eight_date_str_for_check < target_date_str)
     if need_retry:
         import time as _time
         for _retry in range(8):
             _time.sleep(15)
-            print(f"   overnight_8step 数据未就绪 (当前={eight_date}, 期望>={target_date})，15s后重试 ({_retry+1}/8)...")
+            print(f"   overnight_8step 数据未就绪 (当前={eight_date}, 期望>={target_date_str})，15s后重试 ({_retry+1}/8)...")
             eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
-            if eight_candidates and eight_date and str(eight_date) >= str(target_date):
+            eight_date_str_for_check = str(eight_date) if eight_date else None
+            if eight_candidates and eight_date_str_for_check and eight_date_str_for_check >= target_date_str:
                 break
         # 如果重试后仍然没有目标日期的数据，使用最新可用数据
-        if not eight_candidates or not eight_date or str(eight_date) < str(target_date):
-            print(f"   ⚠ overnight_8step {target_date} 无数据，使用最新可用数据 (日期={eight_date})")
+        eight_date_str_for_check = str(eight_date) if eight_date else None
+        if not eight_candidates or not eight_date_str_for_check or eight_date_str_for_check < target_date_str:
+            print(f"   ⚠ overnight_8step {target_date_str} 无数据，使用最新可用数据 (日期={eight_date})")
     eight_date_str = str(eight_date) if eight_date else None
     eight_timestamp = load_strategy_timestamp('overnight_8step', eight_date)
 
