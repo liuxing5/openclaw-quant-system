@@ -100,6 +100,13 @@ def _get_latest_source_date(cur, source, lookback_days=7):
 
 
 def load_funnel_data(trade_date=None):
+    # 确保 trade_date 是 date 对象，psycopg2 才能正确匹配 DATE 字段
+    if trade_date and isinstance(trade_date, str):
+        try:
+            trade_date = date.fromisoformat(trade_date)
+        except ValueError:
+            pass
+    
     if trade_date:
         row = query_one("""
             SELECT * FROM funnel_results WHERE trade_date = %s ORDER BY trade_date DESC LIMIT 1;
