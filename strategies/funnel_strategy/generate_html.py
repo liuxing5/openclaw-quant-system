@@ -341,15 +341,16 @@ def generate_unified_html(output_dir=None, trade_date=None):
     eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
     # 并行 workflow 竞争：overnight_8step 和 funnel 同时 15:10 触发，
     # zuiyou1.py 可能还在写入，最多重试 8 次（每次 15s，共 120s）
-    # 关键修复：即使有昨天的数据，也要等待今天的数据写入
-    # 修复：生成历史日期报告时，用 trade_date 而不是 beijing_today 判断
+    # 优化：生成历史日期报告时跳过重试（历史数据不会变化），仅当天日期重试
     target_date = trade_date if trade_date else str(get_beijing_date())
     # 统一转换为字符串比较，避免 date 对象和字符串类型不匹配
     target_date_str = str(target_date)
     eight_date_str_for_check = str(eight_date) if eight_date else None
     
+    is_today = (target_date_str == str(get_beijing_date()))
     need_retry = (not eight_candidates or not eight_date_str_for_check) or (eight_date_str_for_check and eight_date_str_for_check < target_date_str)
-    if need_retry:
+    if need_retry and is_today:
+        # 仅当天日期重试（等待并行 workflow 写入）
         import time as _time
         for _retry in range(8):
             _time.sleep(15)
@@ -362,6 +363,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
         eight_date_str_for_check = str(eight_date) if eight_date else None
         if not eight_candidates or not eight_date_str_for_check or eight_date_str_for_check < target_date_str:
             print(f"   ⚠ overnight_8step {target_date_str} 无数据，使用最新可用数据 (日期={eight_date})")
+    elif need_retry and not is_today:
+        # 历史日期不重试，直接使用已有数据
+        print(f"   ⚠ overnight_8step {target_date_str} 无数据，使用最新可用数据 (日期={eight_date})")
     eight_date_str = str(eight_date) if eight_date else None
     eight_timestamp = load_strategy_timestamp('overnight_8step', eight_date)
 
