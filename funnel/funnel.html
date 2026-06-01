@@ -131,7 +131,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-05-29 | 生成: 2026-06-01 14:43:54
+        报告日期: 2026-05-29 | 生成: 2026-06-01 14:52:24
         <select class="date-select" onchange="switchDate(this.value)">
           <option value="">历史日期</option>
           <option value="2026-06-01" >2026-06-01</option><option value="2026-05-29" selected>2026-05-29</option><option value="2026-05-28" >2026-05-28</option><option value="2026-05-27" >2026-05-27</option><option value="2026-05-26" >2026-05-26</option><option value="2026-05-25" >2026-05-25</option><option value="2026-05-22" >2026-05-22</option><option value="2026-05-21" >2026-05-21</option><option value="2026-05-20" >2026-05-20</option><option value="2026-05-19" >2026-05-19</option>
@@ -158,38 +158,38 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
       <div class="steps-area">
             <div class="step-row" title="稳健3%~5%，高位6%~9.7%，剔除涨停/跌停">
               <span class="step-name">涨幅筛选</span>
-              <span class="step-pass">281</span>
+              <span class="step-pass">304</span>
               
               <span class="rule-inline">稳健3%~5%，高位6%~9.7%，剔除涨停/跌停</span>
             </div>
             <div class="step-row" title="稳健0.5~50亿，高位0.3~30亿，保证流动性">
               <span class="step-name">成交额过滤</span>
-              <span class="step-pass">265</span>
-              <span class="elim">16</span>
+              <span class="step-pass">289</span>
+              <span class="elim">15</span>
               <span class="rule-inline">稳健0.5~50亿，高位0.3~30亿，保证流动性</span>
             </div>
             <div class="step-row" title="5%~10%，活跃度适中">
               <span class="step-name">换手率过滤</span>
-              <span class="step-pass">29</span>
-              <span class="elim">236</span>
+              <span class="step-pass">31</span>
+              <span class="elim">258</span>
               <span class="rule-inline">5%~10%，活跃度适中</span>
             </div>
             <div class="step-row" title="稳健50~500亿，高位30~200亿">
               <span class="step-name">市值过滤</span>
-              <span class="step-pass">24</span>
-              <span class="elim">5</span>
+              <span class="step-pass">25</span>
+              <span class="elim">6</span>
               <span class="rule-inline">稳健50~500亿，高位30~200亿</span>
             </div>
             <div class="step-row" title="量比≥1，放量确认">
               <span class="step-name">量比过滤</span>
-              <span class="step-pass">13</span>
-              <span class="elim">11</span>
+              <span class="step-pass">12</span>
+              <span class="elim">13</span>
               <span class="rule-inline">量比≥1，放量确认</span>
             </div>
             <div class="step-row" title="MA多头排列 + 无上方压力位">
               <span class="step-name">均线+压力</span>
               <span class="step-pass">6</span>
-              <span class="elim">7</span>
+              <span class="elim">6</span>
               <span class="rule-inline">MA多头排列 + 无上方压力位</span>
             </div>
             <div class="step-row" title="乖离率≤5%，避免追高">
@@ -204,7 +204,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
               
               <span class="rule-inline">综合评分≥阈值(85+)，量化+情绪加权</span>
             </div><div class="step-note"> 情绪高潮(96分)</div></div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (4只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (5只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
       <div class="cards-grid"><div class="path-group"><div class="cards-grid">
         <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-603500','_blank')" style="cursor:pointer">
           <div class="cand-header">
@@ -217,9 +217,9 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             <span class="cand-score">100</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">10.66</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">10.50</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">11.09</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">10.69</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">10.53</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">11.12</span><span class="ml">目标</span></div>
             <div class="metric"><span class="mv">110</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手 · 量能递增</div>
@@ -253,13 +253,31 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             <span class="cand-score">100</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">40.27</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">39.66</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">41.90</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">40.53</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">39.92</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">42.17</span><span class="ml">目标</span></div>
             <div class="metric"><span class="mv">83</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">稳健蓄势 · 黄金放量 · 量能递增 · 首阳突破</div>
         </div></div></div><div class="path-group"><div class="path-label path-upper" style="margin-bottom:8px;">高位路径</div><div class="cards-grid">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-001286','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-001286" target="_blank" style="color:inherit;text-decoration:none">001286.SZ</a></span>
+              <span class="cand-name">陕西能源</span>
+              
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">100</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">13.45</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">13.25</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">14.27</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">90</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手 · 量能递增</div>
+        </div>
         <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-605589','_blank')" style="cursor:pointer">
           <div class="cand-header">
             <div>
@@ -271,9 +289,9 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             <span class="cand-score">95</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">48.97</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">48.22</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">51.93</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">48.91</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">48.16</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">51.87</span><span class="ml">目标</span></div>
             <div class="metric"><span class="mv">78</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">高位博弈 · 量能达标 · 换手偏高 · 量能递增</div>
