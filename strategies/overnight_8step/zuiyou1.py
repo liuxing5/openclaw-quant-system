@@ -2166,7 +2166,15 @@ def analyze_ultimate(
     score += capped_bonus
 
     # --- 最终判定 ---
-    # v2.0: 评分上限100分，阈值70
+    # v2.1: 引入温度衰减防止满分扎堆，高分段压缩区分度
+    # 原始分50-100映射为最终分，满分约85分，留出区分空间
+    if score > 50:
+        # 归一化到0-1区间（50为底，100为顶）
+        norm = (score - 50) / 50.0
+        # 温度衰减：高分段非线性压缩
+        final = norm * 100 * (1 - 0.15 * norm * norm)
+        # 保底50分起算，最终分范围约 50-85
+        score = 50 + final * 0.5
     score = min(score, 100)
     if score < cfg["score_threshold"]:
         if reject_stats is not None:
@@ -3124,6 +3132,11 @@ def debug_stock(code: str, cfg: dict = None):
         score += funnel_boost
         tags.append(f"🔽漏斗+{funnel_boost:.0f}")
 
+    # v2.1: 温度衰减（与主流程一致）
+    if score > 50:
+        norm = (score - 50) / 50.0
+        final = norm * 100 * (1 - 0.15 * norm * norm)
+        score = 50 + final * 0.5
     score = min(score, 100)
 
     steps.append(("评分", score >= cfg["score_threshold"],
