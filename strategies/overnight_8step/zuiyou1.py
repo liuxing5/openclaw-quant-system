@@ -239,10 +239,36 @@ if os.path.exists(_LEGACY_CACHE_FILE) and not os.path.exists(_INDUSTRY_CACHE_FIL
     except Exception:
         pass
 
+# 全局计数器，用于定期重连baostock防止连接被服务端断开
+_bs_query_counter = 0
+_BS_RECONNECT_INTERVAL = 200  # 每200次查询重连一次
+
+def _ensure_bs_connection():
+    """确保baostock连接有效，必要时重新登录"""
+    global _bs_query_counter
+    _bs_query_counter += 1
+    if _bs_query_counter % _BS_RECONNECT_INTERVAL == 0:
+        try:
+            bs.logout()
+        except Exception:
+            pass
+        time.sleep(0.5)
+        try:
+            lg = bs.login()
+            if lg.error_code != "0":
+                if DEBUG:
+                    print(f"  [DEBUG] baostock重连失败: {lg.error_msg}")
+                time.sleep(2)
+                lg = bs.login()
+        except Exception as e:
+            if DEBUG:
+                print(f"  [DEBUG] baostock重连异常: {e}")
+
 def preload_industries(stock_pool: list):
     """启动时一次性查询所有股票行业，缓存到本地文件，3天更新一次
     v1.5.1: 增加临时文件原子写入，避免并发写入损坏文件。
     v1.7: 缓存周期从7天缩短至3天，确保新上市公司及时纳入。
+    v1.7.1: 增加批量查询间隔和连接健康检查，防止连接被重置。
     """
     if os.path.exists(_INDUSTRY_CACHE_FILE):
         mtime = os.path.getmtime(_INDUSTRY_CACHE_FILE)
@@ -255,7 +281,11 @@ def preload_industries(stock_pool: list):
                 pass
 
     print("预热行业缓存（首次或过期）...")
-    for code in stock_pool:
+    batch_size = 100
+    for i, code in enumerate(stock_pool):
+        if i > 0 and i % batch_size == 0:
+            _ensure_bs_connection()
+            time.sleep(1)
         get_stock_industry(code)
 
     tmp_file = _INDUSTRY_CACHE_FILE + ".tmp"
@@ -273,6 +303,7 @@ def preload_industries(stock_pool: list):
 def get_stock_industry(code: str) -> str:
     """获取股票所属行业，带内存+文件双缓存
     v1.5.2: 失败查询增加冷却时间，1小时后可重试，避免空字符串永久缓存。
+    v1.7.1: 增加重试机制和连接恢复，处理Connection reset by peer/Broken pipe。
     """
     if code in _industry_cache:
         return _industry_cache[code]
@@ -282,23 +313,46 @@ def get_stock_industry(code: str) -> str:
     if now_ts - last_fail < _INDUSTRY_RETRY_COOLDOWN:
         return ""
 
-    try:
-        rs = bs.query_stock_industry(code=code)
-        if rs.error_code == '0':
-            row = rs.get_row_data()
-            if row and len(row) > 0:
-                # row: [updateDate, code, code_name, industry, industryClassification]
-                industry = row[3] if len(row) > 3 and row[3] else (row[0] if row[0] else "")
-                _industry_cache[code] = industry
-                return industry
-        else:
-            if DEBUG:
-                print(f"  [DEBUG] 行业查询失败 {code}: {rs.error_msg}")
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            _ensure_bs_connection()
+            rs = bs.query_stock_industry(code=code)
+            if rs.error_code == '0':
+                row = rs.get_row_data()
+                if row and len(row) > 0:
+                    # row: [updateDate, code, code_name, industry, industryClassification]
+                    industry = row[3] if len(row) > 3 and row[3] else (row[0] if row[0] else "")
+                    _industry_cache[code] = industry
+                    return industry
+            else:
+                if DEBUG:
+                    print(f"  [DEBUG] 行业查询失败 {code}: {rs.error_msg}")
+                _industry_fail_times[code] = now_ts
+                return ""
+        except Exception as e:
+            err_msg = str(e).lower()
+            is_network_error = any(kw in err_msg for kw in ['connection reset', 'broken pipe', 'connection', 'timeout', 'reset by peer'])
+            if is_network_error:
+                if DEBUG:
+                    print(f"  [DEBUG] 行业查询网络异常 {code} (尝试{attempt+1}/{max_retries}): {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2 * (attempt + 1))
+                    try:
+                        bs.logout()
+                    except Exception:
+                        pass
+                    time.sleep(1)
+                    try:
+                        bs.login()
+                    except Exception:
+                        pass
+                    continue
+            else:
+                if DEBUG:
+                    print(f"  [DEBUG] 行业查询异常 {code}: {e}")
             _industry_fail_times[code] = now_ts
-    except Exception as e:
-        if DEBUG:
-            print(f"  [DEBUG] 行业查询异常 {code}: {e}")
-        _industry_fail_times[code] = now_ts
+            return ""
     return ""
 
 # ============================================================
