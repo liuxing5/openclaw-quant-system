@@ -1895,58 +1895,58 @@ def analyze_ultimate(
 
     # A. 涨幅路径
     if in_stable:
-        score += 12
+        score += 8
         tags.append("稳健蓄势")
         bias = (curr_price - ma5_yest) / ma5_yest if ma5_yest > 0 else 1
         if bias < 0.02:
-            score += 8
+            score += 5
             tags.append("紧贴MA5")
     elif in_upper:
-        score += 17
+        score += 12
         tags.append("高位博弈")
         if cfg["MODE"] == "post":
             if curr_high > 0 and curr_price >= curr_high * 0.998:
-                score += 8
+                score += 5
                 tags.append("光头大阳")
 
     # B. 量比评分
     if 1.8 <= vol_ratio <= 4.0:
-        score += 21
+        score += 15
         tags.append("黄金放量")
     elif vol_ratio > 4.0:
-        score += 8
+        score += 5
         tags.append("爆量博弈")
     else:
-        score += 4
+        score += 3
         tags.append("量能达标")
 
     # C. 换手率评分
     if 5.0 <= curr_turn <= 8.0:
-        score += 12
+        score += 8
         tags.append("黄金换手")
     elif 8.0 < curr_turn <= 10.0:
-        score += 7
+        score += 5
         tags.append("换手偏高")
 
     # D. 成交量递增加分
     if vol_increasing:
-        score += 8
+        score += 5
         tags.append("量能递增")
     else:
-        score -= 4
+        score -= 3
 
     # E. 连板高度
     if streak == 0:
-        score += 4
+        score += 3
         tags.append("首阳突破")
     elif streak == 1:
-        score += 17
+        score += 12
         tags.append("首板突破")
     elif streak == 2:
-        score += 25
+        score += 18
         tags.append("二连板")
     elif streak >= cfg["streak_penalty_threshold"]:
-        bonus = 25
+        bonus = 18
         penalty = (streak - 2) * cfg["streak_penalty_per_board"]
         net = bonus - penalty
         score += max(net, 0)
@@ -2084,9 +2084,9 @@ def analyze_ultimate(
         tags.append(f"🔽漏斗+{funnel_boost:.0f}")
 
     # --- 新增指标加成（v1.6+）---
-    # v1.7: 新增加成项总上限25分，防止评分膨胀稀释核心8步法逻辑
+    # v1.7: 新增加成项总上限15分（从25收紧），防止评分膨胀稀释核心8步法逻辑
     _bonus_pool = 0.0
-    _BONUS_POOL_CAP = 25.0
+    _BONUS_POOL_CAP = 15.0
 
     amplitude = real_info.get('amplitude', 0) if real_info else 0
     if 3 <= amplitude <= 8:
@@ -2166,14 +2166,14 @@ def analyze_ultimate(
     score += capped_bonus
 
     # --- 最终判定 ---
-    # v2.1: 引入温度衰减防止满分扎堆，高分段压缩区分度
-    # 原始分50-100映射为最终分，满分约85分，留出区分空间
+    # v2.2: 增大温度衰减系数（0.15→0.30），高分段更强压缩，拉开区分度
+    # 原始分50-100映射为最终分，满分约77分，留出更大区分空间
     if score > 50:
         # 归一化到0-1区间（50为底，100为顶）
         norm = (score - 50) / 50.0
-        # 温度衰减：高分段非线性压缩
-        final = norm * 100 * (1 - 0.15 * norm * norm)
-        # 保底50分起算，最终分范围约 50-85
+        # 温度衰减：高分段非线性压缩（系数0.30）
+        final = norm * 100 * (1 - 0.30 * norm * norm)
+        # 保底50分起算，最终分范围约 50-77
         score = 50 + final * 0.5
     score = min(score, 100)
     if score < cfg["score_threshold"]:
@@ -3132,10 +3132,10 @@ def debug_stock(code: str, cfg: dict = None):
         score += funnel_boost
         tags.append(f"🔽漏斗+{funnel_boost:.0f}")
 
-    # v2.1: 温度衰减（与主流程一致）
+    # v2.2: 温度衰减（与主流程一致，系数0.30）
     if score > 50:
         norm = (score - 50) / 50.0
-        final = norm * 100 * (1 - 0.15 * norm * norm)
+        final = norm * 100 * (1 - 0.30 * norm * norm)
         score = 50 + final * 0.5
     score = min(score, 100)
 
