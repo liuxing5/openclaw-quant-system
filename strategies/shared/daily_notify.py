@@ -193,8 +193,14 @@ def _format_stock_line(c: dict, source_label: str) -> str:
 
 
 def push_daily_summary(trade_date: Optional[str] = None) -> bool:
+    now_beijing = datetime.now(BEIJING_TZ)
     if not trade_date:
-        trade_date = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
+        trade_date = now_beijing.strftime("%Y-%m-%d")
+
+    # 每日汇总推送只在下午15:00后执行（防止早上 push/workflow_dispatch 触发误发）
+    if now_beijing.hour < 15:
+        logger.warning(f"北京时间 {now_beijing.strftime('%H:%M')} < 15:00，跳过每日汇总推送")
+        return False
 
     try:
         conn = _get_conn()
@@ -251,6 +257,15 @@ def push_daily_summary(trade_date: Optional[str] = None) -> bool:
         lines.append("")
         lines.append("━━ 八步隔夜法 ━━")
         if eight_candidates:
+            # 按 ts_code 去重，保留得分最高的记录
+            best_by_code = {}
+            for c in eight_candidates:
+                code = c.get('ts_code', '')
+                score = c.get('final_score', 0) or 0
+                if code not in best_by_code or score > (best_by_code[code].get('final_score', 0) or 0):
+                    best_by_code[code] = c
+            eight_candidates = list(best_by_code.values())
+
             stable = [c for c in eight_candidates if '稳健' in str(c.get('logic_tags', []))]
             upper = [c for c in eight_candidates if '高位' in str(c.get('logic_tags', []))]
             others = [c for c in eight_candidates if c not in stable and c not in upper]
