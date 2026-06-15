@@ -120,7 +120,13 @@ async def push_daily_candidates():
     
     bot = Bot(BOT_TOKEN, request=request)
     today = get_beijing_date()
-    logger.info(f"=== 推送开始，today={today}, RUN_MODE={RUN_MODE} ===")
+    now_beijing = datetime.now(BEIJING_TZ)
+    logger.info(f"=== 推送开始，today={today}, RUN_MODE={RUN_MODE}, beijing_time={now_beijing.strftime('%H:%M')} ===")
+    
+    # 盘后复盘消息只在下午15:00后推送（防止早上 push/workflow_dispatch 触发误发）
+    if RUN_MODE == 'afternoon' and now_beijing.hour < 15:
+        logger.warning(f"北京时间 {now_beijing.strftime('%H:%M')} < 15:00，跳过盘后复盘推送")
+        return
     
     # 非交易日跳过推送
     if not is_trading_day(today):

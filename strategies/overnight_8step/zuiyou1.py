@@ -1,6 +1,12 @@
 """
-隔夜选股法·最优融合版 (zuiyou1 v1.6)
+隔夜选股法·最优融合版 (zuiyou1 v1.8)
 ========================================
+v1.8 修订（2026-06-15）：
+  ✓ 行业缓存批量查询 —— bs.query_stock_industry()不传code一次性获取全部，从800+次请求降为1次
+  ✓ K线查询天数优化 —— 45天缩短为30天（MA20只需20天，留余量）
+  ✓ 日志实时输出 —— 关键节点增加flush，避免GitHub Actions取消时无日志
+  ✓ 降级方案保留 —— 批量查询失败时自动降级为逐只查询
+
 v1.6.2 修订（2026-05-12）：
   ✓ 修复腾讯API字段索引错误 —— p[45]-p[52]映射修正(量比/委比/大单净量/主力净流入/涨跌停价)
   ✓ 修复流通市值缺失 —— 新增circ_mcap字段，优先使用流通市值而非总市值
@@ -123,9 +129,14 @@ import pandas as pd
 import requests
 import time
 import os
+import sys
 import json
 from datetime import datetime, timedelta
 from typing import Tuple, Optional, List
+
+# GitHub Actions 日志实时输出（避免缓冲导致取消时无日志）
+def _log(msg):
+    print(msg, flush=True)
 
 # tqdm 自动检测
 try:
@@ -241,7 +252,7 @@ if os.path.exists(_LEGACY_CACHE_FILE) and not os.path.exists(_INDUSTRY_CACHE_FIL
 
 # 全局计数器，用于定期重连baostock防止连接被服务端断开
 _bs_query_counter = 0
-_BS_RECONNECT_INTERVAL = 200  # 每200次查询重连一次
+_BS_RECONNECT_INTERVAL = 500  # 每500次查询重连一次
 
 def _ensure_bs_connection():
     """确保baostock连接有效，必要时重新登录"""
@@ -268,7 +279,7 @@ def preload_industries(stock_pool: list):
     """启动时一次性查询所有股票行业，缓存到本地文件，3天更新一次
     v1.5.1: 增加临时文件原子写入，避免并发写入损坏文件。
     v1.7: 缓存周期从7天缩短至3天，确保新上市公司及时纳入。
-    v1.7.1: 增加批量查询间隔和连接健康检查，防止连接被重置。
+    v1.8: 改为批量查询（不传code参数一次性获取全部），从800+次请求降为1次。
     """
     if os.path.exists(_INDUSTRY_CACHE_FILE):
         mtime = os.path.getmtime(_INDUSTRY_CACHE_FILE)
@@ -280,13 +291,28 @@ def preload_industries(stock_pool: list):
             except Exception:
                 pass
 
-    print("预热行业缓存（首次或过期）...")
-    batch_size = 100
-    for i, code in enumerate(stock_pool):
-        if i > 0 and i % batch_size == 0:
-            _ensure_bs_connection()
-            time.sleep(1)
-        get_stock_industry(code)
+    print("预热行业缓存（首次或过期，批量查询）...")
+    # 批量获取全部股票行业（不传code参数）
+    try:
+        _ensure_bs_connection()
+        rs = bs.query_stock_industry()
+        if rs.error_code == '0':
+            count = 0
+            while rs.next():
+                row = rs.get_row_data()
+                if row and len(row) > 4:
+                    code = row[1]  # code
+                    industry = row[3] if row[3] else ""
+                    if code:
+                        _industry_cache[code] = industry
+                        count += 1
+            print(f"  ✓ 批量加载 {count} 只股票行业信息")
+        else:
+            print(f"  ⚠️ 批量行业查询失败: {rs.error_msg}，降级为逐只查询")
+            _fallback_preload(stock_pool)
+    except Exception as e:
+        print(f"  ⚠️ 批量行业查询异常: {e}，降级为逐只查询")
+        _fallback_preload(stock_pool)
 
     tmp_file = _INDUSTRY_CACHE_FILE + ".tmp"
     try:
@@ -299,6 +325,15 @@ def preload_industries(stock_pool: list):
                 os.remove(tmp_file)
             except Exception:
                 pass
+
+
+def _fallback_preload(stock_pool: list):
+    """降级方案：逐只查询行业（批量查询失败时使用）"""
+    for i, code in enumerate(stock_pool):
+        if i > 0 and i % 100 == 0:
+            _ensure_bs_connection()
+            time.sleep(0.5)
+        get_stock_industry(code)
 
 def get_stock_industry(code: str) -> str:
     """获取股票所属行业，带内存+文件双缓存
@@ -337,12 +372,11 @@ def get_stock_industry(code: str) -> str:
                 if DEBUG:
                     print(f"  [DEBUG] 行业查询网络异常 {code} (尝试{attempt+1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(2 * (attempt + 1))
+                    time.sleep(1 * (attempt + 1))
                     try:
                         bs.logout()
                     except Exception:
                         pass
-                    time.sleep(1)
                     try:
                         bs.login()
                     except Exception:
@@ -2207,45 +2241,51 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
     pool_name = cfg["POOL"]
     mode = cfg["MODE"]
 
-    print(f"\n扫描池: [{pool_name}]  模式: {mode}  时间权重: {time_weight:.2f}")
-    print()
+    _log(f"\n扫描池: [{pool_name}]  模式: {mode}  时间权重: {time_weight:.2f}")
+    _log("")
 
     stock_pool = get_stock_pool(cfg["POOL"])
-    print(f"股票池: [{cfg['POOL']}] 共 {len(stock_pool)} 只")
+    _log(f"股票池: [{cfg['POOL']}] 共 {len(stock_pool)} 只")
 
     # v1.5+: 加载LLM候选池（最近 3 天盘后产出，覆盖周末断档）
     today_str = beijing_now().strftime("%Y-%m-%d")
+    _log("正在加载LLM候选池...")
     llm_pool = get_llm_candidates_from_supabase(today_str, lookback_days=3, min_score=40.0)
     llm_count = len(llm_pool)
     if llm_count > 0:
-        print(f"📊 LLM候选池: {llm_count} 只 (最近 3 日盘后 selected/分数≥40)")
+        _log(f"📊 LLM候选池: {llm_count} 只 (最近 3 日盘后 selected/分数≥40)")
         existing = set(stock_pool)
         added = [c for c in llm_pool.keys() if c not in existing]
         if added:
             stock_pool = stock_pool + added
-            print(f"  ➕ 合并 LLM 候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
+            _log(f"  ➕ 合并 LLM 候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
 
     # v1.8: 加载漏斗策略候选池（收盘后产出，次日八步法辅助）
+    _log("正在加载漏斗候选池...")
     funnel_pool = get_funnel_candidates_from_db(today_str, lookback_days=3)
     funnel_count = len(funnel_pool)
     if funnel_count > 0:
-        print(f"🔽 漏斗候选池: {funnel_count} 只 (最近 3 日盘后漏斗筛选)")
+        _log(f"🔽 漏斗候选池: {funnel_count} 只 (最近 3 日盘后漏斗筛选)")
         existing = set(stock_pool)
         added = [c for c in funnel_pool.keys() if c not in existing]
         if added:
             stock_pool = stock_pool + added
-            print(f"  ➕ 合并漏斗候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
+            _log(f"  ➕ 合并漏斗候选 {len(added)} 只到扫描池 (合并后: {len(stock_pool)} 只)")
 
     # v1.6+: 加载新增指标（强势股排名、机构预期、概念板块）
+    _log("正在加载新增指标...")
     load_new_indicators(today_str)
 
     # 预热行业缓存（首次或7天过期时批量查询），preloaded=True 时跳过
     if not preloaded:
+        _log("正在预热行业缓存...")
         preload_industries(stock_pool)
+        _log("✓ 行业缓存预热完成")
 
     # post 模式也用腾讯接口获取收盘数据（baostock 历史数据有延迟）
+    _log("正在获取实时行情...")
     real_map = get_realtime_quotes(stock_pool)
-    print(f"实时行情获取: {len(real_map)} 只")
+    _log(f"实时行情获取: {len(real_map)} 只")
 
     # 构建名称映射：key -> stock_name
     name_map = {}
@@ -2256,7 +2296,7 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
     results = []
     total = len(stock_pool)
     end_d = snapshot_date if snapshot_date else beijing_now().strftime("%Y-%m-%d")
-    start_d = (beijing_now() - timedelta(days=45)).strftime("%Y-%m-%d")
+    start_d = (beijing_now() - timedelta(days=30)).strftime("%Y-%m-%d")
 
     reject_stats = {
         "数据不足": 0, "ST/退市": 0, "情绪冷淡": 0, "涨幅不符": 0,
@@ -2264,7 +2304,7 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
         "压力": 0, "乖离严重": 0, "得分不足": 0,
     }
 
-    print(f"开始扫描 {total} 只股票...")
+    _log(f"开始扫描 {total} 只股票...")
 
     for code in stock_pool:
         # 次新股过滤：上市<60天直接跳过
@@ -2593,38 +2633,43 @@ def _save_reject_trend(date_str: str, rejects: dict):
 def main():
     _update_mode()  # 运行时重新计算 MODE
 
-    print(f"隔夜选股法·最优融合版 v1.6.2")
-    print(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
-    print(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
-    print(f"运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
-    print()
+    _log(f"隔夜选股法·最优融合版 v1.8")
+    _log(f"双池策略：稳健[hs300+zz500] + 高位[zz1000]")
+    _log(f"完整8步法：涨幅→量比→换手→市值→量能→均线→压力→评分")
+    _log(f"运行时间：{beijing_now().strftime('%Y-%m-%d %H:%M:%S')}")
+    _log("")
 
+    _log("正在连接 baostock...")
     lg = bs.login()
     if lg.error_code != "0":
-        print(f"❌ baostock 登录失败: {lg.error_msg}")
+        _log(f"❌ baostock 登录失败: {lg.error_msg}")
         return
+    _log("✓ baostock 连接成功")
 
     if CONFIG_STABLE["MODE"] == "post" and not is_safe_post_time():
-        print("⚠️ 当前不是安全的盘后时间,数据可能不是最终收盘价")
-        print("   建议 15:10 之后再运行 post 模式")
+        _log("⚠️ 当前不是安全的盘后时间,数据可能不是最终收盘价")
+        _log("   建议 15:10 之后再运行 post 模式")
 
+    _log("正在获取市场情绪...")
     sentiment_score, mood = fetch_market_sentiment()
-    print(f"\n📊 市场情绪: 综合评分 {sentiment_score} 分 → [{mood}]")
+    _log(f"\n📊 市场情绪: 综合评分 {sentiment_score} 分 → [{mood}]")
 
     if mood in ("极冷", "冷淡"):
-        print("情绪冷淡，仅启用稳健路径(3%-6%)，高位路径自动关闭")
+        _log("情绪冷淡，仅启用稳健路径(3%-6%)，高位路径自动关闭")
     elif mood in ("活跃", "火热", "高潮"):
-        print("情绪偏热，高位路径(6%-9.7%)已开放，注意风控")
+        _log("情绪偏热，高位路径(6%-9.7%)已开放，注意风控")
     else:
-        print("情绪正常，双路径运行")
+        _log("情绪正常，双路径运行")
 
-    print(f"稳健路径仓位: {CONFIG_STABLE['position_label']}")
-    print(f"高位路径仓位: {CONFIG_UPPER['position_label']}")
+    _log(f"稳健路径仓位: {CONFIG_STABLE['position_label']}")
+    _log(f"高位路径仓位: {CONFIG_UPPER['position_label']}")
 
     end_d = get_trading_date_for_snapshot()
 
+    _log(f"\n🔍 开始扫描稳健池 [hs300+zz500]...")
     results_stable, rejects_stable, name_map_stable, stable_pool_size, stable_real_count, stable_tw = scan_pool(CONFIG_STABLE, sentiment_score, mood, preloaded=False, snapshot_date=end_d)
 
+    _log(f"\n🔍 开始扫描高位池 [zz1000]...")
     results_upper, rejects_upper, name_map_upper, upper_pool_size, upper_real_count, upper_tw = scan_pool(CONFIG_UPPER, sentiment_score, mood, preloaded=True, snapshot_date=end_d)
 
     # 合并名称映射
@@ -2636,7 +2681,9 @@ def main():
         for reason, count in stats.items():
             total_rejects[reason] = total_rejects.get(reason, 0) + count
 
+    _log("\n正在断开 baostock 连接...")
     bs.logout()
+    _log("✓ baostock 已断开")
 
     all_results = {}
     for r in results_stable + results_upper:
@@ -2788,7 +2835,7 @@ def main():
     #  v1.5+: 盘中初筛 / 盘后定稿 都推送，标题用 mode_label 区分
     # ============================================================
     if TELEGRAM_ENABLED:
-        title = f"zuiyou1 v1.6.2 [{mode_label}]"
+        title = f"zuiyou1 v1.8 [{mode_label}]"
         mood_info = f"情绪: {mood} ({sentiment_score}分)"
 
         # 使用已筛选的 stable_picks 和 upper_picks（已应用推荐数限制）
@@ -2890,11 +2937,13 @@ def main():
                 stable_reject_summary, upper_reject_summary, pool_summary
             )
             if ok:
-                print("✅ 已推送到 Telegram\n")
+                _log("✅ 已推送到 Telegram\n")
             else:
-                print("⚠️ Telegram 推送失败,请检查 token/chat_id\n")
+                _log("⚠️ Telegram 推送失败,请检查 token/chat_id\n")
         except Exception as e:
-            print(f"  ️ Telegram 推送异常: {e}\n")
+            _log(f"  ️ Telegram 推送异常: {e}\n")
+
+    _log("\n✅ 隔夜选股法执行完成")
 
 
 # ============================================================
@@ -2926,7 +2975,7 @@ def debug_stock(code: str, cfg: dict = None):
 
     # 获取历史数据
     end_d = beijing_now().strftime("%Y-%m-%d")
-    start_d = (beijing_now() - timedelta(days=45)).strftime("%Y-%m-%d")
+    start_d = (beijing_now() - timedelta(days=30)).strftime("%Y-%m-%d")
     k_rs = bs.query_history_k_data_plus(
         code, FIELDS_HIST,
         start_date=start_d, end_date=end_d,
