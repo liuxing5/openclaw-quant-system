@@ -132,7 +132,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-06-18 | 生成: 2026-06-18 15:20:08
+        报告日期: 2026-06-18 | 生成: 2026-06-18 15:49:31
         <input type="date" class="date-input" id="datePicker" value="2026-06-18" min="2026-01-05" max="2026-06-18" onchange="switchDate(this.value)">
       </div>
     </div>
@@ -398,11 +398,11 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
     <!-- ========== LLM多源 ========== -->
     <div class="section">
-      <h2>🤖 LLM多源策略<span class="section-subtitle">2026-06-17 15:42:07</span></h2>
+      <h2>🤖 LLM多源策略<span class="section-subtitle">2026-06-18 15:46:19</span></h2>
       <div class="steps-area">
         <div class="step-row" title="6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐">
           <span class="step-name">多源信号采集</span>
-          <span class="step-pass">45</span>
+          <span class="step-pass">20</span>
           <span class="rule-inline">6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐</span>
         </div>
         <div class="step-row" title="成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股">
@@ -419,103 +419,67 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row" title="量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池">
           <span class="step-name">综合评分≥阈值</span>
-          <span class="step-pass">14</span>
+          <span class="step-pass">3</span>
           <span class="rule-inline">量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池</span>
         </div>
         <div class="step-row" title="综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只">
           <span class="step-name">精选标记</span>
-          <span class="step-pass">5</span>
+          <span class="step-pass">3</span>
           <span class="rule-inline">综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只</span>
         </div></div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (14只)</h3>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (3只)</h3>
       <div class="cards-grid">
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600522','_blank')" style="cursor:pointer">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000021','_blank')" style="cursor:pointer">
           <div class="cand-header">
             <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600522" target="_blank" style="color:inherit;text-decoration:none">600522.SH</a></span>
-              <span class="cand-name">中天科技</span>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000021" target="_blank" style="color:inherit;text-decoration:none">000021.SZ</a></span>
+              <span class="cand-name">深科技</span>
               
               <span class="src-badge">1源</span>
             </div>
-            <span class="cand-score">43</span>
+            <span class="cand-score">36</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">54.36</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">53.26</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">57.66</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">86</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">43.60</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">42.72</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">46.24</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">82</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">盈利预测</div>
         </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-603993','_blank')" style="cursor:pointer">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-002741','_blank')" style="cursor:pointer">
           <div class="cand-header">
             <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-603993" target="_blank" style="color:inherit;text-decoration:none">603993.SH</a></span>
-              <span class="cand-name">洛阳钼业</span>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-002741" target="_blank" style="color:inherit;text-decoration:none">002741.SZ</a></span>
+              <span class="cand-name">光华科技</span>
               
               <span class="src-badge">1源</span>
             </div>
-            <span class="cand-score">43</span>
+            <span class="cand-score">28</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">19.97</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">19.56</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">21.18</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">85</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">40.89</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">40.06</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">43.37</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">54</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">盈利预测</div>
         </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600487','_blank')" style="cursor:pointer">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-300184','_blank')" style="cursor:pointer">
           <div class="cand-header">
             <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600487" target="_blank" style="color:inherit;text-decoration:none">600487.SH</a></span>
-              <span class="cand-name">亨通光电</span>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300184" target="_blank" style="color:inherit;text-decoration:none">300184.SZ</a></span>
+              <span class="cand-name">力源信息</span>
               
               <span class="src-badge">1源</span>
             </div>
-            <span class="cand-score">38</span>
+            <span class="cand-score">26</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">109.89</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">107.67</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">116.55</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">70</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">盈利预测</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000032','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000032" target="_blank" style="color:inherit;text-decoration:none">000032.SZ</a></span>
-              <span class="cand-name">深桑达Ａ</span>
-              
-              <span class="src-badge">2源</span>
-            </div>
-            <span class="cand-score">35</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">22.99</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">22.52</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">24.38</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">47</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">强势股 · 盈利预测</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-002384','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-002384" target="_blank" style="color:inherit;text-decoration:none">002384.SZ</a></span>
-              <span class="cand-name">东山精密</span>
-              
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">35</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">254.35</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">249.21</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">269.77</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">60</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">16.92</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">16.32</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">18.55</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">48</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">盈利预测</div>
         </div></div>
