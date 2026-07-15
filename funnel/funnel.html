@@ -132,7 +132,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-07-15 | 生成: 2026-07-15 15:14:10
+        报告日期: 2026-07-15 | 生成: 2026-07-15 15:16:02
         <input type="date" class="date-input" id="datePicker" value="2026-07-15" min="2026-01-05" max="2026-07-15" onchange="switchDate(this.value)">
       </div>
     </div>
@@ -186,24 +186,42 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             </div>
             <div class="step-row" title="MA多头排列 + 无上方压力位">
               <span class="step-name">均线+压力</span>
-              <span class="step-pass">2</span>
-              <span class="elim">5</span>
+              <span class="step-pass">3</span>
+              <span class="elim">4</span>
               <span class="rule-inline">MA多头排列 + 无上方压力位</span>
             </div>
             <div class="step-row" title="乖离率≤5%，避免追高">
               <span class="step-name">乖离率过滤</span>
-              <span class="step-pass">2</span>
+              <span class="step-pass">3</span>
               
               <span class="rule-inline">乖离率≤5%，避免追高</span>
             </div>
             <div class="step-row" title="综合评分≥阈值(85+)，量化+情绪加权">
               <span class="step-name">综合评分</span>
               <span class="step-pass">2</span>
-              
+              <span class="elim">1</span>
               <span class="rule-inline">综合评分≥阈值(85+)，量化+情绪加权</span>
             </div><div class="step-note"> 情绪高潮(93分)</div></div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (2只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (4只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
       <div class="cards-grid"><div class="path-group"><div class="cards-grid">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600267','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600267" target="_blank" style="color:inherit;text-decoration:none">600267.SH</a></span>
+              <span class="cand-name">海正药业</span>
+              
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">81</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">11.86</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">11.68</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">12.34</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">77</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手 · 量能递增</div>
+        </div>
         <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-603456','_blank')" style="cursor:pointer">
           <div class="cand-header">
             <div>
@@ -221,24 +239,6 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
             <div class="metric"><span class="mv">65</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">稳健蓄势 · 量能达标 · 黄金换手 · 量能递增</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600267','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600267" target="_blank" style="color:inherit;text-decoration:none">600267.SH</a></span>
-              <span class="cand-name">海正药业</span>
-              
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">74</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">11.86</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">11.68</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">12.34</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">65</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手 · 量能递增</div>
         </div></div></div></div>
     </div>
 
