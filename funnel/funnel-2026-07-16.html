@@ -132,8 +132,8 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-07-16 | 生成: 2026-07-16 18:23:19
-        <input type="date" class="date-input" id="datePicker" value="2026-07-16" min="2026-01-05" max="2026-07-16" onchange="switchDate(this.value)">
+        报告日期: 2026-07-16 | 生成: 2026-07-17 15:13:30
+        <input type="date" class="date-input" id="datePicker" value="2026-07-16" min="2026-01-05" max="2026-07-17" onchange="switchDate(this.value)">
       </div>
     </div>
     <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">
@@ -505,8 +505,96 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
     <!-- ========== 主升浪 ========== -->
     <div class="section">
-      <h2>📈 主升浪检测<span class="section-subtitle">2025-12-01</span></h2>
+      <h2>📈 主升浪检测<span class="section-subtitle">2026-07-16 18:29:38</span></h2>
       <div class="steps-area">
+        <div class="step-row">
+          <span class="step-name">运行时间</span>
+          <span class="step-pass">2026-07-16 18:29:38</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">A 层预筛池</span>
+          <span class="step-pass">2915 只</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">A1 业绩加速</span>
+          <span class="rule-inline">归母净利润同比 &gt; 30%</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">A2 市值适中</span>
+          <span class="rule-inline">流通市值 50-200 亿</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">A3 行业景气</span>
+          <span class="rule-inline">申万二级行业近20日涨幅排名前30%</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">B 层启动信号</span>
+          <span class="step-pass">0 只</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">B1 量能突破</span>
+          <span class="rule-inline">量比 &gt; 1.5 且换手率 &gt; 3%</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">B2 价格突破</span>
+          <span class="rule-inline">突破60日箱体高点 &gt; 1% 或刚站上120日均线</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">B3 主力资金</span>
+          <span class="rule-inline">主力净流入占比 &gt; 5% 且净额为正</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">B4 封单质量</span>
+          <span class="rule-inline">涨停封单额/流通市值 &gt; 0.5% 或涨幅 &gt; 3%</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">C 层持续性</span>
+          <span class="step-pass">0 只</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C1 分时形态</span>
+          <span class="rule-inline">当日上涨即可（回测模式）</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C2 大单买入</span>
+          <span class="rule-inline">成交额/20日均 &gt; 1.0 且当日上涨</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C3 缩量上涨</span>
+          <span class="rule-inline">量比 0.2~1.5 且当日上涨</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C4 板上量比</span>
+          <span class="rule-inline">涨停或涨幅 &gt; 3%</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C5 板块联动</span>
+          <span class="rule-inline">行业平均涨幅 &gt; 0% 且至少1只同涨</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">D 层通过</span>
+          <span class="step-pass">0 只</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">D1 ST/退市</span>
+          <span class="rule-inline">剔除ST、*ST、退市股</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">D2 减持</span>
+          <span class="rule-inline">近30日内无重大减持公告</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">D3 诱多</span>
+          <span class="rule-inline">量比 &gt; 5 但封单不足流通市值0.3%剔除</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">D4 高质押</span>
+          <span class="rule-inline">大股东质押 &gt; 50% 且连板 &gt; 3 剔除</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">最终候选</span>
+          <span class="step-pass">0 只</span>
+        </div>
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
         <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:6px;">📊 回测统计</div>
         <div class="step-row">
@@ -656,7 +744,7 @@ function toggleTheme() {
 }
 function switchDate(dateVal) {
   if (!dateVal) return;
-  var available = ["2026-07-16", "2026-07-15", "2026-07-14", "2026-07-13", "2026-07-10", "2026-07-09", "2026-07-08", "2026-07-07", "2026-07-06", "2026-07-03", "2026-07-02", "2026-07-01", "2026-06-30", "2026-06-29", "2026-06-26", "2026-06-25", "2026-06-24", "2026-06-23", "2026-06-22", "2026-06-18", "2026-06-17", "2026-06-16", "2026-06-15", "2026-06-12", "2026-06-11", "2026-06-10", "2026-06-09", "2026-06-08", "2026-06-05", "2026-06-04", "2026-06-03", "2026-06-02", "2026-06-01", "2026-05-29", "2026-05-28", "2026-05-27", "2026-05-26", "2026-05-25", "2026-05-22", "2026-05-21", "2026-05-20", "2026-05-19", "2026-05-18", "2026-05-15", "2026-05-14", "2026-05-13", "2026-05-12", "2026-05-11", "2026-05-08", "2026-05-07", "2026-05-06", "2026-04-30", "2026-04-29", "2026-04-28", "2026-04-27", "2026-04-24", "2026-04-23", "2026-04-22", "2026-04-21", "2026-04-20", "2026-04-17", "2026-04-16", "2026-04-15", "2026-04-14", "2026-04-13", "2026-04-10", "2026-04-09", "2026-04-08", "2026-04-07", "2026-04-03", "2026-04-02", "2026-04-01", "2026-03-31", "2026-03-30", "2026-03-27", "2026-03-26", "2026-03-25", "2026-03-24", "2026-03-23", "2026-03-20", "2026-03-19", "2026-03-18", "2026-03-17", "2026-03-16", "2026-03-13", "2026-03-12", "2026-03-11", "2026-03-10", "2026-03-09", "2026-03-06", "2026-03-05", "2026-03-04", "2026-03-03", "2026-03-02", "2026-02-27", "2026-02-26", "2026-02-25", "2026-02-24", "2026-02-13", "2026-02-12", "2026-02-11", "2026-02-10", "2026-02-09", "2026-02-06", "2026-02-05", "2026-02-04", "2026-02-03", "2026-02-02", "2026-01-30", "2026-01-29", "2026-01-28", "2026-01-27", "2026-01-26", "2026-01-23", "2026-01-22", "2026-01-21", "2026-01-20", "2026-01-19", "2026-01-16", "2026-01-14", "2026-01-13", "2026-01-12", "2026-01-09", "2026-01-08", "2026-01-07", "2026-01-06", "2026-01-05"];
+  var available = ["2026-07-17", "2026-07-16", "2026-07-15", "2026-07-14", "2026-07-13", "2026-07-10", "2026-07-09", "2026-07-08", "2026-07-07", "2026-07-06", "2026-07-03", "2026-07-02", "2026-07-01", "2026-06-30", "2026-06-29", "2026-06-26", "2026-06-25", "2026-06-24", "2026-06-23", "2026-06-22", "2026-06-18", "2026-06-17", "2026-06-16", "2026-06-15", "2026-06-12", "2026-06-11", "2026-06-10", "2026-06-09", "2026-06-08", "2026-06-05", "2026-06-04", "2026-06-03", "2026-06-02", "2026-06-01", "2026-05-29", "2026-05-28", "2026-05-27", "2026-05-26", "2026-05-25", "2026-05-22", "2026-05-21", "2026-05-20", "2026-05-19", "2026-05-18", "2026-05-15", "2026-05-14", "2026-05-13", "2026-05-12", "2026-05-11", "2026-05-08", "2026-05-07", "2026-05-06", "2026-04-30", "2026-04-29", "2026-04-28", "2026-04-27", "2026-04-24", "2026-04-23", "2026-04-22", "2026-04-21", "2026-04-20", "2026-04-17", "2026-04-16", "2026-04-15", "2026-04-14", "2026-04-13", "2026-04-10", "2026-04-09", "2026-04-08", "2026-04-07", "2026-04-03", "2026-04-02", "2026-04-01", "2026-03-31", "2026-03-30", "2026-03-27", "2026-03-26", "2026-03-25", "2026-03-24", "2026-03-23", "2026-03-20", "2026-03-19", "2026-03-18", "2026-03-17", "2026-03-16", "2026-03-13", "2026-03-12", "2026-03-11", "2026-03-10", "2026-03-09", "2026-03-06", "2026-03-05", "2026-03-04", "2026-03-03", "2026-03-02", "2026-02-27", "2026-02-26", "2026-02-25", "2026-02-24", "2026-02-13", "2026-02-12", "2026-02-11", "2026-02-10", "2026-02-09", "2026-02-06", "2026-02-05", "2026-02-04", "2026-02-03", "2026-02-02", "2026-01-30", "2026-01-29", "2026-01-28", "2026-01-27", "2026-01-26", "2026-01-23", "2026-01-22", "2026-01-21", "2026-01-20", "2026-01-19", "2026-01-16", "2026-01-14", "2026-01-13", "2026-01-12", "2026-01-09", "2026-01-08", "2026-01-07", "2026-01-06", "2026-01-05"];
   if (available.indexOf(dateVal) === -1) {
     // 自动跳转到最近的有数据的日期
     var closest = null;
