@@ -6,15 +6,16 @@
 按照以下规则精确计算收益：
 
 买入：推荐日（snapshot_date）收盘价
-卖出规则（按日顺序检查 T+1 ~ T+5）：
-  1. 若当日最低价 ≤ 止损价(买入价-3%) → 以止损价卖出（保守优先）
-  2. 若当日最高价 ≥ 止盈价(买入价+5%) → 以止盈价卖出
-  3. T+5 收盘若仍未触发 → 以收盘价卖出
+卖出规则（按日顺序检查 T+1 ~ T+7）：
+  1. 若当日最低价 ≤ 止损价(买入价-5%) → 以止损价卖出（保守优先）
+  2. 若当日最高价 ≥ 止盈价(买入价+8%) → 以止盈价卖出
+  3. T+7 收盘若仍未触发 → 以收盘价卖出
 选股：每日选1只推荐分(final_score)最高的股票（排除八步法）
 仓位：单仓模式，95%资金买入，满仓进出
 初始资金：100,000元
 
-参数经156种组合扫描优化，Calmar比率(年化收益/最大回撤)最优。
+参数经1380种多维组合扫描优化（止盈/止损/持仓天数/仓位模式/入场时机/
+选股指标/移动止损/原始目标），Calmar比率(年化收益/最大回撤)最优。
 """
 
 import os, sys, json, math
@@ -30,9 +31,9 @@ DB_URL = os.getenv(
 )
 INITIAL_CAPITAL = 100000.0
 POSITION_PCT = 0.95
-MAX_HOLD_DAYS = 5
-PROFIT_PCT = 5.0   # 止盈百分比
-STOP_PCT = 3.0     # 止损百分比
+MAX_HOLD_DAYS = 7
+PROFIT_PCT = 8.0   # 止盈百分比
+STOP_PCT = 5.0     # 止损百分比
 MAX_CONCURRENT = 3  # 最多同时持仓数
 EXCLUDE_SOURCES = ["overnight_8step"]  # 排除表现差的策略
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest")
@@ -492,7 +493,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
     pnl_dates = json.dumps([de["date"].strftime("%Y-%m-%d") for de in daily_equity])
     pnl_values = json.dumps(daily_pnl)
 
-    source_map = {"llm_multisource": "LLM多源", "overnight_8step": "八步法", "funnel_strategy": "漏斗策略"}
+    source_map = {"llm_multisource": "LLM多源", "overnight_8step": "八步法", "funnel_strategy": "漏斗策略", "main_uptrend": "主升浪"}
 
     trade_rows = []
     for t in sorted(trades, key=lambda x: x["rec_date"], reverse=True):
@@ -580,6 +581,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
         .tag-llm { background: #e0f2fe; color: #0284c7; }
         .tag-8step { background: #fef3c7; color: #d97706; }
         .tag-funnel { background: #ede9fe; color: #7c3aed; }
+        .tag-uptrend { background: #d1fae5; color: #059669; }
         .search-box { padding: 8px 16px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; width: 200px; }
     </style>
 </head>
@@ -587,7 +589,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
 <div class="container">
     <div class="header">
         <h1>每日荐股收益回测报告</h1>
-        <div class="subtitle">基于 daily_candidates 推荐数据 · 推荐日收盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · T+5强制平仓 · 单仓模式 · 排除八步法</div>
+        <div class="subtitle">基于 daily_candidates 推荐数据 · 推荐日收盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · T+7强制平仓 · 单仓模式 · 排除八步法</div>
         <div class="params">
             <div class="param">初始资金: <strong>¥@@INITIAL_CAPITAL@@</strong></div>
             <div class="param">选股策略: <strong>每日TOP 1（推荐分最高）</strong></div>
@@ -714,7 +716,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
     </div>
 
     <div class="footer">
-        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 推荐日收盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, T+5强制平仓, 单仓模式, 排除八步法</p>
+        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 推荐日收盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, T+7强制平仓, 单仓模式, 排除八步法</p>
         <p>注意: 本报告仅供学习研究, 不构成投资建议. A股交易规则: 100股整手, T+1交易制度</p>
         <p>生成时间: @@NOW@@ | © openclaw-quant-system</p>
     </div>
