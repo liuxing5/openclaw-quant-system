@@ -7,10 +7,11 @@
 
 买入：推荐日（snapshot_date）收盘价
 卖出规则（按日顺序检查 T+1, T+2, T+3）：
-  1. 若当日最低价 ≤ 止损价 → 以止损价卖出（保守优先）
-  2. 若当日最高价 ≥ 目标价 → 以目标价卖出
+  1. 若当日最低价 ≤ 止损价(买入价-3%) → 以止损价卖出（保守优先）
+  2. 若当日最高价 ≥ 止盈价(买入价+8%) → 以止盈价卖出
   3. T+3 收盘若仍未触发 → 以收盘价卖出
-仓位：每日选1只推荐分(final_score)最高的股票，按当前总权益10%仓位买入
+选股：每日选1只推荐分(final_score)最高的股票（排除八步法）
+仓位：单仓模式，95%资金买入，满仓进出
 初始资金：100,000元
 """
 
@@ -26,8 +27,12 @@ DB_URL = os.getenv(
     "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
 )
 INITIAL_CAPITAL = 100000.0
-POSITION_PCT = 0.10
+POSITION_PCT = 0.95
 MAX_HOLD_DAYS = 3
+PROFIT_PCT = 8.0   # 止盈百分比
+STOP_PCT = 3.0     # 止损百分比
+MAX_CONCURRENT = 3  # 最多同时持仓数
+EXCLUDE_SOURCES = ["overnight_8step"]  # 排除表现差的策略
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest")
 OUTPUT_HTML = os.path.join(OUTPUT_DIR, "backtest_report.html")
 
@@ -68,7 +73,7 @@ def load_recommendations(conn):
         WHERE selected = TRUE
           AND target_1 IS NOT NULL
           AND stop_loss IS NOT NULL
-          AND source IN ('llm_multisource', 'overnight_8step', 'funnel_strategy')
+          AND source IN ('llm_multisource', 'funnel_strategy')
         ORDER BY snapshot_date, source, final_score DESC;
     """)
     recs = [dict(r) for r in cur.fetchall()]
@@ -129,16 +134,21 @@ def get_buy_price(rec, quotes_by_stock):
     return None
 
 
-def determine_sell(rec, trading_dates, quotes_by_stock):
+def determine_sell(rec, trading_dates, quotes_by_stock, buy_price):
+    """Determine sell price using fixed percentage profit/stop-loss.
+    Always returns within T+1~T+3, even if quote data is missing."""
     ts_code = rec["ts_code"]
     snap_date = rec["snapshot_date"]
-    target = float(rec["target_1"])
-    stop = float(rec["stop_loss"])
+    profit_price = buy_price * (1 + PROFIT_PCT / 100)
+    stop_price = buy_price * (1 - STOP_PCT / 100)
     quotes = quotes_by_stock.get(ts_code, {})
     future_dates = [d for d in trading_dates if d > snap_date]
 
     for i, check_date in enumerate(future_dates[:MAX_HOLD_DAYS]):
         if check_date not in quotes:
+            # No data for this day; if it's T+3, force return with buy_price
+            if i == MAX_HOLD_DAYS - 1:
+                return check_date, buy_price, "到期无数据", i + 1
             continue
         q = quotes[check_date]
         open_p = float(q["open"]) if q.get("open") else None
@@ -146,29 +156,32 @@ def determine_sell(rec, trading_dates, quotes_by_stock):
         low = float(q["low"]) if q.get("low") else None
         close = float(q["close"]) if q.get("close") else None
         if high is None or low is None or close is None:
+            if i == MAX_HOLD_DAYS - 1:
+                return check_date, buy_price, "到期无数据", i + 1
             continue
 
         # Stop loss first (conservative)
-        if low <= stop:
-            if open_p is not None and open_p <= stop:
+        if low <= stop_price:
+            if open_p is not None and open_p <= stop_price:
                 return check_date, open_p, "跳空止损", i + 1
-            return check_date, stop, "止损", i + 1
+            return check_date, stop_price, "止损", i + 1
 
-        # Target
-        if high >= target:
-            if open_p is not None and open_p >= target:
+        # Profit taking
+        if high >= profit_price:
+            if open_p is not None and open_p >= profit_price:
                 return check_date, open_p, "跳空止盈", i + 1
-            return check_date, target, "止盈", i + 1
+            return check_date, profit_price, "止盈", i + 1
 
         # T+3 force sell
         if i == MAX_HOLD_DAYS - 1:
             return check_date, close, "到期平仓", i + 1
 
-    # Still open
+    # Fallback: not enough future dates, use what we have
     if future_dates:
-        for d in reversed(future_dates):
-            if d in quotes and quotes[d].get("close"):
-                return d, float(quotes[d]["close"]), "持仓中", len(future_dates)
+        last_d = future_dates[-1]
+        if last_d in quotes and quotes[last_d].get("close"):
+            return last_d, float(quotes[last_d]["close"]), "持仓中", len(future_dates)
+        return future_dates[0], buy_price, "无数据平仓", 1
     return None, None, "无数据", 0
 
 
@@ -203,7 +216,7 @@ def run_backtest_logic(recs, trading_dates, quotes_by_stock):
             skipped_no_price += 1
             continue
         sell_date, sell_price, sell_reason, hold_days = determine_sell(
-            rec, trading_dates, quotes_by_stock)
+            rec, trading_dates, quotes_by_stock, buy_price)
         if sell_price is None:
             continue
         return_pct = (sell_price - buy_price) / buy_price * 100
@@ -215,8 +228,8 @@ def run_backtest_logic(recs, trading_dates, quotes_by_stock):
             "all_sources": rec.get("all_sources", [rec["source"]]),
             "buy_price": round(buy_price, 3),
             "sell_price": round(sell_price, 3),
-            "target_1": float(rec["target_1"]),
-            "stop_loss": float(rec["stop_loss"]),
+            "target_1": round(buy_price * (1 + PROFIT_PCT / 100), 3),
+            "stop_loss": round(buy_price * (1 - STOP_PCT / 100), 3),
             "return_pct": round(return_pct, 2),
             "sell_date": sell_date,
             "sell_reason": sell_reason,
@@ -265,23 +278,30 @@ def simulate_portfolio(trades, trading_dates, quotes_by_stock):
             else:
                 open_value += t["cost"]
         current_equity = cash + open_value
-        position_amount = current_equity * POSITION_PCT
-        # 3. Process buys - only buy the TOP 1 highest-scored stock each day
+        # 3. Process buys - single position mode, use 95% of cash, pick TOP 1 affordable
         daily_buys = buys_by_date.get(d, [])
-        for idx, t in enumerate(daily_buys):
-            if idx > 0:
-                # Skip all but the top-1 pick
+        if open_positions:
+            for t in daily_buys:
                 t["executed"] = False
                 skipped_count += 1
-                continue
-            buy_price = t["buy_price"]
-            shares = int(position_amount / buy_price / 100) * 100
-            if shares < 100:
-                t["executed"] = False
-                skipped_count += 1
-                continue
-            cost = shares * buy_price
-            if cash >= cost:
+        else:
+            if not daily_buys:
+                pass
+            position_amount = cash * POSITION_PCT
+            bought = False
+            for t in daily_buys:
+                if bought:
+                    t["executed"] = False
+                    skipped_count += 1
+                    continue
+                buy_price = t["buy_price"]
+                shares = int(position_amount / buy_price / 100) * 100
+                if shares < 100:
+                    shares = 100
+                cost = shares * buy_price
+                if cash < cost:
+                    t["executed"] = False
+                    continue
                 cash -= cost
                 t["shares"] = shares
                 t["cost"] = round(cost, 2)
@@ -289,9 +309,7 @@ def simulate_portfolio(trades, trading_dates, quotes_by_stock):
                 t["pnl"] = round(t["proceeds"] - cost, 2)
                 t["executed"] = True
                 open_positions.append(t)
-            else:
-                t["executed"] = False
-                skipped_count += 1
+                bought = True
         # 4. Recalculate end-of-day equity
         open_value = 0
         for t in open_positions:
@@ -567,12 +585,14 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
 <div class="container">
     <div class="header">
         <h1>每日荐股收益回测报告</h1>
-        <div class="subtitle">基于 daily_candidates 推荐数据 · 推荐日收盘买入 · 目标价/止损价卖出 · T+3强制平仓</div>
+        <div class="subtitle">基于 daily_candidates 推荐数据 · 推荐日收盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · T+3强制平仓 · 单仓模式 · 排除八步法</div>
         <div class="params">
             <div class="param">初始资金: <strong>¥@@INITIAL_CAPITAL@@</strong></div>
             <div class="param">选股策略: <strong>每日TOP 1（推荐分最高）</strong></div>
-            <div class="param">单股仓位: <strong>@@POSITION_PCT@@</strong></div>
-            <div class="param">最大持仓: <strong>@@MAX_HOLD@@</strong></div>
+            <div class="param">止盈/止损: <strong>@@PROFIT_PCT@@ / @@STOP_PCT@@</strong></div>
+            <div class="param">仓位比例: <strong>@@POSITION_PCT@@</strong></div>
+            <div class="param">持仓模式: <strong>单仓（满仓进出）</strong></div>
+            <div class="param">最大持仓天数: <strong>@@MAX_HOLD@@</strong></div>
             <div class="param">回测区间: <strong>@@FIRST_DATE@@ ~ @@LAST_DATE@@</strong></div>
             <div class="param">更新时间: <strong>@@NOW@@</strong></div>
         </div>
@@ -680,7 +700,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
                     <th onclick="sortTable(0)">推荐日</th><th onclick="sortTable(1)">代码</th>
                     <th onclick="sortTable(2)">名称</th><th onclick="sortTable(3)">策略</th>
                     <th onclick="sortTable(4)">买入价</th><th onclick="sortTable(5)">卖出价</th>
-                    <th onclick="sortTable(6)">目标价</th><th onclick="sortTable(7)">止损价</th>
+                    <th onclick="sortTable(6)">止盈价</th><th onclick="sortTable(7)">止损价</th>
                     <th onclick="sortTable(8)">股数</th><th onclick="sortTable(9)">成本</th>
                     <th onclick="sortTable(10)">盈亏</th><th onclick="sortTable(11)">收益率</th>
                     <th onclick="sortTable(12)">卖出原因</th><th onclick="sortTable(13)">持仓</th>
@@ -692,7 +712,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
     </div>
 
     <div class="footer">
-        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 推荐日收盘买入, 目标价/止损价卖出, T+3强制平仓</p>
+        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 推荐日收盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, T+3强制平仓, 单仓模式, 排除八步法</p>
         <p>注意: 本报告仅供学习研究, 不构成投资建议. A股交易规则: 100股整手, T+1交易制度</p>
         <p>生成时间: @@NOW@@ | © openclaw-quant-system</p>
     </div>
@@ -805,6 +825,8 @@ function sortTable(colIdx) {
     repl = {
         "@@INITIAL_CAPITAL@@": format(INITIAL_CAPITAL, ",.0f"),
         "@@POSITION_PCT@@": "%d%%" % (POSITION_PCT * 100),
+        "@@PROFIT_PCT@@": "+%.0f%%" % PROFIT_PCT,
+        "@@STOP_PCT@@": "-%.0f%%" % STOP_PCT,
         "@@MAX_HOLD@@": "T+%d" % MAX_HOLD_DAYS,
         "@@FIRST_DATE@@": first_date, "@@LAST_DATE@@": last_date,
         "@@NOW@@": now_str,
