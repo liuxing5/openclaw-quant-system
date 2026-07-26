@@ -7,15 +7,15 @@
 
 买入：次日开盘价（ENTRY_MODE=open）
 卖出规则（按日顺序检查 T+1 ~ T+10）：
-  1. 若当日最低价 ≤ 止损价(买入价-3%) → 以止损价卖出（保守优先）
-  2. 若当日最高价 ≥ 止盈价(买入价+15%) → 以止盈价卖出
+  1. 若当日最低价 ≤ 止损价(买入价-7%) → 以止损价卖出（保守优先）
+  2. 若当日最高价 ≥ 止盈价(买入价+10%) → 以止盈价卖出
   3. T+10 收盘若仍未触发 → 以收盘价卖出
 选股：每日选推荐分(final_score)最高的股票（全部4种策略参与）
-仓位：双仓模式，每仓50%资金，最多同时持2只
+仓位：单仓模式，95%资金买入，满仓进出
+数据清洗：过滤日变动>30%的异常行情数据（A股涨跌停±10%/±20%）
 初始资金：100,000元
 
-参数经7560种组合扫描优化（止盈/止损/持仓天数/仓位模式/入场时机/
-排除策略/多仓位），Calmar比率(年化收益/最大回撤)最优。
+参数经180种组合扫描优化（清洗后数据），Calmar比率(年化收益/最大回撤)最优。
 """
 
 import os, sys, json, math
@@ -30,11 +30,11 @@ DB_URL = os.getenv(
     "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
 )
 INITIAL_CAPITAL = 100000.0
-POSITION_PCT = 0.50
+POSITION_PCT = 0.95
 MAX_HOLD_DAYS = 10
-PROFIT_PCT = 15.0   # 止盈百分比
-STOP_PCT = 3.0      # 止损百分比
-MAX_CONCURRENT = 2  # 最多同时持仓数
+PROFIT_PCT = 10.0  # 止盈百分比
+STOP_PCT = 7.0     # 止损百分比
+MAX_CONCURRENT = 1  # 单仓模式
 ENTRY_MODE = "open"  # "close" = 推荐日收盘买入, "open" = 次日开盘买入
 EXCLUDE_SOURCES = []  # 不排除任何策略（全部策略表现更优）
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest")
@@ -118,6 +118,62 @@ def organize_quotes(quotes):
     for q in quotes:
         by_stock[q["ts_code"]][q["trade_date"]] = q
     return by_stock
+
+
+def validate_and_clean_quotes(quotes_by_stock):
+    """Validate quote data and null out suspicious entries.
+    A-share daily limit is ±10% (±20% for ChiNext/STAR), so >30% daily change is data error.
+    Check ALL OHLC values against prev_close, not just close."""
+    MAX_DAILY_CHANGE = 0.30
+    cleaned_count = 0
+    cleaned_details = []
+
+    for ts_code, quotes in quotes_by_stock.items():
+        sorted_dates = sorted(quotes.keys())
+        prev_close = None
+
+        for date in sorted_dates:
+            q = quotes[date]
+            close = q.get("close")
+            if close is None:
+                continue
+            close = float(close)
+            if close <= 0:
+                q["open"] = q["high"] = q["low"] = q["close"] = None
+                cleaned_count += 1
+                continue
+
+            if prev_close is not None and prev_close > 0:
+                open_p = float(q["open"]) if q.get("open") else None
+                high = float(q["high"]) if q.get("high") else None
+                low = float(q["low"]) if q.get("low") else None
+
+                is_suspicious = False
+                max_dev = 0
+                for val in [open_p, high, low, close]:
+                    if val is not None and val > 0:
+                        dev = abs(val - prev_close) / prev_close
+                        if dev > MAX_DAILY_CHANGE:
+                            is_suspicious = True
+                            max_dev = max(max_dev, dev)
+
+                if is_suspicious:
+                    q["open"] = None
+                    q["high"] = None
+                    q["low"] = None
+                    q["close"] = None
+                    cleaned_count += 1
+                    cleaned_details.append((ts_code, date, close, prev_close, round(max_dev * 100, 1)))
+                    continue  # Don't update prev_close
+
+            prev_close = close
+
+    if cleaned_count > 0:
+        print(f"  Cleaned {cleaned_count} suspicious quote records (>30% daily change in OHLC)")
+        cleaned_details.sort(key=lambda x: -x[4])
+        for ts, dt, close, prev, dev in cleaned_details[:10]:
+            print(f"    {ts} {dt}: close={close} vs prev_close={prev} ({dev}%)")
+    return quotes_by_stock
 
 
 # ============================================================
@@ -601,13 +657,13 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed
 <div class="container">
     <div class="header">
         <h1>每日荐股收益回测报告</h1>
-        <div class="subtitle">基于 daily_candidates 推荐数据 · 次日开盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · @@MAX_HOLD@@强制平仓 · 双仓模式(50%×2) · 全部4种策略</div>
+        <div class="subtitle">基于 daily_candidates 推荐数据 · 次日开盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · @@MAX_HOLD@@强制平仓 · 单仓模式(95%) · 全部4种策略 · 异常数据已清洗</div>
         <div class="params">
             <div class="param">初始资金: <strong>¥@@INITIAL_CAPITAL@@</strong></div>
             <div class="param">选股策略: <strong>每日TOP @@MAX_CONCURRENT@@（推荐分最高）</strong></div>
             <div class="param">止盈/止损: <strong>@@PROFIT_PCT@@ / @@STOP_PCT@@</strong></div>
-            <div class="param">仓位比例: <strong>@@POSITION_PCT@@ × @@MAX_CONCURRENT@@仓</strong></div>
-            <div class="param">持仓模式: <strong>双仓模式（最多同时持2只）</strong></div>
+            <div class="param">仓位比例: <strong>@@POSITION_PCT@@</strong></div>
+            <div class="param">持仓模式: <strong>单仓模式（满仓进出）</strong></div>
             <div class="param">入场时机: <strong>次日开盘</strong></div>
             <div class="param">最大持仓天数: <strong>@@MAX_HOLD@@</strong></div>
             <div class="param">回测区间: <strong>@@FIRST_DATE@@ ~ @@LAST_DATE@@</strong></div>
@@ -729,7 +785,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed
     </div>
 
     <div class="footer">
-        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 次日开盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, @@MAX_HOLD@@强制平仓, 双仓模式(50%×2) | 全部4种策略参与组合模拟 | 7560种参数组合扫描最优</p>
+        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 次日开盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, @@MAX_HOLD@@强制平仓, 单仓模式(95%) | 全部4种策略参与 | 异常数据已清洗(日变动>30%过滤) | 180种参数组合扫描最优</p>
         <p>注意: 本报告仅供学习研究, 不构成投资建议. A股交易规则: 100股整手, T+1交易制度</p>
         <p>生成时间: @@NOW@@ | © openclaw-quant-system</p>
     </div>
@@ -914,6 +970,7 @@ def main():
     print("  Loaded %d quote records" % len(quotes))
     quotes_by_stock = organize_quotes(quotes)
     print("  Organized for %d stocks" % len(quotes_by_stock))
+    validate_and_clean_quotes(quotes_by_stock)
     conn.close()
 
     print("\n[4/5] 执行回测...")
