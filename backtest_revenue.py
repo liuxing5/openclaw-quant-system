@@ -5,17 +5,17 @@
 从 Supabase 数据库读取 daily_candidates 推荐数据，
 按照以下规则精确计算收益：
 
-买入：推荐日（snapshot_date）收盘价
-卖出规则（按日顺序检查 T+1 ~ T+7）：
-  1. 若当日最低价 ≤ 止损价(买入价-5%) → 以止损价卖出（保守优先）
-  2. 若当日最高价 ≥ 止盈价(买入价+8%) → 以止盈价卖出
-  3. T+7 收盘若仍未触发 → 以收盘价卖出
-选股：每日选1只推荐分(final_score)最高的股票（排除八步法）
-仓位：单仓模式，95%资金买入，满仓进出
+买入：次日开盘价（ENTRY_MODE=open）
+卖出规则（按日顺序检查 T+1 ~ T+10）：
+  1. 若当日最低价 ≤ 止损价(买入价-3%) → 以止损价卖出（保守优先）
+  2. 若当日最高价 ≥ 止盈价(买入价+15%) → 以止盈价卖出
+  3. T+10 收盘若仍未触发 → 以收盘价卖出
+选股：每日选推荐分(final_score)最高的股票（全部4种策略参与）
+仓位：双仓模式，每仓50%资金，最多同时持2只
 初始资金：100,000元
 
-参数经1380种多维组合扫描优化（止盈/止损/持仓天数/仓位模式/入场时机/
-选股指标/移动止损/原始目标），Calmar比率(年化收益/最大回撤)最优。
+参数经7560种组合扫描优化（止盈/止损/持仓天数/仓位模式/入场时机/
+排除策略/多仓位），Calmar比率(年化收益/最大回撤)最优。
 """
 
 import os, sys, json, math
@@ -30,12 +30,13 @@ DB_URL = os.getenv(
     "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
 )
 INITIAL_CAPITAL = 100000.0
-POSITION_PCT = 0.95
-MAX_HOLD_DAYS = 7
-PROFIT_PCT = 8.0   # 止盈百分比
-STOP_PCT = 5.0     # 止损百分比
-MAX_CONCURRENT = 3  # 最多同时持仓数
-EXCLUDE_SOURCES = ["overnight_8step"]  # 排除表现差的策略
+POSITION_PCT = 0.50
+MAX_HOLD_DAYS = 10
+PROFIT_PCT = 15.0   # 止盈百分比
+STOP_PCT = 3.0      # 止损百分比
+MAX_CONCURRENT = 2  # 最多同时持仓数
+ENTRY_MODE = "open"  # "close" = 推荐日收盘买入, "open" = 次日开盘买入
+EXCLUDE_SOURCES = []  # 不排除任何策略（全部策略表现更优）
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest")
 OUTPUT_HTML = os.path.join(OUTPUT_DIR, "backtest_report.html")
 
@@ -123,10 +124,20 @@ def organize_quotes(quotes):
 # Backtest Logic
 # ============================================================
 
-def get_buy_price(rec, quotes_by_stock):
+def get_buy_price(rec, quotes_by_stock, trading_dates=None):
+    """Get buy price based on ENTRY_MODE.
+    'close' = snapshot date close price
+    'open'  = next trading day open price"""
     ts_code = rec["ts_code"]
     snap_date = rec["snapshot_date"]
     quotes = quotes_by_stock.get(ts_code, {})
+    if ENTRY_MODE == "open" and trading_dates:
+        future = [d for d in trading_dates if d > snap_date]
+        if future:
+            q = quotes.get(future[0])
+            if q and q.get("open"):
+                return float(q["open"])
+    # Fallback: close price on snapshot date
     if snap_date in quotes:
         close = quotes[snap_date].get("close")
         if close is not None:
@@ -213,7 +224,7 @@ def run_backtest_logic(recs, trading_dates, quotes_by_stock):
     trades = []
     skipped_no_price = 0
     for rec in deduped:
-        buy_price = get_buy_price(rec, quotes_by_stock)
+        buy_price = get_buy_price(rec, quotes_by_stock, trading_dates)
         if buy_price is None or buy_price <= 0:
             skipped_no_price += 1
             continue
@@ -246,7 +257,8 @@ def run_backtest_logic(recs, trading_dates, quotes_by_stock):
 
 
 def simulate_portfolio(trades, trading_dates, quotes_by_stock):
-    """Simulate portfolio: buy TOP 1 highest-scored stock each day, 95% cash per position."""
+    """Simulate portfolio: multi-position mode, up to MAX_CONCURRENT positions,
+    each using POSITION_PCT of current equity. Buy TOP-scored stock each day."""
     sorted_trades = sorted(trades, key=lambda t: (t["rec_date"], -t["final_score"]))
     buys_by_date = defaultdict(list)
     sells_by_date = defaultdict(list)
@@ -280,38 +292,31 @@ def simulate_portfolio(trades, trading_dates, quotes_by_stock):
             else:
                 open_value += t["cost"]
         current_equity = cash + open_value
-        # 3. Process buys - single position mode, use 95% of cash, pick TOP 1 affordable
+        # 3. Process buys - multi-position mode
         daily_buys = buys_by_date.get(d, [])
-        if open_positions:
-            for t in daily_buys:
+        for t in daily_buys:
+            if len(open_positions) >= MAX_CONCURRENT:
                 t["executed"] = False
                 skipped_count += 1
-        else:
-            if not daily_buys:
-                pass
-            position_amount = cash * POSITION_PCT
-            bought = False
-            for t in daily_buys:
-                if bought:
-                    t["executed"] = False
-                    skipped_count += 1
-                    continue
-                buy_price = t["buy_price"]
-                shares = int(position_amount / buy_price / 100) * 100
-                if shares < 100:
-                    shares = 100
-                cost = shares * buy_price
-                if cash < cost:
-                    t["executed"] = False
-                    continue
-                cash -= cost
-                t["shares"] = shares
-                t["cost"] = round(cost, 2)
-                t["proceeds"] = round(shares * t["sell_price"], 2)
-                t["pnl"] = round(t["proceeds"] - cost, 2)
-                t["executed"] = True
-                open_positions.append(t)
-                bought = True
+                break
+            position_amount = current_equity * POSITION_PCT
+            buy_price = t["buy_price"]
+            shares = int(position_amount / buy_price / 100) * 100
+            if shares < 100:
+                shares = 100
+            cost = shares * buy_price
+            if cash < cost:
+                t["executed"] = False
+                skipped_count += 1
+                continue
+            cash -= cost
+            t["shares"] = shares
+            t["cost"] = round(cost, 2)
+            t["proceeds"] = round(shares * t["sell_price"], 2)
+            t["pnl"] = round(t["proceeds"] - cost, 2)
+            t["executed"] = True
+            open_positions.append(t)
+            current_equity = cash + open_value + cost
         # 4. Recalculate end-of-day equity
         open_value = 0
         for t in open_positions:
@@ -596,13 +601,14 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed
 <div class="container">
     <div class="header">
         <h1>每日荐股收益回测报告</h1>
-        <div class="subtitle">基于 daily_candidates 推荐数据 · 推荐日收盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · T+7强制平仓 · 单仓模式 · 策略对比含全部4种策略</div>
+        <div class="subtitle">基于 daily_candidates 推荐数据 · 次日开盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · @@MAX_HOLD@@强制平仓 · 双仓模式(50%×2) · 全部4种策略</div>
         <div class="params">
             <div class="param">初始资金: <strong>¥@@INITIAL_CAPITAL@@</strong></div>
-            <div class="param">选股策略: <strong>每日TOP 1（推荐分最高）</strong></div>
+            <div class="param">选股策略: <strong>每日TOP @@MAX_CONCURRENT@@（推荐分最高）</strong></div>
             <div class="param">止盈/止损: <strong>@@PROFIT_PCT@@ / @@STOP_PCT@@</strong></div>
-            <div class="param">仓位比例: <strong>@@POSITION_PCT@@</strong></div>
-            <div class="param">持仓模式: <strong>单仓（满仓进出）</strong></div>
+            <div class="param">仓位比例: <strong>@@POSITION_PCT@@ × @@MAX_CONCURRENT@@仓</strong></div>
+            <div class="param">持仓模式: <strong>双仓模式（最多同时持2只）</strong></div>
+            <div class="param">入场时机: <strong>次日开盘</strong></div>
             <div class="param">最大持仓天数: <strong>@@MAX_HOLD@@</strong></div>
             <div class="param">回测区间: <strong>@@FIRST_DATE@@ ~ @@LAST_DATE@@</strong></div>
             <div class="param">更新时间: <strong>@@NOW@@</strong></div>
@@ -690,7 +696,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed
     </div>
 
     <div class="section">
-        <div class="section-title">策略对比 <span class="badge">含全部4种策略 · 标注"已排除"的策略仅展示信号数据不参与实盘</span></div>
+        <div class="section-title">策略对比 <span class="badge">全部4种策略参与组合模拟</span></div>
         <table>
             <thead><tr><th>策略</th><th>信号数</th><th>盈/亏</th><th>胜率</th><th>实盘盈亏</th><th>平均收益</th><th>卖出原因</th></tr></thead>
             <tbody>@@STRATEGY_HTML@@</tbody>
@@ -723,7 +729,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed
     </div>
 
     <div class="footer">
-        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 推荐日收盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, T+7强制平仓, 单仓模式 | 策略对比含全部4种策略, 组合模拟排除八步法</p>
+        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 次日开盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, @@MAX_HOLD@@强制平仓, 双仓模式(50%×2) | 全部4种策略参与组合模拟 | 7560种参数组合扫描最优</p>
         <p>注意: 本报告仅供学习研究, 不构成投资建议. A股交易规则: 100股整手, T+1交易制度</p>
         <p>生成时间: @@NOW@@ | © openclaw-quant-system</p>
     </div>
@@ -836,6 +842,7 @@ function sortTable(colIdx) {
     repl = {
         "@@INITIAL_CAPITAL@@": format(INITIAL_CAPITAL, ",.0f"),
         "@@POSITION_PCT@@": "%d%%" % (POSITION_PCT * 100),
+        "@@MAX_CONCURRENT@@": str(MAX_CONCURRENT),
         "@@PROFIT_PCT@@": "+%.0f%%" % PROFIT_PCT,
         "@@STOP_PCT@@": "-%.0f%%" % STOP_PCT,
         "@@MAX_HOLD@@": "T+%d" % MAX_HOLD_DAYS,
@@ -912,8 +919,8 @@ def main():
     print("\n[4/5] 执行回测...")
     # Signal analysis: ALL 4 strategies (for strategy comparison)
     all_trades = run_backtest_logic(recs, trading_dates, quotes_by_stock)
-    # Portfolio simulation: filter to non-excluded sources FIRST, then dedup separately
-    portfolio_recs = [r for r in recs if r["source"] not in EXCLUDE_SOURCES]
+    # Portfolio simulation: use all strategies (EXCLUDE_SOURCES is empty)
+    portfolio_recs = [r for r in recs if r["source"] not in EXCLUDE_SOURCES] if EXCLUDE_SOURCES else recs
     portfolio_trades = run_backtest_logic(portfolio_recs, trading_dates, quotes_by_stock)
     daily_equity, skipped_count, executed = simulate_portfolio(portfolio_trades, trading_dates, quotes_by_stock)
 
