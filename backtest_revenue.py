@@ -76,7 +76,6 @@ def load_recommendations(conn):
         WHERE selected = TRUE
           AND target_1 IS NOT NULL
           AND stop_loss IS NOT NULL
-          AND source IN ('llm_multisource', 'funnel_strategy')
         ORDER BY snapshot_date, source, final_score DESC;
     """)
     recs = [dict(r) for r in cur.fetchall()]
@@ -420,11 +419,16 @@ def calculate_stats(trades, daily_equity, executed_trades):
     }
 
 
-def calculate_strategy_stats(trades):
-    """Calculate per-strategy statistics based on all signals (return_pct) and executed trades (pnl)."""
+def calculate_strategy_stats(trades, executed_trades=None):
+    """Calculate per-strategy statistics. Signal stats from all trades, execution stats from executed trades."""
     strategies = defaultdict(list)
     for t in trades:
         strategies[t["source"]].append(t)
+    # Execution stats from executed trades (separate list)
+    exec_by_source = defaultdict(list)
+    if executed_trades:
+        for t in executed_trades:
+            exec_by_source[t["source"]].append(t)
     result = {}
     for source, str_trades in strategies.items():
         if not str_trades:
@@ -434,13 +438,13 @@ def calculate_strategy_stats(trades):
         losses = [t for t in str_trades if t["return_pct"] < 0]
         avg_ret = sum(t["return_pct"] for t in str_trades) / len(str_trades)
         # PnL only from executed trades
-        executed = [t for t in str_trades if t.get("executed")]
-        total_pnl = sum(t["pnl"] for t in executed) if executed else 0
+        exec_list = exec_by_source.get(source, [])
+        total_pnl = sum(t["pnl"] for t in exec_list) if exec_list else 0
         reason_dist = defaultdict(int)
         for t in str_trades:
             reason_dist[t["sell_reason"]] += 1
         result[source] = {
-            "trades": len(str_trades), "executed": len(executed),
+            "trades": len(str_trades), "executed": len(exec_list),
             "wins": len(wins), "losses": len(losses),
             "win_rate": round(len(wins) / len(str_trades) * 100, 1) if str_trades else 0,
             "total_pnl": round(total_pnl, 2), "avg_return": round(avg_ret, 2),
@@ -476,7 +480,7 @@ def calculate_monthly_returns(daily_equity):
 # HTML Generation (template-based, no f-string for JS)
 # ============================================================
 
-def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, skipped_count):
+def generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed_trades, skipped_count):
     # Prepare chart data
     equity_dates = json.dumps([de["date"].strftime("%Y-%m-%d") for de in daily_equity])
     equity_values = json.dumps([de["total_equity"] for de in daily_equity])
@@ -496,7 +500,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
     source_map = {"llm_multisource": "LLM多源", "overnight_8step": "八步法", "funnel_strategy": "漏斗策略", "main_uptrend": "主升浪"}
 
     trade_rows = []
-    for t in sorted(trades, key=lambda x: x["rec_date"], reverse=True):
+    for t in sorted(executed_trades, key=lambda x: x["rec_date"], reverse=True):
         pnl_color = COLOR_UP if t["pnl"] > 0 else (COLOR_DOWN if t["pnl"] < 0 else COLOR_FLAT)
         trade_rows.append({
             "rec_date": t["rec_date"].strftime("%Y-%m-%d"), "ts_code": t["ts_code"],
@@ -524,13 +528,15 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
     strategy_table_html = ""
     for source, display_name in source_map.items():
         s = strategy_stats.get(source, {})
+        excluded = source in EXCLUDE_SOURCES
+        status_tag = ' <span style="font-size:10px;color:#999;background:#f0f0f0;padding:1px 6px;border-radius:3px;">已排除</span>' if excluded else ''
         if not s:
-            strategy_table_html += '<tr><td>%s</td><td colspan="7" style="text-align:center;color:#999;">无数据</td></tr>' % display_name
+            strategy_table_html += '<tr><td>%s%s</td><td colspan="7" style="text-align:center;color:#999;">无数据</td></tr>' % (display_name, status_tag)
             continue
         pnl_color = COLOR_UP if s["total_pnl"] > 0 else COLOR_DOWN
         reason_str = ", ".join("%s:%d" % (k, v) for k, v in sorted(s["reason_dist"].items(), key=lambda x: -x[1]))
-        strategy_table_html += '<tr><td>%s</td><td>%d<br><small style="color:#999;">执行%d</small></td><td>%d / %d</td><td>%.1f%%</td><td style="color:%s;font-weight:600;">¥%s</td><td style="color:%s;">%+.2f%%</td><td>%s</td></tr>' % (
-            display_name, s["trades"], s.get("executed", 0), s["wins"], s.get("losses", s["trades"] - s["wins"]), s["win_rate"],
+        strategy_table_html += '<tr><td>%s%s</td><td>%d<br><small style="color:#999;">执行%d</small></td><td>%d / %d</td><td>%.1f%%</td><td style="color:%s;font-weight:600;">¥%s</td><td style="color:%s;">%+.2f%%</td><td>%s</td></tr>' % (
+            display_name, status_tag, s["trades"], s.get("executed", 0), s["wins"], s.get("losses", s["trades"] - s["wins"]), s["win_rate"],
             pnl_color, format(s["total_pnl"], ",.0f"), pnl_color, s["avg_return"], reason_str)
 
     pf_display = "%.2f" % stats["profit_factor"] if stats.get("profit_factor") else "∞"
@@ -545,6 +551,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>每日荐股收益回测报告</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>window.Chart||document.write('<script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>')</script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
@@ -589,7 +596,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
 <div class="container">
     <div class="header">
         <h1>每日荐股收益回测报告</h1>
-        <div class="subtitle">基于 daily_candidates 推荐数据 · 推荐日收盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · T+7强制平仓 · 单仓模式 · 排除八步法</div>
+        <div class="subtitle">基于 daily_candidates 推荐数据 · 推荐日收盘买入 · @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损 · T+7强制平仓 · 单仓模式 · 策略对比含全部4种策略</div>
         <div class="params">
             <div class="param">初始资金: <strong>¥@@INITIAL_CAPITAL@@</strong></div>
             <div class="param">选股策略: <strong>每日TOP 1（推荐分最高）</strong></div>
@@ -683,9 +690,9 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
     </div>
 
     <div class="section">
-        <div class="section-title">策略对比</div>
+        <div class="section-title">策略对比 <span class="badge">含全部4种策略 · 标注"已排除"的策略仅展示信号数据不参与实盘</span></div>
         <table>
-            <thead><tr><th>策略</th><th>交易数</th><th>盈/亏</th><th>胜率</th><th>总盈亏</th><th>平均收益</th><th>卖出原因</th></tr></thead>
+            <thead><tr><th>策略</th><th>信号数</th><th>盈/亏</th><th>胜率</th><th>实盘盈亏</th><th>平均收益</th><th>卖出原因</th></tr></thead>
             <tbody>@@STRATEGY_HTML@@</tbody>
         </table>
     </div>
@@ -716,7 +723,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
     </div>
 
     <div class="footer">
-        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 推荐日收盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, T+7强制平仓, 单仓模式, 排除八步法</p>
+        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 推荐日收盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, T+7强制平仓, 单仓模式 | 策略对比含全部4种策略, 组合模拟排除八步法</p>
         <p>注意: 本报告仅供学习研究, 不构成投资建议. A股交易规则: 100股整手, T+1交易制度</p>
         <p>生成时间: @@NOW@@ | © openclaw-quant-system</p>
     </div>
@@ -784,7 +791,7 @@ new Chart(document.getElementById('holdDaysChart'), {
 });
 
 var tbody = document.getElementById('tradeBody');
-var sourceTagClass = { 'LLM多源': 'tag-llm', '八步法': 'tag-8step', '漏斗策略': 'tag-funnel' };
+var sourceTagClass = { 'LLM多源': 'tag-llm', '八步法': 'tag-8step', '漏斗策略': 'tag-funnel', '主升浪': 'tag-uptrend' };
 
 function renderTrades(trades) {
     tbody.innerHTML = trades.map(function(t) {
@@ -903,14 +910,18 @@ def main():
     conn.close()
 
     print("\n[4/5] 执行回测...")
-    trades = run_backtest_logic(recs, trading_dates, quotes_by_stock)
-    daily_equity, skipped_count, executed = simulate_portfolio(trades, trading_dates, quotes_by_stock)
+    # Signal analysis: ALL 4 strategies (for strategy comparison)
+    all_trades = run_backtest_logic(recs, trading_dates, quotes_by_stock)
+    # Portfolio simulation: filter to non-excluded sources FIRST, then dedup separately
+    portfolio_recs = [r for r in recs if r["source"] not in EXCLUDE_SOURCES]
+    portfolio_trades = run_backtest_logic(portfolio_recs, trading_dates, quotes_by_stock)
+    daily_equity, skipped_count, executed = simulate_portfolio(portfolio_trades, trading_dates, quotes_by_stock)
 
     print("\n[5/5] 计算统计 & 生成HTML...")
-    stats = calculate_stats(trades, daily_equity, executed)
-    strategy_stats = calculate_strategy_stats(trades)
+    stats = calculate_stats(portfolio_trades, daily_equity, executed)
+    strategy_stats = calculate_strategy_stats(all_trades, executed)
     monthly_returns = calculate_monthly_returns(daily_equity)
-    html = generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, skipped_count)
+    html = generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed, skipped_count)
     with open(OUTPUT_HTML, "w", encoding="utf-8") as f:
         f.write(html)
 
