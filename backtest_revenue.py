@@ -10,7 +10,7 @@
   1. 若当日最低价 ≤ 止损价 → 以止损价卖出（保守优先）
   2. 若当日最高价 ≥ 目标价 → 以目标价卖出
   3. T+3 收盘若仍未触发 → 以收盘价卖出
-仓位：每只股票 10% 初始资金（10,000元），A股100股整手
+仓位：每日选1只推荐分(final_score)最高的股票，按当前总权益10%仓位买入
 初始资金：100,000元
 """
 
@@ -231,7 +231,7 @@ def run_backtest_logic(recs, trading_dates, quotes_by_stock):
 
 
 def simulate_portfolio(trades, trading_dates, quotes_by_stock):
-    """Simulate portfolio with dynamic position sizing (10% of current total equity)."""
+    """Simulate portfolio: buy TOP 1 highest-scored stock each day, 10% equity per position."""
     sorted_trades = sorted(trades, key=lambda t: (t["rec_date"], -t["final_score"]))
     buys_by_date = defaultdict(list)
     sells_by_date = defaultdict(list)
@@ -266,8 +266,14 @@ def simulate_portfolio(trades, trading_dates, quotes_by_stock):
                 open_value += t["cost"]
         current_equity = cash + open_value
         position_amount = current_equity * POSITION_PCT
-        # 3. Process buys with dynamic position size
-        for t in buys_by_date.get(d, []):
+        # 3. Process buys - only buy the TOP 1 highest-scored stock each day
+        daily_buys = buys_by_date.get(d, [])
+        for idx, t in enumerate(daily_buys):
+            if idx > 0:
+                # Skip all but the top-1 pick
+                t["executed"] = False
+                skipped_count += 1
+                continue
             buy_price = t["buy_price"]
             shares = int(position_amount / buy_price / 100) * 100
             if shares < 100:
@@ -564,6 +570,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
         <div class="subtitle">基于 daily_candidates 推荐数据 · 推荐日收盘买入 · 目标价/止损价卖出 · T+3强制平仓</div>
         <div class="params">
             <div class="param">初始资金: <strong>¥@@INITIAL_CAPITAL@@</strong></div>
+            <div class="param">选股策略: <strong>每日TOP 1（推荐分最高）</strong></div>
             <div class="param">单股仓位: <strong>@@POSITION_PCT@@</strong></div>
             <div class="param">最大持仓: <strong>@@MAX_HOLD@@</strong></div>
             <div class="param">回测区间: <strong>@@FIRST_DATE@@ ~ @@LAST_DATE@@</strong></div>
@@ -590,7 +597,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, trades, 
         <div class="metric-card">
             <div class="label">实盘交易</div>
             <div class="value">@@TOTAL_TRADES@@</div>
-            <div class="sub">信号总数: @@SIGNAL_COUNT@@ | 跳过: @@SKIPPED@@</div>
+            <div class="sub">信号总数: @@SIGNAL_COUNT@@ | 跳过(非TOP1/资金不足): @@SKIPPED@@</div>
         </div>
         <div class="metric-card">
             <div class="label">信号胜率</div>
