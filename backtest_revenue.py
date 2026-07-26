@@ -611,8 +611,20 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>每日荐股收益回测报告</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script>window.Chart||document.write('<script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>')</script>
+    <script>
+    // Chart.js loading: try bootcdn first (works in China), fallback to jsdelivr
+    (function(){
+        var s=document.createElement('script');
+        s.src='https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+        s.onerror=function(){
+            var s2=document.createElement('script');
+            s2.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+            s2.onerror=function(){window._chartLoadFailed=true;};
+            document.head.appendChild(s2);
+        };
+        document.head.appendChild(s);
+    })();
+    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
@@ -804,93 +816,134 @@ var hdLabels = @@HD_LABELS@@;
 var hdData = @@HD_VALUES@@;
 var allTrades = @@TRADES_JSON@@;
 
-new Chart(document.getElementById('equityChart'), {
-    type: 'line',
-    data: { labels: equityDates, datasets: [{
-        label: '总权益', data: equityValues, borderColor: '#6366f1',
-        backgroundColor: 'rgba(99,102,241,0.08)', fill: true, borderWidth: 2,
-        pointRadius: 0, pointHoverRadius: 5, tension: 0.1
-    }, {
-        label: '现金', data: cashValues, borderColor: '#28a745',
-        backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
-        pointHoverRadius: 4, borderDash: [4, 4]
-    }, {
-        label: '持仓市值', data: openValues, borderColor: '#dc3545',
-        backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
-        pointHoverRadius: 4, borderDash: [4, 4]
-    }] },
-    options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { intersect: false, mode: 'index' },
-        plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ¥' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
-        scales: { y: { ticks: { callback: function(v) { return '¥' + (v/10000).toFixed(1) + '万'; } } } }
+// ===== All rendering starts after DOM + Chart.js ready =====
+var renderStarted = false;
+function renderAll() {
+    if (renderStarted) return;
+    renderStarted = true;
+
+    try {
+        // --- Equity Curve ---
+        new Chart(document.getElementById('equityChart'), {
+            type: 'line',
+            data: { labels: equityDates, datasets: [{
+                label: '总权益', data: equityValues, borderColor: '#6366f1',
+                backgroundColor: 'rgba(99,102,241,0.08)', fill: true, borderWidth: 2,
+                pointRadius: 0, pointHoverRadius: 5, tension: 0.1
+            }, {
+                label: '现金', data: cashValues, borderColor: '#28a745',
+                backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
+                pointHoverRadius: 4, borderDash: [4, 4]
+            }, {
+                label: '持仓市值', data: openValues, borderColor: '#dc3545',
+                backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
+                pointHoverRadius: 4, borderDash: [4, 4]
+            }] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': \u00a5' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
+                scales: { y: { ticks: { callback: function(v) { return '\u00a5' + (v/10000).toFixed(1) + '\u4e07'; } } } }
+            }
+        });
+
+        // --- Daily P&L ---
+        (function() {
+            var pnlColors = pnlValues.map(function(v) { return v >= 0 ? '#dc3545' : '#28a745'; });
+            new Chart(document.getElementById('pnlChart'), {
+                type: 'bar',
+                data: { labels: pnlDates, datasets: [{ label: '\u6bcf\u65e5\u76c8\u4e8f', data: pnlValues, backgroundColor: pnlColors, borderWidth: 0 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return '\u00a5' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
+                    scales: { y: { ticks: { callback: function(v) { return '\u00a5' + (v/10000).toFixed(1) + '\u4e07'; } } } }
+                }
+            });
+        })();
+
+        // --- Sell Reason Doughnut ---
+        new Chart(document.getElementById('reasonChart'), {
+            type: 'doughnut',
+            data: { labels: reasonLabels, datasets: [{ data: reasonData, backgroundColor: ['#dc3545','#28a745','#ffc107','#17a2b8','#6c757d','#e83e8c'] }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+
+        // --- Holding Days Bar ---
+        new Chart(document.getElementById('holdDaysChart'), {
+            type: 'bar',
+            data: { labels: hdLabels, datasets: [{ label: '\u4ea4\u6613\u7b14\u6570', data: hdData, backgroundColor: '#6366f1', borderWidth: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+    } catch(e) {
+        console.error('Chart render error:', e);
     }
-});
 
-(function() {
-    var pnlColors = pnlValues.map(function(v) { return v >= 0 ? '#dc3545' : '#28a745'; });
-    new Chart(document.getElementById('pnlChart'), {
-        type: 'bar',
-        data: { labels: pnlDates, datasets: [{ label: '每日盈亏', data: pnlValues, backgroundColor: pnlColors, borderWidth: 0 }] },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return '¥' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
-            scales: { y: { ticks: { callback: function(v) { return '¥' + (v/10000).toFixed(1) + '万'; } } } }
+    // --- Trade Table ---
+    var tbody = document.getElementById('tradeBody');
+    if (!tbody) return;
+    var sourceTagClass = { 'LLM\u591a\u6e90': 'tag-llm', '\u516b\u6b65\u6cd5': 'tag-8step', '\u6f0f\u6597\u7b56\u7565': 'tag-funnel', '\u4e3b\u5347\u6d6a': 'tag-uptrend' };
+
+    function renderTrades(trades) {
+        tbody.innerHTML = trades.map(function(t) {
+            var cls = sourceTagClass[t.source] || 'tag-llm';
+            var pnlSign = t.pnl >= 0 ? '+' : '-';
+            var retSign = t.return_pct > 0 ? '+' : '';
+            return '<tr><td>' + t.rec_date + '</td><td>' + t.ts_code + '</td><td>' + t.stock_name +
+                '</td><td><span class="tag ' + cls + '">' + t.source + '</span></td>' +
+                '<td>' + t.buy_price.toFixed(2) + '</td><td>' + t.sell_price.toFixed(2) +
+                '</td><td>' + t.target.toFixed(2) + '</td><td>' + t.stop_loss.toFixed(2) +
+                '</td><td>' + t.shares + '</td><td>\u00a5' + t.cost.toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
+                '</td><td style="color:' + t.pnl_color + ';font-weight:600;">' + pnlSign + '\u00a5' + Math.abs(t.pnl).toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
+                '</td><td style="color:' + t.pnl_color + ';">' + retSign + t.return_pct.toFixed(2) + '%</td>' +
+                '<td>' + t.sell_reason + '</td><td>' + t.hold_days + '\u5929</td><td>' + t.sell_date + '</td></tr>';
+        }).join('');
+        document.getElementById('tradeCount').textContent = '\u5171 ' + trades.length + ' \u7b14';
+    }
+    renderTrades(allTrades);
+
+    window.filterTrades = function() {
+        var q = document.getElementById('tradeSearch').value.toLowerCase();
+        renderTrades(allTrades.filter(function(t) {
+            return t.ts_code.toLowerCase().indexOf(q) >= 0 || t.stock_name.toLowerCase().indexOf(q) >= 0 || t.source.toLowerCase().indexOf(q) >= 0;
+        }));
+    };
+
+    var sortAsc = {};
+    window.sortTable = function(colIdx) {
+        var keys = ['rec_date','ts_code','stock_name','source','buy_price','sell_price','target','stop_loss','shares','cost','pnl','return_pct','sell_reason','hold_days','sell_date'];
+        var key = keys[colIdx];
+        sortAsc[key] = !sortAsc[key];
+        renderTrades(allTrades.slice().sort(function(a, b) {
+            var va = a[key], vb = b[key];
+            if (typeof va === 'string') return sortAsc[key] ? va.localeCompare(vb) : vb.localeCompare(va);
+            return sortAsc[key] ? va - vb : vb - va;
+        }));
+    };
+}
+
+// Wait for Chart.js to load before rendering
+function waitForChart(retries) {
+    retries = retries || 0;
+    if (window.Chart) {
+        renderAll();
+    } else if (window._chartLoadFailed) {
+        // Show fallback message if Chart.js failed entirely
+        var charts = document.querySelectorAll('.chart-container, .chart-container-sm');
+        for (var i = 0; i < charts.length; i++) {
+            charts[i].innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;">\u56fe\u8868\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u8fde\u63a5</div>';
         }
-    });
-})();
-
-new Chart(document.getElementById('reasonChart'), {
-    type: 'doughnut',
-    data: { labels: reasonLabels, datasets: [{ data: reasonData, backgroundColor: ['#dc3545','#28a745','#ffc107','#17a2b8','#6c757d','#e83e8c'] }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
-});
-
-new Chart(document.getElementById('holdDaysChart'), {
-    type: 'bar',
-    data: { labels: hdLabels, datasets: [{ label: '交易笔数', data: hdData, backgroundColor: '#6366f1', borderWidth: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-});
-
-var tbody = document.getElementById('tradeBody');
-var sourceTagClass = { 'LLM多源': 'tag-llm', '八步法': 'tag-8step', '漏斗策略': 'tag-funnel', '主升浪': 'tag-uptrend' };
-
-function renderTrades(trades) {
-    tbody.innerHTML = trades.map(function(t) {
-        var cls = sourceTagClass[t.source] || 'tag-llm';
-        var pnlSign = t.pnl >= 0 ? '+' : '-';
-        var retSign = t.return_pct > 0 ? '+' : '';
-        return '<tr><td>' + t.rec_date + '</td><td>' + t.ts_code + '</td><td>' + t.stock_name +
-            '</td><td><span class="tag ' + cls + '">' + t.source + '</span></td>' +
-            '<td>' + t.buy_price.toFixed(2) + '</td><td>' + t.sell_price.toFixed(2) +
-            '</td><td>' + t.target.toFixed(2) + '</td><td>' + t.stop_loss.toFixed(2) +
-            '</td><td>' + t.shares + '</td><td>¥' + t.cost.toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
-            '</td><td style="color:' + t.pnl_color + ';font-weight:600;">' + pnlSign + '¥' + Math.abs(t.pnl).toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
-            '</td><td style="color:' + t.pnl_color + ';">' + retSign + t.return_pct.toFixed(2) + '%</td>' +
-            '<td>' + t.sell_reason + '</td><td>' + t.hold_days + '天</td><td>' + t.sell_date + '</td></tr>';
-    }).join('');
-    document.getElementById('tradeCount').textContent = '共 ' + trades.length + ' 笔';
+        // Still render trade table
+        if (document.getElementById('tradeBody')) renderAll();
+    } else if (retries < 40) {
+        setTimeout(function(){ waitForChart(retries + 1); }, 250);
+    } else {
+        // Timeout: charts failed but try to render anyway
+        renderAll();
+    }
 }
-renderTrades(allTrades);
-
-function filterTrades() {
-    var q = document.getElementById('tradeSearch').value.toLowerCase();
-    renderTrades(allTrades.filter(function(t) {
-        return t.ts_code.toLowerCase().indexOf(q) >= 0 || t.stock_name.toLowerCase().indexOf(q) >= 0 || t.source.toLowerCase().indexOf(q) >= 0;
-    }));
-}
-
-var sortAsc = {};
-function sortTable(colIdx) {
-    var keys = ['rec_date','ts_code','stock_name','source','buy_price','sell_price','target','stop_loss','shares','cost','pnl','return_pct','sell_reason','hold_days','sell_date'];
-    var key = keys[colIdx];
-    sortAsc[key] = !sortAsc[key];
-    renderTrades(allTrades.slice().sort(function(a, b) {
-        var va = a[key], vb = b[key];
-        if (typeof va === 'string') return sortAsc[key] ? va.localeCompare(vb) : vb.localeCompare(va);
-        return sortAsc[key] ? va - vb : vb - va;
-    }));
-}
+// Also render immediately if Chart already loaded (cached)
+if (window.Chart) { renderAll(); }
+else { setTimeout(function(){ waitForChart(); }, 300); }
 </script>
 </body>
 </html>'''

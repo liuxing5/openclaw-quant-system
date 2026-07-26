@@ -4,8 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>每日荐股收益回测报告</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <script>window.Chart||document.write('<script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"><\/script>')</script>
+    <script>
+    // Chart.js loading: try bootcdn first (works in China), fallback to jsdelivr
+    (function(){
+        var s=document.createElement('script');
+        s.src='https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+        s.onerror=function(){
+            var s2=document.createElement('script');
+            s2.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+            s2.onerror=function(){window._chartLoadFailed=true;};
+            document.head.appendChild(s2);
+        };
+        document.head.appendChild(s);
+    })();
+    </script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
@@ -60,7 +72,7 @@
             <div class="param">入场时机: <strong>次日开盘</strong></div>
             <div class="param">最大持仓天数: <strong>T+10</strong></div>
             <div class="param">回测区间: <strong>2026-01-05 ~ 2026-07-24</strong></div>
-            <div class="param">更新时间: <strong>2026-07-26 16:02</strong></div>
+            <div class="param">更新时间: <strong>2026-07-26 16:56</strong></div>
         </div>
     </div>
 
@@ -180,7 +192,7 @@
     <div class="footer">
         <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 次日开盘买入, +10%止盈/-7%止损, T+10强制平仓, 单仓模式(95%) | 全部4种策略参与 | 异常数据已清洗(日变动>30%过滤) | 180种参数组合扫描最优</p>
         <p>注意: 本报告仅供学习研究, 不构成投资建议. A股交易规则: 100股整手, T+1交易制度</p>
-        <p>生成时间: 2026-07-26 16:02 | © openclaw-quant-system</p>
+        <p>生成时间: 2026-07-26 16:56 | © openclaw-quant-system</p>
     </div>
 </div>
 
@@ -197,93 +209,134 @@ var hdLabels = ["T+1", "T+2", "T+3", "T+4", "T+5", "T+7", "T+8", "T+10"];
 var hdData = [5, 3, 2, 6, 3, 2, 5, 2];
 var allTrades = [{"rec_date": "2026-07-22", "ts_code": "603456.SH", "stock_name": "九洲药业", "source": "漏斗策略", "buy_price": 15.02, "sell_price": 13.98, "target": 16.522, "stop_loss": 13.969, "shares": 14200, "cost": 213284.0, "pnl": -14768.0, "return_pct": -6.92, "sell_reason": "持仓中", "hold_days": 2, "sell_date": "2026-07-24", "pnl_color": "#28a745"}, {"rec_date": "2026-07-08", "ts_code": "600621.SH", "stock_name": "华鑫股份", "source": "漏斗策略", "buy_price": 13.21, "sell_price": 13.3, "target": 14.531, "stop_loss": 12.285, "shares": 16100, "cost": 212681.0, "pnl": 1449.0, "return_pct": 0.68, "sell_reason": "到期平仓", "hold_days": 10, "sell_date": "2026-07-22", "pnl_color": "#dc3545"}, {"rec_date": "2026-07-06", "ts_code": "603222.SH", "stock_name": "济民健康", "source": "八步法", "buy_price": 8.4, "sell_price": 9.24, "target": 9.24, "stop_loss": 7.812, "shares": 23100, "cost": 194040.0, "pnl": 19404.0, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 2, "sell_date": "2026-07-08", "pnl_color": "#dc3545"}, {"rec_date": "2026-06-22", "ts_code": "601696.SH", "stock_name": "中银证券", "source": "八步法", "buy_price": 13.14, "sell_price": 12.43, "target": 14.454, "stop_loss": 12.22, "shares": 15600, "cost": 204984.0, "pnl": -11076.0, "return_pct": -5.4, "sell_reason": "到期平仓", "hold_days": 10, "sell_date": "2026-07-06", "pnl_color": "#28a745"}, {"rec_date": "2026-06-12", "ts_code": "600999.SH", "stock_name": "招商证券", "source": "漏斗策略", "buy_price": 17.9, "sell_price": 19.69, "target": 19.69, "stop_loss": 16.647, "shares": 10400, "cost": 186160.0, "pnl": 18616.0, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 5, "sell_date": "2026-06-22", "pnl_color": "#dc3545"}, {"rec_date": "2026-06-11", "ts_code": "603139.SH", "stock_name": "康惠股份", "source": "八步法", "buy_price": 39.73, "sell_price": 36.949, "target": 43.703, "stop_loss": 36.949, "shares": 5000, "cost": 198650.0, "pnl": -13905.0, "return_pct": -7.0, "sell_reason": "止损", "hold_days": 1, "sell_date": "2026-06-12", "pnl_color": "#28a745"}, {"rec_date": "2026-06-05", "ts_code": "600060.SH", "stock_name": "海信视像", "source": "漏斗策略", "buy_price": 24.98, "sell_price": 27.478, "target": 27.478, "stop_loss": 23.231, "shares": 7300, "cost": 182354.0, "pnl": 18235.4, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 4, "sell_date": "2026-06-11", "pnl_color": "#dc3545"}, {"rec_date": "2026-06-04", "ts_code": "600063.SH", "stock_name": "皖维高新", "source": "八步法", "buy_price": 7.38, "sell_price": 8.118, "target": 8.118, "stop_loss": 6.863, "shares": 22600, "cost": 166788.0, "pnl": 16678.8, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 1, "sell_date": "2026-06-05", "pnl_color": "#dc3545"}, {"rec_date": "2026-05-25", "ts_code": "002823.SZ", "stock_name": "凯中精密", "source": "漏斗策略", "buy_price": 18.49, "sell_price": 20.339, "target": 20.339, "stop_loss": 17.196, "shares": 8200, "cost": 151618.0, "pnl": 15161.8, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 8, "sell_date": "2026-06-04", "pnl_color": "#dc3545"}, {"rec_date": "2026-05-20", "ts_code": "603439.SH", "stock_name": "三力制药", "source": "八步法", "buy_price": 12.99, "sell_price": 14.6, "target": 14.289, "stop_loss": 12.081, "shares": 10500, "cost": 136395.0, "pnl": 16905.0, "return_pct": 12.39, "sell_reason": "跳空止盈", "hold_days": 3, "sell_date": "2026-05-25", "pnl_color": "#dc3545"}, {"rec_date": "2026-05-15", "ts_code": "688981.SH", "stock_name": "中芯国际", "source": "LLM多源", "buy_price": 117.62, "sell_price": 133.81, "target": 129.382, "stop_loss": 109.387, "shares": 1000, "cost": 117620.0, "pnl": 16190.0, "return_pct": 13.76, "sell_reason": "跳空止盈", "hold_days": 3, "sell_date": "2026-05-20", "pnl_color": "#dc3545"}, {"rec_date": "2026-05-13", "ts_code": "600973.SH", "stock_name": "宝胜股份", "source": "八步法", "buy_price": 7.86, "sell_price": 7.31, "target": 8.646, "stop_loss": 7.31, "shares": 16500, "cost": 129690.0, "pnl": -9075.0, "return_pct": -7.0, "sell_reason": "止损", "hold_days": 2, "sell_date": "2026-05-15", "pnl_color": "#28a745"}, {"rec_date": "2026-04-28", "ts_code": "601016.SH", "stock_name": "节能风电", "source": "LLM多源", "buy_price": 4.73, "sell_price": 5.63, "target": 5.203, "stop_loss": 4.399, "shares": 23300, "cost": 110209.0, "pnl": 20970.0, "return_pct": 19.03, "sell_reason": "跳空止盈", "hold_days": 8, "sell_date": "2026-05-13", "pnl_color": "#dc3545"}, {"rec_date": "2026-04-23", "ts_code": "600893.SH", "stock_name": "航发动力", "source": "八步法", "buy_price": 50.38, "sell_price": 46.853, "target": 55.418, "stop_loss": 46.853, "shares": 2300, "cost": 115874.0, "pnl": -8112.1, "return_pct": -7.0, "sell_reason": "止损", "hold_days": 3, "sell_date": "2026-04-28", "pnl_color": "#28a745"}, {"rec_date": "2026-04-20", "ts_code": "300292.SZ", "stock_name": "吴通控股", "source": "漏斗策略", "buy_price": 5.05, "sell_price": 5.555, "target": 5.555, "stop_loss": 4.696, "shares": 21300, "cost": 107565.0, "pnl": 10756.5, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 3, "sell_date": "2026-04-23", "pnl_color": "#dc3545"}, {"rec_date": "2026-04-09", "ts_code": "300058.SZ", "stock_name": "蓝色光标", "source": "LLM多源", "buy_price": 16.67, "sell_price": 18.337, "target": 18.337, "stop_loss": 15.503, "shares": 5900, "cost": 98353.0, "pnl": 9835.3, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 7, "sell_date": "2026-04-20", "pnl_color": "#dc3545"}, {"rec_date": "2026-04-07", "ts_code": "002281.SZ", "stock_name": "光迅科技", "source": "LLM多源", "buy_price": 95.6, "sell_price": 105.16, "target": 105.16, "stop_loss": 88.908, "shares": 900, "cost": 86040.0, "pnl": 8604.0, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 2, "sell_date": "2026-04-09", "pnl_color": "#dc3545"}, {"rec_date": "2026-03-23", "ts_code": "600316.SH", "stock_name": "洪都航空", "source": "八步法", "buy_price": 37.45, "sell_price": 37.45, "target": 41.195, "stop_loss": 34.828, "shares": 2400, "cost": 89880.0, "pnl": 0.0, "return_pct": 0.0, "sell_reason": "到期无数据", "hold_days": 10, "sell_date": "2026-04-07", "pnl_color": "#6c757d"}, {"rec_date": "2026-03-16", "ts_code": "000524.SZ", "stock_name": "岭南控股", "source": "漏斗策略", "buy_price": 13.5, "sell_price": 12.555, "target": 14.85, "stop_loss": 12.555, "shares": 7100, "cost": 95850.0, "pnl": -6709.5, "return_pct": -7.0, "sell_reason": "止损", "hold_days": 5, "sell_date": "2026-03-23", "pnl_color": "#28a745"}, {"rec_date": "2026-03-11", "ts_code": "300140.SZ", "stock_name": "节能环境", "source": "漏斗策略", "buy_price": 8.15, "sell_price": 7.579, "target": 8.965, "stop_loss": 7.579, "shares": 12700, "cost": 103505.0, "pnl": -7251.7, "return_pct": -7.0, "sell_reason": "止损", "hold_days": 3, "sell_date": "2026-03-16", "pnl_color": "#28a745"}, {"rec_date": "2026-03-09", "ts_code": "601868.SH", "stock_name": "中国能建", "source": "LLM多源", "buy_price": 2.98, "sell_price": 3.278, "target": 3.278, "stop_loss": 2.771, "shares": 31700, "cost": 94466.0, "pnl": 9446.6, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 2, "sell_date": "2026-03-11", "pnl_color": "#dc3545"}, {"rec_date": "2026-03-03", "ts_code": "002261.SZ", "stock_name": "拓维信息", "source": "LLM多源", "buy_price": 36.5, "sell_price": 40.15, "target": 40.15, "stop_loss": 33.945, "shares": 2300, "cost": 83950.0, "pnl": 8395.0, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 4, "sell_date": "2026-03-09", "pnl_color": "#dc3545"}, {"rec_date": "2026-02-24", "ts_code": "002131.SZ", "stock_name": "利欧股份", "source": "LLM多源", "buy_price": 9.13, "sell_price": 8.491, "target": 10.043, "stop_loss": 8.491, "shares": 10100, "cost": 92213.0, "pnl": -6453.9, "return_pct": -7.0, "sell_reason": "止损", "hold_days": 5, "sell_date": "2026-03-03", "pnl_color": "#28a745"}, {"rec_date": "2026-02-12", "ts_code": "300952.SZ", "stock_name": "恒辉安防", "source": "漏斗策略", "buy_price": 47.0, "sell_price": 43.71, "target": 51.7, "stop_loss": 43.71, "shares": 2100, "cost": 98700.0, "pnl": -6909.0, "return_pct": -7.0, "sell_reason": "止损", "hold_days": 2, "sell_date": "2026-02-24", "pnl_color": "#28a745"}, {"rec_date": "2026-02-03", "ts_code": "300898.SZ", "stock_name": "熊猫乳品", "source": "漏斗策略", "buy_price": 30.2, "sell_price": 28.086, "target": 33.22, "stop_loss": 28.086, "shares": 3500, "cost": 105700.0, "pnl": -7399.0, "return_pct": -7.0, "sell_reason": "止损", "hold_days": 7, "sell_date": "2026-02-12", "pnl_color": "#28a745"}, {"rec_date": "2026-02-02", "ts_code": "300017.SZ", "stock_name": "网宿科技", "source": "LLM多源", "buy_price": 17.3, "sell_price": 19.03, "target": 19.03, "stop_loss": 16.089, "shares": 5600, "cost": 96880.0, "pnl": 9688.0, "return_pct": 10.0, "sell_reason": "止盈", "hold_days": 1, "sell_date": "2026-02-03", "pnl_color": "#dc3545"}, {"rec_date": "2026-01-19", "ts_code": "000823.SZ", "stock_name": "超声电子", "source": "漏斗策略", "buy_price": 14.66, "sell_price": 13.98, "target": 16.126, "stop_loss": 13.634, "shares": 6900, "cost": 101154.0, "pnl": -4692.0, "return_pct": -4.64, "sell_reason": "到期平仓", "hold_days": 10, "sell_date": "2026-02-02", "pnl_color": "#28a745"}, {"rec_date": "2026-01-05", "ts_code": "002138.SZ", "stock_name": "顺络电子", "source": "漏斗策略", "buy_price": 36.5, "sell_price": 39.17, "target": 40.15, "stop_loss": 33.945, "shares": 2600, "cost": 94900.0, "pnl": 6942.0, "return_pct": 7.32, "sell_reason": "到期平仓", "hold_days": 10, "sell_date": "2026-01-19", "pnl_color": "#dc3545"}];
 
-new Chart(document.getElementById('equityChart'), {
-    type: 'line',
-    data: { labels: equityDates, datasets: [{
-        label: '总权益', data: equityValues, borderColor: '#6366f1',
-        backgroundColor: 'rgba(99,102,241,0.08)', fill: true, borderWidth: 2,
-        pointRadius: 0, pointHoverRadius: 5, tension: 0.1
-    }, {
-        label: '现金', data: cashValues, borderColor: '#28a745',
-        backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
-        pointHoverRadius: 4, borderDash: [4, 4]
-    }, {
-        label: '持仓市值', data: openValues, borderColor: '#dc3545',
-        backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
-        pointHoverRadius: 4, borderDash: [4, 4]
-    }] },
-    options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { intersect: false, mode: 'index' },
-        plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': ¥' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
-        scales: { y: { ticks: { callback: function(v) { return '¥' + (v/10000).toFixed(1) + '万'; } } } }
+// ===== All rendering starts after DOM + Chart.js ready =====
+var renderStarted = false;
+function renderAll() {
+    if (renderStarted) return;
+    renderStarted = true;
+
+    try {
+        // --- Equity Curve ---
+        new Chart(document.getElementById('equityChart'), {
+            type: 'line',
+            data: { labels: equityDates, datasets: [{
+                label: '总权益', data: equityValues, borderColor: '#6366f1',
+                backgroundColor: 'rgba(99,102,241,0.08)', fill: true, borderWidth: 2,
+                pointRadius: 0, pointHoverRadius: 5, tension: 0.1
+            }, {
+                label: '现金', data: cashValues, borderColor: '#28a745',
+                backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
+                pointHoverRadius: 4, borderDash: [4, 4]
+            }, {
+                label: '持仓市值', data: openValues, borderColor: '#dc3545',
+                backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
+                pointHoverRadius: 4, borderDash: [4, 4]
+            }] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': \u00a5' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
+                scales: { y: { ticks: { callback: function(v) { return '\u00a5' + (v/10000).toFixed(1) + '\u4e07'; } } } }
+            }
+        });
+
+        // --- Daily P&L ---
+        (function() {
+            var pnlColors = pnlValues.map(function(v) { return v >= 0 ? '#dc3545' : '#28a745'; });
+            new Chart(document.getElementById('pnlChart'), {
+                type: 'bar',
+                data: { labels: pnlDates, datasets: [{ label: '\u6bcf\u65e5\u76c8\u4e8f', data: pnlValues, backgroundColor: pnlColors, borderWidth: 0 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return '\u00a5' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
+                    scales: { y: { ticks: { callback: function(v) { return '\u00a5' + (v/10000).toFixed(1) + '\u4e07'; } } } }
+                }
+            });
+        })();
+
+        // --- Sell Reason Doughnut ---
+        new Chart(document.getElementById('reasonChart'), {
+            type: 'doughnut',
+            data: { labels: reasonLabels, datasets: [{ data: reasonData, backgroundColor: ['#dc3545','#28a745','#ffc107','#17a2b8','#6c757d','#e83e8c'] }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+
+        // --- Holding Days Bar ---
+        new Chart(document.getElementById('holdDaysChart'), {
+            type: 'bar',
+            data: { labels: hdLabels, datasets: [{ label: '\u4ea4\u6613\u7b14\u6570', data: hdData, backgroundColor: '#6366f1', borderWidth: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+    } catch(e) {
+        console.error('Chart render error:', e);
     }
-});
 
-(function() {
-    var pnlColors = pnlValues.map(function(v) { return v >= 0 ? '#dc3545' : '#28a745'; });
-    new Chart(document.getElementById('pnlChart'), {
-        type: 'bar',
-        data: { labels: pnlDates, datasets: [{ label: '每日盈亏', data: pnlValues, backgroundColor: pnlColors, borderWidth: 0 }] },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return '¥' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
-            scales: { y: { ticks: { callback: function(v) { return '¥' + (v/10000).toFixed(1) + '万'; } } } }
+    // --- Trade Table ---
+    var tbody = document.getElementById('tradeBody');
+    if (!tbody) return;
+    var sourceTagClass = { 'LLM\u591a\u6e90': 'tag-llm', '\u516b\u6b65\u6cd5': 'tag-8step', '\u6f0f\u6597\u7b56\u7565': 'tag-funnel', '\u4e3b\u5347\u6d6a': 'tag-uptrend' };
+
+    function renderTrades(trades) {
+        tbody.innerHTML = trades.map(function(t) {
+            var cls = sourceTagClass[t.source] || 'tag-llm';
+            var pnlSign = t.pnl >= 0 ? '+' : '-';
+            var retSign = t.return_pct > 0 ? '+' : '';
+            return '<tr><td>' + t.rec_date + '</td><td>' + t.ts_code + '</td><td>' + t.stock_name +
+                '</td><td><span class="tag ' + cls + '">' + t.source + '</span></td>' +
+                '<td>' + t.buy_price.toFixed(2) + '</td><td>' + t.sell_price.toFixed(2) +
+                '</td><td>' + t.target.toFixed(2) + '</td><td>' + t.stop_loss.toFixed(2) +
+                '</td><td>' + t.shares + '</td><td>\u00a5' + t.cost.toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
+                '</td><td style="color:' + t.pnl_color + ';font-weight:600;">' + pnlSign + '\u00a5' + Math.abs(t.pnl).toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
+                '</td><td style="color:' + t.pnl_color + ';">' + retSign + t.return_pct.toFixed(2) + '%</td>' +
+                '<td>' + t.sell_reason + '</td><td>' + t.hold_days + '\u5929</td><td>' + t.sell_date + '</td></tr>';
+        }).join('');
+        document.getElementById('tradeCount').textContent = '\u5171 ' + trades.length + ' \u7b14';
+    }
+    renderTrades(allTrades);
+
+    window.filterTrades = function() {
+        var q = document.getElementById('tradeSearch').value.toLowerCase();
+        renderTrades(allTrades.filter(function(t) {
+            return t.ts_code.toLowerCase().indexOf(q) >= 0 || t.stock_name.toLowerCase().indexOf(q) >= 0 || t.source.toLowerCase().indexOf(q) >= 0;
+        }));
+    };
+
+    var sortAsc = {};
+    window.sortTable = function(colIdx) {
+        var keys = ['rec_date','ts_code','stock_name','source','buy_price','sell_price','target','stop_loss','shares','cost','pnl','return_pct','sell_reason','hold_days','sell_date'];
+        var key = keys[colIdx];
+        sortAsc[key] = !sortAsc[key];
+        renderTrades(allTrades.slice().sort(function(a, b) {
+            var va = a[key], vb = b[key];
+            if (typeof va === 'string') return sortAsc[key] ? va.localeCompare(vb) : vb.localeCompare(va);
+            return sortAsc[key] ? va - vb : vb - va;
+        }));
+    };
+}
+
+// Wait for Chart.js to load before rendering
+function waitForChart(retries) {
+    retries = retries || 0;
+    if (window.Chart) {
+        renderAll();
+    } else if (window._chartLoadFailed) {
+        // Show fallback message if Chart.js failed entirely
+        var charts = document.querySelectorAll('.chart-container, .chart-container-sm');
+        for (var i = 0; i < charts.length; i++) {
+            charts[i].innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;">\u56fe\u8868\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u8fde\u63a5</div>';
         }
-    });
-})();
-
-new Chart(document.getElementById('reasonChart'), {
-    type: 'doughnut',
-    data: { labels: reasonLabels, datasets: [{ data: reasonData, backgroundColor: ['#dc3545','#28a745','#ffc107','#17a2b8','#6c757d','#e83e8c'] }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
-});
-
-new Chart(document.getElementById('holdDaysChart'), {
-    type: 'bar',
-    data: { labels: hdLabels, datasets: [{ label: '交易笔数', data: hdData, backgroundColor: '#6366f1', borderWidth: 0 }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-});
-
-var tbody = document.getElementById('tradeBody');
-var sourceTagClass = { 'LLM多源': 'tag-llm', '八步法': 'tag-8step', '漏斗策略': 'tag-funnel', '主升浪': 'tag-uptrend' };
-
-function renderTrades(trades) {
-    tbody.innerHTML = trades.map(function(t) {
-        var cls = sourceTagClass[t.source] || 'tag-llm';
-        var pnlSign = t.pnl >= 0 ? '+' : '-';
-        var retSign = t.return_pct > 0 ? '+' : '';
-        return '<tr><td>' + t.rec_date + '</td><td>' + t.ts_code + '</td><td>' + t.stock_name +
-            '</td><td><span class="tag ' + cls + '">' + t.source + '</span></td>' +
-            '<td>' + t.buy_price.toFixed(2) + '</td><td>' + t.sell_price.toFixed(2) +
-            '</td><td>' + t.target.toFixed(2) + '</td><td>' + t.stop_loss.toFixed(2) +
-            '</td><td>' + t.shares + '</td><td>¥' + t.cost.toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
-            '</td><td style="color:' + t.pnl_color + ';font-weight:600;">' + pnlSign + '¥' + Math.abs(t.pnl).toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
-            '</td><td style="color:' + t.pnl_color + ';">' + retSign + t.return_pct.toFixed(2) + '%</td>' +
-            '<td>' + t.sell_reason + '</td><td>' + t.hold_days + '天</td><td>' + t.sell_date + '</td></tr>';
-    }).join('');
-    document.getElementById('tradeCount').textContent = '共 ' + trades.length + ' 笔';
+        // Still render trade table
+        if (document.getElementById('tradeBody')) renderAll();
+    } else if (retries < 40) {
+        setTimeout(function(){ waitForChart(retries + 1); }, 250);
+    } else {
+        // Timeout: charts failed but try to render anyway
+        renderAll();
+    }
 }
-renderTrades(allTrades);
-
-function filterTrades() {
-    var q = document.getElementById('tradeSearch').value.toLowerCase();
-    renderTrades(allTrades.filter(function(t) {
-        return t.ts_code.toLowerCase().indexOf(q) >= 0 || t.stock_name.toLowerCase().indexOf(q) >= 0 || t.source.toLowerCase().indexOf(q) >= 0;
-    }));
-}
-
-var sortAsc = {};
-function sortTable(colIdx) {
-    var keys = ['rec_date','ts_code','stock_name','source','buy_price','sell_price','target','stop_loss','shares','cost','pnl','return_pct','sell_reason','hold_days','sell_date'];
-    var key = keys[colIdx];
-    sortAsc[key] = !sortAsc[key];
-    renderTrades(allTrades.slice().sort(function(a, b) {
-        var va = a[key], vb = b[key];
-        if (typeof va === 'string') return sortAsc[key] ? va.localeCompare(vb) : vb.localeCompare(va);
-        return sortAsc[key] ? va - vb : vb - va;
-    }));
-}
+// Also render immediately if Chart already loaded (cached)
+if (window.Chart) { renderAll(); }
+else { setTimeout(function(){ waitForChart(); }, 300); }
 </script>
 </body>
 </html>
