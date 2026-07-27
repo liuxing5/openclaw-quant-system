@@ -457,19 +457,19 @@ def generate_html_report(guide_list: List[Dict], snapshot_date: date):
             
             <div class="info-box">
                 <div class="info-label">🤖 LLM评分</div>
-                <div class="info-value">{guide['llm_score']:.1f}</div>
+                <div class="info-value">{round(guide['llm_score'], 1) if guide['llm_score'] else '-'}</div>
                 <div class="info-sub">AI综合评估</div>
             </div>
             
             <div class="info-box">
                 <div class="info-label">📐 量化评分</div>
-                <div class="info-value">{guide['quant_score']:.1f}</div>
+                <div class="info-value">{round(guide['quant_score'], 1) if guide['quant_score'] else '-'}</div>
                 <div class="info-sub">技术面分析</div>
             </div>
             
             <div class="info-box">
                 <div class="info-label">🤝 共识评分</div>
-                <div class="info-value">{guide['consensus_score']:.1f}</div>
+                <div class="info-value">{round(guide['consensus_score'], 1) if guide['consensus_score'] else '-'}</div>
                 <div class="info-sub">多源一致性</div>
             </div>
         </div>
