@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日操作清单</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #f1f5f9; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        .header { background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; padding: 32px; border-radius: 16px; margin-bottom: 24px; }
+        .header h1 { font-size: 28px; margin-bottom: 8px; }
+        .header p { opacity: 0.9; font-size: 14px; }
+        
+        .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .summary-card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align: center; }
+        .summary-card .label { font-size: 13px; color: #64748b; margin-bottom: 8px; }
+        .summary-card .value { font-size: 24px; font-weight: 700; }
+        
+        .section { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e8e8e8; display: flex; align-items: center; gap: 8px; }
+        
+        .position-card { background: #f8fafc; border-radius: 10px; padding: 20px; margin-bottom: 16px; border-left: 4px solid #3b82f6; }
+        .position-card.sell { border-left-color: #ef4444; }
+        .position-card h4 { margin-bottom: 12px; color: #1e293b; }
+        .price-row { display: flex; gap: 16px; margin-bottom: 8px; }
+        .price-item { flex: 1; }
+        .price-item .label { font-size: 12px; color: #64748b; }
+        .price-item .value { font-size: 18px; font-weight: 600; }
+        .tag { display: inline-block; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; margin-left: 8px; }
+        .tag-sell { background: #fef2f2; color: #dc2626; }
+        .tag-buy { background: #f0fdf4; color: #16a34a; }
+        .tag-wait { background: #f1f5f9; color: #64748b; }
+        
+        .action-banner { padding: 20px; border-radius: 10px; margin-bottom: 20px; text-align: center; font-size: 18px; font-weight: 600; }
+        .banner-sell { background: #fef2f2; color: #dc2626; border: 2px solid #fecaca; }
+        .banner-buy { background: #f0fdf4; color: #16a34a; border: 2px solid #bbf7d0; }
+        .banner-wait { background: #fef3c7; color: #d97706; border: 2px solid #fde68a; }
+        
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } }
+        
+        .footer { text-align: center; padding: 24px; color: #94a3b8; font-size: 13px; }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+        th { background: #f8fafc; font-weight: 600; color: #475569; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📋 每日操作清单</h1>
+        <p>📅 日期: 2026-07-27 | ⏰ 生成时间: 2026-07-27 22:16:17</p>
+        <p style="margin-top: 12px;">💰 初始资金: ¥100,000 | 💵 当前现金: ¥100,000.00 | 📊 总盈亏: ¥0.00</p>
+    </div>
+    
+    <div class="summary">
+        <div class="summary-card">
+            <div class="label">📦 当前持仓</div>
+            <div class="value" style="color: #3b82f6;">0 / 3只</div>
+        </div>
+        <div class="summary-card">
+            <div class="label">🔓 可用仓位</div>
+            <div class="value" style="color: #22c55e;">3个</div>
+        </div>
+        <div class="summary-card">
+            <div class="label">📈 历史胜率</div>
+            <div class="value" style="color: #8b5cf6;">0%</div>
+        </div>
+        <div class="summary-card">
+            <div class="label">📊 历史平均收益</div>
+            <div class="value" style="color: #ef4444;">+0.00%</div>
+        </div>
+    </div>
+    
+    <div class="section">
+        <div class="section-title">📦 当前持仓状态</div>
+        <p style="color: #64748b; text-align: center; padding: 20px;">暂无持仓，全部仓位可用</p>
+    </div>
+    <div class="section">
+        <div class="section-title">📅 明日买入计划（2026-07-28开盘执行）</div>
+        <div class="action-banner banner-buy">
+            ✅ 明日开盘买入以下 3 只股票
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>排名</th>
+                    <th>股票</th>
+                    <th>代码</th>
+                    <th>评分</th>
+                    <th>买入价（预计）</th>
+                    <th>止盈价</th>
+                    <th>止损价</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>1</strong></td>
+                    <td>欣旺达</td>
+                    <td>300207.SZ</td>
+                    <td>84.3</td>
+                    <td style="color: #22c55e;">¥0.00</td>
+                    <td style="color: #ef4444;">¥0.00</td>
+                    <td style="color: #3b82f6;">¥0.00</td>
+                    <td><span class="tag tag-buy">✅ 买入</span></td>
+                </tr>
+                <tr>
+                    <td><strong>2</strong></td>
+                    <td>宁德时代</td>
+                    <td>300750.SZ</td>
+                    <td>34.6</td>
+                    <td style="color: #22c55e;">¥0.00</td>
+                    <td style="color: #ef4444;">¥0.00</td>
+                    <td style="color: #3b82f6;">¥0.00</td>
+                    <td><span class="tag tag-buy">✅ 买入</span></td>
+                </tr>
+                <tr>
+                    <td><strong>3</strong></td>
+                    <td>中际旭创</td>
+                    <td>300308.SZ</td>
+                    <td>31.5</td>
+                    <td style="color: #22c55e;">¥0.00</td>
+                    <td style="color: #ef4444;">¥0.00</td>
+                    <td style="color: #3b82f6;">¥0.00</td>
+                    <td><span class="tag tag-buy">✅ 买入</span></td>
+                </tr>
+            </tbody>
+        </table>
+        <div style="margin-top: 16px; padding: 12px; background: #f0fdf4; border-radius: 8px; color: #16a34a; font-size: 13px;">
+            💡 注意: 买入价为次日开盘价，若高开过多可考虑观望。单只仓位不超过可用资金的95%。
+        </div>
+    </div>
+    <div class="section">
+        <div class="section-title">⏭️ 观望备选（仓位释放后可考虑）</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>排名</th>
+                    <th>股票</th>
+                    <th>代码</th>
+                    <th>评分</th>
+                    <th>状态</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>4</td>
+                    <td>紫光股份</td>
+                    <td>000938.SZ</td>
+                    <td>31.4</td>
+                    <td><span class="tag tag-wait">⏭️ 观望</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    <div class="section">
+        <div class="section-title">💡 操作要点</div>
+        <div style="display: grid; gap: 12px; color: #475569;">
+            <div style="padding: 12px; background: #f8fafc; border-radius: 8px;">
+                <strong>1️⃣ 今日收盘后：</strong> 检查持仓中股票的收盘价，若触发止盈(+11.0%)/止损(-8.0%)/到期(9天)，则次日开盘卖出
+            </div>
+            <div style="padding: 12px; background: #f8fafc; border-radius: 8px;">
+                <strong>2️⃣ 明日开盘：</strong> 按清单买入排名前N只（N=可用仓位数）股票
+            </div>
+            <div style="padding: 12px; background: #f8fafc; border-radius: 8px;">
+                <strong>3️⃣ 持仓期间：</strong> 盘中监控股价，触及止盈/止损价立即卖出；持有满9天必须卖出
+            </div>
+            <div style="padding: 12px; background: #f8fafc; border-radius: 8px;">
+                <strong>4️⃣ 仓位管理：</strong> 单只股票不超过可用资金的95.0%，最多同时持有3只
+            </div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>📊 策略参数: 次日开盘买 | +11.0%止盈 | -8.0%止损 | T+9到期 | 95%仓位 | 最多3只持仓</p>
+        <p>🎯 回测收益参考: 2026-01-05 ~ 2026-07-27 | +2.32% | 年化+4.2%</p>
+        <p>⚠️ 风险提示: 本报告仅供参考，投资有风险，入市需谨慎</p>
+    </div>
+</div>
+</body>
+</html>
