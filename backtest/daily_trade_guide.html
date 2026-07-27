@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日荐股操作指导报告</title>
+    <script src="https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; line-height: 1.6; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        
+        .header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #fff; padding: 30px 40px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
+        .header h1 { font-size: 32px; margin-bottom: 8px; }
+        .header .subtitle { font-size: 16px; opacity: 0.8; }
+        .header .time-info { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
+        .header .time-item { background: rgba(255,255,255,0.1); padding: 8px 20px; border-radius: 8px; font-size: 14px; }
+        .header .time-item strong { color: #fbbf24; }
+        
+        .stats-bar { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+        .stat-card { background: #fff; padding: 16px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align: center; }
+        .stat-card .label { font-size: 12px; color: #888; margin-bottom: 4px; }
+        .stat-card .value { font-size: 22px; font-weight: 700; color: #1e293b; }
+        
+        .action-guide { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 2px solid #f59e0b; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
+        .action-guide h3 { color: #d97706; margin-bottom: 12px; font-size: 18px; }
+        .action-guide .steps { display: flex; gap: 24px; flex-wrap: wrap; }
+        .action-guide .step { background: rgba(255,255,255,0.6); padding: 12px 20px; border-radius: 8px; font-size: 14px; }
+        .action-guide .step strong { color: #b45309; }
+        
+        .stock-card { background: #fff; border-radius: 14px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-left: 5px solid #6366f1; transition: transform 0.2s; }
+        .stock-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+        .stock-card.top-rank { border-left-color: #f59e0b; }
+        .stock-card .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
+        .stock-card .rank-badge { background: #6366f1; color: #fff; padding: 6px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; }
+        .stock-card.top-rank .rank-badge { background: #f59e0b; }
+        .stock-card .stock-info h2 { font-size: 24px; margin-bottom: 4px; }
+        .stock-card .stock-info .code { font-size: 14px; color: #888; }
+        
+        .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+        .info-box { background: #f8fafc; border-radius: 10px; padding: 16px; }
+        .info-box .info-label { font-size: 12px; color: #64748b; margin-bottom: 6px; }
+        .info-box .info-value { font-size: 18px; font-weight: 600; }
+        .info-box .info-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
+        
+        .price-box { background: #f8fafc; border-radius: 10px; padding: 16px; }
+        .price-box.buy { border-left: 4px solid #22c55e; }
+        .price-box.take-profit { border-left: 4px solid #ef4444; }
+        .price-box.stop-loss { border-left: 4px solid #3b82f6; }
+        
+        .price-label { font-size: 12px; color: #64748b; margin-bottom: 8px; }
+        .price-value { font-size: 28px; font-weight: 700; }
+        .price-sub { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+        
+        .table-section { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e8e8e8; }
+        
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        thead th { background: #f1f5f9; padding: 12px 14px; text-align: left; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
+        tbody td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; }
+        tbody tr:hover { background: #f8fafc; }
+        .text-green { color: #22c55e; }
+        .text-red { color: #ef4444; }
+        .text-blue { color: #3b82f6; }
+        .text-orange { color: #f59e0b; }
+        
+        .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+        .tag { background: #e0e7ff; color: #6366f1; padding: 4px 10px; border-radius: 12px; font-size: 11px; }
+        
+        .footer { text-align: center; padding: 24px; color: #94a3b8; font-size: 13px; }
+        .footer a { color: #6366f1; text-decoration: none; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>📊 每日荐股操作指导报告</h1>
+        <div class="subtitle">基于回测最优策略 · 次日开盘价买入 · 固定+11%止盈/-8%止损</div>
+        <div class="time-info">
+            <div class="time-item">推荐日期: <strong>2026-07-27</strong></div>
+            <div class="time-item">操作日期: <strong>2026-07-28</strong></div>
+            <div class="time-item">买入时间: <strong>09:25-09:30（集合竞价）</strong></div>
+            <div class="time-item">更新时间: <strong>2026-07-27 14:05:19</strong></div>
+            <div class="time-item">推荐数量: <strong>0 只</strong></div>
+        </div>
+    </div>
+    
+    <div class="stats-bar">
+        <div class="stat-card">
+            <div class="label">推荐股票</div>
+            <div class="value">0只</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">止盈比例</div>
+            <div class="value text-green">+11.0%</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">止损比例</div>
+            <div class="value text-red">-8.0%</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">最大持仓</div>
+            <div class="value">9天</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">单股仓位</div>
+            <div class="value">95.0%</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">最大持仓数</div>
+            <div class="value">3只</div>
+        </div>
+    </div>
+    
+    <div class="action-guide">
+        <h3>📋 明日操作步骤</h3>
+        <div class="steps">
+            <div class="step"><strong>09:15-09:25</strong> 查看集合竞价情况</div>
+            <div class="step"><strong>09:25-09:30</strong> 以开盘价下单买入</div>
+            <div class="step"><strong>盘中</strong> 股价触及止盈自动卖出</div>
+            <div class="step"><strong>盘中</strong> 股价触及止损果断卖出</div>
+            <div class="step"><strong>T+9</strong> 未触发则到期卖出</div>
+        </div>
+    </div>
+    <div class="table-section">
+        <div class="section-title">📊 操作指导汇总表</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>排名</th>
+                    <th>代码</th>
+                    <th>名称</th>
+                    <th>评分</th>
+                    <th>买入价</th>
+                    <th>买入时间</th>
+                    <th>止盈价</th>
+                    <th>止损价</th>
+                    <th>持仓天数</th>
+                    <th>仓位</th>
+                    <th>来源</th>
+                </tr>
+            </thead>
+            <tbody>            </tbody>
+        </table>
+    </div>
+    
+    <div class="table-section">
+        <div class="section-title">📋 策略参数说明</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>参数</th>
+                    <th>取值</th>
+                    <th>说明</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr><td>买入时机</td><td>次日开盘价</td><td>推荐日T的下一个交易日T+1开盘买入</td></tr>
+                <tr><td>止盈条件</td><td>+11%</td><td>股价达到买入价的+11%时自动卖出</td></tr>
+                <tr><td>止损条件</td><td>-8%</td><td>股价下跌至买入价的-8%时止损卖出</td></tr>
+                <tr><td>持仓期限</td><td>T+9</td><td>最长持有9个交易日，到期未触发则平仓</td></tr>
+                <tr><td>单股仓位</td><td>95%</td><td>每只股票投入可用资金的95%</td></tr>
+                <tr><td>最大持仓</td><td>3只</td><td>同一时间最多持有3只推荐股票</td></tr>
+                <tr><td>评分门槛</td><td>≥30</td><td>仅推荐综合评分≥30分的股票</td></tr>
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="action-guide">
+        <h3>💡 操作要点</h3>
+        <div class="steps">
+            <div class="step"><strong>集合竞价</strong> 关注开盘价是否符合预期，异常高开则谨慎</div>
+            <div class="step"><strong>止盈优先</strong> 达到止盈价果断卖出，不贪心</div>
+            <div class="step"><strong>止损坚决</strong> 触及止损价立即执行，控制风险</div>
+            <div class="step"><strong>到期平仓</strong> 持有满9天无论盈亏都卖出，保持资金流动性</div>
+            <div class="step"><strong>仓位管理</strong> 单只股票不超过可用资金的95%</div>
+        </div>
+    </div>
+    
+    <div class="footer">
+        <p>数据来源: daily_candidates (LLM多源策略筛选)</p>
+        <p>策略参数: 次日开盘价买入 | +11%止盈 | -8%止损 | T+9到期 | 单股95%仓位 | 最多3只持仓</p>
+        <p>生成时间: {now_str} | © openclaw-quant-system</p>
+    </div>
+</div>
+</body>
+</html>
