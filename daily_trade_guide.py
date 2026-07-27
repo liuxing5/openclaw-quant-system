@@ -11,11 +11,13 @@
   - 每日下午收市后运行
   - 获取今日推荐股票
   - 生成明日操作指导（买入时间、价格、止盈止损）
+  - 显示当前模拟持仓状态和可用仓位
 """
 from __future__ import annotations
 
 import os
 import sys
+import json
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 
@@ -27,17 +29,14 @@ from core.utils.trading_calendar import is_trading_day, get_next_trading_day
 
 load_project_env()
 
+from position_manager import PositionManager
+
 PROFIT_PCT = 11.0
 STOP_PCT = 8.0
 MAX_HOLD_DAYS = 9
 POS_SIZE = 0.95
 MAX_CONCURRENT = 3
 SCORE_THRESHOLD = 30
-
-RECOMMEND_TIME_WINDOW = {
-    'morning': '09:00-10:00',
-    'afternoon': '14:30-15:00',
-}
 
 
 def fetch_latest_candidates(snapshot_date: date = None) -> List[Dict]:
@@ -132,6 +131,67 @@ def fetch_latest_price(ts_code: str) -> Optional[Dict]:
     return None
 
 
+def fetch_open_positions(snapshot_date: date) -> List[Dict]:
+    """从持仓跟踪文件读取当前持仓状态
+    
+    关键逻辑：
+    1. 从 position_tracker.json 读取用户的虚拟交易记录
+    2. 返回当前仍在持仓中的股票
+    3. 更新持仓天数（基于交易日历）
+    """
+    tracker_path = os.path.join(os.path.dirname(__file__), 'position_tracker.json')
+    
+    if not os.path.exists(tracker_path):
+        return []
+    
+    try:
+        with open(tracker_path, 'r', encoding='utf-8') as f:
+            tracker = json.load(f)
+        
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        
+        cur.execute("""
+            SELECT trade_date FROM daily_quotes
+            WHERE trade_date <= %s
+            GROUP BY trade_date
+            ORDER BY trade_date DESC
+        """, (snapshot_date,))
+        
+        recent_dates = [r[0] for r in cur.fetchall()]
+        cur.close()
+        conn.close()
+        
+        positions = []
+        for pos in tracker.get('open_positions', []):
+            buy_date_str = pos.get('buy_date')
+            if not buy_date_str:
+                continue
+            
+            buy_date = datetime.strptime(buy_date_str, '%Y-%m-%d').date()
+            days_since_buy = len([d for d in recent_dates if d > buy_date])
+            
+            positions.append({
+                'ts_code': pos.get('ts_code'),
+                'stock_name': pos.get('stock_name'),
+                'rec_date': pos.get('rec_date'),
+                'buy_date': buy_date,
+                'buy_price': pos.get('buy_price'),
+                'days_held': days_since_buy,
+                'days_remaining': MAX_HOLD_DAYS - days_since_buy,
+                'final_score': pos.get('final_score', 0),
+                'source': pos.get('source'),
+                'target_1': pos.get('target_1'),
+                'stop_loss': pos.get('stop_loss'),
+                'status': '持仓中',
+            })
+        
+        return positions
+    except Exception as e:
+        print(f"  读取持仓失败: {e}")
+        return []
+
+
 def fetch_stock_info(ts_code: str) -> Optional[Dict]:
     """获取股票基本信息"""
     conn = get_db_fresh()
@@ -158,12 +218,63 @@ def fetch_stock_info(ts_code: str) -> Optional[Dict]:
     return None
 
 
-def generate_trade_guide(candidates: List[Dict], snapshot_date: date) -> List[Dict]:
+def fetch_backtest_stats() -> Dict:
+    """获取回测统计信息（用于指导报告）"""
+    backtest_report_path = os.path.join(os.path.dirname(__file__), 'backtest', 'backtest_report.html')
+    
+    if not os.path.exists(backtest_report_path):
+        return {}
+    
+    try:
+        with open(backtest_report_path, 'r', encoding='utf-8') as f:
+            content = f.read()
+        
+        import re
+        
+        total_trades_match = re.search(r'<div class="label">实盘交易</div>\s*<div class="value">(\d+)', content)
+        win_rate_match = re.search(r'<div class="label">胜率</div>\s*<div class="value">([\d.]+)%', content)
+        signal_count_match = re.search(r'信号总数:\s*(\d+)', content)
+        
+        if not total_trades_match or not win_rate_match:
+            return {}
+        
+        total_trades = int(total_trades_match.group(1))
+        win_rate = float(win_rate_match.group(1))
+        signal_count = int(signal_count_match.group(1)) if signal_count_match else total_trades
+        
+        avg_return_match = re.search(r'<div class="label">平均每笔收益</div>\s*<div class="value[^>]*>([+\-]?[\d.]+)%', content)
+        avg_return = float(avg_return_match.group(1)) if avg_return_match else 0.0
+        
+        profit_count = int(total_trades * win_rate / 100)
+        loss_count = total_trades - profit_count
+        
+        return {
+            'total_signals': signal_count,
+            'win_rate': round(win_rate, 1),
+            'avg_return': round(avg_return, 2),
+            'profit_count': profit_count,
+            'loss_count': loss_count,
+            'profit_pct': PROFIT_PCT,
+            'stop_pct': STOP_PCT,
+            'max_hold_days': MAX_HOLD_DAYS,
+            'max_concurrent': MAX_CONCURRENT,
+        }
+    except Exception as e:
+        print(f"  读取回测统计失败: {e}")
+        return {}
+
+
+def generate_trade_guide(candidates: List[Dict], snapshot_date: date, available_slots: int = MAX_CONCURRENT, open_positions: List[Dict] = None) -> List[Dict]:
     """生成交易操作指导"""
     next_trade_day = get_next_trading_day(snapshot_date)
+    open_positions = open_positions or []
+    held_stocks = {pos['ts_code'] for pos in open_positions}
     
     guide_list = []
-    for i, candidate in enumerate(candidates[:MAX_CONCURRENT], 1):
+    for i, candidate in enumerate(candidates, 1):
+        if candidate['ts_code'] in held_stocks:
+            continue
+        
         latest_price = fetch_latest_price(candidate['ts_code'])
         stock_info = fetch_stock_info(candidate['ts_code'])
         
@@ -205,6 +316,7 @@ def generate_trade_guide(candidates: List[Dict], snapshot_date: date) -> List[Di
             
             position_ratio = candidate['position_pct'] or POS_SIZE
             priority = i
+            should_buy = i <= available_slots
             
             guide = {
                 'rank': priority,
@@ -241,16 +353,24 @@ def generate_trade_guide(candidates: List[Dict], snapshot_date: date) -> List[Di
                 'snapshot_date': candidate['snapshot_date'],
                 'created_at': candidate['created_at'],
                 'stock_info': stock_info,
+                'should_buy': should_buy,
+                'available_slots': available_slots,
+                'action': '买入' if should_buy else '观望',
             }
             guide_list.append(guide)
     
     return guide_list
 
 
-def generate_html_report(guide_list: List[Dict], snapshot_date: date):
+def generate_html_report(guide_list: List[Dict], snapshot_date: date, open_positions: List[Dict] = None, available_slots: int = 0, backtest_stats: Dict = None):
     """生成HTML操作指导报告"""
     now_str = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     next_trade_day = guide_list[0]['buy_date'] if guide_list else get_next_trading_day(snapshot_date)
+    open_positions = open_positions or []
+    backtest_stats = backtest_stats or {}
+    
+    buy_list = [g for g in guide_list if g['should_buy']]
+    wait_list = [g for g in guide_list if not g['should_buy']]
     
     html = f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -263,7 +383,6 @@ def generate_html_report(guide_list: List[Dict], snapshot_date: date):
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; line-height: 1.6; }}
         .container {{ max-width: 1400px; margin: 0 auto; padding: 20px; }}
-        
         .header {{ background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #fff; padding: 30px 40px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }}
         .header h1 {{ font-size: 32px; margin-bottom: 8px; }}
         .header .subtitle {{ font-size: 16px; opacity: 0.8; }}
@@ -275,21 +394,31 @@ def generate_html_report(guide_list: List[Dict], snapshot_date: date):
         .stat-card {{ background: #fff; padding: 16px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align: center; }}
         .stat-card .label {{ font-size: 12px; color: #888; margin-bottom: 4px; }}
         .stat-card .value {{ font-size: 22px; font-weight: 700; color: #1e293b; }}
+        .stat-card.buy .value {{ color: #22c55e; }}
+        .stat-card.hold .value {{ color: #3b82f6; }}
+        
+        .position-section {{ background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border: 2px solid #3b82f6; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }}
+        .position-section h3 {{ color: #1d4ed8; margin-bottom: 12px; font-size: 18px; }}
+        .position-item {{ background: rgba(255,255,255,0.7); padding: 12px 20px; border-radius: 8px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }}
+        .position-item:last-child {{ margin-bottom: 0; }}
         
         .action-guide {{ background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 2px solid #f59e0b; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }}
         .action-guide h3 {{ color: #d97706; margin-bottom: 12px; font-size: 18px; }}
         .action-guide .steps {{ display: flex; gap: 24px; flex-wrap: wrap; }}
         .action-guide .step {{ background: rgba(255,255,255,0.6); padding: 12px 20px; border-radius: 8px; font-size: 14px; }}
-        .action-guide .step strong {{ color: #b45309; }}
         
         .stock-card {{ background: #fff; border-radius: 14px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-left: 5px solid #6366f1; transition: transform 0.2s; }}
         .stock-card:hover {{ transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }}
         .stock-card.top-rank {{ border-left-color: #f59e0b; }}
+        .stock-card.buy-action {{ border-left-color: #22c55e; }}
+        .stock-card.wait-action {{ border-left-color: #94a3b8; }}
         .stock-card .card-header {{ display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }}
         .stock-card .rank-badge {{ background: #6366f1; color: #fff; padding: 6px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; }}
         .stock-card.top-rank .rank-badge {{ background: #f59e0b; }}
-        .stock-card .stock-info h2 {{ font-size: 24px; margin-bottom: 4px; }}
-        .stock-card .stock-info .code {{ font-size: 14px; color: #888; }}
+        .stock-card.buy-action .rank-badge {{ background: #22c55e; }}
+        .stock-card.wait-action .rank-badge {{ background: #94a3b8; }}
+        .stock-card .action-badge {{ background: #22c55e; color: #fff; padding: 6px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; }}
+        .stock-card.wait-action .action-badge {{ background: #f1f5f9; color: #64748b; }}
         
         .grid-3 {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }}
         .info-box {{ background: #f8fafc; border-radius: 10px; padding: 16px; }}
@@ -302,27 +431,20 @@ def generate_html_report(guide_list: List[Dict], snapshot_date: date):
         .price-box.take-profit {{ border-left: 4px solid #ef4444; }}
         .price-box.stop-loss {{ border-left: 4px solid #3b82f6; }}
         
-        .price-label {{ font-size: 12px; color: #64748b; margin-bottom: 8px; }}
-        .price-value {{ font-size: 28px; font-weight: 700; }}
-        .price-sub {{ font-size: 13px; color: #94a3b8; margin-top: 4px; }}
-        
         .table-section {{ background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }}
         .section-title {{ font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e8e8e8; }}
         
         table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
         thead th {{ background: #f1f5f9; padding: 12px 14px; text-align: left; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }}
         tbody td {{ padding: 12px 14px; border-bottom: 1px solid #f1f5f9; }}
-        tbody tr:hover {{ background: #f8fafc; }}
-        .text-green {{ color: #22c55e; }}
-        .text-red {{ color: #ef4444; }}
-        .text-blue {{ color: #3b82f6; }}
-        .text-orange {{ color: #f59e0b; }}
         
         .tags {{ display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }}
         .tag {{ background: #e0e7ff; color: #6366f1; padding: 4px 10px; border-radius: 12px; font-size: 11px; }}
         
         .footer {{ text-align: center; padding: 24px; color: #94a3b8; font-size: 13px; }}
-        .footer a {{ color: #6366f1; text-decoration: none; }}
+        .text-green {{ color: #22c55e; }}
+        .text-red {{ color: #ef4444; }}
+        .text-blue {{ color: #3b82f6; }}
     </style>
 </head>
 <body>
@@ -336,23 +458,28 @@ def generate_html_report(guide_list: List[Dict], snapshot_date: date):
             <div class="time-item">买入时间: <strong>09:25-09:30（集合竞价）</strong></div>
             <div class="time-item">更新时间: <strong>{now_str}</strong></div>
             <div class="time-item">推荐数量: <strong>{len(guide_list)} 只</strong></div>
+            <div class="time-item">可用仓位: <strong>{available_slots} 个</strong></div>
         </div>
     </div>
     
-    <div class="stats-bar">
-        <div class="stat-card">
-            <div class="label">推荐股票</div>
-            <div class="value">{len(guide_list)}只</div>
+    <div class="stats-bar" style="margin-bottom: 24px;">
+        <div class="stat-card" style="background: #f0fdf4;">
+            <div class="label">可用仓位</div>
+            <div class="value text-green">{available_slots}/{MAX_CONCURRENT}个</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="background: #fef3c7;">
+            <div class="label">当前持仓</div>
+            <div class="value text-red">{len(open_positions)}只</div>
+        </div>
+        <div class="stat-card" style="background: #e0e7ff;">
             <div class="label">止盈比例</div>
             <div class="value text-green">+{PROFIT_PCT}%</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="background: #fecaca;">
             <div class="label">止损比例</div>
             <div class="value text-red">-{STOP_PCT}%</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="background: #f1f5f9;">
             <div class="label">最大持仓</div>
             <div class="value">{MAX_HOLD_DAYS}天</div>
         </div>
@@ -364,177 +491,168 @@ def generate_html_report(guide_list: List[Dict], snapshot_date: date):
             <div class="label">最大持仓数</div>
             <div class="value">{MAX_CONCURRENT}只</div>
         </div>
+        <div class="stat-card hold">
+            <div class="label">当前持仓</div>
+            <div class="value">{len(open_positions)}只</div>
+        </div>
+        <div class="stat-card buy">
+            <div class="label">可用仓位</div>
+            <div class="value">{available_slots}个</div>
+        </div>
+    </div>
+    
+    {f"""    <div class="stats-bar">
+        <div class="stat-card">
+            <div class="label">回测信号总数</div>
+            <div class="value">{backtest_stats['total_signals']}笔</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">回测胜率</div>
+            <div class="value text-green">{backtest_stats['win_rate']}%</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">平均每笔收益</div>
+            <div class="value {'text-green' if backtest_stats['avg_return'] > 0 else 'text-red'}">{backtest_stats['avg_return']:+.2f}%</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">盈利/亏损</div>
+            <div class="value">{backtest_stats['profit_count']}/{backtest_stats['loss_count']}</div>
+        </div>
+    </div>""" if backtest_stats else ''}
+    
+    <div class="position-section">
+        <h3>📦 当前持仓状态</h3>
+        {'' if open_positions else '<p style="color:#64748b;">暂无持仓，全部仓位可用</p>'}
+        {''.join([f'<div class="position-item"><div><strong>{pos["stock_name"]}</strong> ({pos["ts_code"]}) - 来源: {pos["source"]}</div><div style="color:#64748b;">已持有 {pos["days_held"]} 天 / 剩余 {pos["days_remaining"]} 天</div></div>' for pos in open_positions])}
     </div>
     
     <div class="action-guide">
         <h3>📋 明日操作步骤</h3>
         <div class="steps">
             <div class="step"><strong>09:15-09:25</strong> 查看集合竞价情况</div>
-            <div class="step"><strong>09:25-09:30</strong> 以开盘价下单买入</div>
+            <div class="step"><strong>09:25-09:30</strong> 以开盘价下单买入推荐股票</div>
             <div class="step"><strong>盘中</strong> 股价触及止盈自动卖出</div>
             <div class="step"><strong>盘中</strong> 股价触及止损果断卖出</div>
             <div class="step"><strong>T+{MAX_HOLD_DAYS}</strong> 未触发则到期卖出</div>
         </div>
     </div>
-"""
-
-    for guide in guide_list:
+    
+    {f'<h2 style="margin-bottom:16px;color:#22c55e;">✅ 明日买入 ({len(buy_list)}只)</h2>' if buy_list else ''}"""
+    
+    for guide in buy_list:
         is_top = guide['rank'] == 1
-        card_class = 'stock-card top-rank' if is_top else 'stock-card'
-        
+        card_class = 'stock-card top-rank buy-action' if is_top else 'stock-card buy-action'
         tags_html = ''.join([f'<span class="tag">{t}</span>' for t in (guide['logic_tags'][:5] if guide['logic_tags'] else [])])
         
         html += f"""    <div class="{card_class}">
         <div class="card-header">
-            <div class="stock-info">
+            <div>
                 <h2>{guide['stock_name']}</h2>
-                <div class="code">{guide['ts_code']} | 综合评分: <strong>{guide['final_score']:.1f}</strong></div>
+                <div style="color:#888;font-size:14px;">{guide['ts_code']} | 综合评分: <strong>{guide['final_score']:.1f}</strong></div>
                 {tags_html}
             </div>
-            <div class="rank-badge">第{guide['rank']}推荐</div>
+            <div style="display:flex;gap:10px;">
+                <span class="rank-badge">第{guide['rank']}推荐</span>
+                <span class="action-badge">✅ 买入</span>
+            </div>
         </div>
-        
         <div class="grid-3">
             <div class="price-box buy">
-                <div class="price-label">💰 买入价</div>
-                <div class="price-value text-green">¥{guide['buy_price']:.2f}</div>
-                <div class="price-sub">{guide['buy_price_range']}</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">💰 买入价</div>
+                <div style="font-size:28px;font-weight:700;color:#22c55e;">¥{guide['buy_price']:.2f}</div>
+                <div style="font-size:13px;color:#94a3b8;">{guide['buy_price_range']}</div>
             </div>
-            
             <div class="price-box take-profit">
-                <div class="price-label">🚀 止盈价</div>
-                <div class="price-value text-red">¥{guide['take_profit_price']:.2f}</div>
-                <div class="price-sub">涨幅 {guide['take_profit_pct']}</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">🚀 止盈价</div>
+                <div style="font-size:28px;font-weight:700;color:#ef4444;">¥{guide['take_profit_price']:.2f}</div>
+                <div style="font-size:13px;color:#94a3b8;">涨幅 {guide['take_profit_pct']}</div>
             </div>
-            
             <div class="price-box stop-loss">
-                <div class="price-label">🛡️ 止损价</div>
-                <div class="price-value text-blue">¥{guide['stop_loss_price']:.2f}</div>
-                <div class="price-sub">跌幅 {guide['stop_loss_pct']}</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">🛡️ 止损价</div>
+                <div style="font-size:28px;font-weight:700;color:#3b82f6;">¥{guide['stop_loss_price']:.2f}</div>
+                <div style="font-size:13px;color:#94a3b8;">跌幅 {guide['stop_loss_pct']}</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📅 买入日期</div>
                 <div class="info-value">{guide['buy_date']}</div>
                 <div class="info-sub">操作时间: {guide['buy_time']}</div>
             </div>
-            
-            <div class="info-box">
-                <div class="info-label">🎯 买入策略</div>
-                <div class="info-value">{guide['buy_price_strategy']}</div>
-                <div class="info-sub">集合竞价下单</div>
-            </div>
-            
             <div class="info-box">
                 <div class="info-label">⏱️ 持仓期限</div>
                 <div class="info-value">最多{MAX_HOLD_DAYS}天</div>
-                <div class="info-sub">到期日: {guide['expiry_date']}</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📊 仓位建议</div>
                 <div class="info-value">{guide['position_ratio']*100:.0f}%</div>
-                <div class="info-sub">单股仓位控制</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📈 最新收盘</div>
                 <div class="info-value">¥{guide['latest_close']:.2f}</div>
-                <div class="info-sub">涨跌幅: {('+' if guide['latest_pct_chg'] and guide['latest_pct_chg'] > 0 else '') + f'{guide["latest_pct_chg"]:.2f}%' if guide['latest_pct_chg'] else '-'}</div>
             </div>
-            
-            <div class="info-box">
-                <div class="info-label">📉 换手率</div>
-                <div class="info-value">{f'{guide["latest_turnover"]:.2f}%' if guide['latest_turnover'] else '-'}</div>
-                <div class="info-sub">昨日换手率</div>
-            </div>
-            
             <div class="info-box">
                 <div class="info-label">🔍 数据源</div>
                 <div class="info-value">{guide['source']}</div>
-                <div class="info-sub">提及{guide['mention_count']}次 · 来源{guide['source_diversity']}个</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">🤖 LLM评分</div>
                 <div class="info-value">{round(guide['llm_score'], 1) if guide['llm_score'] else '-'}</div>
-                <div class="info-sub">AI综合评估</div>
-            </div>
-            
-            <div class="info-box">
-                <div class="info-label">📐 量化评分</div>
-                <div class="info-value">{round(guide['quant_score'], 1) if guide['quant_score'] else '-'}</div>
-                <div class="info-sub">技术面分析</div>
-            </div>
-            
-            <div class="info-box">
-                <div class="info-label">🤝 共识评分</div>
-                <div class="info-value">{round(guide['consensus_score'], 1) if guide['consensus_score'] else '-'}</div>
-                <div class="info-sub">多源一致性</div>
             </div>
         </div>
-    </div>
-"""
-
-    html += """    <div class="table-section">
+    </div>"""
+    
+    html += f"""    {f'<h2 style="margin-bottom:16px;color:#94a3b8;margin-top:32px;">⏭️ 观望 ({len(wait_list)}只)</h2>' if wait_list else ''}"""
+    
+    for guide in wait_list:
+        html += f"""    <div class="stock-card wait-action">
+        <div class="card-header">
+            <div>
+                <h2>{guide['stock_name']}</h2>
+                <div style="color:#888;font-size:14px;">{guide['ts_code']} | 综合评分: <strong>{guide['final_score']:.1f}</strong></div>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <span class="rank-badge">第{guide['rank']}推荐</span>
+                <span class="action-badge">⏭️ 观望</span>
+            </div>
+        </div>
+        <div style="color:#94a3b8;font-size:14px;margin-bottom:16px;">当前仓位已满（{MAX_CONCURRENT}只），此股票列为备选，等待仓位释放后可考虑买入。</div>
+        <div class="grid-3">
+            <div class="info-box">
+                <div class="info-label">💰 参考买入价</div>
+                <div class="info-value">¥{guide['buy_price']:.2f}</div>
+            </div>
+            <div class="info-box">
+                <div class="info-label">🚀 参考止盈价</div>
+                <div class="info-value">¥{guide['take_profit_price']:.2f}</div>
+            </div>
+            <div class="info-box">
+                <div class="info-label">🛡️ 参考止损价</div>
+                <div class="info-value">¥{guide['stop_loss_price']:.2f}</div>
+            </div>
+        </div>
+    </div>"""
+    
+    html += f"""    <div class="table-section">
         <div class="section-title">📊 操作指导汇总表</div>
         <table>
-            <thead>
-                <tr>
-                    <th>排名</th>
-                    <th>代码</th>
-                    <th>名称</th>
-                    <th>评分</th>
-                    <th>买入价</th>
-                    <th>买入时间</th>
-                    <th>止盈价</th>
-                    <th>止损价</th>
-                    <th>持仓天数</th>
-                    <th>仓位</th>
-                    <th>来源</th>
-                </tr>
-            </thead>
+            <thead><tr><th>排名</th><th>代码</th><th>名称</th><th>评分</th><th>买入价</th><th>止盈价</th><th>止损价</th><th>操作</th></tr></thead>
             <tbody>"""
-
-    for guide in guide_list:
-        html += f"""
-                <tr>
-                    <td><strong>{guide['rank']}</strong></td>
-                    <td>{guide['ts_code']}</td>
-                    <td>{guide['stock_name']}</td>
-                    <td>{guide['final_score']:.1f}</td>
-                    <td><span class="text-green">¥{guide['buy_price']:.2f}</span></td>
-                    <td>{guide['buy_date']} {guide['buy_time']}</td>
-                    <td><span class="text-red">¥{guide['take_profit_price']:.2f}</span></td>
-                    <td><span class="text-blue">¥{guide['stop_loss_price']:.2f}</span></td>
-                    <td>{MAX_HOLD_DAYS}天</td>
-                    <td>{guide['position_ratio']*100:.0f}%</td>
-                    <td>{guide['source']}</td>
-                </tr>"""
-
-    html += """            </tbody>
-        </table>
-    </div>
     
-    <div class="table-section">
-        <div class="section-title">📋 策略参数说明</div>
-        <table>
-            <thead>
-                <tr>
-                    <th>参数</th>
-                    <th>取值</th>
-                    <th>说明</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td>买入时机</td><td>次日开盘价</td><td>推荐日T的下一个交易日T+1开盘买入</td></tr>
-                <tr><td>止盈条件</td><td>+11%</td><td>股价达到买入价的+11%时自动卖出</td></tr>
-                <tr><td>止损条件</td><td>-8%</td><td>股价下跌至买入价的-8%时止损卖出</td></tr>
-                <tr><td>持仓期限</td><td>T+9</td><td>最长持有9个交易日，到期未触发则平仓</td></tr>
-                <tr><td>单股仓位</td><td>95%</td><td>每只股票投入可用资金的95%</td></tr>
-                <tr><td>最大持仓</td><td>3只</td><td>同一时间最多持有3只推荐股票</td></tr>
-                <tr><td>评分门槛</td><td>≥30</td><td>仅推荐综合评分≥30分的股票</td></tr>
-            </tbody>
+    for guide in guide_list:
+        action_icon = '✅买入' if guide['should_buy'] else '⏭️观望'
+        action_color = '#22c55e' if guide['should_buy'] else '#94a3b8'
+        html += f"""
+            <tr>
+                <td><strong>{guide['rank']}</strong></td>
+                <td>{guide['ts_code']}</td>
+                <td>{guide['stock_name']}</td>
+                <td>{guide['final_score']:.1f}</td>
+                <td><span style="color:#22c55e;">¥{guide['buy_price']:.2f}</span></td>
+                <td><span style="color:#ef4444;">¥{guide['take_profit_price']:.2f}</span></td>
+                <td><span style="color:#3b82f6;">¥{guide['stop_loss_price']:.2f}</span></td>
+                <td><strong style="color:{action_color};">{action_icon}</strong></td>
+            </tr>"""
+    
+    html += """            </tbody>
         </table>
     </div>
     
@@ -549,15 +667,52 @@ def generate_html_report(guide_list: List[Dict], snapshot_date: date):
         </div>
     </div>
     
+    <div class="table-section">
+        <div class="section-title">🔄 交易流程说明</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border-left: 4px solid #6366f1;">
+                <div style="font-size: 24px; margin-bottom: 12px;">📅</div>
+                <h4 style="margin-bottom: 8px;">第一步：收市后查看推荐</h4>
+                <p style="font-size: 14px; color: #64748b;">每天下午收市后运行脚本，获取今日推荐股票列表</p>
+            </div>
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border-left: 4px solid #22c55e;">
+                <div style="font-size: 24px; margin-bottom: 12px;">💵</div>
+                <h4 style="margin-bottom: 8px;">第二步：次日开盘买入</h4>
+                <p style="font-size: 14px; color: #64748b;">按评分从高到低，买入排名前N只（N=可用仓位数），满仓则观望</p>
+            </div>
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border-left: 4px solid #3b82f6;">
+                <div style="font-size: 24px; margin-bottom: 12px;">📈</div>
+                <h4 style="margin-bottom: 8px;">第三步：持有期间监控</h4>
+                <p style="font-size: 14px; color: #64748b;">盘中监控股价，触及+11%止盈或-8%止损则卖出</p>
+            </div>
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border-left: 4px solid #f59e0b;">
+                <div style="font-size: 24px; margin-bottom: 12px;">⏰</div>
+                <h4 style="margin-bottom: 8px;">第四步：到期卖出释放仓位</h4>
+                <p style="font-size: 14px; color: #64748b;">持有满9天无论盈亏都卖出，释放仓位后可买入新推荐</p>
+            </div>
+        </div>
+        <div style="margin-top: 20px; padding: 16px; background: #fffbeb; border-radius: 8px; border: 1px solid #fef3c7;">
+            <strong style="color: #d97706;">❓ 常见疑问：</strong>
+            <ul style="margin-top: 8px; padding-left: 20px; color: #64748b; font-size: 14px;">
+                <li><strong>Q：每天都有推荐，是不是每天都要买？</strong></li>
+                <li>A：不是！只有当有可用仓位（持仓<3只）时才买入排名前N的推荐，已满仓则观望</li>
+                <li><strong>Q：明天买还是后天买？</strong></li>
+                <li>A：今天的推荐 → 明天开盘买；明天的推荐 → 后天开盘买。按顺序执行即可</li>
+                <li><strong>Q：推荐了4只但只能买3只怎么办？</strong></li>
+                <li>A：只买评分最高的3只，第4只列为备选，等待仓位释放后可考虑</li>
+            </ul>
+        </div>
+    </div>
+    
     <div class="footer">
         <p>数据来源: daily_candidates (LLM多源策略筛选)</p>
-        <p>策略参数: 次日开盘价买入 | +11%止盈 | -8%止损 | T+9到期 | 单股95%仓位 | 最多3只持仓</p>
+        <p>策略参数: 次日开盘价买入 | +11%止盈 | -8%止损 | T+9到期 | 单股95%仓位 | 最多3只持仓 | 评分≥30分</p>
         <p>生成时间: {now_str} | © openclaw-quant-system</p>
     </div>
 </div>
 </body>
 </html>"""
-
+    
     return html
 
 
@@ -578,6 +733,36 @@ def main():
         snapshot_date = today
     
     print(f"\n推荐日期: {snapshot_date}")
+    
+    pm = PositionManager()
+    
+    print("\n🔍 正在检查持仓中股票是否触发止盈/止损/到期...")
+    sold_positions = pm.update_positions(snapshot_date)
+    if sold_positions:
+        print(f"  📤 今日卖出 {len(sold_positions)} 只股票:")
+        for sold in sold_positions:
+            profit_sign = '+' if sold['profit'] > 0 else ''
+            print(f"    {sold['stock_name']} ({sold['sell_date']}) - {sold['sell_reason']}")
+            print(f"      买入: ¥{sold['buy_price']:.2f} | 卖出: ¥{sold['sell_price']:.2f}")
+            print(f"      盈亏: {profit_sign}¥{sold['profit']:.2f} ({sold['profit_pct']:+.2f}%)")
+    else:
+        print("  ✅ 无股票卖出")
+    
+    print("\n📦 正在获取当前持仓状态...")
+    open_positions = pm.get_open_positions(snapshot_date)
+    print(f"当前持仓: {len(open_positions)} 只 / 最多 {MAX_CONCURRENT} 只")
+    for pos in open_positions:
+        print(f"  {pos['stock_name']} ({pos['ts_code']}) - 持有{pos['days_held']}天, 剩余{pos['days_remaining']}天")
+    
+    available_slots = pm.get_available_slots()
+    print(f"可用仓位: {available_slots} 个")
+    
+    print("\n正在获取回测统计信息...")
+    backtest_stats = fetch_backtest_stats()
+    if backtest_stats:
+        print(f"  回测信号: {backtest_stats['total_signals']}笔 | 胜率: {backtest_stats['win_rate']}% | 平均收益: {backtest_stats['avg_return']:+.2f}%")
+    else:
+        print("  未获取到回测统计信息")
     
     print("\n正在获取推荐股票数据...")
     candidates = fetch_latest_candidates(snapshot_date)
@@ -603,15 +788,20 @@ def main():
             guide_list = []
         else:
             print(f"\n使用 {snapshot_date} 的推荐数据")
-            guide_list = generate_trade_guide(candidates, snapshot_date)
+            guide_list = generate_trade_guide(candidates, snapshot_date, available_slots, open_positions)
             print(f"生成了 {len(guide_list)} 条操作指导")
     else:
         print("\n正在生成操作指导...")
-        guide_list = generate_trade_guide(candidates, snapshot_date)
+        guide_list = generate_trade_guide(candidates, snapshot_date, available_slots, open_positions)
         print(f"生成了 {len(guide_list)} 条操作指导")
     
+    buy_count = sum(1 for g in guide_list if g['should_buy'])
+    wait_count = len(guide_list) - buy_count
+    print(f"  ├── ✅ 明日买入: {buy_count} 只")
+    print(f"  └── ⏭️ 观望等待: {wait_count} 只")
+    
     print("\n正在生成HTML报告...")
-    html = generate_html_report(guide_list, snapshot_date)
+    html = generate_html_report(guide_list, snapshot_date, open_positions, available_slots, backtest_stats)
     
     output_path = os.path.join(os.path.dirname(__file__), 'backtest', 'daily_trade_guide.html')
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -626,11 +816,11 @@ def main():
     if guide_list:
         print("\n📊 明日操作清单:")
         for guide in guide_list:
-            print(f"\n  {guide['rank']}. {guide['stock_name']} ({guide['ts_code']})")
+            action = "✅ 买入" if guide.get('should_buy') else "⏭️ 观望"
+            print(f"\n  {action} {guide['rank']}. {guide['stock_name']} ({guide['ts_code']})")
             print(f"     买入价: ¥{guide['buy_price']:.2f}")
-            print(f"     止盈价: ¥{guide['take_profit_price']:.2f} (+{PROFIT_PCT}%)")
-            print(f"     止损价: ¥{guide['stop_loss_price']:.2f} (-{STOP_PCT}%)")
-            print(f"     操作日期: {guide['buy_date']}")
+            print(f"     止盈价: ¥{guide['take_profit_price']:.2f}")
+            print(f"     止损价: ¥{guide['stop_loss_price']:.2f}")
             print(f"     评分: {guide['final_score']:.1f}")
 
 

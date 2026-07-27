@@ -1,0 +1,15 @@
+{
+  "start_date": "2026-07-27",
+  "current_date": "2026-07-27",
+  "initial_capital": 100000.0,
+  "cash": 100000.0,
+  "open_positions": [],
+  "history": [],
+  "config": {
+    "max_concurrent": 3,
+    "profit_pct": 11.0,
+    "stop_pct": 8.0,
+    "max_hold_days": 9,
+    "position_pct": 0.95
+  }
+}

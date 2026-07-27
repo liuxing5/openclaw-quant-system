@@ -9,7 +9,6 @@
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f0f2f5; color: #333; line-height: 1.6; }
         .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
-        
         .header { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); color: #fff; padding: 30px 40px; border-radius: 16px; margin-bottom: 24px; box-shadow: 0 8px 32px rgba(0,0,0,0.2); }
         .header h1 { font-size: 32px; margin-bottom: 8px; }
         .header .subtitle { font-size: 16px; opacity: 0.8; }
@@ -21,21 +20,31 @@
         .stat-card { background: #fff; padding: 16px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align: center; }
         .stat-card .label { font-size: 12px; color: #888; margin-bottom: 4px; }
         .stat-card .value { font-size: 22px; font-weight: 700; color: #1e293b; }
+        .stat-card.buy .value { color: #22c55e; }
+        .stat-card.hold .value { color: #3b82f6; }
+        
+        .position-section { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border: 2px solid #3b82f6; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
+        .position-section h3 { color: #1d4ed8; margin-bottom: 12px; font-size: 18px; }
+        .position-item { background: rgba(255,255,255,0.7); padding: 12px 20px; border-radius: 8px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .position-item:last-child { margin-bottom: 0; }
         
         .action-guide { background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%); border: 2px solid #f59e0b; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
         .action-guide h3 { color: #d97706; margin-bottom: 12px; font-size: 18px; }
         .action-guide .steps { display: flex; gap: 24px; flex-wrap: wrap; }
         .action-guide .step { background: rgba(255,255,255,0.6); padding: 12px 20px; border-radius: 8px; font-size: 14px; }
-        .action-guide .step strong { color: #b45309; }
         
         .stock-card { background: #fff; border-radius: 14px; padding: 24px; margin-bottom: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.08); border-left: 5px solid #6366f1; transition: transform 0.2s; }
         .stock-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
         .stock-card.top-rank { border-left-color: #f59e0b; }
+        .stock-card.buy-action { border-left-color: #22c55e; }
+        .stock-card.wait-action { border-left-color: #94a3b8; }
         .stock-card .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
         .stock-card .rank-badge { background: #6366f1; color: #fff; padding: 6px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; }
         .stock-card.top-rank .rank-badge { background: #f59e0b; }
-        .stock-card .stock-info h2 { font-size: 24px; margin-bottom: 4px; }
-        .stock-card .stock-info .code { font-size: 14px; color: #888; }
+        .stock-card.buy-action .rank-badge { background: #22c55e; }
+        .stock-card.wait-action .rank-badge { background: #94a3b8; }
+        .stock-card .action-badge { background: #22c55e; color: #fff; padding: 6px 16px; border-radius: 20px; font-size: 14px; font-weight: 600; }
+        .stock-card.wait-action .action-badge { background: #f1f5f9; color: #64748b; }
         
         .grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
         .info-box { background: #f8fafc; border-radius: 10px; padding: 16px; }
@@ -48,27 +57,20 @@
         .price-box.take-profit { border-left: 4px solid #ef4444; }
         .price-box.stop-loss { border-left: 4px solid #3b82f6; }
         
-        .price-label { font-size: 12px; color: #64748b; margin-bottom: 8px; }
-        .price-value { font-size: 28px; font-weight: 700; }
-        .price-sub { font-size: 13px; color: #94a3b8; margin-top: 4px; }
-        
         .table-section { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
         .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e8e8e8; }
         
         table { width: 100%; border-collapse: collapse; font-size: 13px; }
         thead th { background: #f1f5f9; padding: 12px 14px; text-align: left; font-weight: 600; color: #475569; border-bottom: 2px solid #e2e8f0; }
         tbody td { padding: 12px 14px; border-bottom: 1px solid #f1f5f9; }
-        tbody tr:hover { background: #f8fafc; }
-        .text-green { color: #22c55e; }
-        .text-red { color: #ef4444; }
-        .text-blue { color: #3b82f6; }
-        .text-orange { color: #f59e0b; }
         
         .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
         .tag { background: #e0e7ff; color: #6366f1; padding: 4px 10px; border-radius: 12px; font-size: 11px; }
         
         .footer { text-align: center; padding: 24px; color: #94a3b8; font-size: 13px; }
-        .footer a { color: #6366f1; text-decoration: none; }
+        .text-green { color: #22c55e; }
+        .text-red { color: #ef4444; }
+        .text-blue { color: #3b82f6; }
     </style>
 </head>
 <body>
@@ -80,25 +82,30 @@
             <div class="time-item">推荐日期: <strong>2026-07-27</strong></div>
             <div class="time-item">操作日期: <strong>2026-07-28</strong></div>
             <div class="time-item">买入时间: <strong>09:25-09:30（集合竞价）</strong></div>
-            <div class="time-item">更新时间: <strong>2026-07-27 18:00:14</strong></div>
-            <div class="time-item">推荐数量: <strong>3 只</strong></div>
+            <div class="time-item">更新时间: <strong>2026-07-27 20:33:29</strong></div>
+            <div class="time-item">推荐数量: <strong>4 只</strong></div>
+            <div class="time-item">可用仓位: <strong>3 个</strong></div>
         </div>
     </div>
     
-    <div class="stats-bar">
-        <div class="stat-card">
-            <div class="label">推荐股票</div>
-            <div class="value">3只</div>
+    <div class="stats-bar" style="margin-bottom: 24px;">
+        <div class="stat-card" style="background: #f0fdf4;">
+            <div class="label">可用仓位</div>
+            <div class="value text-green">3/3个</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="background: #fef3c7;">
+            <div class="label">当前持仓</div>
+            <div class="value text-red">0只</div>
+        </div>
+        <div class="stat-card" style="background: #e0e7ff;">
             <div class="label">止盈比例</div>
             <div class="value text-green">+11.0%</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="background: #fecaca;">
             <div class="label">止损比例</div>
             <div class="value text-red">-8.0%</div>
         </div>
-        <div class="stat-card">
+        <div class="stat-card" style="background: #f1f5f9;">
             <div class="label">最大持仓</div>
             <div class="value">9天</div>
         </div>
@@ -110,368 +117,285 @@
             <div class="label">最大持仓数</div>
             <div class="value">3只</div>
         </div>
+        <div class="stat-card hold">
+            <div class="label">当前持仓</div>
+            <div class="value">0只</div>
+        </div>
+        <div class="stat-card buy">
+            <div class="label">可用仓位</div>
+            <div class="value">3个</div>
+        </div>
+    </div>
+    
+        <div class="stats-bar">
+        <div class="stat-card">
+            <div class="label">回测信号总数</div>
+            <div class="value">1256笔</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">回测胜率</div>
+            <div class="value text-green">47.5%</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">平均每笔收益</div>
+            <div class="value text-green">+0.33%</div>
+        </div>
+        <div class="stat-card">
+            <div class="label">盈利/亏损</div>
+            <div class="value">28/31</div>
+        </div>
+    </div>
+    
+    <div class="position-section">
+        <h3>📦 当前持仓状态</h3>
+        <p style="color:#64748b;">暂无持仓，全部仓位可用</p>
+        
     </div>
     
     <div class="action-guide">
         <h3>📋 明日操作步骤</h3>
         <div class="steps">
             <div class="step"><strong>09:15-09:25</strong> 查看集合竞价情况</div>
-            <div class="step"><strong>09:25-09:30</strong> 以开盘价下单买入</div>
+            <div class="step"><strong>09:25-09:30</strong> 以开盘价下单买入推荐股票</div>
             <div class="step"><strong>盘中</strong> 股价触及止盈自动卖出</div>
             <div class="step"><strong>盘中</strong> 股价触及止损果断卖出</div>
             <div class="step"><strong>T+9</strong> 未触发则到期卖出</div>
         </div>
     </div>
-    <div class="stock-card top-rank">
+    
+    <h2 style="margin-bottom:16px;color:#22c55e;">✅ 明日买入 (3只)</h2>    <div class="stock-card top-rank buy-action">
         <div class="card-header">
-            <div class="stock-info">
+            <div>
                 <h2>欣旺达</h2>
-                <div class="code">300207.SZ | 综合评分: <strong>84.3</strong></div>
+                <div style="color:#888;font-size:14px;">300207.SZ | 综合评分: <strong>84.3</strong></div>
                 <span class="tag">高位博弈</span><span class="tag">黄金放量</span><span class="tag">黄金换手</span><span class="tag">量能递增</span><span class="tag">首阳突破</span>
             </div>
-            <div class="rank-badge">第1推荐</div>
+            <div style="display:flex;gap:10px;">
+                <span class="rank-badge">第1推荐</span>
+                <span class="action-badge">✅ 买入</span>
+            </div>
         </div>
-        
         <div class="grid-3">
             <div class="price-box buy">
-                <div class="price-label">💰 买入价</div>
-                <div class="price-value text-green">¥18.08</div>
-                <div class="price-sub">¥17.90 - ¥18.26</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">💰 买入价</div>
+                <div style="font-size:28px;font-weight:700;color:#22c55e;">¥18.08</div>
+                <div style="font-size:13px;color:#94a3b8;">¥17.90 - ¥18.26</div>
             </div>
-            
             <div class="price-box take-profit">
-                <div class="price-label">🚀 止盈价</div>
-                <div class="price-value text-red">¥18.98</div>
-                <div class="price-sub">涨幅 +5.0%</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">🚀 止盈价</div>
+                <div style="font-size:28px;font-weight:700;color:#ef4444;">¥18.98</div>
+                <div style="font-size:13px;color:#94a3b8;">涨幅 +5.0%</div>
             </div>
-            
             <div class="price-box stop-loss">
-                <div class="price-label">🛡️ 止损价</div>
-                <div class="price-value text-blue">¥17.63</div>
-                <div class="price-sub">跌幅 -2.5%</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">🛡️ 止损价</div>
+                <div style="font-size:28px;font-weight:700;color:#3b82f6;">¥17.63</div>
+                <div style="font-size:13px;color:#94a3b8;">跌幅 -2.5%</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📅 买入日期</div>
                 <div class="info-value">2026-07-28</div>
                 <div class="info-sub">操作时间: 09:25-09:30</div>
             </div>
-            
-            <div class="info-box">
-                <div class="info-label">🎯 买入策略</div>
-                <div class="info-value">集合竞价/开盘价买入</div>
-                <div class="info-sub">集合竞价下单</div>
-            </div>
-            
             <div class="info-box">
                 <div class="info-label">⏱️ 持仓期限</div>
                 <div class="info-value">最多9天</div>
-                <div class="info-sub">到期日: 2026-08-10</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📊 仓位建议</div>
                 <div class="info-value">8%</div>
-                <div class="info-sub">单股仓位控制</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📈 最新收盘</div>
                 <div class="info-value">¥18.08</div>
-                <div class="info-sub">涨跌幅: +6.86%</div>
             </div>
-            
-            <div class="info-box">
-                <div class="info-label">📉 换手率</div>
-                <div class="info-value">-</div>
-                <div class="info-sub">昨日换手率</div>
-            </div>
-            
             <div class="info-box">
                 <div class="info-label">🔍 数据源</div>
                 <div class="info-value">overnight_8step</div>
-                <div class="info-sub">提及1次 · 来源1个</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">🤖 LLM评分</div>
                 <div class="info-value">-</div>
-                <div class="info-sub">AI综合评估</div>
-            </div>
-            
-            <div class="info-box">
-                <div class="info-label">📐 量化评分</div>
-                <div class="info-value">81.0</div>
-                <div class="info-sub">技术面分析</div>
-            </div>
-            
-            <div class="info-box">
-                <div class="info-label">🤝 共识评分</div>
-                <div class="info-value">1.0</div>
-                <div class="info-sub">多源一致性</div>
             </div>
         </div>
-    </div>
-    <div class="stock-card">
+    </div>    <div class="stock-card buy-action">
         <div class="card-header">
-            <div class="stock-info">
+            <div>
                 <h2>宁德时代</h2>
-                <div class="code">300750.SZ | 综合评分: <strong>34.6</strong></div>
+                <div style="color:#888;font-size:14px;">300750.SZ | 综合评分: <strong>34.6</strong></div>
                 <span class="tag">盈利预测</span>
             </div>
-            <div class="rank-badge">第2推荐</div>
+            <div style="display:flex;gap:10px;">
+                <span class="rank-badge">第2推荐</span>
+                <span class="action-badge">✅ 买入</span>
+            </div>
         </div>
-        
         <div class="grid-3">
             <div class="price-box buy">
-                <div class="price-label">💰 买入价</div>
-                <div class="price-value text-green">¥400.00</div>
-                <div class="price-sub">¥394.00 - ¥406.00</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">💰 买入价</div>
+                <div style="font-size:28px;font-weight:700;color:#22c55e;">¥400.00</div>
+                <div style="font-size:13px;color:#94a3b8;">¥394.00 - ¥406.00</div>
             </div>
-            
             <div class="price-box take-profit">
-                <div class="price-label">🚀 止盈价</div>
-                <div class="price-value text-red">¥432.00</div>
-                <div class="price-sub">涨幅 +8.0%</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">🚀 止盈价</div>
+                <div style="font-size:28px;font-weight:700;color:#ef4444;">¥432.00</div>
+                <div style="font-size:13px;color:#94a3b8;">涨幅 +8.0%</div>
             </div>
-            
             <div class="price-box stop-loss">
-                <div class="price-label">🛡️ 止损价</div>
-                <div class="price-value text-blue">¥380.00</div>
-                <div class="price-sub">跌幅 -5.0%</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">🛡️ 止损价</div>
+                <div style="font-size:28px;font-weight:700;color:#3b82f6;">¥380.00</div>
+                <div style="font-size:13px;color:#94a3b8;">跌幅 -5.0%</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📅 买入日期</div>
                 <div class="info-value">2026-07-28</div>
                 <div class="info-sub">操作时间: 09:25-09:30</div>
             </div>
-            
-            <div class="info-box">
-                <div class="info-label">🎯 买入策略</div>
-                <div class="info-value">集合竞价/开盘价买入</div>
-                <div class="info-sub">集合竞价下单</div>
-            </div>
-            
             <div class="info-box">
                 <div class="info-label">⏱️ 持仓期限</div>
                 <div class="info-value">最多9天</div>
-                <div class="info-sub">到期日: 2026-08-10</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📊 仓位建议</div>
                 <div class="info-value">4%</div>
-                <div class="info-sub">单股仓位控制</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📈 最新收盘</div>
                 <div class="info-value">¥400.00</div>
-                <div class="info-sub">涨跌幅: +4.44%</div>
             </div>
-            
-            <div class="info-box">
-                <div class="info-label">📉 换手率</div>
-                <div class="info-value">-</div>
-                <div class="info-sub">昨日换手率</div>
-            </div>
-            
             <div class="info-box">
                 <div class="info-label">🔍 数据源</div>
                 <div class="info-value">llm_multisource</div>
-                <div class="info-sub">提及1次 · 来源1个</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">🤖 LLM评分</div>
                 <div class="info-value">33.0</div>
-                <div class="info-sub">AI综合评估</div>
-            </div>
-            
-            <div class="info-box">
-                <div class="info-label">📐 量化评分</div>
-                <div class="info-value">59.6</div>
-                <div class="info-sub">技术面分析</div>
-            </div>
-            
-            <div class="info-box">
-                <div class="info-label">🤝 共识评分</div>
-                <div class="info-value">50.0</div>
-                <div class="info-sub">多源一致性</div>
             </div>
         </div>
-    </div>
-    <div class="stock-card">
+    </div>    <div class="stock-card buy-action">
         <div class="card-header">
-            <div class="stock-info">
+            <div>
                 <h2>中际旭创</h2>
-                <div class="code">300308.SZ | 综合评分: <strong>31.5</strong></div>
+                <div style="color:#888;font-size:14px;">300308.SZ | 综合评分: <strong>31.5</strong></div>
                 <span class="tag">盈利预测</span>
             </div>
-            <div class="rank-badge">第3推荐</div>
+            <div style="display:flex;gap:10px;">
+                <span class="rank-badge">第3推荐</span>
+                <span class="action-badge">✅ 买入</span>
+            </div>
         </div>
-        
         <div class="grid-3">
             <div class="price-box buy">
-                <div class="price-label">💰 买入价</div>
-                <div class="price-value text-green">¥1076.94</div>
-                <div class="price-sub">¥1060.79 - ¥1093.09</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">💰 买入价</div>
+                <div style="font-size:28px;font-weight:700;color:#22c55e;">¥1076.94</div>
+                <div style="font-size:13px;color:#94a3b8;">¥1060.79 - ¥1093.09</div>
             </div>
-            
             <div class="price-box take-profit">
-                <div class="price-label">🚀 止盈价</div>
-                <div class="price-value text-red">¥1163.10</div>
-                <div class="price-sub">涨幅 +8.0%</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">🚀 止盈价</div>
+                <div style="font-size:28px;font-weight:700;color:#ef4444;">¥1163.10</div>
+                <div style="font-size:13px;color:#94a3b8;">涨幅 +8.0%</div>
             </div>
-            
             <div class="price-box stop-loss">
-                <div class="price-label">🛡️ 止损价</div>
-                <div class="price-value text-blue">¥1023.09</div>
-                <div class="price-sub">跌幅 -5.0%</div>
+                <div style="font-size:12px;color:#64748b;margin-bottom:8px;">🛡️ 止损价</div>
+                <div style="font-size:28px;font-weight:700;color:#3b82f6;">¥1023.09</div>
+                <div style="font-size:13px;color:#94a3b8;">跌幅 -5.0%</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📅 买入日期</div>
                 <div class="info-value">2026-07-28</div>
                 <div class="info-sub">操作时间: 09:25-09:30</div>
             </div>
-            
-            <div class="info-box">
-                <div class="info-label">🎯 买入策略</div>
-                <div class="info-value">集合竞价/开盘价买入</div>
-                <div class="info-sub">集合竞价下单</div>
-            </div>
-            
             <div class="info-box">
                 <div class="info-label">⏱️ 持仓期限</div>
                 <div class="info-value">最多9天</div>
-                <div class="info-sub">到期日: 2026-08-10</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📊 仓位建议</div>
                 <div class="info-value">4%</div>
-                <div class="info-sub">单股仓位控制</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">📈 最新收盘</div>
                 <div class="info-value">¥1076.94</div>
-                <div class="info-sub">涨跌幅: +2.91%</div>
             </div>
-            
-            <div class="info-box">
-                <div class="info-label">📉 换手率</div>
-                <div class="info-value">-</div>
-                <div class="info-sub">昨日换手率</div>
-            </div>
-            
             <div class="info-box">
                 <div class="info-label">🔍 数据源</div>
                 <div class="info-value">llm_multisource</div>
-                <div class="info-sub">提及1次 · 来源1个</div>
             </div>
-            
             <div class="info-box">
                 <div class="info-label">🤖 LLM评分</div>
                 <div class="info-value">33.0</div>
-                <div class="info-sub">AI综合评估</div>
-            </div>
-            
-            <div class="info-box">
-                <div class="info-label">📐 量化评分</div>
-                <div class="info-value">50.6</div>
-                <div class="info-sub">技术面分析</div>
-            </div>
-            
-            <div class="info-box">
-                <div class="info-label">🤝 共识评分</div>
-                <div class="info-value">50.0</div>
-                <div class="info-sub">多源一致性</div>
             </div>
         </div>
-    </div>
-    <div class="table-section">
+    </div>    <h2 style="margin-bottom:16px;color:#94a3b8;margin-top:32px;">⏭️ 观望 (1只)</h2>    <div class="stock-card wait-action">
+        <div class="card-header">
+            <div>
+                <h2>紫光股份</h2>
+                <div style="color:#888;font-size:14px;">000938.SZ | 综合评分: <strong>31.4</strong></div>
+            </div>
+            <div style="display:flex;gap:10px;">
+                <span class="rank-badge">第4推荐</span>
+                <span class="action-badge">⏭️ 观望</span>
+            </div>
+        </div>
+        <div style="color:#94a3b8;font-size:14px;margin-bottom:16px;">当前仓位已满（3只），此股票列为备选，等待仓位释放后可考虑买入。</div>
+        <div class="grid-3">
+            <div class="info-box">
+                <div class="info-label">💰 参考买入价</div>
+                <div class="info-value">¥41.47</div>
+            </div>
+            <div class="info-box">
+                <div class="info-label">🚀 参考止盈价</div>
+                <div class="info-value">¥43.54</div>
+            </div>
+            <div class="info-box">
+                <div class="info-label">🛡️ 参考止损价</div>
+                <div class="info-value">¥40.23</div>
+            </div>
+        </div>
+    </div>    <div class="table-section">
         <div class="section-title">📊 操作指导汇总表</div>
         <table>
-            <thead>
-                <tr>
-                    <th>排名</th>
-                    <th>代码</th>
-                    <th>名称</th>
-                    <th>评分</th>
-                    <th>买入价</th>
-                    <th>买入时间</th>
-                    <th>止盈价</th>
-                    <th>止损价</th>
-                    <th>持仓天数</th>
-                    <th>仓位</th>
-                    <th>来源</th>
-                </tr>
-            </thead>
+            <thead><tr><th>排名</th><th>代码</th><th>名称</th><th>评分</th><th>买入价</th><th>止盈价</th><th>止损价</th><th>操作</th></tr></thead>
             <tbody>
-                <tr>
-                    <td><strong>1</strong></td>
-                    <td>300207.SZ</td>
-                    <td>欣旺达</td>
-                    <td>84.3</td>
-                    <td><span class="text-green">¥18.08</span></td>
-                    <td>2026-07-28 09:25-09:30</td>
-                    <td><span class="text-red">¥18.98</span></td>
-                    <td><span class="text-blue">¥17.63</span></td>
-                    <td>9天</td>
-                    <td>8%</td>
-                    <td>overnight_8step</td>
-                </tr>
-                <tr>
-                    <td><strong>2</strong></td>
-                    <td>300750.SZ</td>
-                    <td>宁德时代</td>
-                    <td>34.6</td>
-                    <td><span class="text-green">¥400.00</span></td>
-                    <td>2026-07-28 09:25-09:30</td>
-                    <td><span class="text-red">¥432.00</span></td>
-                    <td><span class="text-blue">¥380.00</span></td>
-                    <td>9天</td>
-                    <td>4%</td>
-                    <td>llm_multisource</td>
-                </tr>
-                <tr>
-                    <td><strong>3</strong></td>
-                    <td>300308.SZ</td>
-                    <td>中际旭创</td>
-                    <td>31.5</td>
-                    <td><span class="text-green">¥1076.94</span></td>
-                    <td>2026-07-28 09:25-09:30</td>
-                    <td><span class="text-red">¥1163.10</span></td>
-                    <td><span class="text-blue">¥1023.09</span></td>
-                    <td>9天</td>
-                    <td>4%</td>
-                    <td>llm_multisource</td>
-                </tr>            </tbody>
-        </table>
-    </div>
-    
-    <div class="table-section">
-        <div class="section-title">📋 策略参数说明</div>
-        <table>
-            <thead>
-                <tr>
-                    <th>参数</th>
-                    <th>取值</th>
-                    <th>说明</th>
-                </tr>
-            </thead>
-            <tbody>
-                <tr><td>买入时机</td><td>次日开盘价</td><td>推荐日T的下一个交易日T+1开盘买入</td></tr>
-                <tr><td>止盈条件</td><td>+11%</td><td>股价达到买入价的+11%时自动卖出</td></tr>
-                <tr><td>止损条件</td><td>-8%</td><td>股价下跌至买入价的-8%时止损卖出</td></tr>
-                <tr><td>持仓期限</td><td>T+9</td><td>最长持有9个交易日，到期未触发则平仓</td></tr>
-                <tr><td>单股仓位</td><td>95%</td><td>每只股票投入可用资金的95%</td></tr>
-                <tr><td>最大持仓</td><td>3只</td><td>同一时间最多持有3只推荐股票</td></tr>
-                <tr><td>评分门槛</td><td>≥30</td><td>仅推荐综合评分≥30分的股票</td></tr>
-            </tbody>
+            <tr>
+                <td><strong>1</strong></td>
+                <td>300207.SZ</td>
+                <td>欣旺达</td>
+                <td>84.3</td>
+                <td><span style="color:#22c55e;">¥18.08</span></td>
+                <td><span style="color:#ef4444;">¥18.98</span></td>
+                <td><span style="color:#3b82f6;">¥17.63</span></td>
+                <td><strong style="color:#22c55e;">✅买入</strong></td>
+            </tr>
+            <tr>
+                <td><strong>2</strong></td>
+                <td>300750.SZ</td>
+                <td>宁德时代</td>
+                <td>34.6</td>
+                <td><span style="color:#22c55e;">¥400.00</span></td>
+                <td><span style="color:#ef4444;">¥432.00</span></td>
+                <td><span style="color:#3b82f6;">¥380.00</span></td>
+                <td><strong style="color:#22c55e;">✅买入</strong></td>
+            </tr>
+            <tr>
+                <td><strong>3</strong></td>
+                <td>300308.SZ</td>
+                <td>中际旭创</td>
+                <td>31.5</td>
+                <td><span style="color:#22c55e;">¥1076.94</span></td>
+                <td><span style="color:#ef4444;">¥1163.10</span></td>
+                <td><span style="color:#3b82f6;">¥1023.09</span></td>
+                <td><strong style="color:#22c55e;">✅买入</strong></td>
+            </tr>
+            <tr>
+                <td><strong>4</strong></td>
+                <td>000938.SZ</td>
+                <td>紫光股份</td>
+                <td>31.4</td>
+                <td><span style="color:#22c55e;">¥41.47</span></td>
+                <td><span style="color:#ef4444;">¥43.54</span></td>
+                <td><span style="color:#3b82f6;">¥40.23</span></td>
+                <td><strong style="color:#94a3b8;">⏭️观望</strong></td>
+            </tr>            </tbody>
         </table>
     </div>
     
@@ -486,9 +410,46 @@
         </div>
     </div>
     
+    <div class="table-section">
+        <div class="section-title">🔄 交易流程说明</div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border-left: 4px solid #6366f1;">
+                <div style="font-size: 24px; margin-bottom: 12px;">📅</div>
+                <h4 style="margin-bottom: 8px;">第一步：收市后查看推荐</h4>
+                <p style="font-size: 14px; color: #64748b;">每天下午收市后运行脚本，获取今日推荐股票列表</p>
+            </div>
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border-left: 4px solid #22c55e;">
+                <div style="font-size: 24px; margin-bottom: 12px;">💵</div>
+                <h4 style="margin-bottom: 8px;">第二步：次日开盘买入</h4>
+                <p style="font-size: 14px; color: #64748b;">按评分从高到低，买入排名前N只（N=可用仓位数），满仓则观望</p>
+            </div>
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border-left: 4px solid #3b82f6;">
+                <div style="font-size: 24px; margin-bottom: 12px;">📈</div>
+                <h4 style="margin-bottom: 8px;">第三步：持有期间监控</h4>
+                <p style="font-size: 14px; color: #64748b;">盘中监控股价，触及+11%止盈或-8%止损则卖出</p>
+            </div>
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border-left: 4px solid #f59e0b;">
+                <div style="font-size: 24px; margin-bottom: 12px;">⏰</div>
+                <h4 style="margin-bottom: 8px;">第四步：到期卖出释放仓位</h4>
+                <p style="font-size: 14px; color: #64748b;">持有满9天无论盈亏都卖出，释放仓位后可买入新推荐</p>
+            </div>
+        </div>
+        <div style="margin-top: 20px; padding: 16px; background: #fffbeb; border-radius: 8px; border: 1px solid #fef3c7;">
+            <strong style="color: #d97706;">❓ 常见疑问：</strong>
+            <ul style="margin-top: 8px; padding-left: 20px; color: #64748b; font-size: 14px;">
+                <li><strong>Q：每天都有推荐，是不是每天都要买？</strong></li>
+                <li>A：不是！只有当有可用仓位（持仓<3只）时才买入排名前N的推荐，已满仓则观望</li>
+                <li><strong>Q：明天买还是后天买？</strong></li>
+                <li>A：今天的推荐 → 明天开盘买；明天的推荐 → 后天开盘买。按顺序执行即可</li>
+                <li><strong>Q：推荐了4只但只能买3只怎么办？</strong></li>
+                <li>A：只买评分最高的3只，第4只列为备选，等待仓位释放后可考虑</li>
+            </ul>
+        </div>
+    </div>
+    
     <div class="footer">
         <p>数据来源: daily_candidates (LLM多源策略筛选)</p>
-        <p>策略参数: 次日开盘价买入 | +11%止盈 | -8%止损 | T+9到期 | 单股95%仓位 | 最多3只持仓</p>
+        <p>策略参数: 次日开盘价买入 | +11%止盈 | -8%止损 | T+9到期 | 单股95%仓位 | 最多3只持仓 | 评分≥30分</p>
         <p>生成时间: {now_str} | © openclaw-quant-system</p>
     </div>
 </div>
