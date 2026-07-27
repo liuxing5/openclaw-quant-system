@@ -584,8 +584,27 @@ def main():
     print(f"获取到 {len(candidates)} 只推荐股票")
     
     if not candidates:
-        print("\n⚠️ 未找到推荐股票，生成空报告")
-        guide_list = []
+        print(f"\n⚠️ {snapshot_date} 未找到推荐股票，尝试回退到最近有数据的日期")
+        d = snapshot_date
+        max_back_days = 10
+        days_back = 0
+        while not candidates and days_back < max_back_days:
+            d -= timedelta(days=1)
+            days_back += 1
+            if is_trading_day(d):
+                candidates = fetch_latest_candidates(d)
+                print(f"  尝试 {d}: {len(candidates)} 只")
+                if candidates:
+                    snapshot_date = d
+                    print(f"  ✅ 使用 {d} 的数据")
+        
+        if not candidates:
+            print(f"\n⚠️ 最近{max_back_days}天都未找到推荐股票，生成空报告")
+            guide_list = []
+        else:
+            print(f"\n使用 {snapshot_date} 的推荐数据")
+            guide_list = generate_trade_guide(candidates, snapshot_date)
+            print(f"生成了 {len(guide_list)} 条操作指导")
     else:
         print("\n正在生成操作指导...")
         guide_list = generate_trade_guide(candidates, snapshot_date)
