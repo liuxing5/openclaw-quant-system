@@ -33,9 +33,9 @@ from core.utils.trading_calendar import is_trading_day, get_next_trading_day
 load_project_env()
 
 MAX_CONCURRENT = 1  # 单仓模式：与回测一致
-PROFIT_PCT = 11.0
-STOP_PCT = 8.0
-MAX_HOLD_DAYS = 9
+PROFIT_PCT = 10.0
+STOP_PCT = 7.0
+MAX_HOLD_DAYS = 10
 POSITION_PCT = 0.95
 
 TRACKER_PATH = os.path.join(os.path.dirname(__file__), 'position_tracker.json')

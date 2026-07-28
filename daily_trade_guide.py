@@ -31,9 +31,9 @@ load_project_env()
 
 from position_manager import PositionManager
 
-PROFIT_PCT = 11.0
-STOP_PCT = 8.0
-MAX_HOLD_DAYS = 9
+PROFIT_PCT = 10.0
+STOP_PCT = 7.0
+MAX_HOLD_DAYS = 10
 POS_SIZE = 0.95
 MAX_CONCURRENT = 1  # 单仓模式：与回测一致
 SCORE_THRESHOLD = 30

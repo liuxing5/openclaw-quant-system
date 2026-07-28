@@ -6,18 +6,16 @@
 按照以下规则精确计算收益：
 
 买入：次日开盘价（ENTRY_MODE=open）
-卖出规则（按日顺序检查 T+1 ~ T+7）：
+卖出规则（按日顺序检查 T+1 ~ T+10）：
   1. 若当日最低价 ≤ 止损价(买入价-7%) → 以止损价卖出（保守优先）
-  2. 若当日最高价 ≥ 止盈价(买入价+9%) → 以止盈价卖出
-  3. T+7 收盘若仍未触发 → 以收盘价卖出
+  2. 若当日最高价 ≥ 止盈价(买入价+10%) → 以止盈价卖出
+  3. T+10 收盘若仍未触发 → 以收盘价卖出
 选股：每日选推荐分(final_score)最高的股票（全部4种策略参与）
 仓位：单仓模式，95%资金买入，满仓进出
 数据清洗：过滤日变动>30%的异常行情数据（A股涨跌停±10%/±20%）
 初始资金：100,000元
 
-参数经19000种组合精细扫描优化（含移动止损/分数过滤/分批止盈），
-Calmar比率(年化收益/最大回撤)最优。
-关键优化：权益计算修复（持仓无行情数据时使用最近收盘价估值，避免虚假回撤）。
+参数经180种组合扫描优化（清洗后数据），Calmar比率(年化收益/最大回撤)最优。
 """
 
 import os, sys, json, math
@@ -33,11 +31,10 @@ DB_URL = os.getenv(
 )
 INITIAL_CAPITAL = 100000.0
 POSITION_PCT = 0.95
-MAX_HOLD_DAYS = 9
-PROFIT_PCT = 11.0  # 止盈百分比
-STOP_PCT = 8.0     # 止损百分比
-MAX_CONCURRENT = 1  # 单仓模式：每次只持有1只股票
-SCORE_THRESHOLD = 30  # 最低推荐分过滤（与每日指导一致）
+MAX_HOLD_DAYS = 10
+PROFIT_PCT = 10.0  # 止盈百分比
+STOP_PCT = 7.0     # 止损百分比
+MAX_CONCURRENT = 1  # 单仓模式
 ENTRY_MODE = "open"  # "close" = 推荐日收盘买入, "open" = 次日开盘买入
 EXCLUDE_SOURCES = []  # 不排除任何策略（全部策略表现更优）
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest")
@@ -80,9 +77,8 @@ def load_recommendations(conn):
         WHERE selected = TRUE
           AND target_1 IS NOT NULL
           AND stop_loss IS NOT NULL
-          AND final_score >= %s
-        ORDER BY snapshot_date, final_score DESC, ts_code;
-    """, (SCORE_THRESHOLD,))
+        ORDER BY snapshot_date, source, final_score DESC;
+    """)
     recs = [dict(r) for r in cur.fetchall()]
     cur.close()
     return recs
@@ -183,21 +179,6 @@ def validate_and_clean_quotes(quotes_by_stock):
 # ============================================================
 # Backtest Logic
 # ============================================================
-
-def get_last_known_close(ts_code, current_date, quotes_by_stock, trading_dates, lookback=5):
-    """Get last known close price before/at current_date, looking back up to `lookback` days."""
-    if current_date not in trading_dates:
-        return None
-    idx = trading_dates.index(current_date)
-    for i in range(idx, max(-1, idx - lookback - 1), -1):
-        if i < 0:
-            break
-        d = trading_dates[i]
-        q = quotes_by_stock.get(ts_code, {}).get(d)
-        if q and q.get("close"):
-            return float(q["close"])
-    return None
-
 
 def get_buy_price(rec, quotes_by_stock, trading_dates=None):
     """Get buy price based on ENTRY_MODE.
@@ -331,235 +312,83 @@ def run_backtest_logic(recs, trading_dates, quotes_by_stock):
     return trades
 
 
-def simulate_portfolio(recs, trading_dates, quotes_by_stock):
-    """Dynamic day-by-day portfolio simulation (matches param_sweep logic).
-    For each trading day: process sells (checking OHLC against targets/stops),
-    then process buys (TOP-scored stock). Returns daily_equity, executed_trades, skipped_count.
-    
-    Key fix: Recommendations generate signals on snapshot_date, but buys are executed
-    on the NEXT trading day using that day's open price. This matches real trading flow."""
-    if not recs:
+def simulate_portfolio(trades, trading_dates, quotes_by_stock):
+    """Simulate portfolio: multi-position mode, up to MAX_CONCURRENT positions,
+    each using POSITION_PCT of current equity. Buy TOP-scored stock each day."""
+    sorted_trades = sorted(trades, key=lambda t: (t["rec_date"], -t["final_score"]))
+    buys_by_date = defaultdict(list)
+    sells_by_date = defaultdict(list)
+    for t in sorted_trades:
+        buys_by_date[t["rec_date"]].append(t)
+        if t["sell_date"]:
+            sells_by_date[t["sell_date"]].append(t)
+    if not trades:
         return [], 0, []
-
-    # Group recommendations by snapshot_date
-    daily_recs = defaultdict(list)
-    for r in recs:
-        daily_recs[r["snapshot_date"]].append(r)
-
-    # Build trading date range: from first recommendation to last trading date
-    first_date = min(r["snapshot_date"] for r in recs)
-    bt_dates = [d for d in trading_dates if d >= first_date]
-
+    first_date = min(t["rec_date"] for t in trades)
+    last_date = max(t.get("sell_date") or t["rec_date"] for t in trades)
+    bt_dates = [d for d in trading_dates if first_date <= d <= last_date]
     cash = INITIAL_CAPITAL
-    open_positions = []  # list of dicts
-    pending_buys = []    # Orders pending execution (next trading day)
+    open_positions = []
     daily_equity = []
     executed_trades = []
     skipped_count = 0
-
     for d in bt_dates:
-        # 0. Process pending buy orders (executed at today's open price)
-        q_today = {}
-        for ts_code in [p["ts_code"] for p in pending_buys]:
-            q = quotes_by_stock.get(ts_code, {}).get(d)
-            if q and q.get("open"):
-                q_today[ts_code] = float(q["open"])
-        
-        pending_buys_sorted = sorted(pending_buys, key=lambda x: x["final_score"], reverse=True)
-        slots = MAX_CONCURRENT - len(open_positions)
-        
-        for order in pending_buys_sorted:
-            if slots <= 0:
-                break
-            
-            ts_code = order["ts_code"]
-            bp = q_today.get(ts_code)
-            if not bp:
-                continue
-            
-            avail = cash * POSITION_PCT
-            allocated = avail / slots
-            shares = int(allocated / bp / 100) * 100
-            if shares < 100:
-                pending_buys.remove(order)
-                skipped_count += 1
-                continue
-            
-            cost = shares * bp
-            if cost > cash:
-                pending_buys.remove(order)
-                skipped_count += 1
-                continue
-            
-            cash -= cost
-            target = round(bp * (1 + PROFIT_PCT / 100), 2)
-            stop_loss = round(bp * (1 - STOP_PCT / 100), 2)
-            pos = {
-                "ts_code": order["ts_code"], "stock_name": order["stock_name"],
-                "source": order["source"], "all_sources": order.get("all_sources", [order["source"]]),
-                "rec_date": order["rec_date"], "buy_date": d,
-                "buy_price": bp, "shares": shares, "cost": round(cost, 2),
-                "target": target, "stop_loss": stop_loss,
-                "final_score": float(order.get("final_score") or 0),
-                "target_1": target, "days_held": 0,
-            }
-            open_positions.append(pos)
-            pending_buys.remove(order)
-            slots -= 1
-
-        # 1. Process sells first - dynamically check OHLC
-        for pos in list(open_positions):
-            pos["days_held"] = pos.get("days_held", 0) + 1
-            q = quotes_by_stock.get(pos["ts_code"], {}).get(d)
-            if not q or q.get("open") is None:
-                if pos["days_held"] >= MAX_HOLD_DAYS:
-                    last_p = _get_last_known_close(pos["ts_code"], d, quotes_by_stock, bt_dates) or pos["buy_price"]
-                    cash += pos["shares"] * last_p
-                    open_positions.remove(pos)
-                    pnl = (last_p - pos["buy_price"]) * pos["shares"]
-                    ret = (last_p - pos["buy_price"]) / pos["buy_price"] * 100
-                    executed_trades.append(_make_trade_dict(pos, last_p, d, "到期无数据", pnl, ret))
-                continue
-
-            o = float(q["open"]) if q.get("open") else None
-            h = float(q["high"]) if q.get("high") else None
-            l = float(q["low"]) if q.get("low") else None
-            c = float(q["close"]) if q.get("close") else None
-
-            sell_price = None
-            sell_reason = None
-
-            # Gap-down stop
-            if o is not None and o <= pos["stop_loss"] and o > 0:
-                sell_price = o
-                sell_reason = "跳空止损"
-            # Gap-up profit
-            elif o is not None and o >= pos["target"] and o > 0:
-                sell_price = o
-                sell_reason = "跳空止盈"
-            # Intraday stop loss (conservative priority)
-            elif l is not None and l <= pos["stop_loss"] and pos["stop_loss"] > 0:
-                sell_price = pos["stop_loss"]
-                sell_reason = "止损"
-            # Intraday profit
-            elif h is not None and h >= pos["target"] and pos["target"] > 0:
-                sell_price = pos["target"]
-                sell_reason = "止盈"
-            # Time expiry
-            elif pos.get("days_held", 0) >= MAX_HOLD_DAYS:
-                sell_price = c
-                sell_reason = "到期平仓"
-
-            if sell_price is not None:
-                cash += pos["shares"] * sell_price
-                pnl = (sell_price - pos["buy_price"]) * pos["shares"]
-                ret = (sell_price - pos["buy_price"]) / pos["buy_price"] * 100
-                open_positions.remove(pos)
-                executed_trades.append(_make_trade_dict(pos, sell_price, d, sell_reason, pnl, ret))
-
-        # 2. Calculate equity for position sizing
-        open_value = _calc_open_value(open_positions, d, quotes_by_stock, bt_dates)
+        # 1. Process sells first
+        for t in sells_by_date.get(d, []):
+            if t in open_positions:
+                cash += t["proceeds"]
+                open_positions.remove(t)
+                executed_trades.append(t)
+        # 2. Calculate current equity for dynamic position sizing
+        open_value = 0
+        for t in open_positions:
+            q = quotes_by_stock.get(t["ts_code"], {}).get(d)
+            if q and q.get("close"):
+                open_value += t["shares"] * float(q["close"])
+            else:
+                open_value += t["cost"]
         current_equity = cash + open_value
-
-        # 3. Process recommendations - add to pending buys queue (executed tomorrow)
-        recs_today = daily_recs.get(d, [])
-        if recs_today:
-            recs_sorted = sorted(recs_today, key=lambda x: float(x.get("final_score") or 0), reverse=True)
-            for rec in recs_sorted:
-                # Skip if already holding this stock
-                if any(p["ts_code"] == rec["ts_code"] for p in open_positions):
-                    continue
-                # Skip if already in pending buys
-                if any(p["ts_code"] == rec["ts_code"] for p in pending_buys):
-                    continue
-                
-                pending_buys.append({
-                    "ts_code": rec["ts_code"], "stock_name": rec["stock_name"],
-                    "source": rec["source"], "all_sources": rec.get("all_sources", [rec["source"]]),
-                    "rec_date": rec["snapshot_date"], "final_score": float(rec.get("final_score") or 0),
-                })
-
-        # 4. End-of-day equity
-        open_value = _calc_open_value(open_positions, d, quotes_by_stock, bt_dates)
+        # 3. Process buys - multi-position mode
+        daily_buys = buys_by_date.get(d, [])
+        for t in daily_buys:
+            if len(open_positions) >= MAX_CONCURRENT:
+                t["executed"] = False
+                skipped_count += 1
+                break
+            position_amount = current_equity * POSITION_PCT
+            buy_price = t["buy_price"]
+            shares = int(position_amount / buy_price / 100) * 100
+            if shares < 100:
+                shares = 100
+            cost = shares * buy_price
+            if cash < cost:
+                t["executed"] = False
+                skipped_count += 1
+                continue
+            cash -= cost
+            t["shares"] = shares
+            t["cost"] = round(cost, 2)
+            t["proceeds"] = round(shares * t["sell_price"], 2)
+            t["pnl"] = round(t["proceeds"] - cost, 2)
+            t["executed"] = True
+            open_positions.append(t)
+            current_equity = cash + open_value + cost
+        # 4. Recalculate end-of-day equity
+        open_value = 0
+        for t in open_positions:
+            q = quotes_by_stock.get(t["ts_code"], {}).get(d)
+            if q and q.get("close"):
+                open_value += t["shares"] * float(q["close"])
+            else:
+                open_value += t["cost"]
         total_equity = cash + open_value
         daily_equity.append({
             "date": d, "cash": round(cash, 2),
             "open_value": round(open_value, 2),
             "total_equity": round(total_equity, 2),
             "open_count": len(open_positions),
-            "pending_count": len(pending_buys),
         })
-
-    # Close remaining positions at last available prices
-    for pos in open_positions:
-        last_p = _get_last_known_close(pos["ts_code"], bt_dates[-1], quotes_by_stock, bt_dates) or pos["buy_price"]
-        cash += pos["shares"] * last_p
-        pnl = (last_p - pos["buy_price"]) * pos["shares"]
-        ret = (last_p - pos["buy_price"]) / pos["buy_price"] * 100
-        executed_trades.append(_make_trade_dict(pos, last_p, bt_dates[-1], "持仓中", pnl, ret))
-
     return daily_equity, skipped_count, executed_trades
-
-
-def _get_buy_price_dynamic(rec, quotes_by_stock, bt_dates):
-    """Get buy price: next trading day open price (matches param_sweep logic)."""
-    ts_code = rec["ts_code"]
-    snap_date = rec["snapshot_date"]
-    quotes = quotes_by_stock.get(ts_code, {})
-    future = [d for d in bt_dates if d > snap_date]
-    if future:
-        q = quotes.get(future[0])
-        if q and q.get("open"):
-            return float(q["open"])
-    return None
-
-
-def _get_last_known_close(ts_code, current_date, quotes_by_stock, bt_dates, lookback=5):
-    """Get last known close price before/at current_date."""
-    if current_date not in bt_dates:
-        return None
-    idx = bt_dates.index(current_date)
-    for i in range(idx, max(-1, idx - lookback - 1), -1):
-        if i < 0:
-            break
-        d = bt_dates[i]
-        q = quotes_by_stock.get(ts_code, {}).get(d)
-        if q and q.get("close"):
-            return float(q["close"])
-    return None
-
-
-def _calc_open_value(positions, d, quotes_by_stock, bt_dates):
-    """Calculate total market value of open positions."""
-    val = 0
-    for p in positions:
-        q = quotes_by_stock.get(p["ts_code"], {}).get(d)
-        if q and q.get("close"):
-            val += p["shares"] * float(q["close"])
-        else:
-            last_p = _get_last_known_close(p["ts_code"], d, quotes_by_stock, bt_dates)
-            val += p["shares"] * (last_p or p["buy_price"])
-    return val
-
-
-def _make_trade_dict(pos, sell_price, sell_date, sell_reason, pnl, ret):
-    """Create a trade dict compatible with stats/HTML generation."""
-    return {
-        "rec_date": pos["rec_date"], "buy_date": pos.get("buy_date", pos["rec_date"]),
-        "ts_code": pos["ts_code"], "stock_name": pos["stock_name"],
-        "source": pos["source"], "all_sources": pos.get("all_sources", [pos["source"]]),
-        "buy_price": round(pos["buy_price"], 3),
-        "sell_price": round(sell_price, 3),
-        "target_1": round(pos["target"], 3),
-        "stop_loss": round(pos["stop_loss"], 3),
-        "shares": pos["shares"], "cost": round(pos["shares"] * pos["buy_price"], 2),
-        "proceeds": round(pos["shares"] * sell_price, 2),
-        "pnl": round(pnl, 2), "return_pct": round(ret, 2),
-        "sell_date": sell_date, "sell_reason": sell_reason,
-        "hold_days": pos.get("days_held", 0),
-        "final_score": pos.get("final_score", 0),
-        "executed": True,
-    }
 
 
 # ============================================================
@@ -968,7 +797,7 @@ def generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed
     </div>
 
     <div class="footer">
-        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 次日开盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, @@MAX_HOLD@@强制平仓, 单仓模式(95%) | 全部4种策略参与 | 异常数据已清洗(日变动>30%过滤) | 19000种参数组合精细扫描最优 | 权益计算已修复(无行情日使用最近收盘价估值)</p>
+        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 次日开盘买入, @@PROFIT_PCT@@止盈/@@STOP_PCT@@止损, @@MAX_HOLD@@强制平仓, 单仓模式(95%) | 全部4种策略参与 | 异常数据已清洗(日变动>30%过滤) | 180种参数组合扫描最优</p>
         <p>注意: 本报告仅供学习研究, 不构成投资建议. A股交易规则: 100股整手, T+1交易制度</p>
         <p>生成时间: @@NOW@@ | © openclaw-quant-system</p>
     </div>
@@ -1198,20 +1027,15 @@ def main():
     conn.close()
 
     print("\n[4/5] 执行回测...")
-    # Signal analysis: ALL 4 strategies (for strategy comparison + signal stats)
+    # Signal analysis: ALL 4 strategies (for strategy comparison)
     all_trades = run_backtest_logic(recs, trading_dates, quotes_by_stock)
-    # Dynamic portfolio simulation (matches param_sweep logic)
+    # Portfolio simulation: use all strategies (EXCLUDE_SOURCES is empty)
     portfolio_recs = [r for r in recs if r["source"] not in EXCLUDE_SOURCES] if EXCLUDE_SOURCES else recs
-    daily_equity, skipped_count, executed = simulate_portfolio(portfolio_recs, trading_dates, quotes_by_stock)
+    portfolio_trades = run_backtest_logic(portfolio_recs, trading_dates, quotes_by_stock)
+    daily_equity, skipped_count, executed = simulate_portfolio(portfolio_trades, trading_dates, quotes_by_stock)
 
     print("\n[5/5] 计算统计 & 生成HTML...")
-    stats = calculate_stats(executed, daily_equity, executed)
-    # Override signal-level stats from all_trades (all signals, not just executed)
-    if all_trades:
-        sig_wins = [t for t in all_trades if t["return_pct"] > 0]
-        stats["signal_count"] = len(all_trades)
-        stats["signal_win_rate"] = round(len(sig_wins) / len(all_trades) * 100, 1)
-        stats["signal_avg_return"] = round(sum(t["return_pct"] for t in all_trades) / len(all_trades), 2)
+    stats = calculate_stats(portfolio_trades, daily_equity, executed)
     strategy_stats = calculate_strategy_stats(all_trades, executed)
     monthly_returns = calculate_monthly_returns(daily_equity)
     html = generate_html(stats, strategy_stats, monthly_returns, daily_equity, executed, skipped_count)
