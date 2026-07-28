@@ -39,7 +39,7 @@ PROFIT_PCT = 11.0
 STOP_PCT = 8.0
 MAX_HOLD_DAYS = 9
 POS_SIZE = 0.95
-MAX_CONCURRENT = 3
+MAX_CONCURRENT = 1  # 单仓模式：与回测一致
 SCORE_THRESHOLD = 30
 
 TRACKER_PATH = os.path.join(os.path.dirname(__file__), 'position_tracker.json')
@@ -64,9 +64,7 @@ def generate_operation_report(pm: PositionManager, snapshot_date: date) -> str:
             d -= timedelta(days=1)
             days_back += 1
             if is_trading_day(d):
-                conn = get_db_fresh()
-                candidates = fetch_latest_candidates(d, conn)
-                conn.close()
+                candidates = fetch_latest_candidates(d)
                 if candidates:
                     snapshot_date = d
                     print(f"  使用 {d} 的数据")
