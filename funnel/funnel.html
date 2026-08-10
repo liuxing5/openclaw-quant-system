@@ -132,8 +132,8 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 四策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-08-07 | 生成: 2026-08-10 11:55:36
-        <input type="date" class="date-input" id="datePicker" value="2026-08-07" min="2026-01-05" max="2026-08-07" onchange="switchDate(this.value)">
+        报告日期: 2026-08-07 | 生成: 2026-08-10 14:39:59
+        <input type="date" class="date-input" id="datePicker" value="2026-08-07" min="2026-01-05" max="2026-08-10" onchange="switchDate(this.value)">
       </div>
     </div>
     <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">
@@ -152,201 +152,93 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
   <div class="four-col">
     <!-- ========== 八步法 ========== -->
     <div class="section">
-      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-08-07 14:39:02</span></h2>
+      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-08-10 14:39:45</span></h2>
       <div class="steps-area">
             <div class="step-row" title="稳健3%~5%，高位6%~9.7%，剔除涨停/跌停">
               <span class="step-name">涨幅筛选</span>
-              <span class="step-pass">216</span>
+              <span class="step-pass">237</span>
               
               <span class="rule-inline">稳健3%~5%，高位6%~9.7%，剔除涨停/跌停</span>
             </div>
             <div class="step-row" title="稳健0.5~50亿，高位0.3~30亿，保证流动性">
               <span class="step-name">成交额过滤</span>
-              <span class="step-pass">168</span>
-              <span class="elim">48</span>
+              <span class="step-pass">202</span>
+              <span class="elim">35</span>
               <span class="rule-inline">稳健0.5~50亿，高位0.3~30亿，保证流动性</span>
             </div>
             <div class="step-row" title="5%~10%，活跃度适中">
               <span class="step-name">换手率过滤</span>
-              <span class="step-pass">54</span>
-              <span class="elim">114</span>
+              <span class="step-pass">27</span>
+              <span class="elim">175</span>
               <span class="rule-inline">5%~10%，活跃度适中</span>
             </div>
             <div class="step-row" title="稳健50~500亿，高位30~200亿">
               <span class="step-name">市值过滤</span>
-              <span class="step-pass">48</span>
-              <span class="elim">6</span>
+              <span class="step-pass">24</span>
+              <span class="elim">3</span>
               <span class="rule-inline">稳健50~500亿，高位30~200亿</span>
             </div>
             <div class="step-row" title="量比≥1，放量确认">
               <span class="step-name">量比过滤</span>
-              <span class="step-pass">15</span>
-              <span class="elim">33</span>
+              <span class="step-pass">9</span>
+              <span class="elim">15</span>
               <span class="rule-inline">量比≥1，放量确认</span>
             </div>
             <div class="step-row" title="MA多头排列 + 无上方压力位">
               <span class="step-name">均线+压力</span>
-              <span class="step-pass">10</span>
-              <span class="elim">5</span>
+              <span class="step-pass">8</span>
+              <span class="elim">1</span>
               <span class="rule-inline">MA多头排列 + 无上方压力位</span>
             </div>
             <div class="step-row" title="乖离率≤5%，避免追高">
               <span class="step-name">乖离率过滤</span>
-              <span class="step-pass">10</span>
-              
+              <span class="step-pass">7</span>
+              <span class="elim">1</span>
               <span class="rule-inline">乖离率≤5%，避免追高</span>
             </div>
             <div class="step-row" title="综合评分≥阈值(85+)，量化+情绪加权">
               <span class="step-name">综合评分</span>
-              <span class="step-pass">8</span>
-              <span class="elim">2</span>
+              <span class="step-pass">2</span>
+              <span class="elim">5</span>
               <span class="rule-inline">综合评分≥阈值(85+)，量化+情绪加权</span>
-            </div><div class="step-note"> 情绪正常·涨停池异常(55分)</div></div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (11只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
+            </div><div class="step-note"> 情绪高潮(95分)</div></div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (2只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
       <div class="cards-grid"><div class="path-group"><div class="cards-grid">
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-603352','_blank')" style="cursor:pointer">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-603108','_blank')" style="cursor:pointer">
           <div class="cand-header">
             <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-603352" target="_blank" style="color:inherit;text-decoration:none">603352.SH</a></span>
-              <span class="cand-name">至信股份</span>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-603108" target="_blank" style="color:inherit;text-decoration:none">603108.SH</a></span>
+              <span class="cand-name">润达医疗</span>
               
               <span class="src-badge">1源</span>
             </div>
             <span class="cand-score">83</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">27.81</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">27.39</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">28.93</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">80</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">稳健蓄势 · 黄金放量 · 换手偏高 · 首阳突破</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000630','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000630" target="_blank" style="color:inherit;text-decoration:none">000630.SZ</a></span>
-              <span class="cand-name">铜陵有色</span>
-              
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">75</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">6.89</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">6.79</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">7.17</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">66</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手 · 量能递增</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000737','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000737" target="_blank" style="color:inherit;text-decoration:none">000737.SZ</a></span>
-              <span class="cand-name">北方铜业</span>
-              
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">75</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">14.49</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">14.27</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">15.08</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">66</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">10.95</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">10.78</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">11.39</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">77</span><span class="ml">量化分</span></div>
           </div>
           <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手 · 量能递增</div>
         </div></div></div><div class="path-group"><div class="path-label path-upper" style="margin-bottom:8px;">高位路径</div><div class="cards-grid">
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-300142','_blank')" style="cursor:pointer">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600230','_blank')" style="cursor:pointer">
           <div class="cand-header">
             <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300142" target="_blank" style="color:inherit;text-decoration:none">300142.SZ</a></span>
-              <span class="cand-name">沃森生物</span>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600230" target="_blank" style="color:inherit;text-decoration:none">600230.SH</a></span>
+              <span class="cand-name">沧州大化</span>
               
               <span class="src-badge">1源</span>
             </div>
-            <span class="cand-score">85</span>
+            <span class="cand-score">71</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">13.01</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">12.81</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">13.80</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">100</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">15.73</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">15.49</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">16.68</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">61</span><span class="ml">量化分</span></div>
           </div>
-          <div class="cand-tags">高位博弈 · 光头大阳 · 黄金放量 · 黄金换手</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-603456','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-603456" target="_blank" style="color:inherit;text-decoration:none">603456.SH</a></span>
-              <span class="cand-name">九洲药业</span>
-              
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">85</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">16.29</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">16.04</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">17.27</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">89</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手 · 首阳突破</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-002202','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-002202" target="_blank" style="color:inherit;text-decoration:none">002202.SZ</a></span>
-              <span class="cand-name">金风科技</span>
-              
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">85</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">21.58</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">21.25</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">22.89</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">95</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">高位博弈 · 黄金放量 · 黄金换手 · 量能递增</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-300039','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300039" target="_blank" style="color:inherit;text-decoration:none">300039.SZ</a></span>
-              <span class="cand-name">上海凯宝</span>
-              
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">84</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">5.90</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">5.81</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">6.26</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">80</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">高位博弈 · 光头大阳 · 量能达标 · 量能递增</div>
-        </div>
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600129','_blank')" style="cursor:pointer">
-          <div class="cand-header">
-            <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600129" target="_blank" style="color:inherit;text-decoration:none">600129.SH</a></span>
-              <span class="cand-name">太极集团</span>
-              
-              <span class="src-badge">1源</span>
-            </div>
-            <span class="cand-score">79</span>
-          </div>
-          <div class="cand-metrics">
-            <div class="metric"><span class="mv">16.12</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">15.87</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">17.09</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">80</span><span class="ml">量化分</span></div>
-          </div>
-          <div class="cand-tags">高位博弈 · 量能达标 · 换手偏高 · 量能递增</div>
+          <div class="cand-tags">高位博弈 · 量能达标 · 黄金换手 · 首阳突破</div>
         </div></div></div></div>
     </div>
 
@@ -798,7 +690,7 @@ function toggleTheme() {
 }
 function switchDate(dateVal) {
   if (!dateVal) return;
-  var available = ["2026-08-07", "2026-08-06", "2026-08-05", "2026-08-04", "2026-08-03", "2026-07-31", "2026-07-30", "2026-07-29", "2026-07-28", "2026-07-27", "2026-07-24", "2026-07-23", "2026-07-22", "2026-07-21", "2026-07-20", "2026-07-17", "2026-07-16", "2026-07-15", "2026-07-14", "2026-07-13", "2026-07-10", "2026-07-09", "2026-07-08", "2026-07-07", "2026-07-06", "2026-07-03", "2026-07-02", "2026-07-01", "2026-06-30", "2026-06-29", "2026-06-26", "2026-06-25", "2026-06-24", "2026-06-23", "2026-06-22", "2026-06-18", "2026-06-17", "2026-06-16", "2026-06-15", "2026-06-12", "2026-06-11", "2026-06-10", "2026-06-09", "2026-06-08", "2026-06-05", "2026-06-04", "2026-06-03", "2026-06-02", "2026-06-01", "2026-05-29", "2026-05-28", "2026-05-27", "2026-05-26", "2026-05-25", "2026-05-22", "2026-05-21", "2026-05-20", "2026-05-19", "2026-05-18", "2026-05-15", "2026-05-14", "2026-05-13", "2026-05-12", "2026-05-11", "2026-05-08", "2026-05-06", "2026-04-30", "2026-04-29", "2026-04-28", "2026-04-27", "2026-04-24", "2026-04-23", "2026-04-22", "2026-04-21", "2026-04-20", "2026-04-17", "2026-04-16", "2026-04-15", "2026-04-14", "2026-04-13", "2026-04-10", "2026-04-09", "2026-04-08", "2026-04-07", "2026-04-03", "2026-04-02", "2026-04-01", "2026-03-31", "2026-03-30", "2026-03-27", "2026-03-26", "2026-03-25", "2026-03-24", "2026-03-23", "2026-03-20", "2026-03-19", "2026-03-18", "2026-03-17", "2026-03-16", "2026-03-13", "2026-03-12", "2026-03-11", "2026-03-10", "2026-03-09", "2026-03-06", "2026-03-05", "2026-03-04", "2026-03-03", "2026-03-02", "2026-02-27", "2026-02-26", "2026-02-25", "2026-02-24", "2026-02-13", "2026-02-12", "2026-02-11", "2026-02-10", "2026-02-09", "2026-02-06", "2026-02-05", "2026-02-04", "2026-02-03", "2026-02-02", "2026-01-30", "2026-01-29", "2026-01-28", "2026-01-27", "2026-01-26", "2026-01-23", "2026-01-22", "2026-01-21", "2026-01-20", "2026-01-19", "2026-01-16", "2026-01-14", "2026-01-13", "2026-01-12", "2026-01-09", "2026-01-08", "2026-01-07", "2026-01-06", "2026-01-05"];
+  var available = ["2026-08-10", "2026-08-07", "2026-08-06", "2026-08-05", "2026-08-04", "2026-08-03", "2026-07-31", "2026-07-30", "2026-07-29", "2026-07-28", "2026-07-27", "2026-07-24", "2026-07-23", "2026-07-22", "2026-07-21", "2026-07-20", "2026-07-17", "2026-07-16", "2026-07-15", "2026-07-14", "2026-07-13", "2026-07-10", "2026-07-09", "2026-07-08", "2026-07-07", "2026-07-06", "2026-07-03", "2026-07-02", "2026-07-01", "2026-06-30", "2026-06-29", "2026-06-26", "2026-06-25", "2026-06-24", "2026-06-23", "2026-06-22", "2026-06-18", "2026-06-17", "2026-06-16", "2026-06-15", "2026-06-12", "2026-06-11", "2026-06-10", "2026-06-09", "2026-06-08", "2026-06-05", "2026-06-04", "2026-06-03", "2026-06-02", "2026-06-01", "2026-05-29", "2026-05-28", "2026-05-27", "2026-05-26", "2026-05-25", "2026-05-22", "2026-05-21", "2026-05-20", "2026-05-19", "2026-05-18", "2026-05-15", "2026-05-14", "2026-05-13", "2026-05-12", "2026-05-11", "2026-05-08", "2026-05-06", "2026-04-30", "2026-04-29", "2026-04-28", "2026-04-27", "2026-04-24", "2026-04-23", "2026-04-22", "2026-04-21", "2026-04-20", "2026-04-17", "2026-04-16", "2026-04-15", "2026-04-14", "2026-04-13", "2026-04-10", "2026-04-09", "2026-04-08", "2026-04-07", "2026-04-03", "2026-04-02", "2026-04-01", "2026-03-31", "2026-03-30", "2026-03-27", "2026-03-26", "2026-03-25", "2026-03-24", "2026-03-23", "2026-03-20", "2026-03-19", "2026-03-18", "2026-03-17", "2026-03-16", "2026-03-13", "2026-03-12", "2026-03-11", "2026-03-10", "2026-03-09", "2026-03-06", "2026-03-05", "2026-03-04", "2026-03-03", "2026-03-02", "2026-02-27", "2026-02-26", "2026-02-25", "2026-02-24", "2026-02-13", "2026-02-12", "2026-02-11", "2026-02-10", "2026-02-09", "2026-02-06", "2026-02-05", "2026-02-04", "2026-02-03", "2026-02-02", "2026-01-30", "2026-01-29", "2026-01-28", "2026-01-27", "2026-01-26", "2026-01-23", "2026-01-22", "2026-01-21", "2026-01-20", "2026-01-19", "2026-01-16", "2026-01-14", "2026-01-13", "2026-01-12", "2026-01-09", "2026-01-08", "2026-01-07", "2026-01-06", "2026-01-05"];
   if (available.indexOf(dateVal) === -1) {
     // 自动跳转到最近的有数据的日期
     var closest = null;
