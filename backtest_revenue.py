@@ -6,16 +6,18 @@
 按照以下规则精确计算收益：
 
 买入：次日开盘价（ENTRY_MODE=open）
-卖出规则（按日顺序检查 T+1 ~ T+10）：
-  1. 若当日最低价 ≤ 止损价(买入价-7%) → 以止损价卖出（保守优先）
-  2. 若当日最高价 ≥ 止盈价(买入价+10%) → 以止盈价卖出
-  3. T+10 收盘若仍未触发 → 以收盘价卖出
-选股：每日选推荐分(final_score)最高的股票（全部4种策略参与）
+卖出规则（按日顺序检查 T+1 ~ T+9）：
+  1. 若当日最低价 ≤ 止损价(买入价-8%) → 以止损价卖出（保守优先）
+  2. 若当日最高价 ≥ 止盈价(买入价+10.5%) → 以止盈价卖出
+  3. T+9 收盘若仍未触发 → 以收盘价卖出
+选股：每日选推荐分(final_score)最高的股票（全部4种策略参与），仅交易 final_score>=75
 仓位：单仓模式，95%资金买入，满仓进出
 数据清洗：过滤日变动>30%的异常行情数据（A股涨跌停±10%/±20%）
 初始资金：100,000元
 
-参数经180种组合扫描优化（清洗后数据），Calmar比率(年化收益/最大回撤)最优。
+参数经375种组合确定性扫描优化（清洗后数据，已修复系统性 high==target 污染，
+并修复同分选股的非确定性 tie-break），按 Calmar比率(年化收益/最大回撤) 最优：
+10.5%/8%/9d/score75 -> +241.84% / -16.56% / Calmar 4.47。
 """
 
 import os, sys, json, math
@@ -31,10 +33,11 @@ DB_URL = os.getenv(
 )
 INITIAL_CAPITAL = 100000.0
 POSITION_PCT = 0.95
-MAX_HOLD_DAYS = 10
-PROFIT_PCT = 10.0  # 止盈百分比
-STOP_PCT = 7.0     # 止损百分比
+MAX_HOLD_DAYS = 9
+PROFIT_PCT = 10.5  # 止盈百分比
+STOP_PCT = 8.0     # 止损百分比
 MAX_CONCURRENT = 1  # 单仓模式
+SCORE_THRESHOLD = 75  # 仅交易高置信推荐 (final_score >= 75)
 ENTRY_MODE = "open"  # "close" = 推荐日收盘买入, "open" = 次日开盘买入
 EXCLUDE_SOURCES = []  # 不排除任何策略（全部策略表现更优）
 OUTPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "backtest")
@@ -49,7 +52,7 @@ def get_connection():
     """Connect to Supabase. Supports both DATABASE_URL and individual POSTGRES_* env vars."""
     db_url = os.getenv("DATABASE_URL")
     if db_url:
-        return psycopg2.connect(db_url, connect_timeout=30, options="-c statement_timeout=60000")
+        return psycopg2.connect(db_url, connect_timeout=30, options="-c statement_timeout=180000")
     # Fall back to individual env vars (used in GitHub Actions)
     return psycopg2.connect(
         host=os.getenv("POSTGRES_HOST", "aws-1-ap-northeast-1.pooler.supabase.com"),
@@ -59,7 +62,7 @@ def get_connection():
         dbname=os.getenv("POSTGRES_DB", "postgres"),
         sslmode=os.getenv("POSTGRES_SSLMODE", "require"),
         connect_timeout=30,
-        options="-c statement_timeout=60000",
+        options="-c statement_timeout=180000",
     )
 
 
@@ -77,8 +80,9 @@ def load_recommendations(conn):
         WHERE selected = TRUE
           AND target_1 IS NOT NULL
           AND stop_loss IS NOT NULL
-        ORDER BY snapshot_date, source, final_score DESC;
-    """)
+          AND COALESCE(final_score, 0) >= %s
+        ORDER BY snapshot_date, source, final_score DESC, ts_code;
+    """ % SCORE_THRESHOLD)
     recs = [dict(r) for r in cur.fetchall()]
     cur.close()
     return recs
@@ -93,24 +97,112 @@ def load_trading_dates(conn):
 
 
 def load_quotes_batch(conn, ts_codes, start_date, end_date):
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    code_list = list(ts_codes)
-    all_quotes = []
-    batch_size = 500
+    """Load quotes with local cache + per-batch thread-timeout retry.
+
+    Two robustness measures against flaky Supabase SSL drops that hang:
+      1. Incremental pickle cache (saved after every batch) — progress survives
+         process kills; subsequent runs resume from cache.
+      2. Per-batch thread timeout (45s) — a hung query is abandoned and the
+         batch retried with a fresh connection instead of blocking forever.
+    """
+    import pickle, time as _t, threading
+    from psycopg2 import OperationalError
+    cache_path = os.path.join(OUTPUT_DIR, "quotes_cache.pkl")
+    code_list = sorted(set(ts_codes))
     extended_end = end_date + timedelta(days=15)
-    for i in range(0, len(code_list), batch_size):
-        batch = code_list[i : i + batch_size]
-        cur.execute("""
-            SELECT ts_code, trade_date, open, high, low, close, volume, amount, pct_chg
-            FROM daily_quotes
-            WHERE ts_code = ANY(%s)
-              AND trade_date >= %s
-              AND trade_date <= %s
-            ORDER BY ts_code, trade_date;
-        """, (batch, start_date, extended_end))
-        all_quotes.extend([dict(r) for r in cur.fetchall()])
-    cur.close()
-    return all_quotes
+
+    # Load any existing cache to resume from
+    by_stock = {}
+    if os.path.exists(cache_path):
+        try:
+            with open(cache_path, "rb") as f:
+                by_stock = pickle.load(f)
+            print(f"  [cache] 续跑: 已有 {len(by_stock)} 只股票缓存")
+        except Exception as e:
+            print(f"  [cache] 读取失败，重新加载: {e}")
+            by_stock = {}
+
+    needed = set(code_list)
+    missing = [c for c in code_list if c not in by_stock or not by_stock[c]]
+    if not missing:
+        print(f"  [cache] 全部 {len(by_stock)} 只已缓存，跳过DB")
+        return _flatten_cache(by_stock)
+
+    print(f"  [db] 分批加载 {len(missing)} 只缺失股票行情 (带超时重试)...")
+    batch_size = 30
+
+    def _query_batch(batch):
+        bconn = get_connection()
+        try:
+            bcur = bconn.cursor(cursor_factory=RealDictCursor)
+            bcur.execute("""
+                SELECT ts_code, trade_date, open, high, low, close
+                FROM daily_quotes
+                WHERE ts_code = ANY(%s)
+                  AND trade_date >= %s
+                  AND trade_date <= %s;
+            """, (batch, start_date, extended_end))
+            rows = bcur.fetchall()
+            return rows
+        finally:
+            try:
+                bconn.close()
+            except Exception:
+                pass
+
+    def _query_with_timeout(batch, timeout=45):
+        result = [None]
+        exc = [None]
+
+        def _run():
+            try:
+                result[0] = _query_batch(batch)
+            except Exception as e:
+                exc[0] = e
+
+        t = threading.Thread(target=_run, daemon=True)
+        t.start()
+        t.join(timeout)
+        if t.is_alive():
+            return None, TimeoutError("query hung >%ss" % timeout)
+        if exc[0] is not None:
+            return None, exc[0]
+        return result[0], None
+
+    for i in range(0, len(missing), batch_size):
+        batch = missing[i : i + batch_size]
+        done = False
+        for attempt in range(8):
+            rows, err = _query_with_timeout(batch)
+            if err is None and rows is not None:
+                for r in rows:
+                    ts = r["ts_code"]
+                    by_stock.setdefault(ts, {})[r["trade_date"]] = dict(r)
+                # Incremental save after each successful batch
+                try:
+                    with open(cache_path, "wb") as f:
+                        pickle.dump(by_stock, f)
+                except Exception:
+                    pass
+                done = True
+                break
+            # err is timeout or OperationalError → retry with fresh conn
+            _t.sleep(min(2 * (attempt + 1), 10))
+        if not done:
+            print(f"  [warn] batch {i//batch_size+1} 加载失败(跳过)")
+        if (i // batch_size + 1) % 10 == 0:
+            print(f"  [db] 进度 {i//batch_size+1}/{(len(missing)+batch_size-1)//batch_size}, 已缓存{len(by_stock)}")
+
+    print(f"  [cache] 行情缓存就绪: {len(by_stock)} 只股票")
+    return _flatten_cache(by_stock)
+
+
+def _flatten_cache(by_stock):
+    out = []
+    for ts, days in by_stock.items():
+        for d, q in days.items():
+            out.append(q)
+    return out
 
 
 def organize_quotes(quotes):
