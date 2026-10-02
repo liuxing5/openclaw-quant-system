@@ -175,7 +175,7 @@ class DragonConfig:
     """
     # L1 涨停过滤
     limit_up_lookback: int = 20
-    limit_up_pct_main: float = 0.097     # 主板涨停阈值
+    limit_up_pct_main: float = 0.098     # 主板涨停阈值(与 layer4 一致地设为 9.8%)
     limit_up_pct_chinext: float = 0.197  # 创业板/科创板
 
     # L2 连板高度

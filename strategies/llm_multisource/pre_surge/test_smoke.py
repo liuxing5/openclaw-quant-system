@@ -78,7 +78,7 @@ def synthetic_kline(
         for i in range(250, n_days - 8):
             shock = 0
             if i in (300, 380, 460, 540):
-                shock = 0.097
+                shock = 0.098
             elif i in (305, 385, 465, 545):
                 shock = -0.04
             close[i] = close[i - 1] * (1 + rng.normal(0.0005, 0.012) + shock)
@@ -191,7 +191,7 @@ def test_indicators():
     print(f"  ✓ MACD(8/17/9) 计算正常, 末值 DIF={m['DIF'].iloc[-1]:.4f}")
 
     # 涨停阈值
-    assert detect_limit_up_pct("600519") == 0.097
+    assert detect_limit_up_pct("600519") == 0.098
     assert detect_limit_up_pct("300750") == 0.197
     assert detect_limit_up_pct("688981") == 0.197
     assert detect_limit_up_pct("600000", "ST 银行") == 0.048
@@ -483,13 +483,13 @@ def test_dragon_indicators():
     df.loc[df.index[-1], "volume"] = 2500000
 
     # 测试连板计数
-    max_run = max_consecutive_limit_ups_in_window(df, 0.097, 10)
+    max_run = max_consecutive_limit_ups_in_window(df, 0.098, 10)
     print(f"  窗口内最长连板: {max_run}")
     assert max_run >= 4, f"应至少识别 5 连板, 实际 {max_run}"
     print(f"  ✓ 连板计数正确")
 
     # 测试末尾连板(从末尾数,最后一天是断板,应返回 0)
-    tail_run = count_consecutive_limit_ups(df, 0.097)
+    tail_run = count_consecutive_limit_ups(df, 0.098)
     print(f"  末尾连板: {tail_run} (末日是断板,应为 0)")
     assert tail_run == 0
     print(f"  ✓ 末尾连板计数正确")

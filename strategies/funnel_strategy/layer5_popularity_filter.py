@@ -138,6 +138,10 @@ def _load_llm_candidates(trade_date: date, db_conn) -> Dict[str, dict]:
                 'logic_tags': r['logic_tags'] or [],
                 'selected': r['selected'] or False,
             }
+            # 兼容 legacy writer：若全部字段都落在 0~1 区间，视为比例制，统一转 0~100
+            if all(llm_map[r['ts_code']][k] <= 1.0 for k in ('consensus_score','llm_score','quant_score','final_score')):
+                for k in ('consensus_score','llm_score','quant_score','final_score'):
+                    llm_map[r['ts_code']][k] *= 100.0
         cur.close()
     except Exception:
         pass

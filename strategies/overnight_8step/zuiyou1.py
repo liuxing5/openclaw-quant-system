@@ -1774,6 +1774,13 @@ def analyze_ultimate(
         in_stable = cfg["stable_pct_lo"] <= curr_pct <= cfg["stable_pct_hi"]
         in_upper = cfg["upper_pct_lo"] <= curr_pct <= cfg["upper_pct_hi"]
 
+    # 大盘极度冷淡时（<40）所有路径都拒绝，避免在弱市里误配仓
+    if sentiment_score < cfg["sentiment_cold"]:
+        if reject_stats is not None:
+            reject_stats["情绪极冷"] += 1
+        return None
+
+    # 一般冷淡市场仅放过稳健池票（原有策略）
     if sentiment_score < cfg["sentiment_normal"] and not in_stable:
         if reject_stats is not None:
             reject_stats["情绪冷淡"] += 1

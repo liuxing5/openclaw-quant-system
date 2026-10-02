@@ -70,7 +70,7 @@ def detect_limit_up_pct(symbol: str, name: str = "") -> float:
         return 0.048
     if symbol.startswith(("300", "688")):
         return 0.197
-    return 0.097
+    return 0.098
 
 
 def find_limit_up_days(df: pd.DataFrame, limit_pct: float) -> pd.DataFrame:
