@@ -80,9 +80,9 @@ jobs:
         if: steps.check_trading.outputs.is_trading == 'false' && inputs.date == ''
         run: |
           echo "⏭️ 今天不是 A 股交易日，跳过执行"
-          exit 0
 
       - name: Run funnel strategy
+        if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}
         run: |
           CMD="python -m strategies.funnel_strategy.run_funnel --output ./results"
           if [ -n "${{ inputs.date }}" ]; then
@@ -103,6 +103,7 @@ jobs:
           fi
 
       - name: Generate HTML report
+        if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}
         run: |
           CMD="python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs --all-dates"
           if [ -n "${{ inputs.date }}" ]; then
@@ -118,6 +119,7 @@ jobs:
           python .github/scripts/funnel_telegram.py
 
       - name: Deploy to GitHub Pages
+        if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}
         uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.GH_PAT }}
