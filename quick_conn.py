@@ -6,7 +6,7 @@ import time
 import sys
 
 # Try with very short timeout
-url = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+url = "postgresql://postgres.qoakbxswwjqfsgbcgepr:REDACTED_SET_POSTGRES_PASSWORD_ENV@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
 
 print("Testing connection with short timeout...")
 for i in range(20):

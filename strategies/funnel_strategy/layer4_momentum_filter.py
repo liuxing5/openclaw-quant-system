@@ -386,7 +386,7 @@ def run_layer4_momentum_filter(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -409,7 +409,7 @@ def run_layer4_momentum_filter(
               f" 回踩反弹{'✅' if getattr(cfg, 'layer4_enable_pullback_bounce', False) else '⏭️'}")
 
     # ── 阶段1: 批量加载 + 预计算指标──
-    db_conn = get_db()
+    db_conn = get_db_fresh()
     try:
         if verbose:
             print(f"  ⏳批量加载K线+ 预计算指标({n_total} 可...")

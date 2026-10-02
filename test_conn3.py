@@ -4,8 +4,8 @@ import sys
 
 # 尝试不同的连接参数
 configs = [
-    {"host": "aws-1-ap-northeast-1.pooler.supabase.com", "port": 5432, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "wYFBB91zViSrk2vl", "sslmode": "require", "connect_timeout": 10},
-    {"host": "aws-1-ap-northeast-1.pooler.supabase.com", "port": 6543, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "wYFBB91zViSrk2vl", "sslmode": "require", "connect_timeout": 10},
+    {"host": "aws-1-ap-northeast-1.pooler.supabase.com", "port": 5432, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "REDACTED_SET_POSTGRES_PASSWORD_ENV", "sslmode": "require", "connect_timeout": 10},
+    {"host": "aws-1-ap-northeast-1.pooler.supabase.com", "port": 6543, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "REDACTED_SET_POSTGRES_PASSWORD_ENV", "sslmode": "require", "connect_timeout": 10},
 ]
 
 for i, cfg in enumerate(configs):

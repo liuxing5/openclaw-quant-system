@@ -5,7 +5,7 @@ import time, sys
 DB_HOST = 'aws-1-ap-northeast-1.pooler.supabase.com'
 DB_PORT = 5432
 DB_USER = 'postgres.qoakbxswwjqfsgbcgepr'
-DB_PASS = 'wYFBB91zViSrk2vl'
+DB_PASS = 'REDACTED_SET_POSTGRES_PASSWORD_ENV'
 DB_NAME = 'postgres'
 
 def get_conn():

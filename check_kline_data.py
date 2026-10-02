@@ -15,12 +15,6 @@ class Tee:
             f.flush()
 sys.stdout = Tee(sys.__stdout__, output_file)
 
-os.environ['POSTGRES_HOST'] = 'aws-1-ap-northeast-1.pooler.supabase.com'
-os.environ['POSTGRES_PORT'] = '5432'
-os.environ['POSTGRES_USER'] = 'postgres.qoakbxswwjqfsgbcgepr'
-os.environ['POSTGRES_PASSWORD'] = 'wYFBB91zViSrk2vl'
-os.environ['POSTGRES_DB'] = 'postgres'
-os.environ['POSTGRES_SSLMODE'] = 'require'
 
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -29,7 +23,7 @@ conn = psycopg2.connect(
     host='aws-1-ap-northeast-1.pooler.supabase.com',
     port=5432,
     user='postgres.qoakbxswwjqfsgbcgepr',
-    password='wYFBB91zViSrk2vl',
+    password='REDACTED_SET_POSTGRES_PASSWORD_ENV',
     dbname='postgres',
     sslmode='require'
 )

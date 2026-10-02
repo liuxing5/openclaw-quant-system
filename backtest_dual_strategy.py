@@ -15,7 +15,7 @@ import time
 from datetime import date, timedelta
 
 # 使用transaction pooler端口（6543）避免session pooler连接池限制
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 INITIAL_CAPITAL = 1_000_000
 STOP_LOSS = -0.02  # -2%止损

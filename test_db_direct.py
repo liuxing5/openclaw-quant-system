@@ -6,7 +6,7 @@ load_project_env()
 
 import psycopg2
 
-DB_URL_DIRECT = "postgresql://postgres:wYFBB91zViSrk2vl@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres"
+DB_URL_DIRECT = "postgresql://postgres:REDACTED_SET_POSTGRES_PASSWORD_ENV@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres"
 
 print("Connecting direct...", flush=True)
 t0 = time.time()

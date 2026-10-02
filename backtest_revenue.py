@@ -31,7 +31,7 @@ from psycopg2.extras import RealDictCursor
 # === Configuration ===
 DB_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
+    "postgresql://postgres.qoakbxswwjqfsgbcgepr:REDACTED_SET_POSTGRES_PASSWORD_ENV@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
 )
 INITIAL_CAPITAL = 100000.0
 POSITION_PCT = 0.95
@@ -60,7 +60,7 @@ def get_connection():
         host=os.getenv("POSTGRES_HOST", "aws-1-ap-northeast-1.pooler.supabase.com"),
         port=int(os.getenv("POSTGRES_PORT", "5432")),
         user=os.getenv("POSTGRES_USER", "postgres.qoakbxswwjqfsgbcgepr"),
-        password=os.getenv("POSTGRES_PASSWORD", "wYFBB91zViSrk2vl"),
+        password=os.getenv("POSTGRES_PASSWORD", "REDACTED_SET_POSTGRES_PASSWORD_ENV"),
         dbname=os.getenv("POSTGRES_DB", "postgres"),
         sslmode=os.getenv("POSTGRES_SSLMODE", "require"),
         connect_timeout=30,

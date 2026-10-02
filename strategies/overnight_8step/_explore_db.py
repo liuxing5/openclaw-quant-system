@@ -2,7 +2,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 import sys
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 conn = psycopg2.connect(DB_URL, connect_timeout=30)
 cur = conn.cursor(cursor_factory=RealDictCursor)

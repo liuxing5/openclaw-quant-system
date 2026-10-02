@@ -2,12 +2,6 @@
 import sys, os, time, logging, json
 sys.path.insert(0, '.')
 
-os.environ['POSTGRES_HOST'] = 'aws-1-ap-northeast-1.pooler.supabase.com'
-os.environ['POSTGRES_PORT'] = '5432'
-os.environ['POSTGRES_USER'] = 'postgres.qoakbxswwjqfsgbcgepr'
-os.environ['POSTGRES_PASSWORD'] = 'wYFBB91zViSrk2vl'
-os.environ['POSTGRES_DB'] = 'postgres'
-os.environ['POSTGRES_SSLMODE'] = 'require'
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', force=True)
 

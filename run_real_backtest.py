@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import time
 import sys
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 START_DATE = "2025-05-01"
 END_DATE = "2026-05-25"
@@ -22,7 +22,7 @@ TAKE_PROFIT = 0.05
 def log(msg):
     print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 def connect_with_retry(max_retries=50, wait_seconds=10):
     for attempt in range(max_retries):

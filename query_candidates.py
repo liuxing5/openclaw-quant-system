@@ -3,7 +3,7 @@ import psycopg2
 import sys
 
 # 直连数据库（绕过 pooler）
-DB_URL = "postgresql://postgres:wYFBB91zViSrk2vl@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres"
+DB_URL = "postgresql://postgres:REDACTED_SET_POSTGRES_PASSWORD_ENV@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres"
 
 print("Connecting (direct)...", flush=True)
 try:

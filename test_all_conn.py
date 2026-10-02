@@ -4,8 +4,8 @@ import sys
 
 # Try different connection methods
 configs = [
-    ("6543-transaction", "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"),
-    ("5432-session", "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"),
+    ("6543-transaction", "postgresql://postgres.qoakbxswwjqfsgbcgepr:REDACTED_SET_POSTGRES_PASSWORD_ENV@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"),
+    ("5432-session", "postgresql://postgres.qoakbxswwjqfsgbcgepr:REDACTED_SET_POSTGRES_PASSWORD_ENV@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"),
 ]
 
 for name, url in configs:

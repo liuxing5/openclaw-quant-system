@@ -8,7 +8,7 @@ try:
         host='aws-1-ap-northeast-1.pooler.supabase.com',
         port=6543,
         user='postgres.qoakbxswwjqfsgbcgepr',
-        password='wYFBB91zViSrk2vl',
+        password='REDACTED_SET_POSTGRES_PASSWORD_ENV',
         dbname='postgres',
         sslmode='require',
         connect_timeout=10,

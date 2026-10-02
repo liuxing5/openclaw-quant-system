@@ -3,7 +3,7 @@ import pandas as pd
 import time
 from datetime import timedelta, datetime
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 print("Connecting to database...")
 conn = psycopg2.connect(DB_URL, connect_timeout=60)

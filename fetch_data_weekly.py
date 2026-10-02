@@ -8,7 +8,7 @@ import pandas as pd
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 CACHE_FILE = r'd:\pythonProject\openclaw-quant-system\data_cache.pkl'
 
 # 按周分批 - 极小批次

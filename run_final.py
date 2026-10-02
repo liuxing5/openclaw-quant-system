@@ -10,9 +10,9 @@ from psycopg2.extras import RealDictCursor
 # 尝试多个连接URL
 URLS = [
     # Transaction pooler（先用这个，连接池限制较松）
-    "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres",
+    "postgresql://postgres.qoakbxswwjqfsgbcgepr:REDACTED_SET_POSTGRES_PASSWORD_ENV@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres",
     # Session pooler
-    "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
+    "postgresql://postgres.qoakbxswwjqfsgbcgepr:REDACTED_SET_POSTGRES_PASSWORD_ENV@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
 ]
 
 CACHE_FILE = r'd:\pythonProject\openclaw-quant-system\data_cache.pkl'

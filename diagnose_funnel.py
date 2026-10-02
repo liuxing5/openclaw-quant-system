@@ -3,12 +3,6 @@
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-os.environ['POSTGRES_HOST'] = 'aws-1-ap-northeast-1.pooler.supabase.com'
-os.environ['POSTGRES_PORT'] = '5432'
-os.environ['POSTGRES_USER'] = 'postgres.qoakbxswwjqfsgbcgepr'
-os.environ['POSTGRES_PASSWORD'] = 'wYFBB91zViSrk2vl'
-os.environ['POSTGRES_DB'] = 'postgres'
-os.environ['POSTGRES_SSLMODE'] = 'require'
 
 from datetime import date, timedelta
 from strategies.meta_strategy.db_data_adapter import (

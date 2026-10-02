@@ -24,7 +24,7 @@ from typing import List, Dict, Optional
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -33,7 +33,7 @@ def _load_fundamentals_cache(trade_date: date = None) -> Dict:
     cache = {}
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT DISTINCT ON (ts_code)
@@ -86,7 +86,7 @@ def _load_st_basic_info() -> Dict:
     cache = {}
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT ts_code, stock_name, list_date, is_st, is_active
@@ -112,16 +112,17 @@ def _load_reduction_announcements(trade_date: date, lookback_days: int = 60) -> 
     reduction_codes = set()
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         since = trade_date - timedelta(days=lookback_days)
         cur.execute("""
             SELECT DISTINCT ts_code
             FROM stock_announcements
             WHERE publish_date >= %s
+              AND publish_date <= %s
               AND (title ILIKE '%减持%' OR title ILIKE '%reduce%')
               AND ts_code IS NOT NULL;
-        """, (since,))
+        """, (since, trade_date))
         for r in cur.fetchall():
             reduction_codes.add(r['ts_code'])
         cur.close()

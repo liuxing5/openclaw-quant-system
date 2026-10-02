@@ -20,7 +20,7 @@ for _env_path in [Path('.env'), Path('strategies/llm_multisource/.env')]:
         load_dotenv(_env_path)
         break
 
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 from core.utils.env import load_project_env
 from psycopg2.extras import RealDictCursor
 
@@ -38,7 +38,7 @@ def query_dicts(sql, params=None):
     
     Connection pool exhaustion retry is handled at _connect() level in core/db/connection.py.
     """
-    conn = get_db(use_dict_cursor=True)
+    conn = get_db_fresh(use_dict_cursor=True)
     cur = conn.cursor()
     cur.execute(sql, params)
     rows = [dict(r) for r in cur.fetchall()]
@@ -126,7 +126,7 @@ def load_funnel_data(trade_date=None):
     codes_missing_name = [c.get('ts_code', '') for c in candidates if not c.get('stock_name')]
     if codes_missing_name:
         try:
-            conn = get_db(use_dict_cursor=True)
+            conn = get_db_fresh(use_dict_cursor=True)
             cur = conn.cursor()
             cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes_missing_name,))
             name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
@@ -152,7 +152,7 @@ def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, m
             pass
     for attempt in range(max_retries):
         try:
-            conn = get_db(use_dict_cursor=True)
+            conn = get_db_fresh(use_dict_cursor=True)
             if conn.closed:
                 raise psycopg2.OperationalError("Connection is closed")
             cur = conn.cursor()
@@ -305,7 +305,7 @@ def load_main_uptrend_daily(trade_date=None):
             codes = [c.get('ts_code', '') for c in candidates if not c.get('stock_name')]
             if codes:
                 try:
-                    conn = get_db(use_dict_cursor=True)
+                    conn = get_db_fresh(use_dict_cursor=True)
                     cur = conn.cursor()
                     cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes,))
                     name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}

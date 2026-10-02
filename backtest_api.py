@@ -10,7 +10,7 @@ import os
 from datetime import datetime, timedelta
 
 SUPABASE_URL = "https://qoakbxswwjqfsgbcgepr.supabase.co"
-SUPABASE_KEY = "wYFBB91zViSrk2vl"
+SUPABASE_KEY = "REDACTED_SET_POSTGRES_PASSWORD_ENV"
 
 CACHE_FILE = r'd:\pythonProject\openclaw-quant-system\data_cache.pkl'
 OUTPUT_FILE = r'd:\pythonProject\openclaw-quant-system\diag_key_stocks_out.txt'

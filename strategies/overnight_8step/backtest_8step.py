@@ -8,7 +8,7 @@ import numpy as np
 from psycopg2.extras import RealDictCursor
 import time
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 INITIAL_CAPITAL = 100_000
 PROFIT_TARGET = 0.02

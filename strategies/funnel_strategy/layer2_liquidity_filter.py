@@ -35,7 +35,7 @@ def _load_liquidity_data(stock_list: List[str], trade_date: date) -> Dict:
     cache = {}
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT ts_code, amount, pct_chg, turnover_rate,
@@ -69,7 +69,7 @@ def _load_20d_avg_amount(stock_list: List[str], trade_date: date) -> Dict[str, f
     cache = {}
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT ts_code, amount
@@ -114,7 +114,7 @@ def run_layer2_liquidity_filter(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -151,7 +151,7 @@ def run_layer2_liquidity_filter(
         print(f"  ⚠️ 20日均成交额数据缺失，降级使用当日成交额过滤")
 
     passed = []
-    reject_stats = {'成交额不足': 0, '市值不足': 0, '换手不符': 0}
+    reject_stats = {'成交额不足': 0, '市值不足': 0, '市值过大': 0, '换手不符': 0}
 
     for ts_code in stock_list:
         liq = liq_cache.get(ts_code, {})

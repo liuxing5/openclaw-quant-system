@@ -328,7 +328,7 @@ def compute_popularity_score(
 ) -> dict:
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cache = _batch_load_ohlcv([ts_code], trade_date, conn, days=30)
     finally:
         if conn and not conn.closed:
@@ -358,7 +358,7 @@ def run_layer5_popularity_filter(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -387,7 +387,7 @@ def run_layer5_popularity_filter(
     stock_list_all = [item['ts_code'] for item in stock_items]
     db_conn = None
     try:
-        db_conn = get_db()
+        db_conn = get_db_fresh()
         if verbose:
             llm_note = " + LLM候通+ 概念" if cfg.layer5_llm_bonus_enabled else ""
             print(f"  ⏳加载人气排名{llm_note} + 估值+ 批量K线({n_total} 可...")

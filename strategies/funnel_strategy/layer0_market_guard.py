@@ -23,7 +23,7 @@ import pandas as pd
 from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from core.db.connection import get_db
+from core.db.connection import get_db_fresh
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -31,7 +31,7 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 def _fetch_market_breadth(trade_date=None) -> Tuple[int, int]:
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         if trade_date is None:
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
@@ -63,7 +63,7 @@ def _fetch_breadth_series(trade_date: date, days: int = 50) -> pd.DataFrame:
     """
     start_date = trade_date - timedelta(days=days)
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT trade_date,
@@ -136,7 +136,7 @@ def check_market_environment(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -186,12 +186,12 @@ def check_market_environment(
             if total_stocks > 0:
                 today_breadth = advancers / total_stocks
                 index_close = round(today_breadth * 100, 2)
-                index_above_ema = today_breadth > 0.5
+                index_above_ema = today_breadth > min_breadth_ratio
                 index_ema = 50.0
     else:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
                 SELECT trade_date, close as market_close

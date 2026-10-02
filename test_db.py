@@ -4,7 +4,7 @@ import time
 from datetime import timedelta, datetime
 from psycopg2.extras import RealDictCursor
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 print("Connecting to database...")
 t0 = time.time()

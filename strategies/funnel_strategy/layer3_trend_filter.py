@@ -243,7 +243,7 @@ def _check_single(
 
 def check_trend_structure(ts_code: str, trade_date: date, cfg, verbose: bool = False) -> dict:
     """单股趋势结构检查（兼容接口，内部用batch load）"""
-    conn = get_db()
+    conn = get_db_fresh()
     try:
         cache = _batch_load_history([ts_code], trade_date, conn, days=300)
     finally:
@@ -273,7 +273,7 @@ def run_layer3_trend_filter(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -293,7 +293,7 @@ def run_layer3_trend_filter(
               f"股价>EMA{cfg.layer3_ema_fast}  结构: {cfg.layer3_trend_structure_modes}")
 
     # ── 阶段1: 批量加载 OHLCV： 次SQL）──
-    conn = get_db()
+    conn = get_db_fresh()
     try:
         if verbose:
             print(f"  ⏳批量加载K线数换({n_total} 可...")

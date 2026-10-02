@@ -4,7 +4,7 @@ import time
 from collections import defaultdict
 
 SUPABASE_URL = 'https://qoakbxswwjqfsgbcgepr.supabase.co'
-SUPABASE_KEY = 'wYFBB91zViSrk2vl'
+SUPABASE_KEY = 'REDACTED_SET_POSTGRES_PASSWORD_ENV'
 
 headers = {
     'apikey': SUPABASE_KEY,

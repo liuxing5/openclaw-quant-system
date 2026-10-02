@@ -40,7 +40,7 @@ from .layer4_momentum_filter import run_layer4_momentum_filter
 from .layer5_popularity_filter import run_layer5_popularity_filter
 from .layer6_risk_control import run_layer6_risk_control
 
-from core.db.connection import get_db, close_db_session
+from core.db.connection import get_db_fresh, close_db_session
 from psycopg2.extras import RealDictCursor
 
 BEIJING_TZ = timezone(timedelta(hours=8))
@@ -51,7 +51,7 @@ def _get_conn():
     
     Connection pool exhaustion retry is handled at _connect() level in core/db/connection.py.
     """
-    conn = get_db()
+    conn = get_db_fresh()
     return conn
 
 

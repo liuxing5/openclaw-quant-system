@@ -640,7 +640,7 @@ def get_existing_candidate_dates(start: date, end: date, source: str = None) -> 
     try:
         import psycopg2
         conn = psycopg2.connect(
-            "postgresql://postgres:wYFBB91zViSrk2vl@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres",
+            "postgresql://postgres:REDACTED_SET_POSTGRES_PASSWORD_ENV@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres",
             connect_timeout=30,
         )
         conn.autocommit = True
@@ -762,7 +762,7 @@ def main():
             # 创建直连（绕过 pooler）
             import psycopg2
             db_conn = psycopg2.connect(
-                "postgresql://postgres:wYFBB91zViSrk2vl@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres",
+                "postgresql://postgres:REDACTED_SET_POSTGRES_PASSWORD_ENV@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres",
                 connect_timeout=30,
                 keepalives=1,
                 keepalives_idle=30,

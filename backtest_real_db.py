@@ -15,7 +15,7 @@ import time
 from datetime import datetime, timedelta
 
 # 数据库连接 - 使用transaction pooler端口
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:6543/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 # 策略参数
 INITIAL_CAPITAL = 1_000_000

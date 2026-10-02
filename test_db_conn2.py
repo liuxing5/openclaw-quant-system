@@ -6,7 +6,7 @@ load_project_env()
 
 import psycopg2
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 print("Connecting via DB_URL...", flush=True)
 t0 = time.time()

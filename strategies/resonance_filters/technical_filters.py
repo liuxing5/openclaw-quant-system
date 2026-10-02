@@ -327,9 +327,9 @@ class ResonanceFilters:
         # 判断是否突破
         is_breakout = close > upper
 
-        # 判断是否回踩（昨日收盘价低于上轨）
+        # “昨收已高于上轨”则视为追高/回踩风险（非新鲜突破），应排除
         close_prev = df['close'].iloc[-2] if len(df) >= 2 else close
-        is_pullback = (close_prev < upper) and (close > upper)
+        is_pullback = close_prev >= upper
 
         # 通过条件：突破上轨 + 量比>1.5 + 非回踩
         passed = is_breakout and (volume_ratio > 1.5) and not is_pullback

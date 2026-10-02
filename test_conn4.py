@@ -5,11 +5,11 @@ import sys
 # 尝试直接连接（非pooler）
 configs = [
     # 直接连接
-    {"host": "db.qoakbxswwjqfsgbcgepr.supabase.co", "port": 5432, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "wYFBB91zViSrk2vl", "sslmode": "require", "connect_timeout": 15},
+    {"host": "db.qoakbxswwjqfsgbcgepr.supabase.co", "port": 5432, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "REDACTED_SET_POSTGRES_PASSWORD_ENV", "sslmode": "require", "connect_timeout": 15},
     # pooler 5432
-    {"host": "aws-1-ap-northeast-1.pooler.supabase.com", "port": 5432, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "wYFBB91zViSrk2vl", "sslmode": "require", "connect_timeout": 15},
+    {"host": "aws-1-ap-northeast-1.pooler.supabase.com", "port": 5432, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "REDACTED_SET_POSTGRES_PASSWORD_ENV", "sslmode": "require", "connect_timeout": 15},
     # pooler 6543
-    {"host": "aws-1-ap-northeast-1.pooler.supabase.com", "port": 6543, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "wYFBB91zViSrk2vl", "sslmode": "require", "connect_timeout": 15},
+    {"host": "aws-1-ap-northeast-1.pooler.supabase.com", "port": 6543, "dbname": "postgres", "user": "postgres.qoakbxswwjqfsgbcgepr", "password": "REDACTED_SET_POSTGRES_PASSWORD_ENV", "sslmode": "require", "connect_timeout": 15},
 ]
 
 for i, cfg in enumerate(configs):

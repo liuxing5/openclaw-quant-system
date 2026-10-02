@@ -28,7 +28,7 @@ from psycopg2.extras import RealDictCursor
 
 DB_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
+    "postgresql://postgres.qoakbxswwjqfsgbcgepr:REDACTED_SET_POSTGRES_PASSWORD_ENV@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres",
 )
 OUT_DIR = os.path.dirname(os.path.abspath(__file__))
 AUDIT_PATH = os.path.join(OUT_DIR, "contam_fix_log.json")
@@ -43,7 +43,7 @@ def get_connection():
         host=os.getenv("POSTGRES_HOST", "aws-1-ap-northeast-1.pooler.supabase.com"),
         port=int(os.getenv("POSTGRES_PORT", "5432")),
         user=os.getenv("POSTGRES_USER", "postgres.qoakbxswwjqfsgbcgepr"),
-        password=os.getenv("POSTGRES_PASSWORD", "wYFBB91zViSrk2vl"),
+        password=os.getenv("POSTGRES_PASSWORD", "REDACTED_SET_POSTGRES_PASSWORD_ENV"),
         dbname=os.getenv("POSTGRES_DB", "postgres"),
         sslmode=os.getenv("POSTGRES_SSLMODE", "require"),
         connect_timeout=30,

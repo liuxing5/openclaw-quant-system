@@ -15,7 +15,7 @@ from psycopg2.extras import RealDictCursor
 import time
 from datetime import date
 
-DB_URL = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@aws-1-ap-northeast-1.pooler.supabase.com:5432/postgres"
+DB_URL = os.environ.get('DATABASE_URL', '')
 
 INITIAL_CAPITAL = 1_000_000
 STOP_LOSS = -0.02  # -2%止损

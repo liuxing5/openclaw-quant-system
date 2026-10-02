@@ -372,7 +372,7 @@ def write_llm_multisource_candidates(candidates: List[dict], target_date: date, 
 # ============================================================
 
 DB_URL = os.environ.get('DATABASE_URL',
-    "postgresql://postgres:wYFBB91zViSrk2vl@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres")
+    "postgresql://postgres:REDACTED_SET_POSTGRES_PASSWORD_ENV@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres")
 
 
 def get_db_conn():

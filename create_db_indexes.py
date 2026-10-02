@@ -10,7 +10,7 @@ conn = psycopg2.connect(
     host='aws-1-ap-northeast-1.pooler.supabase.com',
     port=5432,
     user='postgres.qoakbxswwjqfsgbcgepr',
-    password='wYFBB91zViSrk2vl',
+    password='REDACTED_SET_POSTGRES_PASSWORD_ENV',
     dbname='postgres',
     sslmode='require',
 )

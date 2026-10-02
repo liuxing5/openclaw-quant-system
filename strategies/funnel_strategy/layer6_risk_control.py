@@ -53,7 +53,7 @@ def _load_history(ts_code: str, trade_date: date, days: int = 60) -> Optional[pd
     start_date = trade_date - timedelta(days=days)
     conn = None
     try:
-        conn = get_db()
+        conn = get_db_fresh()
         cur = conn.cursor(cursor_factory=RealDictCursor)
         cur.execute("""
             SELECT trade_date, open, high, low, close, volume
@@ -201,7 +201,7 @@ def compute_risk_params(
         buffer_pct = getattr(cfg, 'layer6_structural_stop_buffer_pct', 0.5) / 100.0
         structural_stop = recent_low * (1 - buffer_pct)
 
-    # 以结构性止损为主，ATR止损为最小距离下除
+    # 以结构性止损为主，但永不超过ATR距离下限（避免结构性跌穿的“宽疏”止损）
     if structural_stop >= entry_price:
         stop_loss = atr_stop
         stop_type = 'atr'
@@ -209,8 +209,8 @@ def compute_risk_params(
         stop_loss = structural_stop
         stop_type = 'structural'
     else:
-        stop_loss = structural_stop
-        stop_type = 'structural'
+        stop_loss = atr_stop
+        stop_type = 'atr'
 
     # 止损幅度过大则拒统
     max_stop_pct = getattr(cfg, 'layer6_max_stop_loss_pct', 8.0)
@@ -269,7 +269,7 @@ def run_layer6_risk_control(
     if trade_date is None:
         conn = None
         try:
-            conn = get_db()
+            conn = get_db_fresh()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
@@ -297,7 +297,7 @@ def run_layer6_risk_control(
     stock_codes = [item['ts_code'] for item in stock_items]
     db_conn = None
     try:
-        db_conn = get_db()
+        db_conn = get_db_fresh()
         ohlcv_cache = _batch_load_history(stock_codes, trade_date, db_conn, days=60, verbose=verbose)
     finally:
         if db_conn and not db_conn.closed:

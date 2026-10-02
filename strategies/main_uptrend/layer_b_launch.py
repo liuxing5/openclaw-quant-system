@@ -99,11 +99,12 @@ class LayerBLaunchDetector:
         ma_half_val = ma_half_year.iloc[-1] if len(ma_half_year) > 0 and pd.notna(ma_half_year.iloc[-1]) else 0
 
         breakout_box = today_close > box_high_val if box_high_val > 0 else False
-        breakout_ma = near_ma(
-            pd.Series([today_close]),
-            pd.Series([ma_half_val]),
-            self.cfg.b_price_above_ma_max_pct
-        ).iloc[0] if ma_half_val > 0 else False
+        # 破半年线必须站上均线，并允许距均线不超过最大偏离阈值
+        breakout_ma = (
+            ma_half_val > 0
+            and today_close > ma_half_val
+            and ((today_close - ma_half_val) / ma_half_val) <= self.cfg.b_price_above_ma_max_pct
+        )
 
         b2_pass = breakout_box or breakout_ma
         if breakout_box:

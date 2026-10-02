@@ -8,7 +8,7 @@ import pandas as pd
 from psycopg2.extras import RealDictCursor
 
 # 直接连接（不使用pooler）
-DB_URL_DIRECT = "postgresql://postgres.qoakbxswwjqfsgbcgepr:wYFBB91zViSrk2vl@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres"
+DB_URL_DIRECT = "postgresql://postgres.qoakbxswwjqfsgbcgepr:REDACTED_SET_POSTGRES_PASSWORD_ENV@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres"
 CACHE_FILE = r'd:\pythonProject\openclaw-quant-system\data_cache.pkl'
 
 print("尝试直接连接数据库...")

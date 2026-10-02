@@ -8,7 +8,7 @@ print(f"Script starting at {datetime.now()}", flush=True)
 DB_HOST = 'aws-1-ap-northeast-1.pooler.supabase.com'
 DB_PORT = 6543
 DB_USER = 'postgres.qoakbxswwjqfsgbcgepr'
-DB_PASS = 'wYFBB91zViSrk2vl'
+DB_PASS = 'REDACTED_SET_POSTGRES_PASSWORD_ENV'
 DB_NAME = 'postgres'
 
 print(f"Connecting to {DB_HOST}:{DB_PORT} as {DB_USER}", flush=True)

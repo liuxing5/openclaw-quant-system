@@ -46,7 +46,7 @@ MIN_LOTS = 100             # 最小交易单位（股）
 HOLD_DAYS = 1              # 持有天数（T+1 买入，T+2 卖出）
 
 DB_URL = os.environ.get('DATABASE_URL',
-    "postgresql://postgres:wYFBB91zViSrk2vl@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres")
+    "postgresql://postgres:REDACTED_SET_POSTGRES_PASSWORD_ENV@db.qoakbxswwjqfsgbcgepr.supabase.co:5432/postgres")
 
 
 # ============================================================

@@ -1,12 +1,6 @@
 """测试数据库查询性能"""
 import os, time, sys
 sys.stdout.reconfigure(line_buffering=True)
-os.environ['POSTGRES_HOST'] = 'aws-1-ap-northeast-1.pooler.supabase.com'
-os.environ['POSTGRES_PORT'] = '6543'
-os.environ['POSTGRES_USER'] = 'postgres.qoakbxswwjqfsgbcgepr'
-os.environ['POSTGRES_PASSWORD'] = 'wYFBB91zViSrk2vl'
-os.environ['POSTGRES_DB'] = 'postgres'
-os.environ['POSTGRES_SSLMODE'] = 'require'
 
 from core.db.connection import get_db
 from psycopg2.extras import RealDictCursor

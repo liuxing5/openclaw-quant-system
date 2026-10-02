@@ -2,12 +2,6 @@
 import sys, traceback, os
 
 # 设置数据库环境变量
-os.environ['POSTGRES_HOST'] = 'aws-1-ap-northeast-1.pooler.supabase.com'
-os.environ['POSTGRES_PORT'] = '5432'
-os.environ['POSTGRES_USER'] = 'postgres.qoakbxswwjqfsgbcgepr'
-os.environ['POSTGRES_PASSWORD'] = 'wYFBB91zViSrk2vl'
-os.environ['POSTGRES_DB'] = 'postgres'
-os.environ['POSTGRES_SSLMODE'] = 'require'
 
 # 先写一个标记文件确认脚本开始执行
 with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'diag_start.txt'), 'w') as f:
