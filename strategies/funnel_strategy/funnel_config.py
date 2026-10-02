@@ -37,7 +37,7 @@ class FunnelConfig:
     layer1_max_consecutive_rev_decline: int = 0  # 营收连续负增≤0次 [①基本面]
     layer1_min_revenue_yoy: float = -10.0        # 营收同比最低（%） [①基本面]
     # P0: 现金流质量 + 商誉风险
-    layer1_min_cashflow_ratio: float = 0.5       # 经营现金流/净利润 ≥ 0.5（盈利质量门槛）
+    layer1_min_cashflow_ratio: float = 1.0       # 经营现金流/净利润 ≥ 1.0（盈利质量门槛，全市场一致收紧）
     layer1_max_goodwill_pct: float = 50.0        # 商誉/净资产 ≤ 50%（商誉暴雷风险）
     # P1: 减持/质押检测
     layer1_check_reduction: bool = True          # 检测大股东减持
