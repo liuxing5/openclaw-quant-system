@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>每日荐股收益回测报告</title>
+    <script>
+    // Chart.js loading: try bootcdn first (works in China), fallback to jsdelivr
+    (function(){
+        var s=document.createElement('script');
+        s.src='https://cdn.bootcdn.net/ajax/libs/Chart.js/4.4.1/chart.umd.min.js';
+        s.onerror=function(){
+            var s2=document.createElement('script');
+            s2.src='https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js';
+            s2.onerror=function(){window._chartLoadFailed=true;};
+            document.head.appendChild(s2);
+        };
+        document.head.appendChild(s);
+    })();
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; background: #f5f7fa; color: #333; line-height: 1.6; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%); color: #fff; padding: 30px 40px; border-radius: 12px; margin-bottom: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
+        .header h1 { font-size: 28px; margin-bottom: 8px; }
+        .header .subtitle { font-size: 14px; opacity: 0.8; }
+        .header .params { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
+        .header .param { background: rgba(255,255,255,0.1); padding: 6px 16px; border-radius: 6px; font-size: 13px; }
+        .header .param strong { color: #ffd700; }
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .metric-card { background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); text-align: center; transition: transform 0.2s; }
+        .metric-card:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.1); }
+        .metric-card .label { font-size: 13px; color: #888; margin-bottom: 8px; }
+        .metric-card .value { font-size: 24px; font-weight: 700; }
+        .metric-card .sub { font-size: 12px; color: #aaa; margin-top: 4px; }
+        .section { background: #fff; border-radius: 10px; padding: 24px; margin-bottom: 24px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        .section-title { font-size: 18px; font-weight: 600; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 2px solid #e8e8e8; display: flex; justify-content: space-between; align-items: center; }
+        .section-title .badge { font-size: 12px; background: #eef2ff; color: #6366f1; padding: 4px 12px; border-radius: 12px; font-weight: normal; }
+        .chart-container { position: relative; height: 400px; }
+        .chart-container-sm { position: relative; height: 280px; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+        @media (max-width: 900px) { .two-col { grid-template-columns: 1fr; } }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        thead th { background: #f8f9fa; padding: 10px 12px; text-align: left; font-weight: 600; color: #555; border-bottom: 2px solid #e0e0e0; position: sticky; top: 0; cursor: pointer; user-select: none; white-space: nowrap; }
+        thead th:hover { background: #eef2ff; }
+        tbody td { padding: 8px 12px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+        tbody tr:hover { background: #f8f9ff; }
+        .table-scroll { max-height: 600px; overflow-y: auto; overflow-x: auto; border-radius: 8px; }
+        .footer { text-align: center; padding: 20px; color: #999; font-size: 13px; }
+        .text-up { color: #dc3545; }
+        .text-down { color: #28a745; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; }
+        .tag-llm { background: #e0f2fe; color: #0284c7; }
+        .tag-8step { background: #fef3c7; color: #d97706; }
+        .tag-funnel { background: #ede9fe; color: #7c3aed; }
+        .tag-uptrend { background: #d1fae5; color: #059669; }
+        .search-box { padding: 8px 16px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; width: 200px; }
+    </style>
+</head>
+<body>
+<div style="background:#f8f9fa;border-bottom:1px solid #dee2e6;padding:10px 16px;text-align:center;color:#495057;font:13px/1.6 -apple-system,BlinkMacSystemFont,'Segoe UI','Microsoft YaHei',sans-serif;">最后更新：2026-10-02 23:57（北京时间）· 由 GitHub Actions 每日自动重新回测生成</div>
+<div class="container">
+    <div class="header">
+        <h1>每日荐股收益回测报告</h1>
+        <div class="subtitle">基于 daily_candidates 推荐数据 · 次日开盘买入 · +10%止盈/-8%止损 · T+9强制平仓 · 单仓模式(95%) · 全部4种策略 · 异常数据已清洗</div>
+        <div class="params">
+            <div class="param">初始资金: <strong>¥100,000</strong></div>
+            <div class="param">选股策略: <strong>每日TOP 1（推荐分最高）</strong></div>
+            <div class="param">止盈/止损: <strong>+10% / -8%</strong></div>
+            <div class="param">仓位比例: <strong>95%</strong></div>
+            <div class="param">持仓模式: <strong>单仓模式（满仓进出）</strong></div>
+            <div class="param">入场时机: <strong>次日开盘</strong></div>
+            <div class="param">最大持仓天数: <strong>T+9</strong></div>
+            <div class="param">回测区间: <strong>2026-01-05 ~ 2026-09-30</strong></div>
+            <div class="param">更新时间: <strong>2026-10-02 23:57</strong></div>
+        </div>
+    </div>
+
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="label">总收益率</div>
+            <div class="value text-up">+219.99%</div>
+            <div class="sub">最终资金: ¥319,994</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">总盈亏</div>
+            <div class="value text-up">¥+219,994</div>
+            <div class="sub">交易总额: ¥5,710,209</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">胜率</div>
+            <div class="value">64.3%</div>
+            <div class="sub">盈18 / 亏9 / 平1</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">实盘交易</div>
+            <div class="value">28</div>
+            <div class="sub">信号总数: 899 | 跳过(非TOP1/资金不足): 143</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">信号胜率</div>
+            <div class="value">39.9%</div>
+            <div class="sub">信号平均收益: -0.50%</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">最大回撤</div>
+            <div class="value text-down">-16.56%</div>
+            <div class="sub">历史最大跌幅</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">盈亏比</div>
+            <div class="value">2.94</div>
+            <div class="sub">总盈利/总亏损</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">平均每笔收益</div>
+            <div class="value text-up">+4.93%</div>
+            <div class="sub">盈: +10.57% / 亏: -5.83%</div>
+        </div>
+        <div class="metric-card">
+            <div class="label">年化收益</div>
+            <div class="value text-up">+387.5%</div>
+            <div class="sub">夏普比率: 3.15</div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">资金曲线 <span class="badge">每日总权益 = 现金 + 持仓市值</span></div>
+        <div class="chart-container"><canvas id="equityChart"></canvas></div>
+    </div>
+
+    <div class="two-col">
+        <div class="section">
+            <div class="section-title">每日盈亏</div>
+            <div class="chart-container-sm"><canvas id="pnlChart"></canvas></div>
+        </div>
+        <div class="section">
+            <div class="section-title">卖出原因分布</div>
+            <div class="chart-container-sm"><canvas id="reasonChart"></canvas></div>
+        </div>
+    </div>
+
+    <div class="two-col">
+        <div class="section">
+            <div class="section-title">持仓天数分布</div>
+            <div class="chart-container-sm"><canvas id="holdDaysChart"></canvas></div>
+        </div>
+        <div class="section">
+            <div class="section-title">月度收益</div>
+            <div class="table-scroll" style="max-height:280px;">
+                <table>
+                    <thead><tr><th>月份</th><th>月初资金</th><th>月末资金</th><th>收益率</th></tr></thead>
+                    <tbody><tr><td>2026-01</td><td>¥100,000</td><td>¥109,396</td><td style="color:#dc3545;font-weight:600;">+9.40%</td></tr><tr><td>2026-02</td><td>¥109,396</td><td>¥135,244</td><td style="color:#dc3545;font-weight:600;">+23.63%</td></tr><tr><td>2026-03</td><td>¥135,244</td><td>¥131,116</td><td style="color:#28a745;font-weight:600;">-3.05%</td></tr><tr><td>2026-04</td><td>¥131,116</td><td>¥116,910</td><td style="color:#28a745;font-weight:600;">-10.83%</td></tr><tr><td>2026-05</td><td>¥116,910</td><td>¥217,996</td><td style="color:#dc3545;font-weight:600;">+86.46%</td></tr><tr><td>2026-06</td><td>¥217,996</td><td>¥283,023</td><td style="color:#dc3545;font-weight:600;">+29.83%</td></tr><tr><td>2026-07</td><td>¥283,023</td><td>¥322,964</td><td style="color:#dc3545;font-weight:600;">+14.11%</td></tr><tr><td>2026-08</td><td>¥322,964</td><td>¥284,489</td><td style="color:#28a745;font-weight:600;">-11.91%</td></tr><tr><td>2026-09</td><td>¥284,489</td><td>¥319,994</td><td style="color:#dc3545;font-weight:600;">+12.48%</td></tr></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="section">
+        <div class="section-title">策略对比 <span class="badge">全部4种策略参与组合模拟</span></div>
+        <table>
+            <thead><tr><th>策略</th><th>信号数</th><th>盈/亏</th><th>胜率</th><th>实盘盈亏</th><th>平均收益</th><th>卖出原因</th></tr></thead>
+            <tbody><tr><td>LLM多源</td><td>15<br><small style="color:#999;">执行1</small></td><td>8 / 5</td><td>53.3%</td><td style="color:#28a745;font-weight:600;">¥0</td><td style="color:#28a745;">+3.84%</td><td>止盈:6, 止损:4, 到期无数据:2, 跳空止盈:2, 到期平仓:1</td></tr><tr><td>八步法</td><td>416<br><small style="color:#999;">执行6</small></td><td>155 / 258</td><td>37.3%</td><td style="color:#dc3545;font-weight:600;">¥132,727</td><td style="color:#dc3545;">-1.30%</td><td>止损:151, 到期平仓:89, 止盈:82, 跳空止损:48, 跳空止盈:23, 持仓中:21, 到期无数据:2</td></tr><tr><td>漏斗策略</td><td>468<br><small style="color:#999;">执行21</small></td><td>196 / 268</td><td>41.9%</td><td style="color:#dc3545;font-weight:600;">¥87,267</td><td style="color:#dc3545;">+0.08%</td><td>到期平仓:226, 止损:93, 止盈:84, 持仓中:25, 跳空止损:21, 跳空止盈:17, 到期无数据:2</td></tr><tr><td>主升浪</td><td colspan="7" style="text-align:center;color:#999;">无数据</td></tr></tbody>
+        </table>
+    </div>
+
+    <div class="section">
+        <div class="section-title">
+            交易明细
+            <span style="display:flex;gap:12px;align-items:center;">
+                <input type="text" class="search-box" id="tradeSearch" placeholder="搜索股票代码/名称..." oninput="filterTrades()">
+                <span class="badge" id="tradeCount">共 28 笔</span>
+            </span>
+        </div>
+        <div class="table-scroll">
+            <table id="tradeTable">
+                <thead><tr>
+                    <th onclick="sortTable(0)">推荐日</th><th onclick="sortTable(1)">代码</th>
+                    <th onclick="sortTable(2)">名称</th><th onclick="sortTable(3)">策略</th>
+                    <th onclick="sortTable(4)">买入价</th><th onclick="sortTable(5)">卖出价</th>
+                    <th onclick="sortTable(6)">止盈价</th><th onclick="sortTable(7)">止损价</th>
+                    <th onclick="sortTable(8)">股数</th><th onclick="sortTable(9)">成本</th>
+                    <th onclick="sortTable(10)">盈亏</th><th onclick="sortTable(11)">收益率</th>
+                    <th onclick="sortTable(12)">卖出原因</th><th onclick="sortTable(13)">持仓</th>
+                    <th onclick="sortTable(14)">卖出日</th>
+                </tr></thead>
+                <tbody id="tradeBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>数据来源: Supabase daily_candidates + daily_quotes | 回测规则: 次日开盘买入, +10%止盈/-8%止损, T+9强制平仓, 单仓模式(95%) | 全部4种策略参与 | 异常数据已清洗(日变动>30%过滤) | 180种参数组合扫描最优</p>
+        <p>注意: 本报告仅供学习研究, 不构成投资建议. A股交易规则: 100股整手, T+1交易制度</p>
+        <p>生成时间: 2026-10-02 23:57 | © openclaw-quant-system</p>
+    </div>
+</div>
+
+<script>
+var equityDates = ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-19", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24", "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15", "2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-28", "2026-09-29", "2026-09-30"];
+var equityValues = [99790.0, 101610.0, 102310.0, 102590.0, 104060.0, 104130.0, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109761.5, 109396.5, 109615.5, 113995.5, 114433.5, 111221.5, 113484.5, 117864.5, 120565.5, 119421.5, 117419.5, 115989.5, 118849.5, 120565.5, 132005.5, 135244.5, 131561.5, 128513.5, 130418.5, 132069.5, 135117.5, 134609.5, 135879.5, 135498.5, 135879.5, 135879.5, 136164.5, 133504.5, 134644.5, 131034.5, 130274.5, 125619.5, 126723.5, 134175.5, 138057.9, 140104.9, 137612.9, 131115.9, 133340.9, 127680.5, 127680.5, 127680.5, 128355.5, 128130.5, 126705.5, 124755.5, 124455.5, 121530.5, 121905.5, 118680.5, 118020.5, 117280.5, 120906.5, 122756.5, 123644.5, 121609.5, 120795.5, 119870.5, 116910.5, 120622.5, 120523.5, 122008.5, 148936.5, 142253.5, 148936.5, 160457.5, 155373.5, 163368.5, 170713.5, 170953.5, 171233.5, 184833.5, 217996.5, 217996.5, 208617.5, 221273.5, 217996.5, 216075.5, 226923.5, 234607.5, 246023.8, 272211.3, 275746.3, 271504.3, 275948.3, 293886.6, 268686.6, 280350.6, 286542.6, 288990.6, 281502.6, 296910.6, 299662.6, 291342.6, 289678.6, 286350.6, 288846.6, 283022.6, 283438.6, 286350.6, 286350.6, 300970.6, 300312.6, 323766.4, 333196.4, 325606.4, 334346.4, 336876.4, 340326.4, 334576.4, 326526.4, 331126.4, 332792.4, 328788.4, 330608.4, 324420.4, 319688.4, 314228.4, 320052.4, 322236.4, 322964.4, 323692.4, 316972.4, 311212.4, 310252.4, 309292.4, 309292.4, 306412.4, 307372.4, 306412.4, 304441.4, 301330.4, 303880.4, 312754.4, 312346.4, 306940.4, 305563.4, 311581.4, 309184.4, 310028.4, 302818.4, 284488.9, 291228.9, 290554.9, 292576.9, 291228.9, 290217.9, 292913.9, 294598.9, 295272.9, 297842.9, 296006.9, 286673.9, 325620.6, 317014.6, 328268.6, 327275.6, 326282.6, 312380.6, 341839.6, 328930.6, 320655.6, 319993.6];
+var cashValues = [7040.0, 7040.0, 7040.0, 7040.0, 7040.0, 7040.0, 5541.5, 5541.5, 5541.5, 5541.5, 5541.5, 5541.5, 5541.5, 5541.5, 5541.5, 109761.5, 109761.5, 109761.5, 109761.5, 6831.5, 6831.5, 6831.5, 6831.5, 6831.5, 6831.5, 6831.5, 6165.5, 6165.5, 6165.5, 6165.5, 6165.5, 6165.5, 6165.5, 6847.5, 6847.5, 6847.5, 6847.5, 6847.5, 6847.5, 6847.5, 6847.5, 6847.5, 135879.5, 135879.5, 7629.5, 7629.5, 7629.5, 7629.5, 7629.5, 125619.5, 7123.5, 7123.5, 138057.9, 8295.9, 8295.9, 8295.9, 8295.9, 127680.5, 127680.5, 127680.5, 6930.5, 6930.5, 6930.5, 6930.5, 6930.5, 6930.5, 6930.5, 6930.5, 7760.5, 7760.5, 7760.5, 7760.5, 7760.5, 7760.5, 7760.5, 7760.5, 7760.5, 6376.5, 6376.5, 6376.5, 148936.5, 7568.5, 7568.5, 7568.5, 7568.5, 7568.5, 11633.5, 11633.5, 11633.5, 11633.5, 12336.5, 12336.5, 12336.5, 12336.5, 12336.5, 12336.5, 12336.5, 12336.5, 12212.8, 15166.3, 15166.3, 15166.3, 15166.3, 15846.6, 13950.6, 13950.6, 13950.6, 13950.6, 13950.6, 13950.6, 15534.6, 15534.6, 15534.6, 15534.6, 15534.6, 15534.6, 15534.6, 15534.6, 15534.6, 15398.6, 15398.6, 16946.4, 16946.4, 16946.4, 16946.4, 16946.4, 16946.4, 16946.4, 16946.4, 16946.4, 17204.4, 17204.4, 17204.4, 17204.4, 17204.4, 17204.4, 17204.4, 17204.4, 17204.4, 16492.4, 16492.4, 16492.4, 16492.4, 16492.4, 16492.4, 16492.4, 16492.4, 16492.4, 17464.4, 17464.4, 17464.4, 17464.4, 17464.4, 17464.4, 17464.4, 17464.4, 17464.4, 15551.4, 15551.4, 14214.9, 14214.9, 14214.9, 14214.9, 14214.9, 14214.9, 14214.9, 14214.9, 14214.9, 15251.9, 15251.9, 15251.9, 17128.6, 17128.6, 17128.6, 17128.6, 17128.6, 17128.6, 17128.6, 17128.6, 17128.6, 319993.6];
+var openValues = [92750.0, 94570.0, 95270.0, 95550.0, 97020.0, 97090.0, 104220.0, 104220.0, 104220.0, 104220.0, 104220.0, 104220.0, 104220.0, 104220.0, 104220.0, 0, 0, 0, 0, 102565.0, 102784.0, 107164.0, 107602.0, 104390.0, 106653.0, 111033.0, 114400.0, 113256.0, 111254.0, 109824.0, 112684.0, 114400.0, 125840.0, 128397.0, 124714.0, 121666.0, 123571.0, 125222.0, 128270.0, 127762.0, 129032.0, 128651.0, 0, 0, 128535.0, 125875.0, 127015.0, 123405.0, 122645.0, 0, 119600.0, 127052.0, 0, 131809.0, 129317.0, 122820.0, 125045.0, 0, 0, 0, 121425.0, 121200.0, 119775.0, 117825.0, 117525.0, 114600.0, 114975.0, 111750.0, 110260.0, 109520.0, 113146.0, 114996.0, 115884.0, 113849.0, 113035.0, 112110.0, 109150.0, 114246.0, 114147.0, 115632.0, 0, 134685.0, 141368.0, 152889.0, 147805.0, 155800.0, 159080.0, 159320.0, 159600.0, 173200.0, 205660.0, 205660.0, 196281.0, 208937.0, 205660.0, 203739.0, 214587.0, 222271.0, 233811.0, 257045.0, 260580.0, 256338.0, 260782.0, 278040.0, 254736.0, 266400.0, 272592.0, 275040.0, 267552.0, 282960.0, 284128.0, 275808.0, 274144.0, 270816.0, 273312.0, 267488.0, 267904.0, 270816.0, 270816.0, 285572.0, 284914.0, 306820.0, 316250.0, 308660.0, 317400.0, 319930.0, 323380.0, 317630.0, 309580.0, 314180.0, 315588.0, 311584.0, 313404.0, 307216.0, 302484.0, 297024.0, 302848.0, 305032.0, 305760.0, 307200.0, 300480.0, 294720.0, 293760.0, 292800.0, 292800.0, 289920.0, 290880.0, 289920.0, 286977.0, 283866.0, 286416.0, 295290.0, 294882.0, 289476.0, 288099.0, 294117.0, 291720.0, 294477.0, 287267.0, 270274.0, 277014.0, 276340.0, 278362.0, 277014.0, 276003.0, 278699.0, 280384.0, 281058.0, 282591.0, 280755.0, 271422.0, 308492.0, 299886.0, 311140.0, 310147.0, 309154.0, 295252.0, 324711.0, 311802.0, 303527.0, 0];
+var pnlDates = ["2026-01-05", "2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09", "2026-01-12", "2026-01-13", "2026-01-14", "2026-01-15", "2026-01-16", "2026-01-19", "2026-01-20", "2026-01-21", "2026-01-22", "2026-01-23", "2026-01-26", "2026-01-27", "2026-01-28", "2026-01-29", "2026-01-30", "2026-02-02", "2026-02-03", "2026-02-04", "2026-02-05", "2026-02-06", "2026-02-09", "2026-02-10", "2026-02-11", "2026-02-12", "2026-02-13", "2026-02-24", "2026-02-25", "2026-02-26", "2026-02-27", "2026-03-02", "2026-03-03", "2026-03-04", "2026-03-05", "2026-03-06", "2026-03-09", "2026-03-10", "2026-03-11", "2026-03-12", "2026-03-13", "2026-03-16", "2026-03-17", "2026-03-18", "2026-03-19", "2026-03-20", "2026-03-23", "2026-03-24", "2026-03-25", "2026-03-26", "2026-03-27", "2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02", "2026-04-03", "2026-04-07", "2026-04-08", "2026-04-09", "2026-04-10", "2026-04-13", "2026-04-14", "2026-04-15", "2026-04-16", "2026-04-17", "2026-04-20", "2026-04-21", "2026-04-22", "2026-04-23", "2026-04-24", "2026-04-27", "2026-04-28", "2026-04-29", "2026-04-30", "2026-05-06", "2026-05-07", "2026-05-08", "2026-05-11", "2026-05-12", "2026-05-13", "2026-05-14", "2026-05-15", "2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21", "2026-05-22", "2026-05-25", "2026-05-26", "2026-05-27", "2026-05-28", "2026-05-29", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-08", "2026-06-09", "2026-06-10", "2026-06-11", "2026-06-12", "2026-06-15", "2026-06-16", "2026-06-17", "2026-06-18", "2026-06-22", "2026-06-23", "2026-06-24", "2026-06-25", "2026-06-26", "2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03", "2026-07-06", "2026-07-07", "2026-07-08", "2026-07-09", "2026-07-10", "2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-20", "2026-07-21", "2026-07-22", "2026-07-23", "2026-07-24", "2026-07-27", "2026-07-28", "2026-07-29", "2026-07-30", "2026-07-31", "2026-08-03", "2026-08-04", "2026-08-05", "2026-08-06", "2026-08-07", "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13", "2026-08-14", "2026-08-17", "2026-08-18", "2026-08-19", "2026-08-20", "2026-08-21", "2026-08-24", "2026-08-25", "2026-08-26", "2026-08-27", "2026-08-28", "2026-08-31", "2026-09-01", "2026-09-02", "2026-09-03", "2026-09-04", "2026-09-07", "2026-09-08", "2026-09-09", "2026-09-10", "2026-09-11", "2026-09-14", "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-28", "2026-09-29", "2026-09-30"];
+var pnlValues = [-210.0, 1820.0, 700.0, 280.0, 1470.0, 70.0, 5631.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -365.0, 219.0, 4380.0, 438.0, -3212.0, 2263.0, 4380.0, 2701.0, -1144.0, -2002.0, -1430.0, 2860.0, 1716.0, 11440.0, 3239.0, -3683.0, -3048.0, 1905.0, 1651.0, 3048.0, -508.0, 1270.0, -381.0, 381.0, 0.0, 285.0, -2660.0, 1140.0, -3610.0, -760.0, -4655.0, 1104.0, 7452.0, 3882.4, 2047.0, -2492.0, -6497.0, 2225.0, -5660.4, 0.0, 0.0, 675.0, -225.0, -1425.0, -1950.0, -300.0, -2925.0, 375.0, -3225.0, -660.0, -740.0, 3626.0, 1850.0, 888.0, -2035.0, -814.0, -925.0, -2960.0, 3712.0, -99.0, 1485.0, 26928.0, -6683.0, 6683.0, 11521.0, -5084.0, 7995.0, 7345.0, 240.0, 280.0, 13600.0, 33163.0, 0.0, -9379.0, 12656.0, -3277.0, -1921.0, 10848.0, 7684.0, 11416.3, 26187.5, 3535.0, -4242.0, 4444.0, 17938.3, -25200.0, 11664.0, 6192.0, 2448.0, -7488.0, 15408.0, 2752.0, -8320.0, -1664.0, -3328.0, 2496.0, -5824.0, 416.0, 2912.0, 0.0, 14620.0, -658.0, 23453.8, 9430.0, -7590.0, 8740.0, 2530.0, 3450.0, -5750.0, -8050.0, 4600.0, 1666.0, -4004.0, 1820.0, -6188.0, -4732.0, -5460.0, 5824.0, 2184.0, 728.0, 728.0, -6720.0, -5760.0, -960.0, -960.0, 0.0, -2880.0, 960.0, -960.0, -1971.0, -3111.0, 2550.0, 8874.0, -408.0, -5406.0, -1377.0, 6018.0, -2397.0, 844.0, -7210.0, -18329.5, 6740.0, -674.0, 2022.0, -1348.0, -1011.0, 2696.0, 1685.0, 674.0, 2570.0, -1836.0, -9333.0, 38946.7, -8606.0, 11254.0, -993.0, -993.0, -13902.0, 29459.0, -12909.0, -8275.0, -662.0];
+var reasonLabels = ["止盈", "到期无数据", "到期平仓", "止损", "跳空止盈"];
+var reasonData = [9, 1, 9, 5, 4];
+var hdLabels = ["T+1", "T+2", "T+3", "T+4", "T+5", "T+6", "T+7", "T+8", "T+9"];
+var hdData = [2, 10, 2, 2, 3, 3, 2, 2, 2];
+var allTrades = [{"rec_date": "2026-09-16", "ts_code": "000905.SZ", "stock_name": "厦门港务", "source": "漏斗策略", "buy_price": 9.28, "sell_price": 9.15, "target": 10.254, "stop_loss": 8.538, "shares": 33100, "cost": 307168.0, "pnl": -4303.0, "return_pct": -1.4, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-09-30", "pnl_color": "#28a745"}, {"rec_date": "2026-09-11", "ts_code": "300207.SZ", "stock_name": "欣旺达", "source": "八步法", "buy_price": 18.28, "sell_price": 20.199, "target": 20.199, "stop_loss": 16.818, "shares": 15300, "cost": 279684.0, "pnl": 29360.7, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 3, "sell_date": "2026-09-16", "pnl_color": "#dc3545"}, {"rec_date": "2026-08-31", "ts_code": "600177.SH", "stock_name": "雅戈尔", "source": "漏斗策略", "buy_price": 8.0, "sell_price": 8.33, "target": 8.84, "stop_loss": 7.36, "shares": 33700, "cost": 269600.0, "pnl": 11121.0, "return_pct": 4.13, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-09-11", "pnl_color": "#dc3545"}, {"rec_date": "2026-08-27", "ts_code": "300566.SZ", "stock_name": "激智科技", "source": "漏斗策略", "buy_price": 28.31, "sell_price": 26.045, "target": 31.283, "stop_loss": 26.045, "shares": 10300, "cost": 291593.0, "pnl": -23329.5, "return_pct": -8.0, "sell_reason": "止损", "hold_days": 2, "sell_date": "2026-08-31", "pnl_color": "#28a745"}, {"rec_date": "2026-08-14", "ts_code": "600660.SH", "stock_name": "福耀玻璃", "source": "漏斗策略", "buy_price": 56.28, "sell_price": 56.8, "target": 62.189, "stop_loss": 51.778, "shares": 5100, "cost": 287028.0, "pnl": 2652.0, "return_pct": 0.92, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-08-27", "pnl_color": "#dc3545"}, {"rec_date": "2026-08-03", "ts_code": "601818.SH", "stock_name": "光大银行", "source": "漏斗策略", "buy_price": 3.2, "sell_price": 3.0, "target": 3.536, "stop_loss": 2.944, "shares": 96000, "cost": 307200.0, "pnl": -19200.0, "return_pct": -6.25, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-08-14", "pnl_color": "#28a745"}, {"rec_date": "2026-07-21", "ts_code": "002926.SZ", "stock_name": "华西证券", "source": "漏斗策略", "buy_price": 8.58, "sell_price": 8.42, "target": 9.481, "stop_loss": 7.894, "shares": 36400, "cost": 312312.0, "pnl": -5824.0, "return_pct": -1.86, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-08-03", "pnl_color": "#28a745"}, {"rec_date": "2026-07-08", "ts_code": "600621.SH", "stock_name": "华鑫股份", "source": "漏斗策略", "buy_price": 13.21, "sell_price": 13.59, "target": 14.597, "stop_loss": 12.153, "shares": 23000, "cost": 303830.0, "pnl": 8740.0, "return_pct": 2.88, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-07-21", "pnl_color": "#dc3545"}, {"rec_date": "2026-07-06", "ts_code": "603222.SH", "stock_name": "济民健康", "source": "八步法", "buy_price": 8.4, "sell_price": 9.282, "target": 9.282, "stop_loss": 7.728, "shares": 32900, "cost": 276360.0, "pnl": 29017.8, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 2, "sell_date": "2026-07-08", "pnl_color": "#dc3545"}, {"rec_date": "2026-06-23", "ts_code": "601328.SH", "stock_name": "交通银行", "source": "漏斗策略", "buy_price": 6.84, "sell_price": 6.64, "target": 7.558, "stop_loss": 6.293, "shares": 41600, "cost": 284544.0, "pnl": -8320.0, "return_pct": -2.92, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-07-06", "pnl_color": "#28a745"}, {"rec_date": "2026-06-12", "ts_code": "600999.SH", "stock_name": "招商证券", "source": "漏斗策略", "buy_price": 17.9, "sell_price": 19.87, "target": 19.779, "stop_loss": 16.468, "shares": 14400, "cost": 257760.0, "pnl": 28368.0, "return_pct": 11.01, "sell_reason": "跳空止盈", "hold_days": 6, "sell_date": "2026-06-23", "pnl_color": "#dc3545"}, {"rec_date": "2026-06-11", "ts_code": "603139.SH", "stock_name": "康惠股份", "source": "八步法", "buy_price": 39.73, "sell_price": 36.552, "target": 43.902, "stop_loss": 36.552, "shares": 7000, "cost": 278110.0, "pnl": -22246.0, "return_pct": -8.0, "sell_reason": "止损", "hold_days": 1, "sell_date": "2026-06-12", "pnl_color": "#28a745"}, {"rec_date": "2026-06-05", "ts_code": "600060.SH", "stock_name": "海信视像", "source": "漏斗策略", "buy_price": 24.98, "sell_price": 27.603, "target": 27.603, "stop_loss": 22.982, "shares": 10100, "cost": 252298.0, "pnl": 26492.3, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 4, "sell_date": "2026-06-11", "pnl_color": "#dc3545"}, {"rec_date": "2026-06-04", "ts_code": "600063.SH", "stock_name": "皖维高新", "source": "八步法", "buy_price": 7.38, "sell_price": 8.155, "target": 8.155, "stop_loss": 6.79, "shares": 31300, "cost": 230994.0, "pnl": 24257.5, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 1, "sell_date": "2026-06-05", "pnl_color": "#dc3545"}, {"rec_date": "2026-05-25", "ts_code": "002823.SZ", "stock_name": "凯中精密", "source": "漏斗策略", "buy_price": 18.49, "sell_price": 20.431, "target": 20.431, "stop_loss": 17.011, "shares": 11300, "cost": 208937.0, "pnl": 21933.3, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 8, "sell_date": "2026-06-04", "pnl_color": "#dc3545"}, {"rec_date": "2026-05-19", "ts_code": "002138.SZ", "stock_name": "顺络电子", "source": "八步法", "buy_price": 39.83, "sell_price": 52.41, "target": 44.012, "stop_loss": 36.644, "shares": 4000, "cost": 159320.0, "pnl": 50320.0, "return_pct": 31.58, "sell_reason": "跳空止盈", "hold_days": 4, "sell_date": "2026-05-25", "pnl_color": "#dc3545"}, {"rec_date": "2026-05-12", "ts_code": "300001.SZ", "stock_name": "特锐德", "source": "八步法", "buy_price": 34.48, "sell_price": 39.85, "target": 38.1, "stop_loss": 31.722, "shares": 4100, "cost": 141368.0, "pnl": 22017.0, "return_pct": 15.57, "sell_reason": "跳空止盈", "hold_days": 5, "sell_date": "2026-05-19", "pnl_color": "#dc3545"}, {"rec_date": "2026-05-06", "ts_code": "300221.SZ", "stock_name": "银禧科技", "source": "漏斗策略", "buy_price": 11.55, "sell_price": 14.4, "target": 12.763, "stop_loss": 10.626, "shares": 9900, "cost": 114345.0, "pnl": 28215.0, "return_pct": 24.68, "sell_reason": "跳空止盈", "hold_days": 3, "sell_date": "2026-05-11", "pnl_color": "#dc3545"}, {"rec_date": "2026-04-20", "ts_code": "300001.SZ", "stock_name": "特锐德", "source": "漏斗策略", "buy_price": 29.8, "sell_price": 30.53, "target": 32.929, "stop_loss": 27.416, "shares": 3700, "cost": 110260.0, "pnl": 2701.0, "return_pct": 2.45, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-05-06", "pnl_color": "#dc3545"}, {"rec_date": "2026-04-08", "ts_code": "600216.SH", "stock_name": "浙江医药", "source": "漏斗策略", "buy_price": 16.1, "sell_price": 14.812, "target": 17.791, "stop_loss": 14.812, "shares": 7500, "cost": 120750.0, "pnl": -9660.0, "return_pct": -8.0, "sell_reason": "止损", "hold_days": 8, "sell_date": "2026-04-20", "pnl_color": "#28a745"}, {"rec_date": "2026-03-27", "ts_code": "002322.SZ", "stock_name": "理工能科", "source": "漏斗策略", "buy_price": 14.58, "sell_price": 13.414, "target": 16.111, "stop_loss": 13.414, "shares": 8900, "cost": 129762.0, "pnl": -10377.4, "return_pct": -8.0, "sell_reason": "止损", "hold_days": 4, "sell_date": "2026-04-02", "pnl_color": "#28a745"}, {"rec_date": "2026-03-24", "ts_code": "002053.SZ", "stock_name": "云南能投", "source": "漏斗策略", "buy_price": 12.88, "sell_price": 14.232, "target": 14.232, "stop_loss": 11.85, "shares": 9200, "cost": 118496.0, "pnl": 12438.4, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 2, "sell_date": "2026-03-26", "pnl_color": "#dc3545"}, {"rec_date": "2026-03-16", "ts_code": "000524.SZ", "stock_name": "岭南控股", "source": "漏斗策略", "buy_price": 13.5, "sell_price": 12.42, "target": 14.918, "stop_loss": 12.42, "shares": 9500, "cost": 128250.0, "pnl": -10260.0, "return_pct": -8.0, "sell_reason": "止损", "hold_days": 5, "sell_date": "2026-03-23", "pnl_color": "#28a745"}, {"rec_date": "2026-02-27", "ts_code": "000037.SZ", "stock_name": "深南电A", "source": "漏斗策略", "buy_price": 9.9, "sell_price": 10.16, "target": 10.94, "stop_loss": 9.108, "shares": 12700, "cost": 125730.0, "pnl": 3302.0, "return_pct": 2.63, "sell_reason": "到期平仓", "hold_days": 9, "sell_date": "2026-03-12", "pnl_color": "#dc3545"}, {"rec_date": "2026-02-10", "ts_code": "002141.SZ", "stock_name": "贤丰控股", "source": "漏斗策略", "buy_price": 4.0, "sell_price": 4.42, "target": 4.42, "stop_loss": 3.68, "shares": 28600, "cost": 114400.0, "pnl": 12012.0, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 7, "sell_date": "2026-02-27", "pnl_color": "#dc3545"}, {"rec_date": "2026-01-30", "ts_code": "000586.SZ", "stock_name": "汇源通信", "source": "漏斗策略", "buy_price": 14.1, "sell_price": 15.58, "target": 15.58, "stop_loss": 12.972, "shares": 7300, "cost": 102930.0, "pnl": 10804.0, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 7, "sell_date": "2026-02-10", "pnl_color": "#dc3545"}, {"rec_date": "2026-01-13", "ts_code": "688387.SH", "stock_name": "信科移动", "source": "LLM多源", "buy_price": 19.3, "sell_price": 19.3, "target": 21.326, "stop_loss": 17.756, "shares": 5400, "cost": 104220.0, "pnl": 0.0, "return_pct": 0.0, "sell_reason": "到期无数据", "hold_days": 9, "sell_date": "2026-01-26", "pnl_color": "#6c757d"}, {"rec_date": "2026-01-05", "ts_code": "000400.SZ", "stock_name": "许继电气", "source": "漏斗策略", "buy_price": 26.56, "sell_price": 29.349, "target": 29.349, "stop_loss": 24.435, "shares": 3500, "cost": 92960.0, "pnl": 9761.5, "return_pct": 10.5, "sell_reason": "止盈", "hold_days": 6, "sell_date": "2026-01-13", "pnl_color": "#dc3545"}];
+
+// ===== All rendering starts after DOM + Chart.js ready =====
+var renderStarted = false;
+function renderAll() {
+    if (renderStarted) return;
+    renderStarted = true;
+
+    try {
+        // --- Equity Curve ---
+        new Chart(document.getElementById('equityChart'), {
+            type: 'line',
+            data: { labels: equityDates, datasets: [{
+                label: '总权益', data: equityValues, borderColor: '#6366f1',
+                backgroundColor: 'rgba(99,102,241,0.08)', fill: true, borderWidth: 2,
+                pointRadius: 0, pointHoverRadius: 5, tension: 0.1
+            }, {
+                label: '现金', data: cashValues, borderColor: '#28a745',
+                backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
+                pointHoverRadius: 4, borderDash: [4, 4]
+            }, {
+                label: '持仓市值', data: openValues, borderColor: '#dc3545',
+                backgroundColor: 'transparent', borderWidth: 1.5, pointRadius: 0,
+                pointHoverRadius: 4, borderDash: [4, 4]
+            }] },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { intersect: false, mode: 'index' },
+                plugins: { legend: { position: 'top' }, tooltip: { callbacks: { label: function(ctx) { return ctx.dataset.label + ': \u00a5' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
+                scales: { y: { ticks: { callback: function(v) { return '\u00a5' + (v/10000).toFixed(1) + '\u4e07'; } } } }
+            }
+        });
+
+        // --- Daily P&L ---
+        (function() {
+            var pnlColors = pnlValues.map(function(v) { return v >= 0 ? '#dc3545' : '#28a745'; });
+            new Chart(document.getElementById('pnlChart'), {
+                type: 'bar',
+                data: { labels: pnlDates, datasets: [{ label: '\u6bcf\u65e5\u76c8\u4e8f', data: pnlValues, backgroundColor: pnlColors, borderWidth: 0 }] },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return '\u00a5' + ctx.parsed.y.toLocaleString('zh-CN', {maximumFractionDigits: 0}); } } } },
+                    scales: { y: { ticks: { callback: function(v) { return '\u00a5' + (v/10000).toFixed(1) + '\u4e07'; } } } }
+                }
+            });
+        })();
+
+        // --- Sell Reason Doughnut ---
+        new Chart(document.getElementById('reasonChart'), {
+            type: 'doughnut',
+            data: { labels: reasonLabels, datasets: [{ data: reasonData, backgroundColor: ['#dc3545','#28a745','#ffc107','#17a2b8','#6c757d','#e83e8c'] }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right' } } }
+        });
+
+        // --- Holding Days Bar ---
+        new Chart(document.getElementById('holdDaysChart'), {
+            type: 'bar',
+            data: { labels: hdLabels, datasets: [{ label: '\u4ea4\u6613\u7b14\u6570', data: hdData, backgroundColor: '#6366f1', borderWidth: 0 }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+        });
+    } catch(e) {
+        console.error('Chart render error:', e);
+    }
+
+    // --- Trade Table ---
+    var tbody = document.getElementById('tradeBody');
+    if (!tbody) return;
+    var sourceTagClass = { 'LLM\u591a\u6e90': 'tag-llm', '\u516b\u6b65\u6cd5': 'tag-8step', '\u6f0f\u6597\u7b56\u7565': 'tag-funnel', '\u4e3b\u5347\u6d6a': 'tag-uptrend' };
+
+    function renderTrades(trades) {
+        tbody.innerHTML = trades.map(function(t) {
+            var cls = sourceTagClass[t.source] || 'tag-llm';
+            var pnlSign = t.pnl >= 0 ? '+' : '-';
+            var retSign = t.return_pct > 0 ? '+' : '';
+            return '<tr><td>' + t.rec_date + '</td><td>' + t.ts_code + '</td><td>' + t.stock_name +
+                '</td><td><span class="tag ' + cls + '">' + t.source + '</span></td>' +
+                '<td>' + t.buy_price.toFixed(2) + '</td><td>' + t.sell_price.toFixed(2) +
+                '</td><td>' + t.target.toFixed(2) + '</td><td>' + t.stop_loss.toFixed(2) +
+                '</td><td>' + t.shares + '</td><td>\u00a5' + t.cost.toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
+                '</td><td style="color:' + t.pnl_color + ';font-weight:600;">' + pnlSign + '\u00a5' + Math.abs(t.pnl).toLocaleString('zh-CN', {maximumFractionDigits: 0}) +
+                '</td><td style="color:' + t.pnl_color + ';">' + retSign + t.return_pct.toFixed(2) + '%</td>' +
+                '<td>' + t.sell_reason + '</td><td>' + t.hold_days + '\u5929</td><td>' + t.sell_date + '</td></tr>';
+        }).join('');
+        document.getElementById('tradeCount').textContent = '\u5171 ' + trades.length + ' \u7b14';
+    }
+    renderTrades(allTrades);
+
+    window.filterTrades = function() {
+        var q = document.getElementById('tradeSearch').value.toLowerCase();
+        renderTrades(allTrades.filter(function(t) {
+            return t.ts_code.toLowerCase().indexOf(q) >= 0 || t.stock_name.toLowerCase().indexOf(q) >= 0 || t.source.toLowerCase().indexOf(q) >= 0;
+        }));
+    };
+
+    var sortAsc = {};
+    window.sortTable = function(colIdx) {
+        var keys = ['rec_date','ts_code','stock_name','source','buy_price','sell_price','target','stop_loss','shares','cost','pnl','return_pct','sell_reason','hold_days','sell_date'];
+        var key = keys[colIdx];
+        sortAsc[key] = !sortAsc[key];
+        renderTrades(allTrades.slice().sort(function(a, b) {
+            var va = a[key], vb = b[key];
+            if (typeof va === 'string') return sortAsc[key] ? va.localeCompare(vb) : vb.localeCompare(va);
+            return sortAsc[key] ? va - vb : vb - va;
+        }));
+    };
+}
+
+// Wait for Chart.js to load before rendering
+function waitForChart(retries) {
+    retries = retries || 0;
+    if (window.Chart) {
+        renderAll();
+    } else if (window._chartLoadFailed) {
+        // Show fallback message if Chart.js failed entirely
+        var charts = document.querySelectorAll('.chart-container, .chart-container-sm');
+        for (var i = 0; i < charts.length; i++) {
+            charts[i].innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;">\u56fe\u8868\u52a0\u8f7d\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u7f51\u7edc\u8fde\u63a5</div>';
+        }
+        // Still render trade table
+        if (document.getElementById('tradeBody')) renderAll();
+    } else if (retries < 40) {
+        setTimeout(function(){ waitForChart(retries + 1); }, 250);
+    } else {
+        // Timeout: charts failed but try to render anyway
+        renderAll();
+    }
+}
+// Also render immediately if Chart already loaded (cached)
+if (window.Chart) { renderAll(); }
+else { setTimeout(function(){ waitForChart(); }, 300); }
+</script>
+</body>
+</html>
