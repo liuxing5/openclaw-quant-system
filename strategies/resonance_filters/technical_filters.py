@@ -27,6 +27,7 @@ from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.db.connection import get_db_fresh
+from core.utils.timezone import beijing_today
 
 
 class ResonanceFilters:
@@ -611,7 +612,7 @@ def run_resonance_filter(trade_date: date = None,
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT MAX(trade_date) as max_date FROM daily_quotes;")
             row = cur.fetchone()
-            trade_date = row['max_date'] if row else date.today()
+            trade_date = row['max_date'] if row else beijing_today()
             cur.close()
         finally:
             if conn and not conn.closed:

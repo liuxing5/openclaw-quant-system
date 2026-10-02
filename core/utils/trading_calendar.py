@@ -16,6 +16,7 @@ import json
 import os
 from datetime import date, timedelta
 from typing import Set
+from core.utils.timezone import beijing_today
 
 # ============================================================
 # A 股休市日期配置（仅配置非周末的休市日）
@@ -174,7 +175,7 @@ def is_trading_day(d: date = None) -> bool:
     未硬编码的年份会懒加载 akshare 并缓存到 ~/.cache/zuiyou_trading_calendar.json。
     """
     if d is None:
-        d = date.today()
+        d = beijing_today()
 
     # 周末休市
     if d.weekday() >= 5:  # 5=周六, 6=周日
@@ -201,7 +202,7 @@ def get_next_trading_day(d: date = None, days_ahead: int = 1) -> date:
         目标交易日的 date 对象
     """
     if d is None:
-        d = date.today()
+        d = beijing_today()
 
     count = 0
     current = d + timedelta(days=1)
@@ -237,7 +238,7 @@ def get_trading_days_in_range(start: date, end: date) -> list:
 if __name__ == "__main__":
     from datetime import date
 
-    today = date.today()
+    today = beijing_today()
     weekdays = ['一', '二', '三', '四', '五', '六', '日']
     print(f"📅 今天: {today} ({weekdays[today.weekday()]})")
     print(f"📊 是否交易日: {'是' if is_trading_day(today) else '否（休市）'}")

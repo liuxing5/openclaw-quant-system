@@ -6,6 +6,7 @@ from loguru import logger
 
 from core.db.connection import get_db_fresh
 from core.utils.env import load_project_env
+from core.utils.timezone import beijing_today
 
 load_project_env()
 
@@ -87,16 +88,16 @@ def update_tracking():
             WHERE c.selected=TRUE
               AND c.source IN ('llm_multisource', 'overnight_8step')
               AND c.snapshot_date >= %s;
-        """, (date.today() - timedelta(days=30),))
+        """, (beijing_today() - timedelta(days=30),))
 
-        trading_dates = _get_trading_dates(conn, date.today() - timedelta(days=60), date.today())
+        trading_dates = _get_trading_dates(conn, beijing_today() - timedelta(days=60), beijing_today())
 
         for cand_id, ts, snap_date, _source, avg_entry, t1, sl in cur.fetchall():
             if not avg_entry:
                 continue
             for offset, col in [(1, 't1'), (5, 't5'), (20, 't20')]:
                 check_date = _nth_trading_day_after(trading_dates, snap_date, offset)
-                if check_date is None or check_date > date.today():
+                if check_date is None or check_date > beijing_today():
                     continue
                 cur.execute("""
                     SELECT high, low, close FROM daily_quotes
