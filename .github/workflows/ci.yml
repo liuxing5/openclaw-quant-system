@@ -22,4 +22,4 @@ jobs:
       - name: Static checks
         run: |
           pip install pyyaml
-          python scripts/pre_deploy_check.py
+          python tools/pre_deploy_check.py
