@@ -180,6 +180,9 @@ def run_layer2_liquidity_filter(
             if circ_mcap < cfg.layer2_min_circulating_mcap:
                 reject_stats['市值不足'] += 1
                 continue
+            if cfg.layer2_max_circulating_mcap > 0 and circ_mcap > cfg.layer2_max_circulating_mcap:
+                reject_stats['市值过大'] += 1
+                continue
 
             # 换手率
             turn = liq.get('turnover_rate', 0)

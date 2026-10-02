@@ -137,7 +137,7 @@ jobs:
         with:
           personal_token: ${{ secrets.GH_PAT }}
           publish_dir: ./strategies/funnel_strategy/docs
-          destination_dir: funnel
+          destination_dir: mainup
           keep_files: true
 
   backtest:

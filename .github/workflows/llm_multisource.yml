@@ -22,6 +22,8 @@ jobs:
   collect_data:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    outputs:
+      is_trading: ${{ steps.check_trading.outputs.is_trading }}
     
     env:
       POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
@@ -45,7 +47,27 @@ jobs:
       - name: Install dependencies
         run: pip install -r strategies/llm_multisource/requirements.txt
 
+      - name: Check if trading day
+        id: check_trading
+        run: |
+          python3 -c "
+          from core.utils.trading_calendar import is_trading_day
+          from datetime import datetime, timedelta, timezone
+          beijing_date = (datetime.now(timezone.utc) + timedelta(hours=8)).date()
+          is_trading = is_trading_day(beijing_date)
+          print(f'北京时间: {beijing_date} ({is_trading})')
+          with open('/tmp/is_trading.txt','w') as f:
+              f.write('true' if is_trading else 'false')
+          "
+          echo "is_trading=$(cat /tmp/is_trading.txt)" >> $GITHUB_OUTPUT
+
+      - name: Skip on non-trading day
+        if: steps.check_trading.outputs.is_trading == 'false' && github.event_name != 'workflow_dispatch'
+        run: echo "⏭️ 今天不是 A 股交易日，跳过采集"
+
+
       - name: Init DB & sync stock info
+        if: ${{ steps.check_trading.outputs.is_trading == 'true' || github.event_name == 'workflow_dispatch' }}
         continue-on-error: true
         run: |
           python -m core.db.apply_schema
@@ -53,12 +75,14 @@ jobs:
           python strategies/llm_multisource/sync_stock_info.py
 
       - name: Collect market data
+        if: ${{ steps.check_trading.outputs.is_trading == 'true' || github.event_name == 'workflow_dispatch' }}
         run: |
           python -m core.market_data.quotes
           python strategies/llm_multisource/collector.py --once
 
   recommend:
     needs: collect_data
+    if: ${{ needs.collect_data.outputs.is_trading == 'true' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     

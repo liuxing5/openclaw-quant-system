@@ -55,7 +55,8 @@ class FunnelConfig:
     # ================================================================
     layer2_enabled: bool = True
     layer2_min_avg_amount_20d: float = 1e8       # 20日日均成交额>1亿 [③八步法]
-    layer2_min_circulating_mcap: float = 2e9     # 流通市值>20亿 [③八步法]
+    layer2_min_circulating_mcap: float = 5e9     # 流通市值>50亿
+    layer2_max_circulating_mcap: float = 50e9   # 流通市值≤500亿
     layer2_turn_rate_min: float = 3.0             # 换手率≥3% [③八步法]
     layer2_turn_rate_max: float = 15.0            # 换手率≤15% [③八步法]
 
@@ -178,6 +179,8 @@ class FunnelConfig:
             errors.append("layer1_max_pledge_ratio 必须在 0~100")
         if self.layer2_min_avg_amount_20d <= 0:
             errors.append("layer2_min_avg_amount_20d 必须 > 0")
+        if self.layer2_max_circulating_mcap <= self.layer2_min_circulating_mcap:
+            errors.append("layer2_max_circulating_mcap 必须大于 layer2_min_circulating_mcap")
         if self.layer3_ema_fast >= self.layer3_ema_mid or self.layer3_ema_mid >= self.layer3_ema_slow:
             errors.append("EMA 参数必须满足: fast < mid < slow")
         if self.layer4_volume_ratio_min >= self.layer4_volume_ratio_max:

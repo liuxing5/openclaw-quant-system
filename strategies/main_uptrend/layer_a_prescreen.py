@@ -120,6 +120,10 @@ class LayerAPrescreener:
                 WHERE profit_yoy IS NOT NULL
                   AND profit_yoy > %s
                   AND report_date >= '2025-01-01'
+                  AND net_profit IS NOT NULL
+                  AND net_profit > 0
+                  AND operating_cashflow IS NOT NULL
+                  AND operating_cashflow >= net_profit
             """, (self.cfg.a_profit_growth_min * 100,))
             for row in cur.fetchall():
                 codes.add(row['ts_code'])

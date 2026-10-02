@@ -504,6 +504,13 @@ def decide_sell(
         result["priority"] = 5
         return result
 
+    # 竞价高开过高不追高：T+1 开盘跳空 >5% → 先止盈/放弃（需过滤涨停锁板）
+    if open_pct >= 5 and not info.get("is_limit_up"):
+        result["action"] = "🟡 竞价高开止盈"
+        result["reason"] = f"竞价{open_pct:.2f}%高开过高，触发动态止盈(不追高)"
+        result["priority"] = 4
+        return result
+
     # ---------- 优先级 4：涨停炸板 / 跟踪止盈 ----------
 
     # 涨停炸板（高位路径专属）
