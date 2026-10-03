@@ -47,7 +47,7 @@ def main():
 
     for s, e in windows(args.start, args.end, args.window_months, args.step_months):
         print(f"\n===== OUT-OF-SAMPLE: {s} ~ {e} =====", flush=True)
-        cmd = f"{args.cmd} --start {s} --end {e} --output /tmp/rolling_backtest.txt"
+        cmd = f"{args.cmd} --start {s} --end {e} --output /tmp/rolling_backtest_{s}_{e}.txt"
         try:
             subprocess.run(cmd, shell=True, check=True, timeout=3600)
         except subprocess.CalledProcessError as exc:
