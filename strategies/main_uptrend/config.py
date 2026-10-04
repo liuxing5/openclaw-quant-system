@@ -114,7 +114,8 @@ class MainUptrendConfig:
 
     e_trend_duration_min: int = 10
     e_top_n_daily: int = 20
-    e_min_total_score: float = 4.5  # E层总信号硬门槛: 低于此分不配参
+    e_min_total_score: float = 4.0  # E层总信号硬门槛
+    e_top_percentile: float = 66.7  # 只保留综合分前1/3
 
     # ============================================================
     # LLM 优选模块

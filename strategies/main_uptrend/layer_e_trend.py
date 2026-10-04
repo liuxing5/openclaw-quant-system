@@ -238,6 +238,10 @@ class LayerETrendDetector:
         pool_df['e_passed'] = passed
 
         passed_df = pool_df[pool_df['e_passed']].sort_values('e_total_score', ascending=False)
+        # 只保留综合分前 e_top_percentile 分位的信号，减少低质噪声
+        if len(passed_df) > 0:
+            cutoff = np.percentile(passed_df["e_total_score"], 100.0 - self.cfg.e_top_percentile)
+            passed_df = passed_df[passed_df["e_total_score"] >= cutoff]
         top = passed_df.head(top_n)
 
         results = []
