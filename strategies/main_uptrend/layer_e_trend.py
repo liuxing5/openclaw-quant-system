@@ -232,7 +232,7 @@ class LayerETrendDetector:
         # 通过条件：(E1或E5通过) 或 (E9蓄势通过且E3回撤可控) + 总分 > 阈值
         trend_confirmed = (e1_pass | e5_pass)
         early_accumulation = e9_pass & e3_pass
-        passed = (trend_confirmed | early_accumulation) & (total_score > 3.5)
+        passed = (trend_confirmed | early_accumulation) & (total_score > self.cfg.e_min_total_score)
 
         pool_df['e_total_score'] = total_score
         pool_df['e_passed'] = passed
