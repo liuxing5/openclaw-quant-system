@@ -136,3 +136,4 @@ ai_investment_system/
 assets/
 scripts/
 .hermes-aux/
+strategies/funnel_strategy/docs/main_uptrend_backtest.json
