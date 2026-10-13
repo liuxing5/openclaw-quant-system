@@ -137,3 +137,6 @@ assets/
 scripts/
 .hermes-aux/
 strategies/funnel_strategy/docs/main_uptrend_backtest.json
+
+# funnel date snapshot pages (only main funnel.html is published; date pages are generated locally via --all-dates)
+strategies/funnel_strategy/docs/funnel-2*.html

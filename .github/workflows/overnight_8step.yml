@@ -285,6 +285,9 @@ jobs:
         POSTGRES_POOL_SIZE: 5
       run: |
         pip install jinja2 psycopg2-binary python-dotenv
+        # 先删掉仓库里可能已过期的 funnel.html：生成失败时宁可不发布，
+        # 也不能把陈旧页面重新推上去覆盖 Pages 上的新版本
+        rm -f strategies/funnel_strategy/docs/funnel.html
         python strategies/funnel_strategy/generate_html.py --output ./strategies/funnel_strategy/docs || echo "⚠️ funnel HTML generation failed, continuing..."
 
     - name: Deploy unified HTML to GitHub Pages (funnel)

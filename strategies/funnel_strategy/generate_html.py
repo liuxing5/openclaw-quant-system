@@ -33,17 +33,33 @@ def get_beijing_date():
     return datetime.now(BEIJING_TZ).date()
 
 
+def _close_conn(conn):
+    """把连接归还连接池（get_db_fresh 拿到的连接必须显式 close 才会归还）。
+
+    忘记归还会导致 "connection pool exhausted"，进程在第 6 次查询时直接崩溃。
+    """
+    if conn is None:
+        return
+    try:
+        conn.close()
+    except Exception:
+        pass
+
+
 def query_dicts(sql, params=None):
-    """Execute query using session-cached connection.
-    
+    """Execute query and return rows.
+
     Connection pool exhaustion retry is handled at _connect() level in core/db/connection.py.
     """
     conn = get_db_fresh(use_dict_cursor=True)
-    cur = conn.cursor()
-    cur.execute(sql, params)
-    rows = [dict(r) for r in cur.fetchall()]
-    cur.close()
-    return rows
+    try:
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        rows = [dict(r) for r in cur.fetchall()]
+        cur.close()
+        return rows
+    finally:
+        _close_conn(conn)
 
 
 def query_one(sql, params=None):
@@ -127,10 +143,13 @@ def load_funnel_data(trade_date=None):
     if codes_missing_name:
         try:
             conn = get_db_fresh(use_dict_cursor=True)
-            cur = conn.cursor()
-            cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes_missing_name,))
-            name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
-            cur.close()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes_missing_name,))
+                name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
+                cur.close()
+            finally:
+                _close_conn(conn)
             for c in candidates:
                 if not c.get('stock_name'):
                     c['stock_name'] = name_map.get(c.get('ts_code', ''), '')
@@ -151,6 +170,7 @@ def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, m
         except ValueError:
             pass
     for attempt in range(max_retries):
+        conn = None
         try:
             conn = get_db_fresh(use_dict_cursor=True)
             if conn.closed:
@@ -196,6 +216,8 @@ def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, m
                 _t.sleep(delay)
                 continue
             raise
+        finally:
+            _close_conn(conn)
 
 
 def load_scan_stats(strategy, snapshot_date=None):
@@ -306,10 +328,13 @@ def load_main_uptrend_daily(trade_date=None):
             if codes:
                 try:
                     conn = get_db_fresh(use_dict_cursor=True)
-                    cur = conn.cursor()
-                    cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes,))
-                    name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
-                    cur.close()
+                    try:
+                        cur = conn.cursor()
+                        cur.execute("SELECT ts_code, stock_name FROM stock_basic_info WHERE ts_code = ANY(%s);", (codes,))
+                        name_map = {r['ts_code']: r['stock_name'] for r in cur.fetchall()}
+                        cur.close()
+                    finally:
+                        _close_conn(conn)
                     for c in candidates:
                         if not c.get('stock_name'):
                             c['stock_name'] = name_map.get(c.get('ts_code', ''), '')
