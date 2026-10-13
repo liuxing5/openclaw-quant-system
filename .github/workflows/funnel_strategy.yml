@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'strategies/funnel_strategy/**'
+      - 'strategies/pullback_strategy/**'
       - 'core/**'
       - '.github/workflows/funnel_strategy.yml'
   schedule:
@@ -101,6 +102,14 @@ jobs:
           if [ "$EXIT_CODE" -ne 0 ]; then
             echo "strategy_failed=true" >> $GITHUB_ENV
           fi
+
+      - name: Run pullback buy strategy
+        # 回调买入法：失败只告警，不阻断报告生成（页面会回退展示已有数据）
+        if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python -m strategies.pullback_strategy.run_daily 2>&1 | tee /tmp/pullback_output.log
 
       - name: Generate HTML report
         if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}

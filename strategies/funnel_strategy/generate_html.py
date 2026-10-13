@@ -1,5 +1,5 @@
 """
-三策略对比 HTML 报告生成器
+五策略对比 HTML 报告生成器
 ===========================
 整合 七步漏斗 / LLM多源 / 八步法 到同一页面，支持暗/亮主题。
 部署目标：https://liuxing5.github.io/openclaw-quant-system/funnel/funnel.html
@@ -289,6 +289,20 @@ def load_main_uptrend_backtest():
     return clean_nan(data)
 
 
+def load_pullback_backtest():
+    """从 docs 目录加载 回调买入法 (pullback_buy) 回测 JSON 数据"""
+    backtest_file = Path(__file__).parent / "docs" / "pullback_backtest.json"
+    if not backtest_file.exists():
+        return None
+    try:
+        with open(backtest_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        return clean_nan(data)
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"  ⚠ 加载 pullback_backtest.json 失败: {e}")
+        return None
+
+
 def load_main_uptrend_run_stats(trade_date=None):
     """从 main_uptrend_runs 加载当日运行统计和运行时间"""
     try:
@@ -353,7 +367,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── 加载三策略数据 ──
+    # ── 加载五策略数据 ──
     funnel = load_funnel_data(trade_date)
     funnel_date = str(funnel['trade_date']) if funnel else None
     funnel_timestamp = load_strategy_timestamp('funnel', funnel_date)
@@ -400,6 +414,12 @@ def generate_unified_html(output_dir=None, trade_date=None):
     uptrend_daily, uptrend_date = load_main_uptrend_daily(trade_date=trade_date)
     uptrend_backtest = load_main_uptrend_backtest()
     uptrend_run_stats = load_main_uptrend_run_stats(trade_date=trade_date)
+
+    # ── 回调买入法 (pullback_buy) ──
+    pb_candidates, pb_date = load_candidates('pullback_buy', trade_date=trade_date)
+    pb_scan = load_scan_stats('pullback_buy', pb_date)
+    pb_backtest = load_pullback_backtest()
+    pb_timestamp = load_strategy_timestamp('pullback_buy', pb_date) if (pb_date or pb_scan) else None
 
     display_date = str(funnel_date or llm_date or eight_date or get_beijing_date())
 
@@ -791,6 +811,129 @@ def generate_unified_html(output_dir=None, trade_date=None):
     else:
         uptrend_steps_html = '<div class="no-data">暂无数据<br><small>运行主升浪检测后自动展示</small></div>'
 
+    # ── 回调买入法（pullback_buy）步骤与回测展示 ──
+    pb_step_defs = [
+        ('流动性/风控', '成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停'),
+        ('强势股筛选', '20日动能≥20% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50'),
+        ('回调至支撑', '自20日高点回撤5%~30% · 低点触及EMA21/EMA50(±3%) · 回调段缩量'),
+        ('回升确认', '收阳 · 收盘>前日收盘 · 重新站上EMA21'),
+        ('紧止损达标', '止损=支撑下方1% · 风险≤3% · 目标=入场+2×风险'),
+    ]
+    pb_stats = pb_scan.get('filter_stats', {}) if pb_scan else {}
+    pb_parts = []
+    if pb_stats:
+        pb_parts.append(f"""
+        <div class="step-row">
+          <span class="step-name">扫描日期</span>
+          <span class="rule-inline">{pb_scan.get('snapshot_date', '—')}</span>
+        </div>""")
+        for _name, _rule in pb_step_defs:
+            _cnt = pb_stats.get(_name, '—')
+            pb_parts.append(f"""
+        <div class="step-row" title="{_rule}">
+          <span class="step-name">{_name}</span>
+          <span class="step-pass">{_cnt}</span>
+          <span class="rule-inline">{_rule}</span>
+        </div>""")
+
+    pb_backtest_html = ""
+    pb_top10_html = ""
+    if pb_backtest:
+        bt = pb_backtest
+        es = bt.get('exit_stats', {})
+        period = f"{bt.get('backtest_start', '')} ~ {bt.get('backtest_end', '')}"
+        fwd = bt.get('forward_returns', {})
+
+        table_rows = ""
+        for days_key in ['10', '20', '60']:
+            fd = fwd.get(days_key, {})
+            if not fd:
+                continue
+            wr = fd.get('win_rate', 0)
+            n = fd.get('count', 0)
+            mn = fd.get('mean', 0)
+            md = fd.get('median', 0)
+            a5 = fd.get('above_5pct', 0)
+            a10 = fd.get('above_10pct', 0)
+            color = '#3fb950' if wr > 0.55 else ('#f0883e' if wr > 0.50 else '#f85149')
+            table_rows += f"""
+            <tr>
+              <td><strong>{days_key}日</strong></td>
+              <td>{n}</td>
+              <td style="color:{color}"><strong>{wr:.1%}</strong></td>
+              <td>{mn:.1%}</td>
+              <td>{md:.1%}</td>
+              <td>{a5:.1%}</td>
+              <td>{a10:.1%}</td>
+            </tr>"""
+
+        pb_backtest_html = f"""
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:6px;">📊 回测统计（T+1开盘入场 · 含止损/止盈模拟）</div>
+        <div class="step-row">
+          <span class="step-name">回测区间</span>
+          <span class="rule-inline">{period}</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">成交笔数</span>
+          <span class="step-pass">{bt.get('total_signals', 0)}</span>
+          <span class="rule-inline">胜率{es.get('win_rate', 0):.1%} · 均值{es.get('mean', 0):+.1%} · 持有{es.get('avg_hold_days', 0):.1f}日</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">出场分布</span>
+          <span class="rule-inline">止损 {es.get('stop_count', 0)} · 止盈 {es.get('target_count', 0)} · 超时 {es.get('timeout_count', 0)}</span>
+        </div>
+        <div style="overflow-x:auto;margin:8px 0;">
+        <table style="width:100%;font-size:.7rem;border-collapse:collapse;white-space:nowrap;">
+        <thead><tr style="background:var(--metric-bg)">
+          <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th><th>&gt;5%</th><th>&gt;10%</th>
+        </tr></thead>
+        <tbody>{table_rows}</tbody>
+        </table>
+        </div>
+        </div>"""
+
+        # 回测 Top5 作为无当日候选时的兜底卡片
+        for s in bt.get('top10_signals', [])[:5]:
+            frets = s.get('forward_rets', {})
+            ret_10 = f"{frets.get('10', 0):.1%}" if '10' in frets else '—'
+            ret_20 = f"{frets.get('20', 0):.1%}" if '20' in frets else '—'
+            ret_60 = f"{frets.get('60', 0):.1%}" if '60' in frets else '—'
+            _ts_code = s.get('ts_code', '')
+            _name = s.get('stock_name', '')
+            _score = s.get('composite_score', 0)
+            _exit_ret = s.get('exit_ret', 0)
+            _exit_map = {'stop': '止损', 'target': '止盈', 'timeout': '超时'}
+            _tags_str = f"{s.get('eval_date', '')} · {_exit_map.get(s.get('exit_type'), s.get('exit_type', ''))} {_exit_ret:+.1%}"
+            _stock_url = ''
+            if _ts_code:
+                _parts = _ts_code.split('.')
+                if len(_parts) == 2:
+                    _stock_url = f'https://finance.baidu.com/stock/ab-{_parts[0]}'
+            _onclick = f' onclick="window.open(\'{_stock_url}\',\'_blank\')" style="cursor:pointer"' if _stock_url else ''
+            _code_link = f'<a href="{_stock_url}" target="_blank" style="color:inherit;text-decoration:none">{_ts_code}</a>' if _stock_url else _ts_code
+            pb_top10_html += f"""
+            <div class="candidate-card"{_onclick}>
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code">{_code_link}</span>
+                  <span class="cand-name">{_name or ''}</span>
+                </div>
+                <span class="cand-score">{_score:.0f}</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">{ret_10}</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">{ret_20}</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">{ret_60}</span><span class="ml">60日</span></div>
+              </div>
+              <div class="cand-tags">{_tags_str}</div>
+            </div>"""
+
+    if pb_parts or pb_backtest_html:
+        pullback_steps_html = "".join(pb_parts) + pb_backtest_html
+    else:
+        pullback_steps_html = '<div class="no-data">暂无数据<br><small>运行回调买入法后自动展示</small></div>'
+
     # ── 候选卡片渲染 ──
     def render_candidate_card(c, badge_class='', badge_text=''):
         code = c.get('ts_code', '')
@@ -930,6 +1073,18 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if not uptrend_cards:
         uptrend_cards = '<div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div>'
 
+    pullback_cards = ""
+    if pb_candidates:
+        for c in pb_candidates[:8]:
+            pullback_cards += render_candidate_card(
+                c, badge_text='<span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>')
+    if not pullback_cards and pb_top10_html:
+        pullback_cards = pb_top10_html
+    if not pullback_cards:
+        pullback_cards = '<div class="no-data">无当日候选<br><small>运行回调买入法后有实时数据</small></div>'
+
+    pullback_count = len(pb_candidates) if pb_candidates else 0
+
     # ── 历史日期范围（用于 date picker 的 min/max） ──
     # 收集所有策略的日期，确保日期选择器覆盖全部可用日期
     # 注意：所有日期必须统一转换为字符串，否则 sorted() 会报类型错误
@@ -987,7 +1142,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>四策略对比 - {display_date}</title>
+<title>五策略对比 - {display_date}</title>
 <style>
 :root {{
   --bg: #f0f2f5; --card: #fff; --text: #1a1a1a; --text2: #666; --border: #e0e0e0;
@@ -1032,14 +1187,15 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .section-subtitle {{ font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 
 /* Four column layout */
-.four-col {{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:stretch; }}
+.four-col {{ display:grid; grid-template-columns:repeat(5,1fr); gap:12px; align-items:stretch; }}
 .four-col .section {{ margin-bottom:0; display:flex; flex-direction:column; min-width:0; overflow:hidden; padding:0; }}
 .four-col .section > h2 {{ padding:16px 20px 0; margin:0; border-bottom:none; font-size:1.05rem; height:64px; display:flex; align-items:center; flex-wrap:wrap; }}
 .four-col .steps-area {{ height:364px; overflow:hidden; padding:0 20px; flex-shrink:0; }}
 .four-col .section > h3 {{ margin:0; padding:14px 20px 8px; font-size:.9rem; flex-shrink:0; }}
 .four-col .cards-grid {{ flex:1; overflow-y:auto; padding:0 20px 20px; align-content:start; }}
 .four-col .candidate-card {{ align-self:stretch; }}
-@media (max-width:1400px) {{ .four-col {{ grid-template-columns:repeat(2,1fr); }} }}
+@media (max-width:1400px) {{ .four-col {{ grid-template-columns:repeat(3,1fr); }} }}
+@media (max-width:1024px) {{ .four-col {{ grid-template-columns:repeat(2,1fr); }} }}
 @media (max-width:768px) {{ .four-col {{ grid-template-columns:1fr; }} }}
 
 /* Keep three-col for backward compatibility */
@@ -1114,7 +1270,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 <div class="container">
   <div class="header">
     <div>
-      <h1>📊 四策略对比选股系统</h1>
+      <h1>📊 五策略对比选股系统</h1>
       <div class="sub">
         报告日期: {display_date} | 生成: {gen_time}
         <input type="date" class="date-input" id="datePicker" value="{display_date}" min="{min_date}" max="{max_date}" onchange="switchDate(this.value)">
@@ -1165,10 +1321,18 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('回测 Top 5 (' + str(uptrend_backtest.get('total_signals', 0)) + '只)' if uptrend_backtest and not uptrend_daily else '今日候选') + (' (' + str(len(uptrend_daily)) + '只)' if uptrend_daily else '')}</h3>
       <div class="cards-grid">{uptrend_cards}</div>
     </div>
+
+    <!-- ========== 回调买入法 ========== -->
+    <div class="section">
+      <h2>🪝 回调买入法<span class="section-subtitle">{pb_timestamp or (pb_scan.get('snapshot_date', '') if pb_scan else '') or (pb_backtest.get('backtest_start', '') if pb_backtest else '') or '—'}</span></h2>
+      <div class="steps-area" style="overflow-y:auto;">{pullback_steps_html}</div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('今日候选 (' + str(pullback_count) + '只)') if pullback_count else ('回测 Top 5 (' + str(pb_backtest.get('total_signals', 0)) + '笔)' if pb_backtest else '候选标的')}</h3>
+      <div class="cards-grid">{pullback_cards}</div>
+    </div>
   </div>
 
   <div class="footer">
-    AI Stock Recommendation System | 四策略对比 · 每日15:10自动更新
+    AI Stock Recommendation System | 五策略对比 · 每日15:10自动更新
   </div>
 </div>
 
@@ -1234,16 +1398,16 @@ function switchDate(dateVal) {{
     else:
         output_file = output_dir / "funnel.html"
     output_file.write_text(html, encoding='utf-8')
-    print(f"  ✓ 三策略对比 HTML: {output_file}")
+    print(f"  ✓ 五策略对比 HTML: {output_file}")
 
     if trade_date:
         index_file = output_dir / "index.html"
         index_html = f'''<!DOCTYPE html>
 <html><head>
 <meta http-equiv="refresh" content="0; url=funnel.html">
-<title>三策略对比</title>
+<title>五策略对比</title>
 </head><body>
-<p>跳转到 <a href="funnel.html">三策略对比页面</a></p>
+<p>跳转到 <a href="funnel.html">五策略对比页面</a></p>
 </body></html>'''
         index_file.write_text(index_html, encoding='utf-8')
 
@@ -1253,7 +1417,7 @@ function switchDate(dateVal) {{
 if __name__ == "__main__":
     import argparse
     import traceback
-    parser = argparse.ArgumentParser(description="生成三策略对比 HTML 报告")
+    parser = argparse.ArgumentParser(description="生成五策略对比 HTML 报告")
     parser.add_argument("--date", "-d", type=str, default=None, help="日期 (YYYY-MM-DD)")
     parser.add_argument("--output", "-o", type=str, default=None, help="输出目录")
     parser.add_argument("--all-dates", action="store_true", help="生成所有历史日期的报告")

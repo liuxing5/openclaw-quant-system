@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>四策略对比 - 2026-10-12</title>
+<title>五策略对比 - 2026-10-13</title>
 <style>
 :root {
   --bg: #f0f2f5; --card: #fff; --text: #1a1a1a; --text2: #666; --border: #e0e0e0;
@@ -48,14 +48,15 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 .section-subtitle { font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 
 /* Four column layout */
-.four-col { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; align-items:stretch; }
+.four-col { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; align-items:stretch; }
 .four-col .section { margin-bottom:0; display:flex; flex-direction:column; min-width:0; overflow:hidden; padding:0; }
 .four-col .section > h2 { padding:16px 20px 0; margin:0; border-bottom:none; font-size:1.05rem; height:64px; display:flex; align-items:center; flex-wrap:wrap; }
 .four-col .steps-area { height:364px; overflow:hidden; padding:0 20px; flex-shrink:0; }
 .four-col .section > h3 { margin:0; padding:14px 20px 8px; font-size:.9rem; flex-shrink:0; }
 .four-col .cards-grid { flex:1; overflow-y:auto; padding:0 20px 20px; align-content:start; }
 .four-col .candidate-card { align-self:stretch; }
-@media (max-width:1400px) { .four-col { grid-template-columns:repeat(2,1fr); } }
+@media (max-width:1400px) { .four-col { grid-template-columns:repeat(3,1fr); } }
+@media (max-width:1024px) { .four-col { grid-template-columns:repeat(2,1fr); } }
 @media (max-width:768px) { .four-col { grid-template-columns:1fr; } }
 
 /* Keep three-col for backward compatibility */
@@ -130,10 +131,10 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 <div class="container">
   <div class="header">
     <div>
-      <h1>📊 四策略对比选股系统</h1>
+      <h1>📊 五策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-10-12 | 生成: 2026-10-13 12:46:09
-        <input type="date" class="date-input" id="datePicker" value="2026-10-12" min="2026-01-05" max="2026-10-12" onchange="switchDate(this.value)">
+        报告日期: 2026-10-13 | 生成: 2026-10-13 17:11:31
+        <input type="date" class="date-input" id="datePicker" value="2026-10-13" min="2026-01-05" max="2026-10-13" onchange="switchDate(this.value)">
       </div>
     </div>
     <button class="theme-btn" onclick="toggleTheme()" id="themeBtn">
@@ -152,82 +153,156 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
   <div class="four-col">
     <!-- ========== 八步法 ========== -->
     <div class="section">
-      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-10-13 00:49:52</span></h2>
+      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-10-13 15:15:18</span></h2>
       <div class="steps-area">
             <div class="step-row" title="稳健3%~5%，高位6%~9.7%，剔除涨停/跌停">
               <span class="step-name">涨幅筛选</span>
-              <span class="step-pass">45</span>
+              <span class="step-pass">123</span>
               
               <span class="rule-inline">稳健3%~5%，高位6%~9.7%，剔除涨停/跌停</span>
             </div>
             <div class="step-row" title="稳健0.5~50亿，高位0.3~30亿，保证流动性">
               <span class="step-name">成交额过滤</span>
-              <span class="step-pass">45</span>
-              
+              <span class="step-pass">113</span>
+              <span class="elim">10</span>
               <span class="rule-inline">稳健0.5~50亿，高位0.3~30亿，保证流动性</span>
             </div>
             <div class="step-row" title="5%~10%，活跃度适中">
               <span class="step-name">换手率过滤</span>
-              <span class="step-pass">8</span>
-              <span class="elim">37</span>
+              <span class="step-pass">27</span>
+              <span class="elim">86</span>
               <span class="rule-inline">5%~10%，活跃度适中</span>
             </div>
             <div class="step-row" title="稳健50~500亿，高位30~200亿">
               <span class="step-name">市值过滤</span>
-              <span class="step-pass">7</span>
-              <span class="elim">1</span>
+              <span class="step-pass">24</span>
+              <span class="elim">3</span>
               <span class="rule-inline">稳健50~500亿，高位30~200亿</span>
             </div>
             <div class="step-row" title="量比≥1，放量确认">
               <span class="step-name">量比过滤</span>
-              <span class="step-pass">5</span>
-              <span class="elim">2</span>
+              <span class="step-pass">8</span>
+              <span class="elim">16</span>
               <span class="rule-inline">量比≥1，放量确认</span>
             </div>
             <div class="step-row" title="MA多头排列 + 无上方压力位">
               <span class="step-name">均线+压力</span>
-              <span class="step-pass">2</span>
-              <span class="elim">3</span>
+              <span class="step-pass">4</span>
+              <span class="elim">4</span>
               <span class="rule-inline">MA多头排列 + 无上方压力位</span>
             </div>
             <div class="step-row" title="乖离率≤5%，避免追高">
               <span class="step-name">乖离率过滤</span>
-              <span class="step-pass">2</span>
+              <span class="step-pass">4</span>
               
               <span class="rule-inline">乖离率≤5%，避免追高</span>
             </div>
             <div class="step-row" title="综合评分≥阈值(85+)，量化+情绪加权">
               <span class="step-name">综合评分</span>
-              <span class="step-pass">1</span>
+              <span class="step-pass">3</span>
               <span class="elim">1</span>
               <span class="rule-inline">综合评分≥阈值(85+)，量化+情绪加权</span>
-            </div><div class="step-note"> 情绪高潮(92分)</div></div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (1只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
+            </div><div class="step-note"> 情绪高潮(93分)</div></div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (2只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
       <div class="cards-grid"><div class="path-group"><div class="cards-grid">
-        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-300450','_blank')" style="cursor:pointer">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600556','_blank')" style="cursor:pointer">
           <div class="cand-header">
             <div>
-              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300450" target="_blank" style="color:inherit;text-decoration:none">300450.SZ</a></span>
-              <span class="cand-name">先导智能</span>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600556" target="_blank" style="color:inherit;text-decoration:none">600556.SH</a></span>
+              <span class="cand-name">天下秀</span>
               
               <span class="src-badge">1源</span>
             </div>
-            <span class="cand-score">75</span>
+            <span class="cand-score">85</span>
           </div>
           <div class="cand-metrics">
-            <div class="metric"><span class="mv">37.50</span><span class="ml">入场</span></div>
-            <div class="metric stop"><span class="mv">36.93</span><span class="ml">止损</span></div>
-            <div class="metric target"><span class="mv">39.02</span><span class="ml">目标</span></div>
-            <div class="metric"><span class="mv">66</span><span class="ml">量化分</span></div>
+            <div class="metric"><span class="mv">4.97</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">4.89</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">5.17</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">92</span><span class="ml">量化分</span></div>
           </div>
-          <div class="cand-tags">稳健蓄势 · 黄金放量 · 换手偏高 · 首阳突破</div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手 · 量能递增</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-601519','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-601519" target="_blank" style="color:inherit;text-decoration:none">601519.SH</a></span>
+              <span class="cand-name">大智慧</span>
+              
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">78</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">9.43</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">9.29</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">9.82</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">77</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">稳健蓄势 · 黄金放量 · 黄金换手 · 量能递增</div>
         </div></div></div></div>
     </div>
 
     <!-- ========== 七步漏斗 ========== -->
     <div class="section">
-      <h2>🎯 七步漏斗选股<span class="section-subtitle">2026-10-12 15:11:16</span></h2>
-      <div class="steps-area"><div class="no-data">L0 大盘风控未通过<br><small>（上涨家数不足或市场广度低于20EMA，当日不荐股）</small></div></div>
+      <h2>🎯 七步漏斗选股<span class="section-subtitle">2026-10-13 15:12:04</span></h2>
+      <div class="steps-area">
+            <div class="step-row" title="A股全市场日成交额>1亿">
+              <span class="step-icon">📊</span>
+              <span class="step-name">全市场</span>
+              <span class="step-pass">1986</span>
+              
+              <span class="rule-inline">A股全市场日成交额>1亿</span>
+            </div>
+            <div class="step-row" title="⚠️限仓">
+              <span class="step-icon">🌤️</span>
+              <span class="step-name">L0 大盘风控</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">⚠️限仓</span>
+            </div>
+            <div class="step-row" title="剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%">
+              <span class="step-icon">⚡</span>
+              <span class="step-name">L1 硬性防雷</span>
+              <span class="step-pass">1756</span>
+              <span class="elim">230</span>
+              <span class="rule-inline">剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%</span>
+            </div>
+            <div class="step-row" title="20日均成交额>1亿；流通市值>20亿；换手率3~15%">
+              <span class="step-icon">💧</span>
+              <span class="step-name">L2 流动性</span>
+              <span class="step-pass">1651</span>
+              <span class="elim">105</span>
+              <span class="rule-inline">20日均成交额>1亿；流通市值>20亿；换手率3~15%</span>
+            </div>
+            <div class="step-row" title="周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12">
+              <span class="step-icon">📈</span>
+              <span class="step-name">L3 趋势结构</span>
+              <span class="step-pass">267</span>
+              <span class="elim">1384</span>
+              <span class="rule-inline">周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12</span>
+            </div>
+            <div class="step-row" title="量比1.5~3.0；乖离率<6%；需求吸收K线或强势接力形态">
+              <span class="step-icon">🚀</span>
+              <span class="step-name">L4 动能信号</span>
+              <span class="step-pass">11</span>
+              <span class="elim">256</span>
+              <span class="rule-inline">量比1.5~3.0；乖离率<6%；需求吸收K线或强势接力形态</span>
+            </div>
+            <div class="step-row" title="综合评分≥80；涨幅3~5%；贴MA5；人气榜+LLM联动加分">
+              <span class="step-icon">🔥</span>
+              <span class="step-name">L5 人气精选</span>
+              <span class="step-pass">0</span>
+              <span class="elim">11</span>
+              <span class="rule-inline">综合评分≥80；涨幅3~5%；贴MA5；人气榜+LLM联动加分</span>
+            </div>
+            <div class="step-row" title="14:30后买入；止损=入场价-1ATR；目标=入场价+2ATR；盈亏比≥2:1">
+              <span class="step-icon">🎯</span>
+              <span class="step-name">L6 刚性风控</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">14:30后买入；止损=入场价-1ATR；目标=入场价+2ATR；盈亏比≥2:1</span>
+            </div></div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 (0只)</h3>
       <div class="cards-grid"><div class="no-data">今日无推荐</div></div>
     </div>
@@ -362,10 +437,242 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">今日候选</h3>
       <div class="cards-grid"><div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div></div>
     </div>
+
+    <!-- ========== 回调买入法 ========== -->
+    <div class="section">
+      <h2>🪝 回调买入法<span class="section-subtitle">2026-10-13 16:29:21</span></h2>
+      <div class="steps-area" style="overflow-y:auto;">
+        <div class="step-row">
+          <span class="step-name">扫描日期</span>
+          <span class="rule-inline">2026-10-13</span>
+        </div>
+        <div class="step-row" title="成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停">
+          <span class="step-name">流动性/风控</span>
+          <span class="step-pass">3813</span>
+          <span class="rule-inline">成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停</span>
+        </div>
+        <div class="step-row" title="20日动能≥20% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50">
+          <span class="step-name">强势股筛选</span>
+          <span class="step-pass">100</span>
+          <span class="rule-inline">20日动能≥20% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50</span>
+        </div>
+        <div class="step-row" title="自20日高点回撤5%~30% · 低点触及EMA21/EMA50(±3%) · 回调段缩量">
+          <span class="step-name">回调至支撑</span>
+          <span class="step-pass">14</span>
+          <span class="rule-inline">自20日高点回撤5%~30% · 低点触及EMA21/EMA50(±3%) · 回调段缩量</span>
+        </div>
+        <div class="step-row" title="收阳 · 收盘>前日收盘 · 重新站上EMA21">
+          <span class="step-name">回升确认</span>
+          <span class="step-pass">10</span>
+          <span class="rule-inline">收阳 · 收盘>前日收盘 · 重新站上EMA21</span>
+        </div>
+        <div class="step-row" title="止损=支撑下方1% · 风险≤3% · 目标=入场+2×风险">
+          <span class="step-name">紧止损达标</span>
+          <span class="step-pass">10</span>
+          <span class="rule-inline">止损=支撑下方1% · 风险≤3% · 目标=入场+2×风险</span>
+        </div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:6px;">📊 回测统计（T+1开盘入场 · 含止损/止盈模拟）</div>
+        <div class="step-row">
+          <span class="step-name">回测区间</span>
+          <span class="rule-inline">2025-01-01 ~ 2026-10-13</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">成交笔数</span>
+          <span class="step-pass">6552</span>
+          <span class="rule-inline">胜率33.3% · 均值-0.2% · 持有2.7日</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">出场分布</span>
+          <span class="rule-inline">止损 4362 · 止盈 2162 · 超时 28</span>
+        </div>
+        <div style="overflow-x:auto;margin:8px 0;">
+        <table style="width:100%;font-size:.7rem;border-collapse:collapse;white-space:nowrap;">
+        <thead><tr style="background:var(--metric-bg)">
+          <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th><th>&gt;5%</th><th>&gt;10%</th>
+        </tr></thead>
+        <tbody>
+            <tr>
+              <td><strong>10日</strong></td>
+              <td>6381</td>
+              <td style="color:#f85149"><strong>43.6%</strong></td>
+              <td>0.4%</td>
+              <td>-1.6%</td>
+              <td>29.8%</td>
+              <td>19.7%</td>
+            </tr>
+            <tr>
+              <td><strong>20日</strong></td>
+              <td>6267</td>
+              <td style="color:#f85149"><strong>41.0%</strong></td>
+              <td>-1.0%</td>
+              <td>-3.5%</td>
+              <td>30.0%</td>
+              <td>21.9%</td>
+            </tr>
+            <tr>
+              <td><strong>60日</strong></td>
+              <td>5542</td>
+              <td style="color:#f85149"><strong>40.5%</strong></td>
+              <td>1.7%</td>
+              <td>-5.9%</td>
+              <td>34.3%</td>
+              <td>29.3%</td>
+            </tr></tbody>
+        </table>
+        </div>
+        </div></div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">今日候选 (10只)</h3>
+      <div class="cards-grid">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-601595','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-601595" target="_blank" style="color:inherit;text-decoration:none">601595.SH</a></span>
+              <span class="cand-name">上海电影</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">71</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">27.56</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">26.73</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">29.21</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">71</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股53% · 回撤18% · 止损3.0% · 盈亏比2:1</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-300964','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300964" target="_blank" style="color:inherit;text-decoration:none">300964.SZ</a></span>
+              <span class="cand-name">本川智能</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">66</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">84.00</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">81.48</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">89.04</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">66</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股44% · 回撤17% · 止损3.0% · 盈亏比2:1</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-300939','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300939" target="_blank" style="color:inherit;text-decoration:none">300939.SZ</a></span>
+              <span class="cand-name">秋田微</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">59</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">93.86</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">91.04</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">99.49</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">59</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股43% · 回撤20% · 止损3.0% · 盈亏比2:1</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600641','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600641" target="_blank" style="color:inherit;text-decoration:none">600641.SH</a></span>
+              <span class="cand-name">先导基电</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">59</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">45.33</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">43.97</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">48.05</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">59</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股44% · 回撤21% · 止损3.0% · 盈亏比2:1</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-002815','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-002815" target="_blank" style="color:inherit;text-decoration:none">002815.SZ</a></span>
+              <span class="cand-name">崇达技术</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">54</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">21.28</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">20.64</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">22.56</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">54</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股45% · 回撤25% · 止损3.0% · 盈亏比2:1</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-300363','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300363" target="_blank" style="color:inherit;text-decoration:none">300363.SZ</a></span>
+              <span class="cand-name">博腾股份</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">45</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">23.17</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">22.48</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">24.56</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">45</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股20% · 回撤15% · 止损3.0% · 盈亏比2:1</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-603999','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-603999" target="_blank" style="color:inherit;text-decoration:none">603999.SH</a></span>
+              <span class="cand-name">读者传媒</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">44</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">7.10</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">6.89</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">7.53</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">44</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股20% · 回撤14% · 止损3.0% · 盈亏比2:1</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-301419','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-301419" target="_blank" style="color:inherit;text-decoration:none">301419.SZ</a></span>
+              <span class="cand-name">阿莱德</span>
+              <span class="badge-8step" style="background:var(--funnel-badge-bg);color:var(--funnel-badge-text)">回调买入</span>
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">42</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">48.53</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">47.07</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">51.44</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">42</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股26% · 回撤20% · 止损3.0% · 盈亏比2:1</div>
+        </div></div>
+    </div>
   </div>
 
   <div class="footer">
-    AI Stock Recommendation System | 四策略对比 · 每日15:10自动更新
+    AI Stock Recommendation System | 五策略对比 · 每日15:10自动更新
   </div>
 </div>
 
@@ -387,7 +694,7 @@ function toggleTheme() {
 }
 function switchDate(dateVal) {
   if (!dateVal) return;
-  var available = ["2026-10-12", "2026-09-30", "2026-09-29", "2026-09-28", "2026-09-24", "2026-09-23", "2026-09-22", "2026-09-21", "2026-09-18", "2026-09-17", "2026-09-16", "2026-09-15", "2026-09-14", "2026-09-11", "2026-09-10", "2026-09-09", "2026-09-08", "2026-09-07", "2026-09-04", "2026-09-03", "2026-09-02", "2026-09-01", "2026-08-31", "2026-08-28", "2026-08-27", "2026-08-26", "2026-08-25", "2026-08-24", "2026-08-21", "2026-08-20", "2026-08-19", "2026-08-18", "2026-08-17", "2026-08-14", "2026-08-13", "2026-08-12", "2026-08-11", "2026-08-10", "2026-08-07", "2026-08-06", "2026-08-05", "2026-08-04", "2026-08-03", "2026-07-31", "2026-07-30", "2026-07-29", "2026-07-28", "2026-07-27", "2026-07-24", "2026-07-23", "2026-07-22", "2026-07-21", "2026-07-20", "2026-07-17", "2026-07-16", "2026-07-15", "2026-07-14", "2026-07-13", "2026-07-10", "2026-07-09", "2026-07-08", "2026-07-07", "2026-07-03", "2026-07-02", "2026-07-01", "2026-06-30", "2026-06-29", "2026-06-26", "2026-06-25", "2026-06-24", "2026-06-23", "2026-06-22", "2026-06-18", "2026-06-17", "2026-06-16", "2026-06-15", "2026-06-12", "2026-06-11", "2026-06-10", "2026-06-09", "2026-06-08", "2026-06-05", "2026-06-04", "2026-06-03", "2026-06-02", "2026-06-01", "2026-05-29", "2026-05-28", "2026-05-27", "2026-05-26", "2026-05-25", "2026-05-22", "2026-05-21", "2026-05-20", "2026-05-19", "2026-05-18", "2026-05-15", "2026-05-14", "2026-05-13", "2026-05-12", "2026-05-11", "2026-05-08", "2026-05-06", "2026-04-30", "2026-04-29", "2026-04-28", "2026-04-27", "2026-04-24", "2026-04-23", "2026-04-22", "2026-04-21", "2026-04-20", "2026-04-17", "2026-04-16", "2026-04-15", "2026-04-14", "2026-04-13", "2026-04-10", "2026-04-09", "2026-04-08", "2026-04-07", "2026-04-03", "2026-04-02", "2026-04-01", "2026-03-31", "2026-03-30", "2026-03-27", "2026-03-26", "2026-03-25", "2026-03-24", "2026-03-23", "2026-03-20", "2026-03-19", "2026-03-18", "2026-03-17", "2026-03-16", "2026-03-13", "2026-03-12", "2026-03-11", "2026-03-10", "2026-03-09", "2026-03-06", "2026-03-05", "2026-03-04", "2026-03-03", "2026-03-02", "2026-02-27", "2026-02-26", "2026-02-25", "2026-02-24", "2026-02-13", "2026-02-12", "2026-02-11", "2026-02-10", "2026-02-09", "2026-02-06", "2026-02-05", "2026-02-04", "2026-02-03", "2026-02-02", "2026-01-30", "2026-01-29", "2026-01-28", "2026-01-27", "2026-01-26", "2026-01-23", "2026-01-22", "2026-01-21", "2026-01-20", "2026-01-19", "2026-01-16", "2026-01-14", "2026-01-13", "2026-01-12", "2026-01-09", "2026-01-08", "2026-01-07", "2026-01-06", "2026-01-05"];
+  var available = ["2026-10-13", "2026-10-12", "2026-09-30", "2026-09-29", "2026-09-28", "2026-09-24", "2026-09-23", "2026-09-22", "2026-09-21", "2026-09-18", "2026-09-17", "2026-09-16", "2026-09-15", "2026-09-14", "2026-09-11", "2026-09-10", "2026-09-09", "2026-09-08", "2026-09-07", "2026-09-04", "2026-09-03", "2026-09-02", "2026-09-01", "2026-08-31", "2026-08-28", "2026-08-27", "2026-08-26", "2026-08-25", "2026-08-24", "2026-08-21", "2026-08-20", "2026-08-19", "2026-08-18", "2026-08-17", "2026-08-14", "2026-08-13", "2026-08-12", "2026-08-11", "2026-08-10", "2026-08-07", "2026-08-06", "2026-08-05", "2026-08-04", "2026-08-03", "2026-07-31", "2026-07-30", "2026-07-29", "2026-07-28", "2026-07-27", "2026-07-24", "2026-07-23", "2026-07-22", "2026-07-21", "2026-07-20", "2026-07-17", "2026-07-16", "2026-07-15", "2026-07-14", "2026-07-13", "2026-07-10", "2026-07-09", "2026-07-08", "2026-07-07", "2026-07-03", "2026-07-02", "2026-07-01", "2026-06-30", "2026-06-29", "2026-06-26", "2026-06-25", "2026-06-24", "2026-06-23", "2026-06-22", "2026-06-18", "2026-06-17", "2026-06-16", "2026-06-15", "2026-06-12", "2026-06-11", "2026-06-10", "2026-06-09", "2026-06-08", "2026-06-05", "2026-06-04", "2026-06-03", "2026-06-02", "2026-06-01", "2026-05-29", "2026-05-28", "2026-05-27", "2026-05-26", "2026-05-25", "2026-05-22", "2026-05-21", "2026-05-20", "2026-05-19", "2026-05-18", "2026-05-15", "2026-05-14", "2026-05-13", "2026-05-12", "2026-05-11", "2026-05-08", "2026-05-06", "2026-04-30", "2026-04-29", "2026-04-28", "2026-04-27", "2026-04-24", "2026-04-23", "2026-04-22", "2026-04-21", "2026-04-20", "2026-04-17", "2026-04-16", "2026-04-15", "2026-04-14", "2026-04-13", "2026-04-10", "2026-04-09", "2026-04-08", "2026-04-07", "2026-04-03", "2026-04-02", "2026-04-01", "2026-03-31", "2026-03-30", "2026-03-27", "2026-03-26", "2026-03-25", "2026-03-24", "2026-03-23", "2026-03-20", "2026-03-19", "2026-03-18", "2026-03-17", "2026-03-16", "2026-03-13", "2026-03-12", "2026-03-11", "2026-03-10", "2026-03-09", "2026-03-06", "2026-03-05", "2026-03-04", "2026-03-03", "2026-03-02", "2026-02-27", "2026-02-26", "2026-02-25", "2026-02-24", "2026-02-13", "2026-02-12", "2026-02-11", "2026-02-10", "2026-02-09", "2026-02-06", "2026-02-05", "2026-02-04", "2026-02-03", "2026-02-02", "2026-01-30", "2026-01-29", "2026-01-28", "2026-01-27", "2026-01-26", "2026-01-23", "2026-01-22", "2026-01-21", "2026-01-20", "2026-01-19", "2026-01-16", "2026-01-14", "2026-01-13", "2026-01-12", "2026-01-09", "2026-01-08", "2026-01-07", "2026-01-06", "2026-01-05"];
   if (available.indexOf(dateVal) === -1) {
     // 自动跳转到最近的有数据的日期
     var closest = null;
@@ -407,7 +714,7 @@ function switchDate(dateVal) {
       alert('暂无可用数据');
     }
     // 重置日期选择器到当前页面日期
-    document.getElementById('datePicker').value = '2026-10-12';
+    document.getElementById('datePicker').value = '2026-10-13';
     return;
   }
   window.location.href = 'funnel-' + dateVal + '.html';
