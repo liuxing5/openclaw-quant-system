@@ -185,6 +185,10 @@ def run_layer2_liquidity_filter(
                 continue
 
             # 换手率
+            # ⚠ 绝对阈值 3~15%，随市场状态漂移（2026-10-13 审查：应改为
+            #   当日全市场截面 P20~P95）。本层只加载 L1 之后股票池的
+            #   turnover_rate，内存中没有全市场截面可 rank，分位数化需
+            #   改造数据流，按保守原则暂保留绝对值。
             turn = liq.get('turnover_rate', 0)
             if turn < cfg.layer2_turn_rate_min or turn > cfg.layer2_turn_rate_max:
                 reject_stats['换手不符'] += 1

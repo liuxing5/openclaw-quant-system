@@ -28,6 +28,10 @@ except ImportError:
 from .config import MainUptrendConfig, DEFAULT_CONFIG
 from .data_loader import DataLoader
 from .engine import MainUptrendEngine
+from ..shared.backtest_stats import (
+    net_return, fwd_stats, format_sig,
+    COST_NOTE, SIGNIFICANCE_NOTE,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +68,7 @@ class MainUptrendBacktester:
             'hit_rate': dict,              # {10: float, 20: float, 60: float}
             'win_rate': dict,              # {10: float, 20: float, 60: float}
             'return_distribution': dict,   # {10: [...], 20: [...], 60: [...]}
+            'trading_days': list,          # 交易日历（显著性/非重叠子样本采样用）
             'summary': str,
           }
         """
@@ -134,16 +139,19 @@ class MainUptrendBacktester:
                         )
                         all_signals.extend(signals)
 
-                    for s in signals:
-                        for d in self.cfg.forward_return_days:
-                            if s.get(f'ret_{d}d') is not None:
-                                forward_data[d].append({
-                                    'ts_code': s['ts_code'],
-                                    'signal_date': s['eval_date'],
-                                    'composite_score': s['composite_score'],
-                                    f'ret_{d}d': s[f'ret_{d}d'],
-                                    f'hit_{d}d': s.get(f'hit_{d}d', False),
-                                })
+                        # 2026-10-13 修复：这段循环原来在 `if filtered:` 之外，
+                        # filtered 为空时会用上一次循环残留的 signals 重复计入前向收益样本
+                        for s in signals:
+                            for d in self.cfg.forward_return_days:
+                                if s.get(f'ret_{d}d') is not None:
+                                    forward_data[d].append({
+                                        'ts_code': s['ts_code'],
+                                        'signal_date': s['eval_date'],
+                                        'composite_score': s['composite_score'],
+                                        f'ret_{d}d': s[f'ret_{d}d'],
+                                        f'ret_{d}d_gross': s.get(f'ret_{d}d_gross'),
+                                        f'hit_{d}d': s.get(f'hit_{d}d', False),
+                                    })
 
                 # 每50天打印一次进度（避免日志过多）
                 if (i + 1) % 50 == 0 or i == day_count - 1:
@@ -164,12 +172,14 @@ class MainUptrendBacktester:
         self.loader.clear_cache()
 
         # 汇总统计
-        summary = self._build_summary(all_signals, forward_data)
+        summary = self._build_summary(all_signals, forward_data, trading_days=trading_days)
 
         return {
             'signals': all_signals,
             'forward_returns': {d: pd.DataFrame(forward_data[d]) for d in self.cfg.forward_return_days},
             'summary': summary,
+            # 2026-10-13 参数审查：透出交易日历，供显著性统计做非重叠子样本采样
+            'trading_days': trading_days,
         }
 
     # ================================================================
@@ -242,8 +252,13 @@ class MainUptrendBacktester:
                     signal[f'hit_{days}d'] = False
                     continue
 
-                ret = (exit_price - entry_price) / entry_price
+                # 2026-10-13 参数审查（交易成本）：前向收益是"买入并持有该股 N 日"
+                # 的买入持有口径，基准同口径，统一扣除 0.25% 往返成本后再统计；
+                # 同时保留毛收益字段便于成本前后对比。
+                gross_ret = (exit_price - entry_price) / entry_price
+                ret = net_return(gross_ret)
                 signal[f'ret_{days}d'] = ret
+                signal[f'ret_{days}d_gross'] = gross_ret
                 signal[f'hit_{days}d'] = ret > 0.05
 
             # 趋势跟踪退出：移动止盈 + 利润保护 + MA10快线
@@ -327,6 +342,11 @@ class MainUptrendBacktester:
                     signal['exit_ret'] = exit_ret
                     signal['max_ret'] = peak_ret
 
+            # 2026-10-13 参数审查（交易成本）：对外报告的已实现退出收益统一扣
+            # 0.25% 往返成本；max_ret 是持仓期间的未实现峰值（毛口径），保持不变。
+            if exit_ret is not None:
+                signal['exit_ret'] = net_return(exit_ret)
+
             results.append(signal)
         return results
 
@@ -359,13 +379,16 @@ class MainUptrendBacktester:
     # 汇总统计
     # ================================================================
     def _build_summary(self, all_signals: List[Dict],
-                       forward_data: Dict[int, List[Dict]]) -> str:
+                       forward_data: Dict[int, List[Dict]],
+                       trading_days: Optional[List[str]] = None) -> str:
         lines = []
         lines.append("=" * 60)
         lines.append("主升浪检测策略 — 回测汇总")
         lines.append("=" * 60)
         lines.append(f"回测区间: {self.cfg.backtest_start} ~ {self.cfg.backtest_end}")
         lines.append(f"总信号数: {len(all_signals)}")
+        lines.append(f"收益口径: {COST_NOTE}")
+        lines.append(f"显著性: {SIGNIFICANCE_NOTE}")
         lines.append("")
 
         for days in self.cfg.forward_return_days:
@@ -405,6 +428,33 @@ class MainUptrendBacktester:
             lines.append(f"  收益>3%: {at_3pct:.1%}")
             lines.append(f"  收益>5%: {at_5pct:.1%}")
             lines.append(f"  收益>10%: {at_10pct:.1%}")
+
+            # ---- 2026-10-13 参数审查：成本对比 + 显著性 + 非重叠子样本 + 分子期稳定性 ----
+            pairs = [(d[f'ret_{days}d'], d.get(f'ret_{days}d_gross')) for d in fd
+                     if d.get(f'ret_{days}d') is not None]
+            dates = [str(d.get('signal_date', ''))[:10] for d in fd
+                     if d.get(f'ret_{days}d') is not None]
+            st = fwd_stats(returns, dates=dates, horizon=days, trading_days=trading_days)
+            gross_vals = [g for _, g in pairs if g is not None]
+            gross_txt = f"毛均值={np.mean(gross_vals):.2%} → " if gross_vals else ""
+            lines.append(f"  成本: {COST_NOTE}（{gross_txt}净均值={st['mean']:.2%}）")
+            lines.append(f"  显著性: {format_sig(st)}, p={st['p']:.4f}, "
+                         f"95%CI=[{st['ci95_low']:.2%}, {st['ci95_high']:.2%}], n_eff={st['n_eff']}")
+            no = st.get('nonoverlap', {})
+            lines.append(f"  非重叠子样本: n={no.get('count', 0)}, 胜率={no.get('win_rate', 0):.1%}, "
+                         f"均值={no.get('mean', 0):.2%}, t={no.get('t', 0):.2f}, p={no.get('p', 1):.4f}")
+            # 分子期（按信号年份）稳定性：分年度 count/win_rate/mean
+            by_year: Dict[str, List[float]] = {}
+            for d0, dd in zip(dates, [p[0] for p in pairs]):
+                yr = d0[:4]
+                if yr.isdigit():
+                    by_year.setdefault(yr, []).append(float(dd))
+            if by_year:
+                seg = "; ".join(
+                    f"{y}: n={len(v)}, 胜率={float(np.mean(np.array(v) > 0)):.1%}, 均值={float(np.mean(v)):.2%}"
+                    for y, v in sorted(by_year.items())
+                )
+                lines.append(f"  分子期稳定性: {seg}")
             lines.append("")
 
         # Top 10 统计

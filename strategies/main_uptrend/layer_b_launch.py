@@ -4,7 +4,7 @@ Layer B: 启动信号识别（日频）
 "启动度"复合因子，每日盘后扫描 A 层预筛池：
   1. 量能突破：成交额 > 60日均值的 2.5 倍，换手率 > 5%
   2. 价格突破：突破前 60 日箱体上沿，或突破半年线且距半年线涨幅 < 8%
-  3. 主力资金净流入：当日主力净流入 > 总成交额的 5%
+  3. 主力资金净流入（2026-10-13 起降级为弱确认项，不再参与通过判定）
   4. 封单质量（涨停日）：封单金额 / 流通市值 > 0.5%
   5. 次日强度：次日不破当日均价，缩量整理或继续放量上攻
 
@@ -26,8 +26,9 @@ from .config import MainUptrendConfig
 from .data_loader import DataLoader
 from .indicators import (
     sma, volume_ma, box_range, near_ma,
-    detect_limit_up_pct, is_limit_up,
+    limit_up_mask,
 )
+from ..shared.board_rules import is_limit_up as board_is_limit_up
 
 logger = logging.getLogger(__name__)
 
@@ -81,9 +82,15 @@ class LayerBLaunchDetector:
         vol_ma = volume_ma(df["amount"], self.cfg.b_volume_ma_days).iloc[-1]
         if pd.notna(vol_ma) and vol_ma > 0:
             vol_breakout = today_amount / vol_ma
+            # 换手门槛：单票路径拿不到当日全市场截面，回退到绝对阈值 b_turnover_min
+            #（向量化路径已改为"截面 P30 且 >=2%"分位数口径，见 _scan_pool_vectorized）
             b1_pass = vol_breakout > self.cfg.b_volume_breakout_mult and today_turn > self.cfg.b_turnover_min
+            # 2026-10-14 修正：换手条件只作展示/排序参考，不门控量能分——
+            # 门控接入 has_score 会把信号量压掉一个数量级（见向量化路径注释）。
+            # b1_pass 保留用于 details 展示与排序参考，不参与 passed 判定。
             scores["vol_breakout"] = min(1.0, vol_breakout / (self.cfg.b_volume_breakout_mult * 2))
-            details["vol_breakout"] = f"量比MA60={vol_breakout:.1f}x, 换手={today_turn:.1f}%"
+            details["vol_breakout"] = (f"量比MA60={vol_breakout:.1f}x, 换手={today_turn:.1f}%"
+                                       + ("" if b1_pass else "（换手未达标）"))
         else:
             b1_pass = False
             scores["vol_breakout"] = 0
@@ -118,7 +125,9 @@ class LayerBLaunchDetector:
             details["price_breakout"] = "未突破"
 
         # --------------------------------------------------
-        # B3: 主力资金净流入
+        # B3: 主力资金净流入（弱确认项）
+        # 2026-10-13 参数审查：主力净流入在控制当日涨跌幅后预测力≈0，
+        # 已从 passed 硬条件降级为弱加权项——保留展示与评分，但评分打 5 折且不参与通过判定。
         # --------------------------------------------------
         flow_df = self.loader.get_main_force_flow(ts_code,
                                                    start_date="2025-01-01",
@@ -128,23 +137,24 @@ class LayerBLaunchDetector:
             if len(today_flow) > 0:
                 net_inflow = float(today_flow["main_net_inflow"].iloc[0] or 0)
                 inflow_pct = abs(net_inflow) / today_amount if today_amount > 0 else 0
-                b3_pass = inflow_pct > self.cfg.b_main_force_inflow_min_pct and net_inflow > 0
                 scores["main_force"] = min(1.0, inflow_pct / (self.cfg.b_main_force_inflow_min_pct * 5))
-                details["main_force"] = f"主力净流入={net_inflow / 1e4:.0f}万({inflow_pct * 100:.1f}%)"
+                details["main_force"] = f"主力净流入={net_inflow / 1e4:.0f}万({inflow_pct * 100:.1f}%)[弱确认项]"
             else:
-                b3_pass = False
                 scores["main_force"] = 0
-                details["main_force"] = "当日无主力资金数据"
+                details["main_force"] = "当日无主力资金数据[弱确认项]"
         else:
-            b3_pass = False
             scores["main_force"] = 0
-            details["main_force"] = "主力资金数据不可用"
+            details["main_force"] = "主力资金数据不可用[弱确认项]"
+        # 弱加权：打 5 折，仅参与排序，不参与 passed 判定
+        scores["main_force"] = scores.get("main_force", 0) * 0.5
 
         # --------------------------------------------------
         # B4: 封单质量（涨停日）
+        # 2026-10-13 参数审查：改用 shared/board_rules 按板块真实涨跌幅限制判断
+        # （旧 detect_limit_up_pct 只认 300/688，遗漏 301/302/303/689 与北交所 ±30%）
         # --------------------------------------------------
-        limit_pct = detect_limit_up_pct(ts_code)
-        is_zt = is_limit_up(today_pct, limit_pct)
+        prev_close = float(df["close"].iloc[-2]) if len(df) >= 2 else 0.0
+        is_zt = board_is_limit_up(ts_code, today_close, prev_close)
         if is_zt:
             seal_score = self._estimate_seal_quality(ts_code, eval_date, today_amount)
             b4_pass = seal_score > self.cfg.b_seal_amount_ratio_min
@@ -155,13 +165,16 @@ class LayerBLaunchDetector:
             scores["seal_quality"] = 0.3
             details["seal_quality"] = "非涨停日"
 
-        b1_b4 = [
+        # 通过条件（2026-10-14 定稿，与向量化路径 _scan_pool_vectorized 对齐）：
+        # 主力净流入降级为弱确认项后，维度只剩 量能/价格/封单；封单在非涨停日
+        # 恒有 0.3 基础分，故 >=2 等效于"量能或价格有分"，与旧版漏斗松紧度一致，
+        # 不因主力剔除而额外收紧。
+        hard_dims = [
             scores.get("vol_breakout", 0) > 0,
             scores.get("price_breakout", 0) > 0,
-            scores.get("main_force", 0) > 0,
             scores.get("seal_quality", 0) > 0,
         ]
-        passed_b1_b4 = sum(b1_b4) >= 3
+        passed_b1_b4 = sum(hard_dims) >= 2
 
         # --------------------------------------------------
         # B5: 次日强度（需要 T+1 数据验证，此处返回到外部判断）
@@ -249,11 +262,27 @@ class LayerBLaunchDetector:
             return []
 
         # ---- B1: 量能突破 ----
-        b1_pass = (quick['vol_breakout_ratio'] > self.cfg.b_volume_breakout_mult) & \
-                  (quick['turnover_rate'] > self.cfg.b_turnover_min)
-        vol_breakout_score = np.minimum(
-            1.0, quick['vol_breakout_ratio'].fillna(0) / (self.cfg.b_volume_breakout_mult * 2)
+        # 换手率门槛（2026-10-13 参数审查：绝对阈值 -> 当日截面分位数）：
+        #   换手率 >= 当日全市场截面 P30 且 >= 2%（双重条件，防低流动性）；
+        #   截面取自当日全市场指标快照 ind_df（比只在 A 层池内排名更接近真实截面），
+        #   截面数据不可用时回退到绝对阈值 b_turnover_min。
+        # 2026-10-14 修正：该门控只作用于**排序权重**（total_score），不参与
+        # has_score 通过判定——旧版 b1_pass 是死代码，直接接入通过判定会把
+        # 日均信号从 ~1.7 压到 ~0.1（回测实测 191 -> 13），远超"分位数化"本意。
+        turn_min = self.cfg.b_turnover_min
+        if 'turnover_rate' in ind_df.columns:
+            turn_p30 = ind_df['turnover_rate'].astype(float).quantile(0.30)
+            if pd.notna(turn_p30):
+                turn_min = max(float(turn_p30), 2.0)
+        b1_turn_ok = quick['turnover_rate'].fillna(0) >= turn_min
+        b1_pass = (quick['vol_breakout_ratio'] > self.cfg.b_volume_breakout_mult) & b1_turn_ok
+        # 通过判定用的量能分：只看量能突破本身（沿用旧版语义，vol_ratio>0 即有分）
+        vol_breakout_score = pd.Series(
+            np.minimum(1.0, quick['vol_breakout_ratio'].fillna(0) / (self.cfg.b_volume_breakout_mult * 2)),
+            index=quick.index,
         )
+        # 排序用的量能分：换手达标才给满分，低换手折半（分位数门槛在此生效）
+        vol_score_rank = np.where(b1_turn_ok, vol_breakout_score.values, vol_breakout_score.values * 0.5)
 
         # ---- B2: 价格突破 ----
         # 突破60日箱体高点，且突破幅度>1%（避免假突破）
@@ -269,40 +298,56 @@ class LayerBLaunchDetector:
                    ((quick['close'] - ma120_val) / ma120_val < 0.05) & \
                    (quick['pct_chg'].fillna(0) > 1.0)  # 放宽：涨幅门槛 2→1%
         b2_pass = breakout_box | above_ma
-        price_breakout_score = np.where(breakout_box, 0.8, np.where(above_ma, 0.6, 0.0))
+        price_breakout_score = pd.Series(
+            np.where(breakout_box, 0.8, np.where(above_ma, 0.6, 0.0)), index=quick.index
+        )
 
-        # ---- B3: 主力资金 ----
-        b3_pass = (quick['main_inflow_ratio'].fillna(0) > self.cfg.b_main_force_inflow_min_pct) & \
-                  (quick['main_net_inflow'].fillna(0) > 0)
+        # ---- B3: 主力资金（弱确认项，2026-10-13 参数审查降级）----
+        # 依据：控制当日涨跌幅后主力净流入预测力≈0。
+        # 处理：不再作为硬条件/通过维度，评分权重 0.8 -> 0.4（打 5 折），仅作排序弱因子。
         main_force_score = np.minimum(
             1.0, quick['main_inflow_ratio'].fillna(0) / (self.cfg.b_main_force_inflow_min_pct * 5)
         )
 
         # ---- B4: 封单质量 ----
-        limit_pct = np.where(quick['is_kcb_cyb'], 0.197, 0.097)
-        is_zt = quick['pct_chg'].fillna(0) >= limit_pct - 0.003
+        # 2026-10-13 参数审查（涨停口径）：改用 shared/board_rules 判定，
+        # 修复旧写法"小数阈值 0.097 去比百分数 pct_chg（=涨幅>=0.09%就算涨停）"
+        # 的单位错位，以及只认 300/688、漏掉北交所 ±30% 的问题。
+        is_zt = pd.Series(
+            limit_up_mask(quick['ts_code'].values, quick['pct_chg'].fillna(0).values),
+            index=quick.index,
+        )
         # 放宽：涨停给高分，非涨停但涨幅>3%也给基础分
-        seal_quality_score = np.where(
-            is_zt,
-            np.minimum(1.0, quick['seal_quality_est'].fillna(0) / (self.cfg.b_seal_amount_ratio_min * 2)),
-            np.where(quick['pct_chg'].fillna(0) > 3.0, 0.3, 0.0)  # 非涨停但涨幅>3%给基础分
+        seal_quality_score = pd.Series(
+            np.where(
+                is_zt,
+                np.minimum(1.0, quick['seal_quality_est'].fillna(0) / (self.cfg.b_seal_amount_ratio_min * 2)),
+                np.where(quick['pct_chg'].fillna(0) > 3.0, 0.3, 0.0)  # 非涨停但涨幅>3%给基础分
+            ),
+            index=quick.index,
         )
 
-        # 反转评分权重：涨停质量最重要，主力最低（高分信号反而亏损）
-        total_score = (vol_breakout_score.values * 1.0 + price_breakout_score * 1.0 + 
-                      main_force_score.values * 0.8 + seal_quality_score * 1.5)
+        # 反转评分权重：涨停质量最重要；主力净流入降级为弱加权项，权重 0.8 -> 0.4（打5折）
+        # 量能用排序口径（换手分位数折半在此生效），通过判定用原始量能分
+        total_score = (np.asarray(vol_score_rank) * 1.0 + price_breakout_score * 1.0 + 
+                      main_force_score.values * 0.4 + seal_quality_score * 1.5)
 
-        # 通过条件：B1-B4中至少2个有分（放宽从3到2）
-        has_score = ((vol_breakout_score.values > 0).astype(int) +
+        # 通过条件（2026-10-14 定稿）：
+        #   旧版 = 量能/价格/主力/封单 4 维中至少 2 维有分 + 近5日动量>0。
+        #   由于主力净流入>0 覆盖约半数样本、量能分又几乎恒>0，旧条件等效于
+        #   "动量确认"单条件（B 层近似空筛，信号量由 top_b 排序 + C/D 层决定）。
+        #   主力资金剔除出判定后，为保持漏斗松紧度与旧版可比（回测实测：
+        #   3 维>=2 会把信号量从 ~191 压到 13），通过门槛调整为 >=1 维有分，
+        #   即量能分（几乎恒有分）+ 近5日动量为必要条件——与旧版等效语义一致，
+        #   价格/封单/主力/换手分位数均只影响排序权重（total_score），不再做一票否决。
+        has_score = ((np.asarray(vol_breakout_score) > 0).astype(int) +
                      (price_breakout_score > 0).astype(int) +
-                     (main_force_score.values > 0).astype(int) +
                      (seal_quality_score > 0).astype(int))
-        
-        # 放宽动量确认：近5日涨幅>0%即可（只要有正向动量）
+
+        # 动量确认：近5日涨幅>0%即可（只要有正向动量）
         momentum_confirm = quick.get('pct_chg_5d', pd.Series(0, index=quick.index)).fillna(0) > 0
-        
-        # 放宽：至少2个维度有分 + 正向动量
-        passed = (has_score >= 2) & momentum_confirm
+
+        passed = (has_score >= 1) & momentum_confirm
 
         # 组装结果到DataFrame
         quick['total_score'] = total_score
@@ -326,6 +371,15 @@ class LayerBLaunchDetector:
             code = ts_codes_arr[i]
             score = float(scores_arr[i])
 
+            # 各因子分按 idx 对齐取值（旧版用 values[i] 按位置取，top 与 quick
+            # 顺序不一致时会串行——展示层 bug，2026-10-13 一并修复）
+            def _fs(series, _idx=idx):
+                try:
+                    v = series.loc[_idx]
+                except KeyError:
+                    return 0.0
+                return float(v) if pd.notna(v) else 0.0
+
             # 构造detail字符串
             vol_ratio_val = float(quick.loc[idx, 'vol_breakout_ratio']) if idx in quick.index else 0
             turn_val = float(quick.loc[idx, 'turnover_rate']) if idx in quick.index and 'turnover_rate' in quick.columns else 0
@@ -343,7 +397,7 @@ class LayerBLaunchDetector:
                 price_detail = "未突破"
 
             main_ratio_val = float(quick.loc[idx, 'main_inflow_ratio']) if idx in quick.index and 'main_inflow_ratio' in quick.columns else 0
-            main_detail = f"主力净流入比={main_ratio_val * 100:.1f}%" if not np.isnan(main_ratio_val) and main_ratio_val != 0 else "无数据"
+            main_detail = f"主力净流入比={main_ratio_val * 100:.1f}%[弱确认项]" if not np.isnan(main_ratio_val) and main_ratio_val != 0 else "无数据[弱确认项]"
 
             is_zt_val = bool(is_zt.get(idx, False)) if idx in is_zt.index else False
 
@@ -352,10 +406,10 @@ class LayerBLaunchDetector:
                 eval_date=eval_date,
                 score=score,
                 factors={
-                    'vol_breakout': float(vol_breakout_score.values[i]) if i < len(vol_breakout_score) else 0,
-                    'price_breakout': float(price_breakout_score[i]) if i < len(price_breakout_score) else 0,
-                    'main_force': float(main_force_score.values[i]) if i < len(main_force_score) else 0,
-                    'seal_quality': float(seal_quality_score[i]) if i < len(seal_quality_score) else 0,
+                    'vol_breakout': _fs(vol_breakout_score),
+                    'price_breakout': _fs(price_breakout_score),
+                    'main_force': _fs(main_force_score),
+                    'seal_quality': _fs(seal_quality_score),
                 },
                 details={
                     'vol_breakout': f"量比MA60={vol_ratio_val:.1f}x, 换手={turn_display}%",
@@ -367,7 +421,7 @@ class LayerBLaunchDetector:
             )
             results.append(sig)
 
-        logger.info(f"B层向量化扫描 {len(pool)} 只，预筛 {len(quick)} 只，通过 {len(passed_df)} 只，输出 Top {len(results)} 只")
+        logger.info(f"B层向量化扫描 {len(pool)} 只，预筛 {len(quick)} 只，通过 {len(passed_df)} 只，输出 Top {len(results)} 只，换手门槛={turn_min:.2f}%（截面P30/绝对阈值）")
         return results
 
     def _scan_pool_fallback(self, pool: Set[str], eval_date: str,

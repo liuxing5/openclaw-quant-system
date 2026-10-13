@@ -6,6 +6,7 @@ on:
     paths:
       - 'strategies/funnel_strategy/**'
       - 'strategies/pullback_strategy/**'
+      - 'strategies/shared/**'
       - 'core/**'
       - '.github/workflows/funnel_strategy.yml'
   schedule:
@@ -110,6 +111,14 @@ jobs:
         run: |
           set -o pipefail
           python -m strategies.pullback_strategy.run_daily 2>&1 | tee /tmp/pullback_output.log
+
+      - name: Recompute forward returns (funnel/llm/8step)
+        # 2026-10-13 审查: 三策略历史候选前向收益重算（含成本/显著性/非重叠口径）
+        if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          python -m strategies.funnel_strategy.forward_stats 2>&1 | tee /tmp/forward_stats.log
 
       - name: Generate HTML report
         if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}

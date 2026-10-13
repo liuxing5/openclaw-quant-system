@@ -303,6 +303,124 @@ def load_pullback_backtest():
         return None
 
 
+def load_forward_stats(filename):
+    """加载 forward_stats.py 输出的三策略前向收益 JSON（2026-10-13 审查新增）"""
+    path = Path(__file__).parent / "docs" / filename
+    if not path.exists():
+        return None
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            return clean_nan(json.load(f))
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"  ⚠ 加载 {filename} 失败: {e}")
+        return None
+
+
+def _sig_mark(p):
+    """p 值 → 显著性星号。"""
+    if p is None:
+        return ''
+    try:
+        p = float(p)
+    except (TypeError, ValueError):
+        return ''
+    if p < 0.01:
+        return '**'
+    if p < 0.05:
+        return '*'
+    return ''
+
+
+def render_fwd_table(fwd, benchmark=None, excess=None, title="前向收益统计"):
+    """统一渲染前向收益表（含 t 值显著性 / 全市场基准 / 超额）。
+
+    fwd: {days: {count, win_rate, mean, median, t, p, n_eff, nonoverlap{...}}}
+    """
+    if not fwd:
+        return ""
+    rows = ""
+    for days_key in ['10', '20', '60']:
+        fd = fwd.get(days_key) or fwd.get(int(days_key)) or {}
+        if not fd:
+            continue
+        wr = fd.get('win_rate', 0) or 0
+        n = fd.get('count', 0)
+        mn = fd.get('mean', 0) or 0
+        md = fd.get('median', 0) or 0
+        a5 = fd.get('above_5pct', 0) or 0
+        a10 = fd.get('above_10pct', 0) or 0
+        t_v = fd.get('t')
+        p_v = fd.get('p')
+        mark = _sig_mark(p_v)
+        t_str = f"{t_v:.2f}{mark}" if isinstance(t_v, (int, float)) else '—'
+        color = '#3fb950' if wr > 0.55 else ('#f0883e' if wr > 0.50 else '#f85149')
+        bm = (benchmark or {}).get(days_key) or (benchmark or {}).get(int(days_key))
+        ex = (excess or {}).get(days_key) if excess else None
+        if ex is None and bm:
+            ex = mn - (bm.get('mean', 0) or 0)
+        bm_str = f"{bm['mean']:+.2%}" if bm and bm.get('mean') is not None else '—'
+        ex_str = f"{ex:+.2%}" if isinstance(ex, (int, float)) else '—'
+        ex_color = '#3fb950' if isinstance(ex, (int, float)) and ex > 0 else '#f85149'
+        non = fd.get('nonoverlap') or {}
+        non_str = (f"n={non.get('count', 0)} {non.get('mean', 0):+.2%} "
+                   f"t={non.get('t', 0):.2f}{_sig_mark(non.get('p'))}") if non.get('count') else '—'
+        rows += f"""
+        <tr>
+          <td><strong>{days_key}日</strong></td>
+          <td>{n}</td>
+          <td style="color:{color}"><strong>{wr:.1%}</strong></td>
+          <td>{mn:+.2%}</td>
+          <td>{md:+.2%}</td>
+          <td>{a5:.1%}</td>
+          <td>{a10:.1%}</td>
+          <td>{t_str}</td>
+          <td>{bm_str}</td>
+          <td style="color:{ex_color}">{ex_str}</td>
+          <td>{non_str}</td>
+        </tr>"""
+    if not rows:
+        return ""
+    return f"""
+    <div style="overflow-x:auto;margin:8px 0;">
+    <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">{title}</div>
+    <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
+    <thead><tr style="background:var(--metric-bg)">
+      <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th>
+      <th>&gt;5%</th><th>&gt;10%</th><th>t值</th><th>基准</th><th>超额</th><th>非重叠子样本</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+    </table>
+    <div style="font-size:.62rem;color:var(--text-secondary);margin-top:4px;">
+      含 0.25% 往返成本 · t 值按重叠窗口有效样本量 n=count/窗口 校正（* p&lt;0.05，** p&lt;0.01）
+      · 基准=全市场等权同窗口 · 非重叠=窗口不重叠的独立子样本
+    </div>
+    </div>"""
+
+
+def render_by_year(by_year):
+    """分子期稳定性小表。"""
+    if not by_year:
+        return ""
+    rows = ""
+    for year in sorted(by_year.keys()):
+        yr = by_year[year] or {}
+        rows += (f"<tr><td>{year}</td><td>{yr.get('count', 0)}</td>"
+                 f"<td>{yr.get('win_rate', 0):.1%}</td>"
+                 f"<td>{yr.get('mean', 0):+.2%}</td>"
+                 f"<td>{yr.get('fwd10_mean', 0):+.2%}</td>"
+                 f"<td>{yr.get('fwd10_win', 0):.1%}</td></tr>")
+    return f"""
+    <div style="overflow-x:auto;margin:8px 0;">
+    <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">📅 分子期稳定性（检验结果是否由单段行情主导）</div>
+    <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
+    <thead><tr style="background:var(--metric-bg)">
+      <th>年份</th><th>样本</th><th>胜率</th><th>出场均值</th><th>前向10日均值</th><th>前向10日胜率</th>
+    </tr></thead>
+    <tbody>{rows}</tbody>
+    </table>
+    </div>"""
+
+
 def load_main_uptrend_run_stats(trade_date=None):
     """从 main_uptrend_runs 加载当日运行统计和运行时间"""
     try:
@@ -421,15 +539,45 @@ def generate_unified_html(output_dir=None, trade_date=None):
     pb_backtest = load_pullback_backtest()
     pb_timestamp = load_strategy_timestamp('pullback_buy', pb_date) if (pb_date or pb_scan) else None
 
+    # ── 三策略前向收益重算（2026-10-13 审查新增，forward_stats.py 产出）──
+    funnel_fwd = load_forward_stats("funnel_forward.json")
+    llm_fwd = load_forward_stats("llm_forward.json")
+    eight_fwd = load_forward_stats("eight_forward.json")
+
+    def _fwd_block(fwd_json, title="📈 历史候选前向收益（重算口径）"):
+        """把 forward_stats JSON 渲染成策略区块内的小节。"""
+        if not fwd_json or not fwd_json.get("forward"):
+            return ""
+        rng = fwd_json.get("sample_range", ["—", "—"])
+        total = fwd_json.get("total_candidates", 0)
+        head = (f'<div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">'
+                f'{title}<br>样本 {rng[0]} ~ {rng[1]} · 候选 {total} 只 · '
+                f'{fwd_json.get("entry_convention", "")}</div>')
+        extra = ""
+        decomp = fwd_json.get("overnight_decomp")
+        if decomp:
+            o, i = decomp.get("overnight", {}), decomp.get("intraday", {})
+            extra = (f'<div style="font-size:.66rem;color:var(--text-secondary);margin-top:4px;">'
+                     f'隔夜段 {o.get("mean", 0):+.2%} t={o.get("t", 0):.2f} · '
+                     f'日内段 {i.get("mean", 0):+.2%} t={i.get("t", 0):.2f}'
+                     f'（验证"A股隔夜收益为负"文献结论）</div>')
+        return head + render_fwd_table(
+            fwd_json.get("forward"), fwd_json.get("benchmark"),
+            fwd_json.get("excess")) + extra
+
+    funnel_fwd_html = _fwd_block(funnel_fwd)
+    llm_fwd_html = _fwd_block(llm_fwd)
+    eight_fwd_html = _fwd_block(eight_fwd)
+
     display_date = str(funnel_date or llm_date or eight_date or get_beijing_date())
 
     # ── 漏斗步骤 ──
     LAYER_RULES = {
-        'L0': '上涨家数≥2500 且 全A指数>20EMA → 满仓；否则半仓或休战',
+        'L0': '上涨占比≥35% 且 广度>20EMA → 满仓；否则限仓（绝对家数阈值已退出判定，2026-10-13审查）',
         'L1': '剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%',
-        'L2': '20日均成交额>1亿；流通市值>20亿；换手率3~15%',
+        'L2': '20日均成交额>1亿；流通市值>20亿；换手率3~15%（⚠绝对阈值待分位数化）',
         'L3': '周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12',
-        'L4': '量比1.5~3.0；乖离率<6%；需求吸收K线或强势接力形态',
+        'L4': '量比1.5~3.0；RSI>75；近5日涨幅>15%；需求吸收K线或强势接力形态（乖离率/EMA12距离两项冗余条件已停用）',
         'L5': '综合评分≥80；涨幅3~5%；贴MA5；人气榜+LLM联动加分',
         'L6': '14:30后买入；止损=入场价-1ATR；目标=入场价+2ATR；盈亏比≥2:1',
     }
@@ -545,7 +693,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         llm_step_rules = {
             "多源信号采集": "6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐",
             "流动性过滤": "成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股",
-            "量化评分": "10维量化打分：涨幅(-3%~7%最优)/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100",
+            "量化评分": "9维量化打分：涨幅(-3%~7%最优)/换手率/成交额/振幅/量比/委比/大单净量(降权50%)/强势股排名/机构预期，满分100（主力资金维度已剔除：无独立预测力，2026-10-13审查）",
             "估值与财务": "PE/PB估值打分(PE<15加分/PE>60扣分)；净利润率/毛利率/负债率/现金流质量评估",
             "综合评分≥阈值": "量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池",
             "精选标记": "综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只",
@@ -588,9 +736,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
           <span class="step-name">流动性过滤</span>
           <span class="rule-inline">成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股</span>
         </div>
-        <div class="step-row" title="10维量化打分：涨幅/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100">
+        <div class="step-row" title="9维量化打分：涨幅/换手率/成交额/振幅/量比/委比/大单净量(降权50%)/强势股排名/机构预期，满分100（主力资金维度已剔除）">
           <span class="step-name">量化评分</span>
-          <span class="rule-inline">10维量化打分：涨幅/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100</span>
+          <span class="rule-inline">9维量化打分：涨幅/换手率/成交额/振幅/量比/委比/大单净量(降权50%)/强势股排名/机构预期，满分100（主力资金维度已剔除）</span>
         </div>
         <div class="step-row" title="PE/PB估值打分；净利润率/毛利率/负债率/现金流质量评估">
           <span class="step-name">估值与财务</span>
@@ -633,7 +781,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">A3 行业景气</span>
-          <span class="rule-inline">申万二级行业近20日涨幅排名前30%</span>
+          <span class="rule-inline">申万二级行业近60日涨幅排名前50%（2026-10-13: 形成期20→60日，避开A股反转区间）</span>
         </div>
         <div class="step-row">
           <span class="step-name">B 层启动信号</span>
@@ -649,7 +797,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">B3 主力资金</span>
-          <span class="rule-inline">主力净流入占比 &gt; 5% 且净额为正</span>
+          <span class="rule-inline">已降级为弱加权项，不再一票否决（主力净流入无独立预测力，2026-10-13审查）</span>
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">B4 封单质量</span>
@@ -716,29 +864,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
         period = f"{bt.get('backtest_start', '')} ~ {bt.get('backtest_end', '')}"
         fwd = bt.get('forward_returns', {})
 
-        table_rows = ""
-        for days_key in ['10', '20', '60']:
-            fd = fwd.get(days_key, {})
-            if not fd:
-                continue
-            wr = fd.get('win_rate', 0)
-            hr = fd.get('hit_rate_5pct', 0)
-            mn = fd.get('mean', 0)
-            md = fd.get('median', 0)
-            a5 = fd.get('above_5pct', 0)
-            a10 = fd.get('above_10pct', 0)
-            n = fd.get('count', 0)
-            color = '#3fb950' if wr > 0.55 else ('#f0883e' if wr > 0.50 else '#f85149')
-            table_rows += f"""
-            <tr>
-              <td><strong>{days_key}日</strong></td>
-              <td>{n}</td>
-              <td style="color:{color}"><strong>{wr:.1%}</strong></td>
-              <td>{mn:.1%}</td>
-              <td>{md:.1%}</td>
-              <td>{a5:.1%}</td>
-              <td>{a10:.1%}</td>
-            </tr>"""
+        fwd_table_html = render_fwd_table(
+            fwd, bt.get('benchmark'), bt.get('excess'))
 
         backtest_html = f"""
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
@@ -751,14 +878,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
           <span class="step-name">总信号数</span>
           <span class="step-pass">{signal_count}</span>
         </div>
-        <div style="overflow-x:auto;margin:8px 0;">
-        <table style="width:100%;font-size:.7rem;border-collapse:collapse;white-space:nowrap;">
-        <thead><tr style="background:var(--metric-bg)">
-          <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th><th>&gt;5%</th><th>&gt;10%</th>
-        </tr></thead>
-        <tbody>{table_rows}</tbody>
-        </table>
-        </div>
+        {fwd_table_html}
+        {render_by_year(bt.get('by_year'))}
         </div>"""
 
         top10_html = ""
@@ -813,11 +934,11 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     # ── 回调买入法（pullback_buy）步骤与回测展示 ──
     pb_step_defs = [
-        ('流动性/风控', '成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停'),
-        ('强势股筛选', '20日动能≥20% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50'),
-        ('回调至支撑', '自20日高点回撤5%~30% · 低点触及EMA21/EMA50(±3%) · 回调段缩量'),
+        ('流动性/风控', '成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停(按板块规则)'),
+        ('强势股筛选', '120日动能居当日截面前30% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50'),
+        ('回调至支撑', '自20日高点回撤5%~25% · 低点触及EMA21/EMA50(±3%) · 回调段缩量'),
         ('回升确认', '收阳 · 收盘>前日收盘 · 重新站上EMA21'),
-        ('紧止损达标', '止损=支撑下方1% · 风险≤3% · 目标=入场+2×风险'),
+        ('波动率止损达标', '止损=min(结构止损, 1.5×ATR14) · 风险≤6% · 目标=入场+2×风险'),
     ]
     pb_stats = pb_scan.get('filter_stats', {}) if pb_scan else {}
     pb_parts = []
@@ -844,28 +965,11 @@ def generate_unified_html(output_dir=None, trade_date=None):
         period = f"{bt.get('backtest_start', '')} ~ {bt.get('backtest_end', '')}"
         fwd = bt.get('forward_returns', {})
 
-        table_rows = ""
-        for days_key in ['10', '20', '60']:
-            fd = fwd.get(days_key, {})
-            if not fd:
-                continue
-            wr = fd.get('win_rate', 0)
-            n = fd.get('count', 0)
-            mn = fd.get('mean', 0)
-            md = fd.get('median', 0)
-            a5 = fd.get('above_5pct', 0)
-            a10 = fd.get('above_10pct', 0)
-            color = '#3fb950' if wr > 0.55 else ('#f0883e' if wr > 0.50 else '#f85149')
-            table_rows += f"""
-            <tr>
-              <td><strong>{days_key}日</strong></td>
-              <td>{n}</td>
-              <td style="color:{color}"><strong>{wr:.1%}</strong></td>
-              <td>{mn:.1%}</td>
-              <td>{md:.1%}</td>
-              <td>{a5:.1%}</td>
-              <td>{a10:.1%}</td>
-            </tr>"""
+        fwd_table_html = render_fwd_table(
+            fwd, bt.get('benchmark'), bt.get('excess'))
+        exit_t = es.get('t')
+        exit_sig = (f" · t={exit_t:.2f}{_sig_mark(es.get('p'))}"
+                    if isinstance(exit_t, (int, float)) else "")
 
         pb_backtest_html = f"""
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
@@ -877,20 +981,14 @@ def generate_unified_html(output_dir=None, trade_date=None):
         <div class="step-row">
           <span class="step-name">成交笔数</span>
           <span class="step-pass">{bt.get('total_signals', 0)}</span>
-          <span class="rule-inline">胜率{es.get('win_rate', 0):.1%} · 均值{es.get('mean', 0):+.1%} · 持有{es.get('avg_hold_days', 0):.1f}日</span>
+          <span class="rule-inline">胜率{es.get('win_rate', 0):.1%} · 均值{es.get('mean', 0):+.1%}{exit_sig} · 持有{es.get('avg_hold_days', 0):.1f}日</span>
         </div>
         <div class="step-row">
           <span class="step-name">出场分布</span>
           <span class="rule-inline">止损 {es.get('stop_count', 0)} · 止盈 {es.get('target_count', 0)} · 超时 {es.get('timeout_count', 0)}</span>
         </div>
-        <div style="overflow-x:auto;margin:8px 0;">
-        <table style="width:100%;font-size:.7rem;border-collapse:collapse;white-space:nowrap;">
-        <thead><tr style="background:var(--metric-bg)">
-          <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th><th>&gt;5%</th><th>&gt;10%</th>
-        </tr></thead>
-        <tbody>{table_rows}</tbody>
-        </table>
-        </div>
+        {fwd_table_html}
+        {render_by_year(bt.get('by_year'))}
         </div>"""
 
         # 回测 Top5 作为无当日候选时的兜底卡片
@@ -1293,7 +1391,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <!-- ========== 八步法 ========== -->
     <div class="section">
       <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
-      <div class="steps-area">{eight_steps_html}</div>
+      <div class="steps-area">{eight_steps_html}{eight_fwd_html}</div>
       {eight_h3}
       <div class="cards-grid">{eight_cards}</div>
     </div>
@@ -1301,7 +1399,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <!-- ========== 七步漏斗 ========== -->
     <div class="section">
       <h2>🎯 七步漏斗选股<span class="section-subtitle">{funnel_timestamp or funnel_date or '—'}</span></h2>
-      <div class="steps-area">{funnel_steps_html}</div>
+      <div class="steps-area">{funnel_steps_html}{funnel_fwd_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 ({funnel_count}只)</h3>
       <div class="cards-grid">{funnel_cards}</div>
     </div>
@@ -1309,7 +1407,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <!-- ========== LLM多源 ========== -->
     <div class="section">
       <h2>🤖 LLM多源策略<span class="section-subtitle">{llm_timestamp or llm_date or '—'}</span></h2>
-      <div class="steps-area">{llm_steps_html}</div>
+      <div class="steps-area">{llm_steps_html}{llm_fwd_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({llm_count}只)</h3>
       <div class="cards-grid">{llm_cards}</div>
     </div>

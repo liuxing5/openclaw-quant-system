@@ -1174,6 +1174,8 @@ def is_new_stock(ts_code: str) -> bool:
 
 # ============================================================
 #  1. 全局配置
+#     ⚠ 本文件阈值均为人工经验设定，未经回测校准/分位数化
+#       （2026-10-13 参数审查：整数偏好明显，随市场 regime 会漂移）。
 # ============================================================
 CONFIG_STABLE = {
     "MODE": "post",
@@ -1182,17 +1184,24 @@ CONFIG_STABLE = {
     "max_amount": 5_000_000_000,
     "min_mktcap": 10_000_000_000,
     "max_mktcap": 200_000_000_000,
+    # ⚠ 经验阈值，未经校准（2026-10-13 审查）：量比下限 1.5 为整数经验值
     "vol_ratio_min": 1.5,
     "vol_ratio_max": 8.0,
+    # ⚠ 经验阈值，未经校准（2026-10-13 审查）：涨幅双路径 3~6%/6~9.7%、
+    #   换手 5~10% 均为绝对值，随市场 regime 漂移，待截面分位数化。
     "stable_pct_lo": 3.0,
     "stable_pct_hi": 6.0,
     "upper_pct_lo": 6.0,
     "upper_pct_hi": 9.7,
+    # ⚠ 经验阈值，未经校准（2026-10-13 审查）
     "turn_min": 5.0,
     "turn_max": 10.0,
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
+    # ⚠ 2026-10-13 审查后总分上限下降（主力资金维度剔除、大单减半），
+    #   阈值 70 未同步下调，可能少选出临界标的 —— 待前向收益重算后校准。
     "score_threshold": 70,
+    # ⚠ 情绪分档 40/55/70/85 为经验阈值，未经校准（2026-10-13 审查）
     "sentiment_cold": 40,      # 情绪评分阈值：冷淡
     "sentiment_normal": 55,    # 情绪评分阈值：正常
     "sentiment_hot": 70,       # 情绪评分阈值：活跃
@@ -1211,17 +1220,24 @@ CONFIG_UPPER = {
     "max_amount": 3_000_000_000,
     "min_mktcap": 3_000_000_000,
     "max_mktcap": 30_000_000_000,
+    # ⚠ 经验阈值，未经校准（2026-10-13 审查）：量比下限 1.5 为整数经验值
     "vol_ratio_min": 1.5,
     "vol_ratio_max": 10.0,
+    # ⚠ 经验阈值，未经校准（2026-10-13 审查）：涨幅双路径 3~6%/6~9.7%、
+    #   换手 5~10% 均为绝对值，随市场 regime 漂移，待截面分位数化。
     "stable_pct_lo": 3.0,
     "stable_pct_hi": 6.0,
     "upper_pct_lo": 6.0,
     "upper_pct_hi": 9.7,
+    # ⚠ 经验阈值，未经校准（2026-10-13 审查）
     "turn_min": 5.0,
     "turn_max": 10.0,
     "streak_penalty_threshold": 3,
     "streak_penalty_per_board": 10,
+    # ⚠ 2026-10-13 审查后总分上限下降（主力资金维度剔除、大单减半），
+    #   阈值 70 未同步下调，可能少选出临界标的 —— 待前向收益重算后校准。
     "score_threshold": 70,
+    # ⚠ 情绪分档 40/55/70/85 为经验阈值，未经校准（2026-10-13 审查）
     "sentiment_cold": 40,      # 情绪评分阈值：冷淡
     "sentiment_normal": 55,    # 情绪评分阈值：正常
     "sentiment_hot": 70,       # 情绪评分阈值：活跃
@@ -1476,6 +1492,8 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         score = max(0, min(100, score))
         
         # 情绪等级判定
+        # ⚠ 25/40/55/70/85 分档为经验阈值，未经校准（2026-10-13 审查）：
+        #   固定整数分档不随市场状态（涨停家数分布/成交额量级）自适应。
         if score < 25:
             mood = "极冷"
         elif score < 40:
@@ -2153,21 +2171,19 @@ def analyze_ultimate(
         score -= 4
         tags.append("卖压大↓")
 
+    # 大单净量 → 已降权 50%（2026-10-13 审查：订单分类不可靠，
+    # 与主力净流入高度共线，控制当日涨跌幅后无独立预测力）
     large_order_net = real_info.get('large_order_net', 0) if real_info else 0
     if large_order_net > 0:
-        _bonus_pool += min(12, large_order_net * 4)
-        tags.append("大单净流入")
+        _bonus_pool += min(12, large_order_net * 4) * 0.5
+        tags.append("大单净流入(降权)")
     elif large_order_net < -5:
-        score -= 8
-        tags.append("大单净流出↓")
+        score -= 8 * 0.5
+        tags.append("大单净流出↓(降权)")
 
-    main_force_net = real_info.get('main_force_net', 0) if real_info else 0
-    if main_force_net > 0:
-        _bonus_pool += min(8, main_force_net / 1e6 * 1.5)
-        tags.append("主力流入")
-    elif main_force_net < -1e7:
-        score -= 4
-        tags.append("主力流出↓")
+    # 主力净流入 → 已剔除，恒 0 分（2026-10-13 参数审查）：
+    # 138万样本证伪——控制当日涨跌幅后主力净流入无独立预测力。
+    _ = real_info.get('main_force_net', 0) if real_info else 0  # 不参与打分
 
     ts_code = baostock_to_standard(code) if 'baostock_to_standard' in globals() else code
     strong_bonus = get_strong_rank_bonus(ts_code)

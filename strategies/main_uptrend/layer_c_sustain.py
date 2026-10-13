@@ -3,7 +3,8 @@ Layer C: 持续性判定（日频）
 ===============================
 判定"半天持续上涨"特征 — 跨日延续能力：
   1. 分时形态质量：日内上行占比 > 60%
-  2. 大单买入占比：大单净买入 / 总成交额 > 8%
+  2. 放量确认：成交额 / 20日均额（旧称"大单买入占比"；2026-10-13 注：大单净买类
+     订单分类伪指标在控制涨跌幅后无预测力，未作为硬条件，config 阈值仅保留兼容）
   3. 缩量上涨：价涨量缩（缩到前一日 60-80%）
   4. 板上量比：封板时间 + 开板次数
   5. 同板块联动：概念板块涨幅 > 3%，至少 2 只同行同涨
@@ -27,7 +28,11 @@ from .data_loader import DataLoader
 from .indicators import (
     intraday_up_ratio, intraday_morning_checks,
     volume_shrink_check, sector_peers_rising,
-    detect_limit_up_pct, is_limit_up,
+    limit_up_mask,
+)
+from ..shared.board_rules import (
+    is_limit_up as board_is_limit_up,
+    limit_pct as board_limit_pct,
 )
 from .layer_b_launch import LaunchSignal
 
@@ -97,6 +102,9 @@ class LayerCSustainAnalyzer:
             c1_pass = np.zeros(len(pool_df), dtype=bool)
 
         # ---- C2: 大单买入占比 ----
+        # 2026-10-13 参数审查：config.c_big_order_net_buy_min_pct（大单净买>=5%）在全代码库
+        # 中没有任何引用，不是硬条件，无需降级；这里的 "big_order" 实为放量倍数
+        #（成交额/20日均额），属量能指标而非订单分类类伪指标，判定逻辑保持不变。
         amount_ratio = pool_df['amount_ratio_20'].fillna(0).values
         c2_pass = (amount_ratio > 1.0) & (pct_chg > 0)  # 只要放量+上涨
         big_order_score = np.minimum(1.0, amount_ratio / 3.0)  # 3倍即满分
@@ -111,9 +119,10 @@ class LayerCSustainAnalyzer:
         c3_pass = c3_pass | ((pct_chg > 0) & (vol_shrink > 1.2) & (vol_shrink <= 1.5))
 
         # ---- C4: 板上量比 ----
-        is_kcb_cyb = pool_df['is_kcb_cyb'].values if 'is_kcb_cyb' in pool_df.columns else np.zeros(len(pool_df), dtype=bool)
-        limit_pct_arr = np.where(is_kcb_cyb, 0.197, 0.097)
-        is_zt = pct_chg >= limit_pct_arr - 0.003
+        # 2026-10-13 参数审查（涨停口径）：改用 shared/board_rules 判定，
+        # 修复旧写法"小数阈值 0.097/0.197 去比百分数 pct_chg"的单位错位，
+        # 并补上 301/302/303/689 与北交所 ±30% 的板块覆盖。
+        is_zt = limit_up_mask(pool_df['ts_code'].values, pct_chg)
         if self.skip_1min:
             # 放宽：涨幅>3%就给基础分
             c4_pass = is_zt | (pct_chg > 3.0)
@@ -136,20 +145,27 @@ class LayerCSustainAnalyzer:
         sector_score = np.minimum(1.0, industry_avg / 2.0)
 
         # ---- 综合判定 ----
-        passed_count = c1_pass.astype(int) + c2_pass.astype(int) + c3_pass.astype(int) + \
-                       c4_pass.astype(int) + c5_pass.astype(int)
-        
-        # 评分权重
-        total_score = (intraday_score * 1.5 + big_order_score * 1.5 + 
-                      vol_shrink_score * 1.2 + seal_quality_score * 1.2 + 
-                      sector_score * 1.0)
-        
+        # 2026-10-14 等效校准：旧版涨停单位错位 bug（小数阈值比百分数）令 is_zt 对
+        # 几乎所有上涨股恒为 True，于是 C4 维度几乎恒过、seal 分恒 +1.2——
+        # passed_count>=3 与 total_score>3.0 这两个阈值实际是"含虚高 1.2 分"校准出来的。
+        # 修复涨停口径后，为保持 C 层漏斗松紧度与旧版等效（不因口径修复而额外收紧）：
+        #   维度数要求 = 4 个诚实维度（C1/C2/C3/C5）中 >=2（等价旧版含 C4 的 >=3）；
+        #   综合分阈值 = 3.0 - 1.2 = 1.8（去掉旧版恒加的虚高分）；
+        #   honest seal 分（真实涨停才有）保留进 total_score 只作排序加分。
+        core_count = c1_pass.astype(int) + c2_pass.astype(int) + c3_pass.astype(int) + \
+                     c5_pass.astype(int)
+        core_score = (intraday_score * 1.5 + big_order_score * 1.5 +
+                      vol_shrink_score * 1.2 + sector_score * 1.0)
+
+        passed_count = core_count + c4_pass.astype(int)
+        total_score = core_score + seal_quality_score * 1.2
+
         # 调试日志
         logger.info(f"C层调试: C1={c1_pass.sum()}/50, C2={c2_pass.sum()}/50, C3={c3_pass.sum()}/50, C4={c4_pass.sum()}/50, C5={c5_pass.sum()}/50")
-        logger.info(f"C层调试: passed_count>=3&score>3.0: {((passed_count >= 3) & (total_score > 3.0)).sum()}, total_score分布: min={total_score.min():.2f}, max={total_score.max():.2f}, mean={total_score.mean():.2f}")
-        
-        # 放宽：只要3/5条件通过即可，综合分>3.0
-        passed = (passed_count >= 3) & (total_score > 3.0)
+        logger.info(f"C层调试: core>=2&core_score>1.8: {((core_count >= 2) & (core_score > 1.8)).sum()}, total_score分布: min={total_score.min():.2f}, max={total_score.max():.2f}, mean={total_score.mean():.2f}")
+
+        # 通过条件（2026-10-14 等效校准，见上方注释）
+        passed = (core_count >= 2) & (core_score > 1.8)
 
         # 过滤通过的，取Top N
         pool_df['total_score'] = total_score
@@ -295,9 +311,10 @@ class LayerCSustainAnalyzer:
         if c3_pass:
             passed_count += 1
 
-        # C4: 板上量比
-        limit_pct = detect_limit_up_pct(ts_code)
-        is_zt = is_limit_up(today_pct, limit_pct)
+        # C4: 板上量比（2026-10-13 参数审查：改用 shared/board_rules 按板块真实涨停价判断）
+        prev_close = float(prev["close"])
+        is_zt = board_is_limit_up(ts_code, today_close, prev_close)
+        c4_pass = False
         if is_zt:
             if self.skip_1min:
                 c4_pass = True
@@ -334,7 +351,11 @@ class LayerCSustainAnalyzer:
         sig.factors = scores
         sig.details = details
         sig.score = sum(scores.values())
-        sig.passed = passed_count >= 3
+        # 通过条件（2026-10-14 等效校准，与向量化路径对齐）：旧版涨停口径 bug
+        # 令 C4 几乎恒过，"5 维 >=3" 实为 "4 个诚实维度 >=2"；修复后直接按
+        # 诚实维度判定，C4 真实涨停只作加分不再凑维度数。
+        core_count = int(c1_pass) + int(c2_pass) + int(c3_pass) + int(c5_pass)
+        sig.passed = core_count >= 2
 
         return sig
 
@@ -343,7 +364,7 @@ class LayerCSustainAnalyzer:
         df_1min = self.loader.get_1min_kline(ts_code, eval_date)
         if df_1min is None or len(df_1min) < 30:
             return "00:00"
-        limit_pct = detect_limit_up_pct(ts_code)
+        limit_pct = board_limit_pct(ts_code)  # 2026-10-13: 涨停口径统一走 shared/board_rules
         open_price = float(df_1min["close"].iloc[0])
         limit_price = open_price * (1 + limit_pct) if open_price > 0 else 0
         for _, row in df_1min.iterrows():
@@ -356,7 +377,7 @@ class LayerCSustainAnalyzer:
         df_1min = self.loader.get_1min_kline(ts_code, eval_date)
         if df_1min is None or len(df_1min) < 30:
             return 99
-        limit_pct = detect_limit_up_pct(ts_code)
+        limit_pct = board_limit_pct(ts_code)  # 2026-10-13: 涨停口径统一走 shared/board_rules
         open_price = float(df_1min["close"].iloc[0])
         limit_price = open_price * (1 + limit_pct) if open_price > 0 else 0
         below_limit = df_1min["high"] < limit_price * 0.999

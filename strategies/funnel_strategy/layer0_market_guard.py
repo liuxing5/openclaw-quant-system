@@ -1,9 +1,11 @@
 """
 Layer 0: 大盘风控（盘前）
 ========================
-决策逻辑：
-  今日两市上涨≥500家，且市场广度(上涨占比)>20EMA。
+决策逻辑（2026-10-13 参数审查）：
+  今日两市上涨占比 ≥ min_breadth_ratio，且市场广度(上涨占比)>20EMA。
   否则当日不荐股或仓位≤50%。
+  ※ 原"绝对上涨家数 ≥ 2000/1500"已从判定中移除——绝对家数随
+    上市公司总数与市场状态漂移，改用占比口径（min_advancers 仅作展示）。
 
 吸收策略：③看大盘控仓位
 
@@ -96,8 +98,8 @@ def _calc_ema(values: pd.Series, period: int) -> pd.Series:
 
 def check_market_environment(
     trade_date: date = None,
-    min_advancers: int = 2000,
-    min_breadth_ratio: float = 0.35,
+    min_advancers: int = 2000,      # ⚠ 已退出判定，仅用于日志/报告展示（2026-10-13 审查）
+    min_breadth_ratio: float = 0.35,  # 判定口径：上涨占比下限 = adv/(adv+dec)
     index_code: str = '000001.SH',
     ema_period: int = 20,
     partial_cap: float = 0.50,
@@ -106,14 +108,20 @@ def check_market_environment(
 ) -> dict:
     """
     大盘风控决策。
-    
+
+    判定口径（2026-10-13 审查）：
+      breadth_condition = (上涨家数 / (上涨+下跌)) >= min_breadth_ratio
+      绝对家数 min_advancers 已退出判定，仅用于日志/报告展示。
+      最终 = breadth_condition（占比） 且 广度>EMA（两者同时满足）。
+
     返回:
       {
         'passed': bool,              # 全部条件通过
         'can_trade': bool,            # 是否可以交易（含部分仓位）
         'max_position_pct': float,   # 最大仓位比例
-        'advancers': int,            # 上涨家数
-        'decliners': int,            # 下跌家数
+        'advancers': int,            # 上涨家数（展示用）
+        'decliners': int,            # 下跌家数（展示用）
+        'breadth_ratio': float,      # 上涨占比（判定用）
         'index_close': float,        # 广度占比%（替代原指数收盘价）
         'index_ema': float,          # 广度EMA%（替代原指数EMA）
         'index_above_ema': bool,     # 广度是否在EMA上方
@@ -126,6 +134,7 @@ def check_market_environment(
         'max_position_pct': 1.0,
         'advancers': 0,
         'decliners': 0,
+        'breadth_ratio': 0.0,
         'index_close': 0.0,
         'index_ema': 0.0,
         'index_above_ema': False,
@@ -151,11 +160,14 @@ def check_market_environment(
     result['advancers'] = advancers
     result['decliners'] = decliners
 
-    breadth_ok = advancers >= min_advancers
+    total_stocks = advancers + decliners
+    breadth_ratio = advancers / total_stocks if total_stocks > 0 else 0.0
+    result['breadth_ratio'] = round(breadth_ratio, 4)
 
     if verbose:
         print(f"  [Layer 0] 上涨: {advancers}  下跌: {decliners}  "
-              f"要求上涨≥{min_advancers}")
+              f"上涨占比: {breadth_ratio:.1%} (要求≥{min_breadth_ratio:.0%})"
+              f"  参考绝对家数: {min_advancers}(不再参与判定)")
 
     # 2. 计算市场广度EMA（替代失效的指数EMA）
     index_above_ema = False
@@ -244,28 +256,32 @@ def check_market_environment(
 
     # 3. 综合判断
     indicator_label = '广度' if use_breadth_ema else '指数'
-    total_stocks = advancers + decliners
-    breadth_ratio = advancers / total_stocks if total_stocks > 0 else 0
 
-    # 满足上涨家数或广度占比任一条件即可
-    breadth_condition = breadth_ok or (breadth_ratio >= min_breadth_ratio)
+    # 2026-10-13 审查：改为纯占比口径。
+    # 原为 (绝对上涨家数≥min_advancers) OR (占比≥min_breadth_ratio)，
+    # 绝对家数随市场状态/上市公司总数漂移，已从判定中移除；
+    # 仅保留「上涨占比」+「广度>EMA」两个条件（同时满足才满仓）。
+    breadth_condition = breadth_ratio >= min_breadth_ratio
 
     if breadth_condition and index_above_ema:
         result['passed'] = True
         result['can_trade'] = True
         result['max_position_pct'] = 1.0
-        result['reason'] = f'大盘偏强(涨{advancers}/{indicator_label}{index_close:.1f}%>{ema_period}EMA)，满仓操作'
+        result['reason'] = (f'大盘偏强(涨{advancers}家/占比{breadth_ratio:.0%}≥{min_breadth_ratio:.0%}，'
+                            f'{indicator_label}{index_close:.1f}%>{ema_period}EMA)，满仓操作')
     elif breadth_condition or index_above_ema:
         result['passed'] = False
         result['can_trade'] = True
         result['max_position_pct'] = partial_cap
-        result['reason'] = (f'大盘偏弱(涨{advancers}/{indicator_label}{index_close:.1f}%{"上穿" if index_above_ema else "跌穿"}{ema_period}EMA)，'
+        result['reason'] = (f'大盘偏弱(涨{advancers}家/占比{breadth_ratio:.0%}，'
+                            f'{indicator_label}{index_close:.1f}%{"上穿" if index_above_ema else "跌穿"}{ema_period}EMA)，'
                            f'仓位≤{int(partial_cap*100)}%')
     else:
         result['passed'] = False
         result['can_trade'] = False
         result['max_position_pct'] = 0.0
-        result['reason'] = f'大盘弱势(涨{advancers}/{indicator_label}{index_close:.1f}%<{ema_period}EMA)，当日不荐股'
+        result['reason'] = (f'大盘弱势(涨{advancers}家/占比{breadth_ratio:.0%}<{min_breadth_ratio:.0%}，'
+                            f'{indicator_label}{index_close:.1f}%<{ema_period}EMA)，当日不荐股')
 
     if verbose:
         status = '✅全仓' if result['passed'] else ('⚠️半仓' if result['can_trade'] else '❌休市')

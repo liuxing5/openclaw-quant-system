@@ -11,6 +11,7 @@ v4: 极致优化回测速度
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date, datetime, timedelta
 from typing import Optional, List, Dict, Tuple
 
@@ -912,24 +913,36 @@ class DataLoader:
             return [d for d in days if start_date <= d <= end_date]
 
         conn = None
-        try:
-            conn = get_db_fresh()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("""
-                SELECT DISTINCT trade_date::text as date
-                FROM daily_quotes
-                WHERE trade_date >= %s
-                  AND trade_date <= %s
-                ORDER BY date
-            """, (start_date, end_date))
-            rows = cur.fetchall()
-            cur.close()
-            return [r['date'] for r in rows]
-        except Exception:
-            return []
-        finally:
-            if conn and not conn.closed:
-                conn.close()
+        last_err = None
+        # 2026-10-14 修复：Supabase pooler 偶发断连时旧实现静默返回 []，
+        # 整轮回测随后以 "无交易日数据" 作废；改为重试 3 次并记录异常。
+        for attempt in range(3):
+            conn = None
+            try:
+                conn = get_db_fresh()
+                cur = conn.cursor(cursor_factory=RealDictCursor)
+                cur.execute("""
+                    SELECT DISTINCT trade_date::text as date
+                    FROM daily_quotes
+                    WHERE trade_date >= %s
+                      AND trade_date <= %s
+                    ORDER BY date
+                """, (start_date, end_date))
+                rows = cur.fetchall()
+                cur.close()
+                return [r['date'] for r in rows]
+            except Exception as e:
+                last_err = e
+                logger.warning("get_trading_days attempt %d failed: %s", attempt + 1, e)
+                time.sleep(3 * (attempt + 1))
+            finally:
+                if conn and not conn.closed:
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+        logger.error("get_trading_days failed after retries: %s", last_err)
+        return []
 
     # ----------------------------------------------------------
     # 清除缓存

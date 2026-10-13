@@ -28,8 +28,18 @@ import numpy as np
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+# 与 pullback/funnel 入口保持一致：加载 .env，否则 POSTGRES_* 为空会退化为 localhost 连接
+from dotenv import load_dotenv
+for _env_path in [Path('.env'), Path('strategies/llm_multisource/.env')]:
+    if _env_path.exists():
+        load_dotenv(_env_path)
+        break
+
 from strategies.main_uptrend.config import MainUptrendConfig, DEFAULT_CONFIG
 from strategies.main_uptrend.backtester import MainUptrendBacktester
+from strategies.shared.backtest_stats import (
+    fwd_stats, COST_NOTE, SIGNIFICANCE_NOTE, ROUND_TRIP_COST,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,10 +50,15 @@ logger = logging.getLogger(__name__)
 
 
 def _build_json_summary(result: dict, start: str, end: str) -> dict:
+    trading_days = result.get('trading_days')
     summary = {
         'backtest_start': start,
         'backtest_end': end,
         'total_signals': len(result.get('signals', [])),
+        # 2026-10-13 参数审查：成本与显著性口径说明（新增字段，旧字段全保留）
+        'cost_note': COST_NOTE,
+        'round_trip_cost': ROUND_TRIP_COST,
+        'significance_note': SIGNIFICANCE_NOTE,
         'forward_returns': {},
         'top10_signals': [],
         'all_signals': [],
@@ -54,20 +69,51 @@ def _build_json_summary(result: dict, start: str, end: str) -> dict:
         rets = df[f'ret_{days}d'].dropna()
         if len(rets) == 0:
             continue
+        # 注意：ret_{days}d 已在 backtester 中扣除 0.25% 往返成本（净口径），
+        # fwd_stats 要求输入为净收益，直接传入即可。
         arr = rets.values
-        summary['forward_returns'][str(days)] = {
-            'count': len(arr),
-            'win_rate': float(np.mean(arr > 0)),
+        dates = None
+        if 'signal_date' in df.columns:
+            dates = [str(v)[:10] for v in df.loc[rets.index, 'signal_date'].tolist()]
+
+        stats = fwd_stats(arr, dates=dates, horizon=int(days), trading_days=trading_days)
+
+        # 毛/净对比：证明成本已扣
+        gross_col = f'ret_{days}d_gross'
+        if gross_col in df.columns:
+            gross = df.loc[rets.index, gross_col].dropna()
+            if len(gross) == len(arr):
+                garr = gross.values
+                stats['gross_mean'] = float(np.mean(garr))
+                stats['gross_win_rate'] = float((garr > 0).mean())
+
+        # 保留旧字段（页面 generate_html 依赖 count/win_rate/mean/...）
+        stats.update({
             'hit_rate_5pct': float(np.mean(arr > 0.05)),
-            'mean': float(np.mean(arr)),
-            'median': float(np.median(arr)),
             'max': float(np.max(arr)),
             'min': float(np.min(arr)),
-            'std': float(np.std(arr)),
             'above_3pct': float(np.mean(arr > 0.03)),
             'above_5pct': float(np.mean(arr > 0.05)),
             'above_10pct': float(np.mean(arr > 0.10)),
+            'cost_note': COST_NOTE,
+        })
+
+        # 分子期稳定性：按信号年份分别给 count/win_rate/mean
+        by_year = {}
+        for dt, r in zip(dates or [], arr):
+            yr = str(dt)[:4]
+            if yr.isdigit():
+                by_year.setdefault(yr, []).append(float(r))
+        stats['by_year'] = {
+            y: {
+                'count': len(v),
+                'win_rate': float(np.mean(np.array(v) > 0)),
+                'mean': float(np.mean(v)),
+            }
+            for y, v in sorted(by_year.items())
         }
+
+        summary['forward_returns'][str(days)] = stats
     sorted_signals = sorted(
         result.get('signals', []),
         key=lambda x: x.get('composite_score', 0),

@@ -338,6 +338,10 @@ class MainUptrendEngine:
         candidates.sort(key=lambda x: x['composite_score'], reverse=True)
 
         # 过滤低综合分信号（保留综合分前15名）
+        _n_launch_raw = sum(1 for c in candidates if c['signal_type'] == 'launch')
+        _n_trend_raw = sum(1 for c in candidates if c['signal_type'] == 'trend')
+        logger.info(f"[归因] {eval_date}: C过{len(c_signals)} E过{len(e_passed_codes)} D过{len(d_passed_set)}"
+                    f" -> launch候选{_n_launch_raw}(需E确认) + trend候选{_n_trend_raw} = {len(candidates)}")
         candidates = candidates[:15]
 
         # 入场量能确认：过滤掉当日量比<1.2的候选（无量上涨不可靠）

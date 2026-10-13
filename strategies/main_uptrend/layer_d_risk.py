@@ -32,6 +32,8 @@ from zoneinfo import ZoneInfo
 
 from .config import MainUptrendConfig
 from .data_loader import DataLoader
+from .indicators import limit_up_mask
+from ..shared.board_rules import is_limit_up as board_is_limit_up
 
 logger = logging.getLogger(__name__)
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
@@ -150,10 +152,11 @@ class LayerDRiskFilter:
             d2_fail = pool_df['ts_code'].isin(self._reduction_cache)
 
         # ---- D3: 诱多型涨停（向量化） ----
+        # 2026-10-13 参数审查（涨停口径）：改用 shared/board_rules 判定，
+        # 修复旧写法"小数阈值 0.097/0.197 去比百分数 pct_chg"的单位错位，
+        # 并补上 301/302/303/689 与北交所 ±30% 的板块覆盖。
         pct_chg = pool_df['pct_chg'].fillna(0)
-        is_kcb_cyb = pool_df.get('is_kcb_cyb', pd.Series(False, index=pool_df.index))
-        limit_pct = np.where(is_kcb_cyb, 0.197, 0.097)
-        is_zt = pct_chg >= limit_pct - 0.003
+        is_zt = limit_up_mask(pool_df['ts_code'].values, pct_chg.values)
 
         vol_ratio = pool_df.get('volume_ratio_20', pd.Series(0, index=pool_df.index)).fillna(0)
         seal_quality = pool_df.get('seal_quality_est', pd.Series(0, index=pool_df.index)).fillna(0)
@@ -398,11 +401,12 @@ class LayerDRiskFilter:
             return False
 
         last = df.iloc[-1]
-        pct = float(last["pct_chg"])
+        today_close = float(last["close"])
+        prev_close = float(df["close"].iloc[-2])
 
-        from .indicators import detect_limit_up_pct, is_limit_up
-        limit_pct = detect_limit_up_pct(ts_code)
-        if not is_limit_up(pct, limit_pct):
+        # 2026-10-13 参数审查（涨停口径）：改用 shared/board_rules 按板块真实涨停价判断
+        #（旧 detect_limit_up_pct 只认 300/688，漏掉 301/302/303/689 与北交所 ±30%）
+        if not board_is_limit_up(ts_code, today_close, prev_close):
             return False
 
         vol_ratio = (

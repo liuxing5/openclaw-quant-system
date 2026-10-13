@@ -4,20 +4,25 @@
 v1.0: 从 zuiyou1 和 aggregate 中提取重复的量化评分代码，
       统一评分权重和阈值，避免维护不一致。
 
-评分维度（总分100）:
+评分维度（2026-10-13 参数审查后）:
   - 涨幅评分: 0-30
   - 换手率评分: 0-30
   - 成交额评分: 0-40
   - 振幅评分: 0-10
-  - 量比评分: 0-15
+  - 量比评分: -5~15
   - 委比评分: -5~10
-  - 大单净量: -10~15
-  - 主力资金: -5~10
+  - 大单净量: -5~7.5   （原 -10~15，订单分类不可靠，降权 50%）
+  - 主力资金: 0         （原 -5~10，已剔除：无独立预测力）
   - 强势股排名: 0-30
   - 机构预期: 0-25
   - 概念板块: 0-10
   - PE/PB估值: -30~25
   - 财务质量: -30~31
+
+2026-10-13 审查要点:
+  1) 主力净流入/大单净买在控制当日涨跌幅后预测力≈0（138万样本证伪），
+     主力资金维度置 0、大单维度降权 50%。
+  2) 各维度内的整数阈值（换手 5~8%、量比 1.5 等）为经验值，未经校准。
 """
 import math
 from typing import Dict, Optional, Tuple, List
@@ -103,6 +108,11 @@ def score_commission_ratio(commission_ratio: float) -> Tuple[float, List[str]]:
 
 
 def score_large_order_net(large_order_net: float) -> Tuple[float, List[str]]:
+    """大单净量评分 —— 已降权 50%（2026-10-13 审查）。
+
+    订单分类（大单/散户单）口径不可靠且与主力资金高度共线，
+    控制当日涨跌幅后无独立预测力，故分数乘 0.5（原 -10~15 → -5~7.5）。
+    """
     s = 0.0
     tags = []
     if large_order_net > 0:
@@ -111,19 +121,19 @@ def score_large_order_net(large_order_net: float) -> Tuple[float, List[str]]:
     elif large_order_net < -5:
         s = -10
         tags.append("大单净流出")
-    return s, tags
+    # 降权 50%（2026-10-13 审查：订单分类不可靠）
+    return s * 0.5, tags
 
 
 def score_main_force_net(main_force_net: float) -> Tuple[float, List[str]]:
-    s = 0.0
-    tags = []
-    if main_force_net > 0:
-        s = min(10, main_force_net / 1e6 * 2)
-        tags.append("主力流入")
-    elif main_force_net < -1e7:
-        s = -5
-        tags.append("主力流出")
-    return s, tags
+    """主力资金净流入评分 —— 已剔除，恒返回 (0, [])（2026-10-13 审查）。
+
+    138 万样本研究结论：控制当日涨跌幅后，主力净流入对次日收益
+    无独立预测力，故不参与打分。函数签名/调用方式保留以便回滚，
+    入参不再影响返回值。
+    """
+    _ = main_force_net  # 入参已不参与打分
+    return 0.0, []
 
 
 def score_strong_rank(strong_ranks: Optional[list]) -> Tuple[float, List[str]]:
@@ -297,7 +307,11 @@ def compute_quant_score(
 ) -> Tuple[float, List[str]]:
     """
     统一量化评分入口。返回 (quant_score, tags)。
-    quant_score 范围约 [-50, 200]，调用方负责归一化/封顶。
+
+    2026-10-13 审查后：主力资金维度贡献恒为 0（已剔除），
+    大单净量维度减半（原 -10~15 → -5~7.5）。
+    quant_score 理论范围约 [-75, 264]（各维度同时取极值，实际远低于此），
+    调用方负责归一化/封顶。
     """
     total = 0.0
     all_tags = []
@@ -320,10 +334,10 @@ def compute_quant_score(
     s, t = score_commission_ratio(commission_ratio)
     total += s; all_tags.extend(t)
 
-    s, t = score_large_order_net(large_order_net)
+    s, t = score_large_order_net(large_order_net)  # 内部已 ×0.5（降权）
     total += s; all_tags.extend(t)
 
-    s, t = score_main_force_net(main_force_net)
+    s, t = score_main_force_net(main_force_net)    # 恒为 (0, [])：主力资金维度已剔除
     total += s; all_tags.extend(t)
 
     s, t = score_strong_rank(strong_ranks)

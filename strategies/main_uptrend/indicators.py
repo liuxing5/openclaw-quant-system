@@ -50,6 +50,27 @@ def is_limit_up(pct_chg: float, limit_pct: float) -> bool:
     return pct_chg >= limit_pct - 0.003
 
 
+def limit_up_mask(ts_codes, pct_chg, tolerance_pp: float = 0.3):
+    """向量化涨停判断（输入 pct_chg 为百分数，如 10.02 表示 +10.02%）。
+
+    2026-10-13 参数审查（涨停口径）修复旧实现的两个问题：
+      1. 单位错位：旧写法 `np.where(is_kcb_cyb, 0.197, 0.097)` 拿小数阈值
+         去比百分数 pct_chg，等于"涨幅 >= 0.094% 就算涨停"，几乎全部误判；
+      2. 板块覆盖不全：只认 300/688，遗漏 301/302/303/689 与北交所 ±30%。
+    改用 shared/board_rules.limit_pct（已验证），阈值 = 板块涨跌幅限制(%) - 容差，
+    容差用于吸收涨停价四舍五入到分带来的 0.1~0.3pp 缺口。
+    （board_rules.is_limit_up 需要 prev_close，指标快照中没有该列，
+      故向量化路径走 pct_chg + 板块限制口径，语义等价。）
+    """
+    from ..shared.board_rules import limit_pct as board_limit_pct
+    codes = list(ts_codes)
+    thr = np.fromiter(
+        (board_limit_pct(c) * 100.0 - tolerance_pp for c in codes),
+        dtype=np.float64, count=len(codes),
+    )
+    return np.asarray(pct_chg, dtype=np.float64) >= thr
+
+
 def box_range(high: pd.Series, low: pd.Series, n: int = 60) -> pd.DataFrame:
     upper = high.rolling(n, min_periods=n).max()
     lower = low.rolling(n, min_periods=n).min()

@@ -133,7 +133,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 五策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-10-13 | 生成: 2026-10-13 17:11:31
+        报告日期: 2026-10-13 | 生成: 2026-10-14 03:36:08
         <input type="date" class="date-input" id="datePicker" value="2026-10-13" min="2026-01-05" max="2026-10-13" onchange="switchDate(this.value)">
       </div>
     </div>
@@ -202,7 +202,60 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
               <span class="step-pass">3</span>
               <span class="elim">1</span>
               <span class="rule-inline">综合评分≥阈值(85+)，量化+情绪加权</span>
-            </div><div class="step-note"> 情绪高潮(93分)</div></div>
+            </div><div class="step-note"> 情绪高潮(93分)</div><div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">📈 历史候选前向收益（重算口径）<br>样本 2026-01-05 ~ 2026-10-13 · 候选 802 只 · T+1 open entry (no gap-up veto), net of 0.25% round-trip cost; benchmark = equal-weight all-market (T+1 open amount>=1e8)</div>
+    <div style="overflow-x:auto;margin:8px 0;">
+    <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">前向收益统计</div>
+    <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
+    <thead><tr style="background:var(--metric-bg)">
+      <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th>
+      <th>&gt;5%</th><th>&gt;10%</th><th>t值</th><th>基准</th><th>超额</th><th>非重叠子样本</th>
+    </tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>10日</strong></td>
+          <td>494</td>
+          <td style="color:#f85149"><strong>32.6%</strong></td>
+          <td>-2.88%</td>
+          <td>-4.29%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-1.64</td>
+          <td>-1.48%</td>
+          <td style="color:#f85149">-1.41%</td>
+          <td>n=17 +0.33% t=0.10</td>
+        </tr>
+        <tr>
+          <td><strong>20日</strong></td>
+          <td>453</td>
+          <td style="color:#f85149"><strong>28.5%</strong></td>
+          <td>-4.33%</td>
+          <td>-6.70%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-1.15</td>
+          <td>-2.36%</td>
+          <td style="color:#f85149">-1.98%</td>
+          <td>n=8 +9.40% t=1.07</td>
+        </tr>
+        <tr>
+          <td><strong>60日</strong></td>
+          <td>289</td>
+          <td style="color:#f85149"><strong>18.0%</strong></td>
+          <td>-13.00%</td>
+          <td>-16.39%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-1.50</td>
+          <td>-7.06%</td>
+          <td style="color:#f85149">-5.94%</td>
+          <td>n=2 -21.29% t=-23.72**</td>
+        </tr></tbody>
+    </table>
+    <div style="font-size:.62rem;color:var(--text-secondary);margin-top:4px;">
+      含 0.25% 往返成本 · t 值按重叠窗口有效样本量 n=count/窗口 校正（* p&lt;0.05，** p&lt;0.01）
+      · 基准=全市场等权同窗口 · 非重叠=窗口不重叠的独立子样本
+    </div>
+    </div><div style="font-size:.66rem;color:var(--text-secondary);margin-top:4px;">隔夜段 -0.64% t=-5.28 · 日内段 -0.27% t=-1.66（验证"A股隔夜收益为负"文献结论）</div></div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 (2只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>
       <div class="cards-grid"><div class="path-group"><div class="cards-grid">
         <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600556','_blank')" style="cursor:pointer">
@@ -245,55 +298,55 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
     <!-- ========== 七步漏斗 ========== -->
     <div class="section">
-      <h2>🎯 七步漏斗选股<span class="section-subtitle">2026-10-13 15:12:04</span></h2>
+      <h2>🎯 七步漏斗选股<span class="section-subtitle">2026-10-13 17:15:01</span></h2>
       <div class="steps-area">
             <div class="step-row" title="A股全市场日成交额>1亿">
               <span class="step-icon">📊</span>
               <span class="step-name">全市场</span>
-              <span class="step-pass">1986</span>
+              <span class="step-pass">2875</span>
               
               <span class="rule-inline">A股全市场日成交额>1亿</span>
             </div>
-            <div class="step-row" title="⚠️限仓">
+            <div class="step-row" title="✅满仓">
               <span class="step-icon">🌤️</span>
               <span class="step-name">L0 大盘风控</span>
-              <span class="step-pass">0</span>
+              <span class="step-pass">1</span>
               
-              <span class="rule-inline">⚠️限仓</span>
+              <span class="rule-inline">✅满仓</span>
             </div>
             <div class="step-row" title="剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%">
               <span class="step-icon">⚡</span>
               <span class="step-name">L1 硬性防雷</span>
-              <span class="step-pass">1756</span>
-              <span class="elim">230</span>
+              <span class="step-pass">2632</span>
+              <span class="elim">243</span>
               <span class="rule-inline">剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%</span>
             </div>
-            <div class="step-row" title="20日均成交额>1亿；流通市值>20亿；换手率3~15%">
+            <div class="step-row" title="20日均成交额>1亿；流通市值>20亿；换手率3~15%（⚠绝对阈值待分位数化）">
               <span class="step-icon">💧</span>
               <span class="step-name">L2 流动性</span>
-              <span class="step-pass">1651</span>
-              <span class="elim">105</span>
-              <span class="rule-inline">20日均成交额>1亿；流通市值>20亿；换手率3~15%</span>
+              <span class="step-pass">630</span>
+              <span class="elim">2002</span>
+              <span class="rule-inline">20日均成交额>1亿；流通市值>20亿；换手率3~15%（⚠绝对阈值待分位数化）</span>
             </div>
             <div class="step-row" title="周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12">
               <span class="step-icon">📈</span>
               <span class="step-name">L3 趋势结构</span>
-              <span class="step-pass">267</span>
-              <span class="elim">1384</span>
+              <span class="step-pass">113</span>
+              <span class="elim">517</span>
               <span class="rule-inline">周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12</span>
             </div>
-            <div class="step-row" title="量比1.5~3.0；乖离率<6%；需求吸收K线或强势接力形态">
+            <div class="step-row" title="量比1.5~3.0；RSI>75；近5日涨幅>15%；需求吸收K线或强势接力形态（乖离率/EMA12距离两项冗余条件已停用）">
               <span class="step-icon">🚀</span>
               <span class="step-name">L4 动能信号</span>
-              <span class="step-pass">11</span>
-              <span class="elim">256</span>
-              <span class="rule-inline">量比1.5~3.0；乖离率<6%；需求吸收K线或强势接力形态</span>
+              <span class="step-pass">4</span>
+              <span class="elim">109</span>
+              <span class="rule-inline">量比1.5~3.0；RSI>75；近5日涨幅>15%；需求吸收K线或强势接力形态（乖离率/EMA12距离两项冗余条件已停用）</span>
             </div>
             <div class="step-row" title="综合评分≥80；涨幅3~5%；贴MA5；人气榜+LLM联动加分">
               <span class="step-icon">🔥</span>
               <span class="step-name">L5 人气精选</span>
               <span class="step-pass">0</span>
-              <span class="elim">11</span>
+              <span class="elim">4</span>
               <span class="rule-inline">综合评分≥80；涨幅3~5%；贴MA5；人气榜+LLM联动加分</span>
             </div>
             <div class="step-row" title="14:30后买入；止损=入场价-1ATR；目标=入场价+2ATR；盈亏比≥2:1">
@@ -302,27 +355,80 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
               <span class="step-pass">0</span>
               
               <span class="rule-inline">14:30后买入；止损=入场价-1ATR；目标=入场价+2ATR；盈亏比≥2:1</span>
-            </div></div>
+            </div><div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">📈 历史候选前向收益（重算口径）<br>样本 2026-01-05 ~ 2026-09-30 · 候选 373 只 · T+1 open entry (no gap-up veto), net of 0.25% round-trip cost; benchmark = equal-weight all-market (T+1 open amount>=1e8)</div>
+    <div style="overflow-x:auto;margin:8px 0;">
+    <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">前向收益统计</div>
+    <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
+    <thead><tr style="background:var(--metric-bg)">
+      <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th>
+      <th>&gt;5%</th><th>&gt;10%</th><th>t值</th><th>基准</th><th>超额</th><th>非重叠子样本</th>
+    </tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>10日</strong></td>
+          <td>348</td>
+          <td style="color:#f85149"><strong>40.5%</strong></td>
+          <td>-0.79%</td>
+          <td>-1.57%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-0.48</td>
+          <td>-0.53%</td>
+          <td style="color:#f85149">-0.26%</td>
+          <td>n=16 -2.19% t=-0.88</td>
+        </tr>
+        <tr>
+          <td><strong>20日</strong></td>
+          <td>322</td>
+          <td style="color:#f85149"><strong>39.8%</strong></td>
+          <td>-1.09%</td>
+          <td>-2.80%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-0.35</td>
+          <td>-0.96%</td>
+          <td style="color:#f85149">-0.13%</td>
+          <td>n=8 +2.20% t=0.37</td>
+        </tr>
+        <tr>
+          <td><strong>60日</strong></td>
+          <td>230</td>
+          <td style="color:#f85149"><strong>30.0%</strong></td>
+          <td>-6.66%</td>
+          <td>-11.39%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-0.50</td>
+          <td>-6.44%</td>
+          <td style="color:#f85149">-0.22%</td>
+          <td>n=3 -13.63% t=-1.43</td>
+        </tr></tbody>
+    </table>
+    <div style="font-size:.62rem;color:var(--text-secondary);margin-top:4px;">
+      含 0.25% 往返成本 · t 值按重叠窗口有效样本量 n=count/窗口 校正（* p&lt;0.05，** p&lt;0.01）
+      · 基准=全市场等权同窗口 · 非重叠=窗口不重叠的独立子样本
+    </div>
+    </div></div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 (0只)</h3>
       <div class="cards-grid"><div class="no-data">今日无推荐</div></div>
     </div>
 
     <!-- ========== LLM多源 ========== -->
     <div class="section">
-      <h2>🤖 LLM多源策略<span class="section-subtitle">2026-09-30 15:51:21</span></h2>
+      <h2>🤖 LLM多源策略<span class="section-subtitle">2026-10-13 23:17:54</span></h2>
       <div class="steps-area">
         <div class="step-row" title="6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐">
           <span class="step-name">多源信号采集</span>
-          <span class="step-pass">13</span>
+          <span class="step-pass">22</span>
           <span class="rule-inline">6大信号源聚合：龙虎榜/涨停板/个股研报/机构调研/盈利预测/巨潮公告，提取结构化推荐</span>
         </div>
         <div class="step-row" title="成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股">
           <span class="step-name">流动性过滤</span>
           <span class="rule-inline">成交额>1亿(涨停票>1亿/研报票>5000万)；剔除ST/次新股(上市<60天)；盘后模式剔除已涨停股</span>
         </div>
-        <div class="step-row" title="10维量化打分：涨幅(-3%~7%最优)/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100">
+        <div class="step-row" title="9维量化打分：涨幅(-3%~7%最优)/换手率/成交额/振幅/量比/委比/大单净量(降权50%)/强势股排名/机构预期，满分100（主力资金维度已剔除：无独立预测力，2026-10-13审查）">
           <span class="step-name">量化评分</span>
-          <span class="rule-inline">10维量化打分：涨幅(-3%~7%最优)/换手率/成交额/振幅/量比/委比/大单净量/主力资金/强势股排名/机构预期，满分100</span>
+          <span class="rule-inline">9维量化打分：涨幅(-3%~7%最优)/换手率/成交额/振幅/量比/委比/大单净量(降权50%)/强势股排名/机构预期，满分100（主力资金维度已剔除：无独立预测力，2026-10-13审查）</span>
         </div>
         <div class="step-row" title="PE/PB估值打分(PE<15加分/PE>60扣分)；净利润率/毛利率/负债率/现金流质量评估">
           <span class="step-name">估值与财务</span>
@@ -330,29 +436,172 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row" title="量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池">
           <span class="step-name">综合评分≥阈值</span>
-          <span class="step-pass">2</span>
+          <span class="step-pass">18</span>
           <span class="rule-inline">量化评分+LLM评分(多源强度×置信度加权)≥60分进入候选池</span>
         </div>
         <div class="step-row" title="综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只">
           <span class="step-name">精选标记</span>
-          <span class="step-pass">2</span>
+          <span class="step-pass">5</span>
           <span class="rule-inline">综合评分≥25分且多源交叉验证(≥2个独立信号源)标记为精选，最多取5只</span>
+        </div><div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">📈 历史候选前向收益（重算口径）<br>样本 2026-01-05 ~ 2026-10-13 · 候选 2518 只 · T+1 open entry (no gap-up veto), net of 0.25% round-trip cost; benchmark = equal-weight all-market (T+1 open amount>=1e8)</div>
+    <div style="overflow-x:auto;margin:8px 0;">
+    <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">前向收益统计</div>
+    <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
+    <thead><tr style="background:var(--metric-bg)">
+      <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th>
+      <th>&gt;5%</th><th>&gt;10%</th><th>t值</th><th>基准</th><th>超额</th><th>非重叠子样本</th>
+    </tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>10日</strong></td>
+          <td>2149</td>
+          <td style="color:#f85149"><strong>41.3%</strong></td>
+          <td>-0.75%</td>
+          <td>-2.70%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-0.73</td>
+          <td>-0.70%</td>
+          <td style="color:#f85149">-0.06%</td>
+          <td>n=18 -5.87% t=-2.00*</td>
+        </tr>
+        <tr>
+          <td><strong>20日</strong></td>
+          <td>2034</td>
+          <td style="color:#f85149"><strong>37.3%</strong></td>
+          <td>-1.41%</td>
+          <td>-4.60%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-0.68</td>
+          <td>-1.60%</td>
+          <td style="color:#3fb950">+0.18%</td>
+          <td>n=9 -3.73% t=-0.58</td>
+        </tr>
+        <tr>
+          <td><strong>60日</strong></td>
+          <td>1486</td>
+          <td style="color:#f85149"><strong>28.4%</strong></td>
+          <td>-5.62%</td>
+          <td>-14.36%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-0.80</td>
+          <td>-6.58%</td>
+          <td style="color:#3fb950">+0.95%</td>
+          <td>n=3 +12.03% t=0.46</td>
+        </tr></tbody>
+    </table>
+    <div style="font-size:.62rem;color:var(--text-secondary);margin-top:4px;">
+      含 0.25% 往返成本 · t 值按重叠窗口有效样本量 n=count/窗口 校正（* p&lt;0.05，** p&lt;0.01）
+      · 基准=全市场等权同窗口 · 非重叠=窗口不重叠的独立子样本
+    </div>
+    </div></div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (15只)</h3>
+      <div class="cards-grid">
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000498','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000498" target="_blank" style="color:inherit;text-decoration:none">000498.SZ</a></span>
+              <span class="cand-name">山东路桥</span>
+              
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">38</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">6.69</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">6.56</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">7.10</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">106</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000651','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000651" target="_blank" style="color:inherit;text-decoration:none">000651.SZ</a></span>
+              <span class="cand-name">格力电器</span>
+              
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">38</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">39.23</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">38.44</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">41.61</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">104</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-001246','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-001246" target="_blank" style="color:inherit;text-decoration:none">001246.SZ</a></span>
+              <span class="cand-name">C力勤资源</span>
+              
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">38</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">35.77</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">35.05</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">37.94</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">107</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-000099','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-000099" target="_blank" style="color:inherit;text-decoration:none">000099.SZ</a></span>
+              <span class="cand-name">中信海直</span>
+              
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">37</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">13.18</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">12.91</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">13.98</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">96</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股</div>
+        </div>
+        <div class="candidate-card selected" onclick="window.open('https://finance.baidu.com/stock/ab-600901','_blank')" style="cursor:pointer">
+          <div class="cand-header">
+            <div>
+              <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600901" target="_blank" style="color:inherit;text-decoration:none">600901.SH</a></span>
+              <span class="cand-name">江苏金租</span>
+              
+              <span class="src-badge">1源</span>
+            </div>
+            <span class="cand-score">36</span>
+          </div>
+          <div class="cand-metrics">
+            <div class="metric"><span class="mv">7.19</span><span class="ml">入场</span></div>
+            <div class="metric stop"><span class="mv">7.04</span><span class="ml">止损</span></div>
+            <div class="metric target"><span class="mv">7.62</span><span class="ml">目标</span></div>
+            <div class="metric"><span class="mv">94</span><span class="ml">量化分</span></div>
+          </div>
+          <div class="cand-tags">强势股</div>
         </div></div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 (0只)</h3>
-      <div class="cards-grid"><div class="no-data">今日无推荐</div></div>
     </div>
 
     <!-- ========== 主升浪 ========== -->
     <div class="section">
-      <h2>📈 主升浪检测<span class="section-subtitle">2026-10-13 02:09:24</span></h2>
+      <h2>📈 主升浪检测<span class="section-subtitle">2026-10-14 00:19:04</span></h2>
       <div class="steps-area">
         <div class="step-row">
           <span class="step-name">运行时间</span>
-          <span class="step-pass">2026-10-13 02:09:24</span>
+          <span class="step-pass">2026-10-14 00:19:04</span>
         </div>
         <div class="step-row">
           <span class="step-name">A 层预筛池</span>
-          <span class="step-pass">2721 只</span>
+          <span class="step-pass">0 只</span>
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">A1 业绩加速</span>
@@ -364,7 +613,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">A3 行业景气</span>
-          <span class="rule-inline">申万二级行业近20日涨幅排名前30%</span>
+          <span class="rule-inline">申万二级行业近60日涨幅排名前50%（2026-10-13: 形成期20→60日，避开A股反转区间）</span>
         </div>
         <div class="step-row">
           <span class="step-name">B 层启动信号</span>
@@ -380,7 +629,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">B3 主力资金</span>
-          <span class="rule-inline">主力净流入占比 &gt; 5% 且净额为正</span>
+          <span class="rule-inline">已降级为弱加权项，不再一票否决（主力净流入无独立预测力，2026-10-13审查）</span>
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">B4 封单质量</span>
@@ -433,9 +682,150 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         <div class="step-row">
           <span class="step-name">最终候选</span>
           <span class="step-pass">0 只</span>
+        </div>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
+        <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:6px;">📊 回测统计</div>
+        <div class="step-row">
+          <span class="step-name">回测区间</span>
+          <span class="rule-inline">2025-12-01 ~ 2026-05-27</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">总信号数</span>
+          <span class="step-pass">13</span>
+        </div>
+        
+    <div style="overflow-x:auto;margin:8px 0;">
+    <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">前向收益统计</div>
+    <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
+    <thead><tr style="background:var(--metric-bg)">
+      <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th>
+      <th>&gt;5%</th><th>&gt;10%</th><th>t值</th><th>基准</th><th>超额</th><th>非重叠子样本</th>
+    </tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>10日</strong></td>
+          <td>12</td>
+          <td style="color:#f85149"><strong>41.7%</strong></td>
+          <td>+0.01%</td>
+          <td>-0.29%</td>
+          <td>16.7%</td>
+          <td>8.3%</td>
+          <td>0.00</td>
+          <td>—</td>
+          <td style="color:#f85149">—</td>
+          <td>n=5 +1.56% t=1.29</td>
+        </tr>
+        <tr>
+          <td><strong>20日</strong></td>
+          <td>10</td>
+          <td style="color:#f85149"><strong>40.0%</strong></td>
+          <td>-1.49%</td>
+          <td>-2.48%</td>
+          <td>20.0%</td>
+          <td>10.0%</td>
+          <td>-0.21</td>
+          <td>—</td>
+          <td style="color:#f85149">—</td>
+          <td>n=3 +1.51% t=0.32</td>
+        </tr>
+        <tr>
+          <td><strong>60日</strong></td>
+          <td>6</td>
+          <td style="color:#f85149"><strong>0.0%</strong></td>
+          <td>-10.54%</td>
+          <td>-10.13%</td>
+          <td>0.0%</td>
+          <td>0.0%</td>
+          <td>-1.29</td>
+          <td>—</td>
+          <td style="color:#f85149">—</td>
+          <td>n=1 -6.60% t=0.00</td>
+        </tr></tbody>
+    </table>
+    <div style="font-size:.62rem;color:var(--text-secondary);margin-top:4px;">
+      含 0.25% 往返成本 · t 值按重叠窗口有效样本量 n=count/窗口 校正（* p&lt;0.05，** p&lt;0.01）
+      · 基准=全市场等权同窗口 · 非重叠=窗口不重叠的独立子样本
+    </div>
+    </div>
+        
         </div></div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">今日候选</h3>
-      <div class="cards-grid"><div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div></div>
+      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">回测 Top 5 (13只)</h3>
+      <div class="cards-grid">
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-300059','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-300059" target="_blank" style="color:inherit;text-decoration:none">300059.SZ</a></span>
+                  <span class="cand-name"></span>
+                </div>
+                <span class="cand-score">27</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">-6.7%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">-10.5%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">-22.6%</span><span class="ml">60日</span></div>
+              </div>
+              
+            </div>
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-600276','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600276" target="_blank" style="color:inherit;text-decoration:none">600276.SH</a></span>
+                  <span class="cand-name"></span>
+                </div>
+                <span class="cand-score">27</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">-0.3%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">-5.1%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">—</span><span class="ml">60日</span></div>
+              </div>
+              
+            </div>
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-601658','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-601658" target="_blank" style="color:inherit;text-decoration:none">601658.SH</a></span>
+                  <span class="cand-name"></span>
+                </div>
+                <span class="cand-score">26</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">-0.2%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">0.5%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">—</span><span class="ml">60日</span></div>
+              </div>
+              
+            </div>
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-601988','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-601988" target="_blank" style="color:inherit;text-decoration:none">601988.SH</a></span>
+                  <span class="cand-name"></span>
+                </div>
+                <span class="cand-score">26</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">5.8%</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">8.1%</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">—</span><span class="ml">60日</span></div>
+              </div>
+              
+            </div>
+            <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-600900','_blank')" style="cursor:pointer">
+              <div class="cand-header">
+                <div>
+                  <span class="cand-code"><a href="https://finance.baidu.com/stock/ab-600900" target="_blank" style="color:inherit;text-decoration:none">600900.SH</a></span>
+                  <span class="cand-name"></span>
+                </div>
+                <span class="cand-score">26</span>
+              </div>
+              <div class="cand-metrics">
+                <div class="metric"><span class="mv">—</span><span class="ml">10日</span></div>
+                <div class="metric"><span class="mv">—</span><span class="ml">20日</span></div>
+                <div class="metric"><span class="mv">—</span><span class="ml">60日</span></div>
+              </div>
+              
+            </div></div>
     </div>
 
     <!-- ========== 回调买入法 ========== -->
@@ -446,30 +836,30 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
           <span class="step-name">扫描日期</span>
           <span class="rule-inline">2026-10-13</span>
         </div>
-        <div class="step-row" title="成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停">
+        <div class="step-row" title="成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停(按板块规则)">
           <span class="step-name">流动性/风控</span>
           <span class="step-pass">3813</span>
-          <span class="rule-inline">成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停</span>
+          <span class="rule-inline">成交额≥0.5亿 · 股价≥3元 · 非ST · 上市≥60天 · 当日未涨停(按板块规则)</span>
         </div>
-        <div class="step-row" title="20日动能≥20% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50">
+        <div class="step-row" title="120日动能居当日截面前30% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50">
           <span class="step-name">强势股筛选</span>
           <span class="step-pass">100</span>
-          <span class="rule-inline">20日动能≥20% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50</span>
+          <span class="rule-inline">120日动能居当日截面前30% · EMA9>EMA21>EMA50 多头 · 收盘>EMA50</span>
         </div>
-        <div class="step-row" title="自20日高点回撤5%~30% · 低点触及EMA21/EMA50(±3%) · 回调段缩量">
+        <div class="step-row" title="自20日高点回撤5%~25% · 低点触及EMA21/EMA50(±3%) · 回调段缩量">
           <span class="step-name">回调至支撑</span>
           <span class="step-pass">14</span>
-          <span class="rule-inline">自20日高点回撤5%~30% · 低点触及EMA21/EMA50(±3%) · 回调段缩量</span>
+          <span class="rule-inline">自20日高点回撤5%~25% · 低点触及EMA21/EMA50(±3%) · 回调段缩量</span>
         </div>
         <div class="step-row" title="收阳 · 收盘>前日收盘 · 重新站上EMA21">
           <span class="step-name">回升确认</span>
           <span class="step-pass">10</span>
           <span class="rule-inline">收阳 · 收盘>前日收盘 · 重新站上EMA21</span>
         </div>
-        <div class="step-row" title="止损=支撑下方1% · 风险≤3% · 目标=入场+2×风险">
-          <span class="step-name">紧止损达标</span>
-          <span class="step-pass">10</span>
-          <span class="rule-inline">止损=支撑下方1% · 风险≤3% · 目标=入场+2×风险</span>
+        <div class="step-row" title="止损=min(结构止损, 1.5×ATR14) · 风险≤6% · 目标=入场+2×风险">
+          <span class="step-name">波动率止损达标</span>
+          <span class="step-pass">—</span>
+          <span class="rule-inline">止损=min(结构止损, 1.5×ATR14) · 风险≤6% · 目标=入场+2×风险</span>
         </div>
         <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);">
         <div style="font-size:.75rem;color:var(--text-secondary);margin-bottom:6px;">📊 回测统计（T+1开盘入场 · 含止损/止盈模拟）</div>
@@ -479,48 +869,77 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row">
           <span class="step-name">成交笔数</span>
-          <span class="step-pass">6552</span>
-          <span class="rule-inline">胜率33.3% · 均值-0.2% · 持有2.7日</span>
+          <span class="step-pass">24878</span>
+          <span class="rule-inline">胜率39.2% · 均值+0.2% · t=4.22** · 持有6.0日</span>
         </div>
         <div class="step-row">
           <span class="step-name">出场分布</span>
-          <span class="rule-inline">止损 4362 · 止盈 2162 · 超时 28</span>
+          <span class="rule-inline">止损 13177 · 止盈 6705 · 超时 4996</span>
         </div>
-        <div style="overflow-x:auto;margin:8px 0;">
-        <table style="width:100%;font-size:.7rem;border-collapse:collapse;white-space:nowrap;">
-        <thead><tr style="background:var(--metric-bg)">
-          <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th><th>&gt;5%</th><th>&gt;10%</th>
-        </tr></thead>
-        <tbody>
-            <tr>
-              <td><strong>10日</strong></td>
-              <td>6381</td>
-              <td style="color:#f85149"><strong>43.6%</strong></td>
-              <td>0.4%</td>
-              <td>-1.6%</td>
-              <td>29.8%</td>
-              <td>19.7%</td>
-            </tr>
-            <tr>
-              <td><strong>20日</strong></td>
-              <td>6267</td>
-              <td style="color:#f85149"><strong>41.0%</strong></td>
-              <td>-1.0%</td>
-              <td>-3.5%</td>
-              <td>30.0%</td>
-              <td>21.9%</td>
-            </tr>
-            <tr>
-              <td><strong>60日</strong></td>
-              <td>5542</td>
-              <td style="color:#f85149"><strong>40.5%</strong></td>
-              <td>1.7%</td>
-              <td>-5.9%</td>
-              <td>34.3%</td>
-              <td>29.3%</td>
-            </tr></tbody>
-        </table>
-        </div>
+        
+    <div style="overflow-x:auto;margin:8px 0;">
+    <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">前向收益统计</div>
+    <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
+    <thead><tr style="background:var(--metric-bg)">
+      <th>持有期</th><th>样本</th><th>胜率</th><th>均值</th><th>中位数</th>
+      <th>&gt;5%</th><th>&gt;10%</th><th>t值</th><th>基准</th><th>超额</th><th>非重叠子样本</th>
+    </tr></thead>
+    <tbody>
+        <tr>
+          <td><strong>10日</strong></td>
+          <td>24429</td>
+          <td style="color:#f85149"><strong>46.0%</strong></td>
+          <td>+0.68%</td>
+          <td>-0.98%</td>
+          <td>28.8%</td>
+          <td>17.6%</td>
+          <td>2.45*</td>
+          <td>+0.91%</td>
+          <td style="color:#f85149">-0.23%</td>
+          <td>n=42 +0.48% t=0.22</td>
+        </tr>
+        <tr>
+          <td><strong>20日</strong></td>
+          <td>24062</td>
+          <td style="color:#f85149"><strong>44.3%</strong></td>
+          <td>+0.35%</td>
+          <td>-2.06%</td>
+          <td>31.5%</td>
+          <td>22.1%</td>
+          <td>0.63</td>
+          <td>+1.75%</td>
+          <td style="color:#f85149">-1.40%</td>
+          <td>n=21 +1.20% t=0.27</td>
+        </tr>
+        <tr>
+          <td><strong>60日</strong></td>
+          <td>23147</td>
+          <td style="color:#f85149"><strong>46.4%</strong></td>
+          <td>+4.54%</td>
+          <td>-2.02%</td>
+          <td>38.1%</td>
+          <td>31.5%</td>
+          <td>2.75**</td>
+          <td>+3.85%</td>
+          <td style="color:#3fb950">+0.69%</td>
+          <td>n=7 +3.03% t=0.20</td>
+        </tr></tbody>
+    </table>
+    <div style="font-size:.62rem;color:var(--text-secondary);margin-top:4px;">
+      含 0.25% 往返成本 · t 值按重叠窗口有效样本量 n=count/窗口 校正（* p&lt;0.05，** p&lt;0.01）
+      · 基准=全市场等权同窗口 · 非重叠=窗口不重叠的独立子样本
+    </div>
+    </div>
+        
+    <div style="overflow-x:auto;margin:8px 0;">
+    <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">📅 分子期稳定性（检验结果是否由单段行情主导）</div>
+    <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
+    <thead><tr style="background:var(--metric-bg)">
+      <th>年份</th><th>样本</th><th>胜率</th><th>出场均值</th><th>前向10日均值</th><th>前向10日胜率</th>
+    </tr></thead>
+    <tbody><tr><td>2025</td><td>16670</td><td>40.7%</td><td>+0.38%</td><td>+0.87%</td><td>46.8%</td></tr><tr><td>2026</td><td>8208</td><td>36.1%</td><td>-0.08%</td><td>+0.27%</td><td>44.2%</td></tr></tbody>
+    </table>
+    </div>
         </div></div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">今日候选 (10只)</h3>
       <div class="cards-grid">

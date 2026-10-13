@@ -24,6 +24,8 @@ from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_d
 load_project_env()
 
 RUN_MODE = os.getenv('RUN_MODE', 'afternoon')
+# ⚠ 经验阈值，未经校准（2026-10-13 参数审查）：25 分为人工设定，
+# 未做分位数化/前向收益校准，换市场 regime 后通过率会漂移。
 MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '25'))
 MAX_SELECTED = 5
 MIN_LIQUIDITY = 1e8
@@ -408,16 +410,18 @@ def aggregate_today():
                     quant_score -= 5  # 卖盘压力大
 
                 # 大单净量评分：大单净量>0表示主力买入
+                # ⚠ 2026-10-13 审查：shared.quant_scorer 已对大单降权 50%
+                #   （订单分类不可靠）；本内联副本按本次审查指令保持原权重，
+                #   待分位数/前向收益校准后与 quant_scorer 同步口径。
                 if large_order_net > 0:
                     quant_score += min(15, large_order_net * 5)
                 elif large_order_net < -5:
                     quant_score -= 10  # 大单卖出，减分
 
-                # 主力资金净流入评分
-                if main_force_net > 0:
-                    quant_score += min(10, main_force_net / 1e6 * 2)  # 每百万加2分，最多10分
-                elif main_force_net < -1e7:
-                    quant_score -= 5  # 主力大幅流出
+                # 主力资金净流入评分 —— 已剔除（2026-10-13 审查）：
+                # 控制当日涨跌幅后主力净流入无独立预测力（138万样本证伪），
+                # 故不再给分，恒为 0。
+                _ = main_force_net  # 不参与打分
 
                 # 强势股加分
                 if ts in strong_rank_cache:
@@ -679,16 +683,15 @@ def aggregate_today():
                     quant_score -= 5
 
                 # 大单净量评分：大单净量>0表示主力买入
+                # ⚠ 2026-10-13 审查：同上，本内联副本保持原权重，待校准后同步。
                 if large_order_net > 0:
                     quant_score += min(15, large_order_net * 5)
                 elif large_order_net < -5:
                     quant_score -= 10
 
-                # 主力资金净流入评分
-                if main_force_net > 0:
-                    quant_score += min(10, main_force_net / 1e6 * 2)
-                elif main_force_net < -1e7:
-                    quant_score -= 5
+                # 主力资金净流入评分 —— 已剔除（2026-10-13 审查）：
+                # 控制当日涨跌幅后主力净流入无独立预测力，恒为 0 分。
+                _ = main_force_net  # 不参与打分
 
                 # 强势股加分
                 if ts_code in strong_rank_cache:
@@ -862,6 +865,13 @@ def aggregate_today():
                     continue
 
                 if 4 < pct < limit and c.get('turnover_rate', 0) > 5:
+                    # ⚠ 已知问题（2026-10-13 审查，暂不改行为）：
+                    # 此处对已归一化合成的 final_score 直接 ×1.2，
+                    # 与 LLM 分/量化分的几何加权链路相互叠加，可能把
+                    # final_score 推高至理论上限(100)以上，并与
+                    # MIN_SELECT_SCORE 阈值口径不一致。
+                    # 属于"准涨停"动量加成，改动会直接影响入池结果，
+                    # 待前向收益重算给出依据后再改为对同量纲分量加权。
                     c['final_score'] *= 1.2
                     if 'logic_tags' not in c:
                         c['logic_tags'] = []

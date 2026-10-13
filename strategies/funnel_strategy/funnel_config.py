@@ -3,6 +3,9 @@
 ===================================
 吸收策略来源标注: [①基本面] [②均线/趋势] [③八步法] [④纪律] [⑤VWAP/价格行为]
                   [⑥人气榜] [⑦海龟风控]
+
+2026-10-13 参数审查：本文件阈值绝大多数为人工设定的绝对值，
+未做截面分位数化或前向收益校准（详见各字段 ⚠ 注释）。
 """
 from __future__ import annotations
 
@@ -18,8 +21,8 @@ class FunnelConfig:
     # Layer 0: 大盘风控（盘前）[③看大盘控仓位]
     # ================================================================
     layer0_enabled: bool = True
-    layer0_min_advancers: int = 1500          # 两市上涨≥此数才荐股（或广度占比≥30%）
-    layer0_min_breadth_ratio: float = 0.30     # 广度占比最低30%（替代方案）
+    layer0_min_advancers: int = 1500          # ⚠ 绝对阈值，随 regime 漂移，待分位数化 —— 2026-10-13 起已退出判定，仅作日志/报告展示
+    layer0_min_breadth_ratio: float = 0.30     # 判定口径：上涨占比 adv/(adv+dec) ≥ 30%（2026-10-13 审查：取代绝对家数）
     layer0_use_breadth_ema: bool = True        # 使用市场广度EMA替代指数EMA
     layer0_index_code: str = '000001.SH'       # 指数代码（仅breadth_ema=False时使用）
     layer0_index_ema_period: int = 20           # 广度/指数EMA周期
@@ -56,9 +59,13 @@ class FunnelConfig:
     layer2_enabled: bool = True
     layer2_min_avg_amount_20d: float = 1e8       # 20日日均成交额>1亿 [③八步法]
     layer2_min_circulating_mcap: float = 5e9     # 流通市值>50亿
-    layer2_max_circulating_mcap: float = 50e9   # 流通市值≤500亿
-    layer2_turn_rate_min: float = 3.0             # 换手率≥3% [③八步法]
-    layer2_turn_rate_max: float = 15.0            # 换手率≤15% [③八步法]
+    layer2_max_circulating_mcap: float = 50e9    # 流通市值≤500亿
+    # ⚠ 绝对阈值，随 regime 漂移，待分位数化（2026-10-13 审查）：
+    #   理想口径是「当日全市场换手率截面 P20~P95」，但 L2 只拿到 L1 之后的
+    #   股票池，且只加载该池的 turnover_rate，内存中没有全市场截面可 rank；
+    #   分位数化需改造数据流（全市场换手率查询），按保守原则暂保留绝对值。
+    layer2_turn_rate_min: float = 3.0             # ⚠ 换手率≥3% 绝对阈值（漂移风险，待分位数化）
+    layer2_turn_rate_max: float = 15.0            # ⚠ 换手率≤15% 绝对阈值（漂移风险，待分位数化）
 
     # ================================================================
     # Layer 3: 趋势结构过滤 [②20周保命法/均线多头/年线/右侧交易]
@@ -74,9 +81,9 @@ class FunnelConfig:
     layer3_trend_structure_modes: List[str] = field(
         default_factory=lambda: ['ascending_platform', 'pullback_support']
     )  # 上升平台 / 回踩支撑 [②右侧交易]
-    # P3: RSI 超买过滤（防止追高）
+    # P3: RSI 超买过滤（防止追高）—— 四项防追高条件精简后保留的两项之一
     layer3_rsi_period: int = 14                   # RSI 计算周期
-    layer3_max_rsi: float = 75.0                  # RSI > 75 视为超买，剔除
+    layer3_max_rsi: float = 75.0                  # RSI > 75 剔除 ⚠ 整数经验阈值，未经校准（2026-10-13 审查）
 
     # ================================================================
     # Layer 4: 动能与买入信号 [⑤价格行为/VWAP/一进二改良/布林反用]
@@ -89,15 +96,19 @@ class FunnelConfig:
     layer4_pullback_bounce_vol_ratio_min: float = 1.0   # 回踩反弹最低量比
     layer4_volume_ratio_min: float = 1.5            # 最小量比 [③八步法]
     layer4_volume_ratio_max: float = 3.0            # 最大量比
-    layer4_max_bias_pct: float = 4.0                # 最大乖离率% [③八步法]（从6%收紧到4%）
+    # ⚠ 防追高条件精简（2026-10-13 审查）：
+    #   L3 RSI>75 与 L4 近5日涨幅>15% 已覆盖"短期涨多追高"，
+    #   以下两项与之高度重复（乖离率/EMA12距离本质都是"离均线多远"，
+    #   与 RSI、近5日涨幅强共线），故停用；字段保留以便回滚。
+    layer4_max_bias_pct: float = 4.0                # ❌ 已停用（2026-10-13）原 [③八步法] 乖离率<4%，与 RSI/近5日涨幅重复
     layer4_vwap_tolerance: float = 0.01             # VWAP翘头容差 [⑤VWAP]
     layer4_require_no_upper_boll_blowout: bool = True  # 无天量上轨 [⑤布林反用]
     layer4_boll_blowout_vol_mult: float = 3.0       # 天量上轨量能倍数
-    # P4: 短期涨幅限制（防止追高）
-    layer4_max_recent_gain_pct: float = 15.0        # 近5日涨幅 > 15% 剔除
+    # P4: 短期涨幅限制（防止追高）—— 保留的两项防追高条件之一
+    layer4_max_recent_gain_pct: float = 15.0        # 近5日涨幅 > 15% 剔除 ⚠ 绝对阈值，随 regime 漂移，待分位数化
     layer4_recent_gain_days: int = 5                # 近期涨幅计算天数
-    # P5: 均线距离检测（防止偏离过大）
-    layer4_max_ema12_distance_pct: float = 3.0      # 股价距离 EMA12 > 3% 剔除
+    # P5: 均线距离检测 ❌ 已停用（2026-10-13）——与乖离率(同为 EMA12 偏离)完全冗余
+    layer4_max_ema12_distance_pct: float = 3.0      # ❌ 已停用，原 股价距 EMA12 > 3% 剔除
 
     # ================================================================
     # Layer 5: 人气精选 [③隔夜八步法/⑥人气榜]

@@ -7,8 +7,13 @@ from dataclasses import dataclass, field
 @dataclass
 class PullbackConfig:
     # ---- 步骤1: 强势股筛选 ----
-    momentum_lookback: int = 20       # 动能回看窗口(交易日)
-    min_momentum_pct: float = 20.0    # 20日累计涨幅 ≥ 20%
+    # 2026-10-13 参数审查修复:
+    #   - 原 20 日动能 ≥20% 落在 A 股"短期反转"区间（动量证据: <1周有效、
+    #     更长反转；中期 3~6 个月形成期才有动量证据）→ 改为 120 日形成期
+    #   - 原绝对阈值 20% 随 regime 漂移 → 改为当日截面百分位
+    momentum_lookback: int = 120      # 动能回看窗口(交易日, 中期动量形成期)
+    min_momentum_pctile: float = 70.0 # 当日截面动能百分位 ≥ 70（前30%）
+    min_momentum_pct: float = 0.0     # 绝对下限: 累计涨幅 > 0（只作正动量兜底）
     ema_fast: int = 9
     ema_mid: int = 21
     ema_slow: int = 50
@@ -25,10 +30,11 @@ class PullbackConfig:
     require_bullish_day: bool = True     # 当日收阳 (close > open)
     require_beat_prev_close: bool = True # 收盘高于前一日收盘
 
-    # ---- 步骤4: 紧止损入场 ----
+    # ---- 步骤4: 波动率止损入场 ----
     stop_lookback: int = 5            # 近5日低点
     stop_below_support_pct: float = 1.0  # 止损设在支撑下方 1%
-    max_risk_pct: float = 3.0         # 入场到止损的风险 ≤ 3%
+    atr_stop_mult: float = 1.5        # 止损至少 1.5×ATR14 宽（2026-10-13: 原3%比日噪声窄，67%被噪声止损）
+    max_risk_pct: float = 6.0         # 风险上限（原3%→6%，与1.5ATR下限配套）
     reward_risk: float = 2.0          # 目标 = 入场 + 2×风险
 
     # ---- 流动性/风控过滤 ----

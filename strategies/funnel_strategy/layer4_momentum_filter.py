@@ -4,7 +4,13 @@ Layer 4: 动能与买入信可
 决策逻辑：
   出现【需求吸收K线（EMA12附近锤子/刺通放量）】或
   【强势接力（昨日首板，今日回踩VWAP翘头）】；
-  同时量比1.5~3；乖离率<6%；未出现天量上轨禁止信号。
+  同时量比1.5~3；未出现天量上轨禁止信号。
+
+防追高条件精简（2026-10-13 参数审查）：
+  四项冗余条件中仅保留【L3 RSI>75】与【近5日涨幅>15%】两项；
+  本层原有的「乖离率<4%」「距EMA12<3%」两项已停用 ——
+  二者本质都是"离 EMA12 多远"，与 RSI、近5日涨幅高度共线，
+  属于同一风险的重复计量。bias_pct 仍会计算并写入 details 供标签/复盘展示。
 
 吸收策略：⑤价格行为/VWAP/一进二改良/红三兵限利布林上轨反用/箱体反转K线
 """
@@ -247,16 +253,14 @@ def _check_single(
         result['reject_reason'] = f'量比={vol_ratio:.1f}>{cfg.layer4_volume_ratio_max}'
         return result
 
-    # 2. 乖离率检查（从预计算读取：
+    # 2. 乖离率（2026-10-13 审查：已停用为拒单条件，仅记录供展示/标签）
+    #    与 L3 RSI>75、近5日涨幅>15% 高度重复（同为"离均线多远"的度量），
+    #    保留计算与记录，不再据此 reject。
     bias_pct = pre['bias_pct']
     result['bias_pct'] = round(bias_pct, 2)
     result['details']['bias_pct'] = round(bias_pct, 2)
 
-    if abs(bias_pct) > cfg.layer4_max_bias_pct:
-        result['reject_reason'] = f'乖离率{bias_pct:.1f}%>{cfg.layer4_max_bias_pct}%'
-        return result
-
-    # 2.1 短期涨幅限制（防止追高）
+    # 2.1 短期涨幅限制（防止追高）—— 保留的防追高条件之一
     max_recent_gain = getattr(cfg, 'layer4_max_recent_gain_pct', 15.0)
     recent_gain = pre.get('recent_gain_pct', 0.0)
     result['details']['recent_gain_pct'] = round(recent_gain, 1)
@@ -264,13 +268,10 @@ def _check_single(
         result['reject_reason'] = f'近{getattr(cfg, "layer4_recent_gain_days", 5)}日涨幅{recent_gain:.1f}%>{max_recent_gain:.0f}%'
         return result
 
-    # 2.2 均线距离检测（防止偏离过大）
-    max_ema12_dist = getattr(cfg, 'layer4_max_ema12_distance_pct', 3.0)
-    ema12_dist = pre.get('ema12_distance_pct', 999.0)
-    result['details']['ema12_distance_pct'] = round(ema12_dist, 1)
-    if ema12_dist > max_ema12_dist:
-        result['reject_reason'] = f'股价距EMA12{ema12_dist:.1f}%>{max_ema12_dist:.0f}%'
-        return result
+    # 2.2 均线距离检测 ❌ 已停用（2026-10-13 审查）：
+    #     ema12_distance_pct 与上面的乖离率 bias_pct 数学上完全等价
+    #     （仅差一个 abs），且与 RSI/近5日涨幅共线，四选二时删除本项。
+    result['details']['ema12_distance_pct'] = round(pre.get('ema12_distance_pct', 999.0), 1)
 
     # 3. 天量上轨禁止（从预计算读可avg_vol_20，避免ohlcv_cache 截断导致死代码）
     if cfg.layer4_require_no_upper_boll_blowout:
@@ -403,7 +404,8 @@ def run_layer4_momentum_filter(
         print(f"  [Layer 4] 动能与买入信号 —待筛通{n_total} 只)")
         print(f"{'─'*60}")
         print(f"  量比{cfg.layer4_volume_ratio_min}~{cfg.layer4_volume_ratio_max}  "
-              f"乖离<{cfg.layer4_max_bias_pct}%  "
+              f"近{getattr(cfg, 'layer4_recent_gain_days', 5)}日涨幅<{getattr(cfg, 'layer4_max_recent_gain_pct', 15.0)}%  "
+              f"(乖离/EMA12距离条件已停用, 2026-10-13)  "
               f"信号: 需求吸收{'✅' if cfg.layer4_enable_demand_absorption else '⏭️'}"
               f" 强势接力{'✅' if cfg.layer4_enable_strong_relay else '⏭️'}"
               f" 回踩反弹{'✅' if getattr(cfg, 'layer4_enable_pullback_bounce', False) else '⏭️'}")
@@ -423,7 +425,9 @@ def run_layer4_momentum_filter(
     if verbose:
         print(f"  ✅数据就绪: {n_loaded}/{n_total} 可(EMA/乖离/布林已预计算)")
 
-    # ── 阶段2: 快速预筛选（量比 + 乖离，纯 dict 查找）──
+    # ── 阶段2: 快速预筛选（仅量比，纯 dict 查找）──
+    # 2026-10-13 审查：原"量比 + 乖离"快速预筛中的乖离项已停用（与 RSI/近5日涨幅重复），
+    # 预筛只保留量比；乖离/EMA12 拒单逻辑同步删除。
     quick_pass = []
     reject_stats = {'量比不符': 0, '乖离超标': 0, '天量上轨': 0, '无买入信号': 0, '数据不足': 0}
 
@@ -437,15 +441,11 @@ def run_layer4_momentum_filter(
         if pd.isna(vr) or vr < cfg.layer4_volume_ratio_min or vr > cfg.layer4_volume_ratio_max:
             reject_stats['量比不符'] += 1
             continue
-        # 乖离快速过滤
-        if pd.isna(pre['bias_pct']) or abs(pre['bias_pct']) > cfg.layer4_max_bias_pct:
-            reject_stats['乖离超标'] += 1
-            continue
         quick_pass.append(ts_code)
 
     if verbose:
-        print(f"  ⚠快速预筛 {len(quick_pass)} 只通过量比+乖离 "
-              f"(淘汰量比{reject_stats['量比不符']} + 乖离{reject_stats['乖离超标']})")
+        print(f"  ⚠快速预筛 {len(quick_pass)} 只通过量比 "
+              f"(淘汰量比{reject_stats['量比不符']})")
 
     # ── 阶段3: K线形态并行检测（仅对预筛选通过的股票）──
     passed = []

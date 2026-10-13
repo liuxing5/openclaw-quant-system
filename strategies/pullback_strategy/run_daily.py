@@ -79,7 +79,7 @@ def persist_scan_stats(scan_date, counts: dict, total_scanned: int, total_passed
 def run(date: str | None = None):
     scan_date = date or latest_trade_date()
     # EMA50 + 20日动能需要预热期：往前多取 120 个自然日
-    start = str(datetime.strptime(scan_date, "%Y-%m-%d").date() - timedelta(days=150))
+    start = str(datetime.strptime(scan_date, "%Y-%m-%d").date() - timedelta(days=260))
     print(f"[回调买入法] 扫描日期={scan_date}  数据窗口={start} ~ {scan_date}")
 
     meta = engine.load_stock_meta()
@@ -100,7 +100,7 @@ def run(date: str | None = None):
     sigs = sigs.sort_values("final_score", ascending=False).head(CFG.top_n)
 
     total_scanned = counts.get("流动性/风控", 0)
-    total_passed = counts.get("紧止损达标", 0)
+    total_passed = counts.get("波动率止损达标", 0)
     persist_scan_stats(scan_date, counts, total_scanned, total_passed)
 
     items = []
@@ -120,7 +120,7 @@ def run(date: str | None = None):
             'target_1': round(target, 3),
             'target_2': round(entry + CFG.reward_risk * 1.5 * (entry - stop), 3),
             'logic_tags': [
-                f"强势股{r['mom20'] * 100:.0f}%",
+                f"动能分位{r['mom_pctile'] * 100:.0f}%",
                 f"回撤{(1 - r['low5'] / r['hi20_prev']) * 100:.0f}%",
                 f"止损{r['risk_pct'] * 100:.1f}%",
                 f"盈亏比{CFG.reward_risk:.0f}:1",
