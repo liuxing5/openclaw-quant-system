@@ -148,6 +148,12 @@ class MainUptrendConfig:
     b_top_n_daily: int = 50  # 放宽：5→50，允许更多启动信号进入C层
     c_top_n_daily: int = 5  # 收紧：8→5
 
+    # 大盘过热上闸（2026-10-14 收益改造）：信号日 breadth_ma20 >= 阈值 → 当日不开新仓。
+    # 证据(82 笔回测): b20>=0.6 桶 n=21 均值 -3.83% 胜率 9.5% t=-2.65*，其余宽度桶均值均为正；
+    # 启动/突破策略在过半个股已站上 MA20 时属"晚阶段追涨"(IBD 晚期市场预警)，胜率崩塌。
+    # 0=关闭门控。回测与实盘(run_daily)双路径生效。
+    max_breadth_ma20: float = 0.6
+
     backtest_start: str = "2025-01-01"
     backtest_end: str = "2026-05-15"
 

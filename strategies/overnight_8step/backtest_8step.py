@@ -10,6 +10,10 @@ from psycopg2.extras import RealDictCursor
 import time
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')))
+# 加载仓库根 .env（DATABASE_URL 等）。原实现依赖外部 shell 注入环境变量，
+# 脱离既有 shell/CI 直接运行会连到 localhost:5432 失败（2026-10-14 修复）。
+from dotenv import load_dotenv as _load_dotenv
+_load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '.env'))
 # 统一交易成本口径（买 0.10% + 卖 0.15% = 往返 0.25%），与其他回测一致
 from strategies.shared.backtest_stats import COST_NOTE, ROUND_TRIP_COST
 
@@ -35,6 +39,12 @@ VOL_RATIO_MAX = 8.0
 MA_WINDOW = 5
 VOL_LOOKBACK = 10
 MAX_PICKS_PER_DAY = 5
+
+# 市场宽度门控（2026-10-14 收益改造）：信号日全市场 %站上MA20 低于阈值 → 当日不开隔夜仓。
+# 证据（813 候选隔夜段 close[T]→open[T+1]）：b20<0.4 桶 -1.05%/夜 t=-6.61*，
+# b20>=0.5 桶 ≈-0.24%/夜（n.s.）；隔夜段整体 -0.67% t=-5.58 已无正期望，
+# 本门控仅为减损（无法转正），启用/停用决策见收益改造报告。0=关闭。
+MIN_MARKET_BREADTH = 0.5
 
 OUTPUT_FILE = r"d:\pythonProject\openclaw-quant-system\strategies\overnight_8step\backtest_result_holddays.txt"
 
@@ -265,6 +275,15 @@ def run_backtest(df, mode="both", hold_days=1):
     date_idx_map = {d: i for i, d in enumerate(trading_dates)}
     log(f"  总交易日: {len(trading_dates)}, 持股天数: {hold_days}")
 
+    # 市场宽度（每日 %站上MA20，原始价口径），供开仓门控使用
+    _ma20 = df.groupby("ts_code")["close"].transform(
+        lambda x: x.rolling(20, min_periods=20).mean())
+    _valid = _ma20.notna()
+    _num = ((df["close"] > _ma20) & _valid).groupby(df["trade_date"]).sum()
+    _den = _valid.groupby(df["trade_date"]).sum().replace(0, np.nan)
+    day_breadth = (_num / _den).to_dict()
+    n_gated = 0
+
     capital = INITIAL_CAPITAL
     trade_log = []
     total_trades = 0
@@ -281,6 +300,14 @@ def run_backtest(df, mode="both", hold_days=1):
         if t_date not in date_groups:
             i += 1
             continue
+
+        # 市场宽度门控（2026-10-14 收益改造）：宽度崩塌日不开隔夜仓
+        if MIN_MARKET_BREADTH > 0:
+            _b = day_breadth.get(t_date)
+            if _b is not None and not np.isnan(_b) and _b < MIN_MARKET_BREADTH:
+                n_gated += 1
+                i += 1
+                continue
 
         day_df = date_groups[t_date].copy()
         candidates = filter_candidates(day_df, mode=mode)
@@ -404,6 +431,8 @@ def run_backtest(df, mode="both", hold_days=1):
         else:
             i += 1
 
+    if MIN_MARKET_BREADTH > 0:
+        log(f"  [宽度门控] b20 < {MIN_MARKET_BREADTH} 跳过的开仓日: {n_gated}")
     return trade_log, capital, total_trades, win_trades
 
 
@@ -547,8 +576,8 @@ def main():
 
     log(f"\n{'=' * 100}")
 
-    _out.close()
     log(f"\n结果已保存到: {OUTPUT_FILE}")
+    _out.close()
 
 
 if __name__ == "__main__":

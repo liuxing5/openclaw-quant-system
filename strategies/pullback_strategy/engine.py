@@ -380,8 +380,36 @@ def generate_signals(df: pd.DataFrame, cfg: PullbackConfig, meta: pd.DataFrame,
     risk_pts = (1 - sig["risk_pct"] / (cfg.max_risk_pct / 100.0)) * 25
     sig["final_score"] = (mom_pts + depth_pts + risk_pts).round(1)
     sig["quant_score"] = sig["final_score"]
+
+    sig = apply_breadth_gate(sig, df, cfg)
+
     sig["step1_pass"] = 1
     return sig.reset_index(drop=True)
+
+
+def apply_breadth_gate(sig: pd.DataFrame, df: pd.DataFrame,
+                       cfg: PullbackConfig) -> pd.DataFrame:
+    """市场宽度门控（2026-10-14 收益改造，证据见 config.min_market_breadth）。
+
+    信号日全市场 %站上MA20（前复权口径，与诊断/离线模拟一致）低于阈值
+    → 剔除当日全部信号。cfg.min_market_breadth <= 0 时关闭门控。
+    """
+    if cfg.min_market_breadth <= 0 or sig.empty:
+        return sig
+    _ma20 = df.groupby("ts_code", sort=False)["close"].transform(
+        lambda s: s.rolling(20, min_periods=20).mean())
+    _valid = _ma20.notna()
+    _num = ((df["close"] > _ma20) & _valid).groupby(df["trade_date"]).sum()
+    _den = _valid.groupby(df["trade_date"]).sum().replace(0, np.nan)
+    _b20 = _num / _den
+    sig = sig.copy()
+    sig["_b20"] = sig["trade_date"].map(_b20)
+    n_before = len(sig)
+    sig = sig[sig["_b20"] >= cfg.min_market_breadth].drop(columns=["_b20"])
+    if n_before != len(sig):
+        logger.info(f"[宽度门控] 剔除 {n_before - len(sig)} 条信号"
+                    f"（b20 < {cfg.min_market_breadth}）, 余 {len(sig)}")
+    return sig
 
 
 def step_counts(df: pd.DataFrame, cfg: PullbackConfig, meta: pd.DataFrame,

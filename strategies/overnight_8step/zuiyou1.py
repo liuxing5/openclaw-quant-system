@@ -138,6 +138,42 @@ from typing import Tuple, Optional, List
 def _log(msg):
     print(msg, flush=True)
 
+# 市场宽度门控（2026-10-14 收益改造，与 backtest_8step 同口径）：
+# 信号日全市场 %站上MA20 低于阈值 → 当日不出隔夜信号。证据：隔夜段 b20<0.4 桶
+# -1.05%/夜 t=-6.61*，b20>=0.5 桶 ≈-0.24%/夜(n.s.)。门控为减损而非增益，
+# 启用/停用决策见收益改造报告。0=关闭。
+MIN_MARKET_BREADTH = 0.5
+
+
+def _market_breadth(as_of: str) -> Optional[float]:
+    """全市场 %站上MA20（原始价口径）。as_of 无行情日返回 None（不门控）。"""
+    try:
+        from core.db.connection import get_db_fresh
+        conn = get_db_fresh()
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                WITH m AS (
+                  SELECT ts_code, trade_date, close,
+                         AVG(close) OVER (PARTITION BY ts_code ORDER BY trade_date
+                                          ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS ma20
+                  FROM daily_quotes
+                  WHERE trade_date BETWEEN %s::date - 40 AND %s::date
+                    AND close IS NOT NULL
+                )
+                SELECT AVG(CASE WHEN close > ma20 THEN 1.0 ELSE 0.0 END)
+                FROM m
+                WHERE trade_date = %s::date AND ma20 IS NOT NULL
+            """, (as_of, as_of, as_of))
+            row = cur.fetchone()
+            cur.close()
+            return float(row[0]) if row and row[0] is not None else None
+        finally:
+            conn.close()
+    except Exception as e:  # 门控查询失败不阻断扫描
+        _log(f"⚠️ 宽度查询失败(不门控): {e}")
+        return None
+
 # tqdm 自动检测
 try:
     from tqdm import tqdm
@@ -2310,6 +2346,15 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
 
     _log(f"\n扫描池: [{pool_name}]  模式: {mode}  时间权重: {time_weight:.2f}")
     _log("")
+
+    # 市场宽度门控（2026-10-14 收益改造）：宽度崩塌日不出隔夜信号
+    if MIN_MARKET_BREADTH > 0:
+        _b_date = snapshot_date if snapshot_date else beijing_now().strftime("%Y-%m-%d")
+        _b20 = _market_breadth(_b_date)
+        if _b20 is not None and _b20 < MIN_MARKET_BREADTH:
+            _log(f"⛔ [宽度门控] {_b_date} b20={_b20:.3f} < {MIN_MARKET_BREADTH}，"
+                 f"今日不开隔夜仓（返回空信号）")
+            return []
 
     stock_pool = get_stock_pool(cfg["POOL"])
     _log(f"股票池: [{cfg['POOL']}] 共 {len(stock_pool)} 只")

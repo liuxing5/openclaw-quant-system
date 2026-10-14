@@ -75,6 +75,25 @@ class MainUptrendEngine:
             eval_date = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
         stats = {}
+
+        # ---------- 大盘过热上闸（2026-10-14 收益改造，见 config.max_breadth_ma20）----------
+        if self.cfg.max_breadth_ma20:
+            env_b20 = self.loader.get_market_breadth(eval_date).get('breadth_ma20', 0.5)
+            if env_b20 >= self.cfg.max_breadth_ma20:
+                logger.info(f"[大盘过热] {eval_date}: breadth_ma20={env_b20:.3f} "
+                            f">= {self.cfg.max_breadth_ma20}，当日不开新仓（晚阶段追涨胜率崩塌）")
+                stats['market_overheat'] = round(float(env_b20), 3)
+                return {
+                    'date': eval_date,
+                    'a_pool_size': 0,
+                    'b_signals': 0,
+                    'c_signals': 0,
+                    'e_signals': 0,
+                    'd_passed': 0,
+                    'candidates': [],
+                    'stats': stats,
+                }
+
         logger.info(f"=" * 60)
         logger.info(f"主升浪检测引擎 - {eval_date}")
         logger.info(f"=" * 60)
@@ -261,6 +280,15 @@ class MainUptrendEngine:
     # ================================================================
     def evaluate_single_day(self, eval_date: str,
                             pool_a: Optional[Set[str]] = None) -> List[Dict]:
+        # 大盘过热上闸（2026-10-14 收益改造，见 config.max_breadth_ma20）：
+        # b20>=0.6 桶回测 n=21 均值 -3.83% 胜率 9.5%（t=-2.65*），过热日不开新仓
+        if self.cfg.max_breadth_ma20:
+            env_b20 = self.loader.get_market_breadth(eval_date).get('breadth_ma20', 0.5)
+            if env_b20 >= self.cfg.max_breadth_ma20:
+                logger.info(f"[大盘过热] {eval_date}: breadth_ma20={env_b20:.3f} "
+                            f">= {self.cfg.max_breadth_ma20}，跳过当日评估")
+                return []
+
         if pool_a is None:
             snapshot = self.loader.get_market_snapshot(eval_date)
             pool_a = set(snapshot['ts_code'].tolist()) if not snapshot.empty else set()
