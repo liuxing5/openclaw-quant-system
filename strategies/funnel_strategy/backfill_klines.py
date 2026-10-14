@@ -66,6 +66,7 @@ def _get_target_stocks() -> list:
 
     使用 stock_basic_info 而非 daily_quotes 以避免鸡生蛋问题：
     daily_quotes 可能只有少量股票，导致回填覆盖不全。
+    不按 is_active 过滤 —— 退市股的历史K线同样需要回填（PIT 回测/复盘依赖）。
     """
     conn = None
     try:
@@ -74,7 +75,6 @@ def _get_target_stocks() -> list:
         cur.execute("""
             SELECT ts_code
             FROM stock_basic_info
-            WHERE is_active = TRUE
             ORDER BY ts_code
         """)
         codes = [r[0] for r in cur.fetchall()]
@@ -100,7 +100,7 @@ def _fetch_stock_history(bs_code: str, start_date: str, end_date: str) -> list:
             start_date=start_date,
             end_date=end_date,
             frequency="d",
-            adjustflag="3",  # 后复权
+            adjustflag="3",  # 不复权（baostock: 1=后复权 2=前复权 3=不复权）
         )
         if rs.error_code != '0':
             return []
@@ -212,7 +212,7 @@ def run_backfill(
     print("=" * 60)
     print("  全量历史K线回填")
     print("=" * 60)
-    print(f"  数据源: baostock (后复权)")
+    print(f"  数据源: baostock (不复权)")
     print(f"  日期区间: {start_dt} ~ {end_dt}")
     print(f"  写入策略: ON CONFLICT DO NOTHING (可断点续传)")
     print("=" * 60)

@@ -14,8 +14,15 @@ cd "$WORKSPACE"
 if git status --porcelain | grep -q .; then
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Changes detected, committing..."
     
-    # Add all changes
-    git add .
+    # 只暂存已跟踪文件的修改（git add -u），避免 `git add .` 误将
+    # 调试脚本/临时产物/敏感文件全量纳入版本库。
+    # 新增文件请在此显式列出（路径之间用空格分隔）后再 git add。
+    WHITELIST=""
+    git add -u
+    if [ -n "$WHITELIST" ]; then
+        # shellcheck disable=SC2086
+        git add -- $WHITELIST
+    fi
     
     # Create commit message with timestamp
     COMMIT_MSG="Auto-sync: $(date '+%Y-%m-%d %H:%M:%S')"

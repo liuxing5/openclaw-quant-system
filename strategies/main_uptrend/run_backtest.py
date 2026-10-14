@@ -23,6 +23,7 @@ import sys
 import os
 from datetime import datetime
 from pathlib import Path
+from typing import Dict
 
 import numpy as np
 
@@ -51,15 +52,24 @@ logger = logging.getLogger(__name__)
 
 def _build_json_summary(result: dict, start: str, end: str) -> dict:
     trading_days = result.get('trading_days')
+    signals = result.get('signals', [])
     summary = {
         'backtest_start': start,
         'backtest_end': end,
-        'total_signals': len(result.get('signals', [])),
+        'total_signals': len(signals),
+        # 审查 30：策略标识 + 漏斗计数（候选→确认）
+        'strategy': 'main_uptrend',
+        'strategy_name': '主升浪检测策略 (B启动+C持续+D风险+E趋势)',
+        'funnel': result.get('funnel') or {},
         # 2026-10-13 参数审查：成本与显著性口径说明（新增字段，旧字段全保留）
         'cost_note': COST_NOTE,
         'round_trip_cost': ROUND_TRIP_COST,
         'significance_note': SIGNIFICANCE_NOTE,
         'forward_returns': {},
+        'benchmark': result.get('benchmark') or {},
+        'excess': {},
+        'exit_stats': {},
+        'by_year': {},
         'top10_signals': [],
         'all_signals': [],
     }
@@ -98,6 +108,14 @@ def _build_json_summary(result: dict, start: str, end: str) -> dict:
             'cost_note': COST_NOTE,
         })
 
+        # 审查 30：与全市场等权基准的超额（同窗口同口径）
+        bm = (result.get('benchmark') or {}).get(str(days)) or {}
+        if bm.get('mean') is not None:
+            stats['benchmark_mean'] = float(bm['mean'])
+            stats['benchmark_win_rate'] = float(bm.get('win_rate', 0.0))
+            stats['benchmark_count'] = int(bm.get('count', 0))
+            summary['excess'][str(days)] = float(stats['mean']) - float(bm['mean'])
+
         # 分子期稳定性：按信号年份分别给 count/win_rate/mean
         by_year = {}
         for dt, r in zip(dates or [], arr):
@@ -114,8 +132,78 @@ def _build_json_summary(result: dict, start: str, end: str) -> dict:
         }
 
         summary['forward_returns'][str(days)] = stats
+
+    # 审查 30：exit_stats（趋势跟踪退出口径，页面渲染出场分布/胜率/持有天数）
+    exit_rets = [s['exit_ret'] for s in signals
+                 if s.get('exit_ret') is not None and np.isfinite(s['exit_ret'])]
+    if exit_rets:
+        er = np.array(exit_rets, dtype=float)
+        exits: Dict[str, int] = {}
+        hold_days = []
+        truncated = 0
+        for s in signals:
+            if s.get('exit_ret') is None or not np.isfinite(s['exit_ret']):
+                continue
+            et = s.get('exit_type') or 'unknown'
+            exits[et] = exits.get(et, 0) + 1
+            if s.get('exit_day') is not None:
+                hold_days.append(float(s['exit_day']))
+            if s.get('exit_truncated'):
+                truncated += 1
+        eval_dates_all = [str(s.get('eval_date', ''))[:10] for s in signals
+                          if s.get('exit_ret') is not None and np.isfinite(s['exit_ret'])]
+        exit_sig = fwd_stats(er, dates=eval_dates_all, horizon=1,
+                             trading_days=trading_days)
+        summary['exit_stats'] = {
+            'win_rate': float(np.mean(er > 0)),
+            'mean': float(np.mean(er)),
+            'median': float(np.median(er)),
+            'max': float(np.max(er)),
+            'min': float(np.min(er)),
+            't': exit_sig.get('t', 0.0),
+            'p': exit_sig.get('p', 1.0),
+            'n_eff': exit_sig.get('n_eff', 0),
+            'low_power': bool(exit_sig.get('low_power', True)),
+            'avg_hold_days': float(np.mean(hold_days)) if hold_days else 0.0,
+            'stop_count': int(exits.get('stop_loss', 0)),
+            'target_count': int(exits.get('trailing_stop', 0)),
+            'timeout_count': int(exits.get('max_hold', 0)),
+            'ma10_count': int(exits.get('ma10_exit', 0)),
+            'ma20_count': int(exits.get('ma20_exit', 0)),
+            'window_end_count': int(exits.get('window_end', 0)),
+            'exit_truncated_count': truncated,
+            'exit_type_counts': exits,
+            'sig_source': 'fwd_stats_by_eval_date',
+        }
+
+    # 审查 30：顶层 by_year（出场收益 + 前向10日，页面"分子期稳定性"表消费）
+    yearly: Dict[str, Dict] = {}
+    for s in signals:
+        yr = str(s.get('eval_date', ''))[:4]
+        if not yr.isdigit():
+            continue
+        e = yearly.setdefault(yr, {'rets': [], 'f10': []})
+        if s.get('exit_ret') is not None and np.isfinite(s['exit_ret']):
+            e['rets'].append(float(s['exit_ret']))
+        if s.get('ret_10d') is not None:
+            e['f10'].append(float(s['ret_10d']))
+    for yr, e in sorted(yearly.items()):
+        yr_entry: Dict = {'count': len(e['rets']) + len(e['f10'])}
+        # 问题19 同口径：分年样本 <30 不报比率（噪声）
+        if len(e['rets']) >= 30:
+            r = np.array(e['rets'])
+            yr_entry['win_rate'] = float(np.mean(r > 0))
+            yr_entry['mean'] = float(np.mean(r))
+        else:
+            yr_entry['low_sample'] = True
+        if len(e['f10']) >= 30:
+            f = np.array(e['f10'])
+            yr_entry['fwd10_mean'] = float(np.mean(f))
+            yr_entry['fwd10_win'] = float(np.mean(f > 0))
+        summary['by_year'][yr] = yr_entry
+
     sorted_signals = sorted(
-        result.get('signals', []),
+        signals,
         key=lambda x: x.get('composite_score', 0),
         reverse=True,
     )
@@ -127,6 +215,7 @@ def _build_json_summary(result: dict, start: str, end: str) -> dict:
             'b_score': round(s.get('b_score', 0), 1),
             'c_score': round(s.get('c_score', 0), 1),
             'entry_price': s.get('entry_price'),
+            'confirmed': bool(s.get('confirmed', False)),
             'forward_rets': {},
         }
         for d in [10, 20, 60]:
@@ -144,10 +233,14 @@ def _build_json_summary(result: dict, start: str, end: str) -> dict:
             'c_score': round(s.get('c_score', 0), 1),
             'signal_type': s.get('signal_type', ''),
             'entry_price': s.get('entry_price'),
+            # 审查 5：未确认信号保留记录（confirmed=False, ret*=None）
+            'confirmed': bool(s.get('confirmed', False)),
+            'confirm_reject': s.get('confirm_reject'),
             'exit_ret': round(float(s['exit_ret']), 4) if s.get('exit_ret') is not None else None,
             'max_ret': round(float(s['max_ret']), 4) if s.get('max_ret') is not None else None,
             'exit_type': s.get('exit_type', ''),
             'exit_day': s.get('exit_day'),
+            'exit_truncated': bool(s.get('exit_truncated', False)),
             'breadth_ma20': s.get('breadth_ma20'),
             'breadth_ma5': s.get('breadth_ma5'),
             'env_score': s.get('env_score'),
@@ -197,21 +290,25 @@ def main():
                         help="跳过 D 层风险过滤")
     parser.add_argument("--output", "-o", type=str, default=None,
                         help="输出文件路径（.txt）")
-    parser.add_argument("--top-b", type=int, default=5,
-                        help="B 层 Top N 数量")
-    parser.add_argument("--top-c", type=int, default=5,
-                        help="C 层 Top N 数量")
+    parser.add_argument("--top-b", type=int, default=None,
+                        help="B 层 Top N 数量（默认用 config.b_top_n_daily，仅显式指定时覆盖）")
+    parser.add_argument("--top-c", type=int, default=None,
+                        help="C 层 Top N 数量（默认用 config.c_top_n_daily，仅显式指定时覆盖）")
 
     args = parser.parse_args()
 
+    # 审查 9：CLI 默认 None，只有显式指定才覆盖 config 默认值
+    # （旧版 CLI default=5 会把 config 里调好的值悄悄覆盖掉）
     cfg = MainUptrendConfig(
         backtest_start=args.start,
         backtest_end=args.end,
         a_enabled=not args.no_a,
         c_enabled=not args.no_c,
         d_enabled=not args.no_d,
-        b_top_n_daily=args.top_b,
-        c_top_n_daily=args.top_c,
+        b_top_n_daily=args.top_b if args.top_b is not None
+        else DEFAULT_CONFIG.b_top_n_daily,
+        c_top_n_daily=args.top_c if args.top_c is not None
+        else DEFAULT_CONFIG.c_top_n_daily,
     )
 
     bt = MainUptrendBacktester(cfg)
@@ -290,14 +387,18 @@ def main():
                     print(f"前向收益明细已保存: {csv_path}")
 
         json_result = _build_json_summary(result, args.start, args.end)
-        docs_dir = Path("strategies/funnel_strategy/docs")
-        docs_dir.mkdir(parents=True, exist_ok=True)
-        json_path = docs_dir / "main_uptrend_backtest.json"
-        json_path.write_text(
-            json.dumps(json_result, ensure_ascii=False, indent=2, default=str),
-            encoding='utf-8',
-        )
-        print(f"JSON 已保存: {json_path}")
+        # 审查 18：双份输出——本策略 results/ 留档 + funnel 页面 docs/ 消费
+        json_text = json.dumps(json_result, ensure_ascii=False, indent=2, default=str)
+        results_dir = Path("strategies/main_uptrend/results")
+        results_dir.mkdir(parents=True, exist_ok=True)
+        json_paths = [
+            results_dir / "main_uptrend_backtest.json",
+            Path("strategies/funnel_strategy/docs/main_uptrend_backtest.json"),
+        ]
+        for jp in json_paths:
+            jp.parent.mkdir(parents=True, exist_ok=True)
+            jp.write_text(json_text, encoding='utf-8')
+            print(f"JSON 已保存: {jp}")
 
 
 if __name__ == "__main__":

@@ -418,6 +418,25 @@ except Exception as _e:
     DB_ENABLED = False
     print(f"ℹ️ core 包不可用，不启用 daily_candidates 写入: {_e}")
 
+# 交易日历（含节假日）—— 2026-10-14：snapshot_date 不能在节假日直接取当天
+try:
+    from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
+    CALENDAR_ENABLED = True
+except Exception as _e:
+    _calendar_is_trading_day = None
+    CALENDAR_ENABLED = False
+    print(f"ℹ️ trading_calendar 不可用，节假日判断退化为工作日: {_e}")
+
+
+def _is_trading_day(d) -> bool:
+    """交易日判断：优先交易日历（识别节假日），不可用时退化为周一~周五。"""
+    if CALENDAR_ENABLED and _calendar_is_trading_day is not None:
+        try:
+            return bool(_calendar_is_trading_day(d))
+        except Exception:
+            pass
+    return d.weekday() < 5
+
 
 def _persist_to_daily_candidates(
     stable_picks,
@@ -1627,10 +1646,11 @@ def get_trading_date_for_snapshot() -> str:
                 rows.append(rs.get_row_data())
             if rows:
                 return day_str
-    # 盘中/盘后：工作日直接取当天（baostock 盘中可能无当天数据，但当天仍是交易日）
-    if now.weekday() < 5:  # 周一=0 ... 周五=4
+    # 盘中/盘后：先过交易日历 —— 2026-10-14 审查：周一~周五的节假日此前直接
+    # 返回当天，得到非交易日 snapshot_date（写库/统计口径全错）
+    if now.weekday() < 5 and _is_trading_day(now.date()):
         return now.strftime("%Y-%m-%d")
-    # 周末回退到最近有数据的交易日
+    # 周末/节假日：回退到最近有数据的交易日
     return get_latest_trading_day()
 
 
@@ -1719,6 +1739,7 @@ def analyze_ultimate(
     cfg: dict,
     reject_stats: Optional[dict] = None,
     mood: str = "",
+    snapshot_date: Optional[str] = None,
 ) -> Optional[dict]:
 
     if hist_df is None or len(hist_df) < 15:
@@ -1745,6 +1766,20 @@ def analyze_ultimate(
             reject_stats["数据不足"] += 1
         return None
 
+    # --- 6.0 判断 baostock 最后一行是否属于本次评估日 ---
+    # 2026-10-14 审查修复：此前对最后一行无条件丢弃。盘中 baostock 往往尚未更新
+    # 当天行情（最后一行实为 T-1），昨日会被错误地剔出量比/连板/均线历史，
+    # 使 avg_vol / streak / MA 全部少一天。只有"最后一行日期 == 评估日"才视为当日行。
+    eval_day = str(snapshot_date)[:10] if snapshot_date else beijing_now().strftime("%Y-%m-%d")
+    last_row_day = ""
+    if len(df) > 0 and "date" in df.columns:
+        last_row_day = str(df["date"].iloc[-1])[:10]
+    last_is_eval_day = bool(last_row_day) and last_row_day == eval_day
+    # 是否需要把最后一行从历史序列剔除：
+    #   - 有实时行情：只有最后一行确实是评估日（当日不完整/与实时重复）才剔；
+    #   - 无实时行情：curr_* 本来就取自最后一行，该行即"当前行"，必须剔。
+    drop_last_row = last_is_eval_day or (real_info is None)
+
     # --- 6.1 决定今日数据来源 ---
     # 修复：只要有real_info(腾讯数据)，无论realtime还是post模式都使用
     # 因为盘后腾讯接口返回的是最终收盘数据，而baostock有延迟
@@ -1756,12 +1791,15 @@ def analyze_ultimate(
         curr_turn = real_info.get("turn", 0.0)
         curr_high = real_info.get("high", 0.0)
         curr_low = real_info.get("low", 0.0)
-        if curr_turn <= 0:
+        # 换手率兜底同样按日期判断：只有最后一行属于评估日才是当日换手率，
+        # 否则会拿昨日换手率冒充今日（脏数据）
+        if curr_turn <= 0 and last_is_eval_day:
             curr_turn = float(df.iloc[-1]["turn"]) if "turn" in df.columns else 0.0
         # 盘后模式下，time_weight=1.0，不需要时间加权
         est_full_vol = curr_vol / time_weight if time_weight > 0 else curr_vol
-        # 排除今日baostock行避免与实时量重复计数
-        hist_vols = df["volume"].tolist()[:-1] if len(df) > 0 else []
+        # 排除评估日 baostock 行避免与实时量重复计数（盘中未更新时不剔，保住昨日历史）
+        hist_vols = (df["volume"].tolist()[:-1] if drop_last_row
+                     else df["volume"].tolist())
     else:
         last = df.iloc[-1]
         curr_price = float(last["close"])
@@ -1772,7 +1810,8 @@ def analyze_ultimate(
         curr_high = float(last["high"]) if "high" in df.columns else 0.0
         curr_low = float(last["low"]) if "low" in df.columns else 0.0
         est_full_vol = curr_vol
-        hist_vols = df["volume"].tolist()[:-1]
+        # curr_* 取自最后一行 → 该行即当前行，必须从历史剔除（drop_last_row 恒为 True）
+        hist_vols = df["volume"].tolist()[:-1] if drop_last_row else df["volume"].tolist()
 
     # --- LLM 票放宽过滤标志（v1.5.1）---
     # LLM 多源策略推荐的标的，硬过滤分别放宽：
@@ -1868,14 +1907,18 @@ def analyze_ultimate(
         return None
 
     # --- STEP 6a: 均线验证（昨收序列，严格无未来函数）---
-    # post 模式：今日收盘已确定，纳入MA计算更准确
-    # realtime 模式：今日价格仍在变动，排除今日收盘
-    if cfg["MODE"] == "post" and curr_price > 0:
+    # post 模式：评估日收盘已确定，纳入MA计算更准确
+    # realtime 模式：评估日价格仍在变动，排除评估日收盘
+    # 2026-10-14：仅当最后一行确实属于评估日才做替换/剔除；盘中 baostock 未更新时
+    # 最后一行是更早的历史，应全部保留（否则昨日被踢出均线序列）
+    if drop_last_row and cfg["MODE"] == "post" and curr_price > 0:
         hist_close = df["close"].tolist()
         if hist_close:
             hist_close[-1] = curr_price
-    else:
+    elif drop_last_row:
         hist_close = df["close"].tolist()[:-1]
+    else:
+        hist_close = df["close"].tolist()
 
     if len(hist_close) < 10:
         if reject_stats is not None:
@@ -1932,8 +1975,9 @@ def analyze_ultimate(
 
     # --- 连板高度判断 ---
     streak = 0
-    # 永远不含今日 baostock 数据（可能有延迟）
-    pct_list = df["pctChg"].tolist()[:-1]
+    # 不含评估日 baostock 行（可能延迟/与实时重复）；盘中未更新时昨日必须保留
+    # （2026-10-14：原为无条件 [:-1]，盘中会把昨日剔出连板历史）
+    pct_list = df["pctChg"].tolist()[:-1] if drop_last_row else df["pctChg"].tolist()
     limit_pct = get_limit_pct(code)
 
     # 先看今日是否涨停（用准确的 curr_pct，来自腾讯实时/收盘数据）
@@ -2369,7 +2413,8 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
             continue
 
         hist_df = pd.DataFrame(data_list, columns=k_rs.fields)
-        res = analyze_ultimate(hist_df, code, real_info, sentiment_score, time_weight, cfg, reject_stats, mood)
+        res = analyze_ultimate(hist_df, code, real_info, sentiment_score, time_weight,
+                               cfg, reject_stats, mood, snapshot_date=snapshot_date)
         if res:
             res["pool"] = pool_name
             results.append(res)
@@ -3033,18 +3078,24 @@ def debug_stock(code: str, cfg: dict = None):
         bs.logout()
         return
 
+    # 2026-10-14：与生产一致 —— 只有最后一行确属评估日(end_d)才当作"当日行"剔除，
+    # 盘中 baostock 未更新时最后一行是 T-1，直接 [:-1] 会把昨日踢出历史序列
+    _last_day = str(df["date"].iloc[-1])[:10] if ("date" in df.columns and len(df)) else ""
+    _last_is_eval = bool(_last_day) and _last_day == end_d
+    _drop_last = _last_is_eval or real_info is None
+
     curr_price = real_info["now"]
     curr_pct = real_info["pct"]
     curr_vol = real_info["vol"]
     curr_amount = real_info["amount"]
     curr_turn = real_info.get("turn", 0.0)
     curr_high = real_info.get("high", 0.0)
-    if curr_turn <= 0:
+    if curr_turn <= 0 and _last_is_eval:  # 只有评估日的换手率才能当兜底
         curr_turn = float(df.iloc[-1]["turn"]) if "turn" in df.columns else 0.0
 
     time_weight = get_time_weight(cfg["MODE"])
     est_full_vol = curr_vol / time_weight if time_weight > 0 else curr_vol
-    hist_vols = df["volume"].tolist()[:-1]  # 排除最后一日(当天baostock数据不完整), 与生产一致
+    hist_vols = df["volume"].tolist()[:-1] if _drop_last else df["volume"].tolist()
 
     # Step 1: 涨幅
     in_stable = cfg["stable_pct_lo"] <= curr_pct <= cfg["stable_pct_hi"]
@@ -3102,13 +3153,15 @@ def debug_stock(code: str, cfg: dict = None):
         bs.logout()
         return
 
-    # Step 6a: 均线
-    if cfg["MODE"] == "post" and curr_price > 0:
+    # Step 6a: 均线（仅最后一行属于评估日才替换/剔除，2026-10-14 与生产一致）
+    if _drop_last and cfg["MODE"] == "post" and curr_price > 0:
         hist_close = df["close"].tolist()
         if hist_close:
             hist_close[-1] = curr_price
-    else:
+    elif _drop_last:
         hist_close = df["close"].tolist()[:-1]
+    else:
+        hist_close = df["close"].tolist()
     if len(hist_close) < 10:
         steps.append(("均线", False, f"有效数据仅{len(hist_close)}条，不足计算"))
         _print_debug_steps(steps)

@@ -17,16 +17,25 @@
 """
 from __future__ import annotations
 
+import logging
+import time
 from datetime import timedelta
 
 import numpy as np
 import pandas as pd
 
 from core.db.connection import get_db_fresh
+from strategies.shared.adjust import qfq_grouped
 from strategies.shared.board_rules import limit_pct
+from strategies.shared.st_history import is_st_mask
 from .config import PullbackConfig, DEFAULT_CONFIG
 
-NUM_COLS = ["open", "high", "low", "close", "volume", "amount", "pct_chg", "limit_up_price"]
+logger = logging.getLogger(__name__)
+
+# 2026-10-14 审查修复（问题20）: OHLC 用 float64——float32 在涨停价/止损临界
+# （0.01 元量级）比较时会因精度不足误判；量额等非价格列保持 float32 省内存
+PRICE_COLS = ["open", "high", "low", "close"]
+NUM_COLS = PRICE_COLS + ["volume", "amount", "pct_chg", "limit_up_price"]
 
 
 def _close(conn):
@@ -66,45 +75,67 @@ def _fetch(sql, params=None, retries: int = 3, timeout_ms: int = 600000):
     raise last
 
 
-def _fetch_streaming(sql, params=None, timeout_ms: int = 900000, chunk: int = 50000):
+def _fetch_streaming(sql, params=None, timeout_ms: int = 900000, chunk: int = 50000,
+                     retries: int = 3):
     """服务端游标流式拉取，返回 (rows, cols)。
 
     2026-10-14: 单次 fetchall 拉取 70 万+行时 SSL 连接会被对端直接断开
     （小查询正常），改用命名游标分批读取。已实测 72.7 万行可完整取回。
     注意：命名游标的 description 为 None（DECLARE 语句本身无结果集），
     列名需用普通游标单独取。
+    2026-10-14 审查修复（问题16）: 原实现无重试，流式拉取中途 SSL 断连即整跑失败，
+    现包 3 次重试（每次重建连接，命名游标不可跨连接复用）。
     """
-    conn = get_db_fresh()
-    try:
-        # statement_timeout 必须在普通游标上设置：命名游标会把语句包进
-        # DECLARE ... CURSOR FOR <sql>，直接 execute("SET ...") 会语法报错
-        if timeout_ms:
-            with conn.cursor() as pre:
-                pre.execute("SET statement_timeout = %s", (int(timeout_ms),))
-        cols = None
-        with conn.cursor() as meta:
-            meta.execute(f"SELECT * FROM ({sql.rstrip().rstrip(';')}) AS _q LIMIT 0", params)
-            cols = [d[0] for d in meta.description]
-        cur = conn.cursor(name="stream_fetch")
-        cur.itersize = chunk
-        cur.execute(sql, params)
-        rows = []
-        while True:
-            batch = cur.fetchmany(chunk)
-            if not batch:
-                break
-            rows.extend(batch)
-        cur.close()
-        return rows, cols
-    finally:
-        _close(conn)
+    last = None
+    for attempt in range(retries):
+        conn = None
+        try:
+            conn = get_db_fresh()
+            # statement_timeout 必须在普通游标上设置：命名游标会把语句包进
+            # DECLARE ... CURSOR FOR <sql>，直接 execute("SET ...") 会语法报错
+            if timeout_ms:
+                with conn.cursor() as pre:
+                    pre.execute("SET statement_timeout = %s", (int(timeout_ms),))
+            cols = None
+            with conn.cursor() as meta:
+                meta.execute(f"SELECT * FROM ({sql.rstrip().rstrip(';')}) AS _q LIMIT 0", params)
+                cols = [d[0] for d in meta.description]
+            cur = conn.cursor(name="stream_fetch")
+            cur.itersize = chunk
+            cur.execute(sql, params)
+            rows = []
+            while True:
+                batch = cur.fetchmany(chunk)
+                if not batch:
+                    break
+                rows.extend(batch)
+            cur.close()
+            return rows, cols
+        except Exception as e:  # noqa: BLE001
+            last = e
+            if attempt < retries - 1:
+                time.sleep(2 * (attempt + 1))
+        finally:
+            _close(conn)
+    raise last
+
+
+def latest_trade_date() -> str | None:
+    """daily_quotes 最新交易日（SELECT MAX 单查询，2026-10-14 审查修复问题14）。"""
+    rows, _ = _fetch("SELECT MAX(trade_date) FROM daily_quotes;")
+    d = rows[0][0] if rows else None
+    return str(d)[:10] if d is not None else None
 
 
 def load_quotes(start_date: str, end_date: str | None = None) -> pd.DataFrame:
-    """拉取日线（含指标预热期），返回 float 化的 DataFrame。
+    """拉取日线（含指标预热期），返回前复权后的 DataFrame。
 
     2026-10-14: 跨度 >= 60 天时（数十万行）fetchall 会触发 SSL 断连，
     改走服务端游标流式拉取；短跨度仍用普通查询（更快）。
+    2026-10-14 审查修复（问题4）: 取数后按 ts_code 前复权（qfq_grouped），
+    指标（EMA/ATR/动量/止损止盈/前向收益）全部在复权价上计算；
+    保留 raw_close/raw_open 列——涨停价计算与除权日检测必须用原始价。
+    末日锚定复权：最新一日 qfq == raw，run_daily 展示价格不受影响。
     """
     sql = """
         SELECT ts_code, trade_date, open, high, low, close, volume, amount,
@@ -127,8 +158,13 @@ def load_quotes(start_date: str, end_date: str | None = None) -> pd.DataFrame:
     if df.empty:
         return df
     df["trade_date"] = pd.to_datetime(df["trade_date"])
+    for c in PRICE_COLS:
+        df[c] = pd.to_numeric(df[c], errors="coerce").astype("float64")
     for c in NUM_COLS:
-        df[c] = pd.to_numeric(df[c], errors="coerce").astype("float32")
+        if c not in PRICE_COLS:
+            df[c] = pd.to_numeric(df[c], errors="coerce").astype("float32")
+    # 问题4: 前复权（保留 raw 列）；组内已按 trade_date 升序
+    df = qfq_grouped(df)
     return df
 
 
@@ -162,6 +198,13 @@ def add_indicators(df: pd.DataFrame, cfg: PullbackConfig) -> pd.DataFrame:
     df["vol3_prev"] = vol.transform(
         lambda s: s.rolling(3, min_periods=3).mean().shift(1)
     )
+    # 2026-10-14 审查修复（问题4/15）: 原始价前收盘——涨停/跌停判定与除权检测
+    # 必须用 raw 价（复权价与板块规则算出的涨停价不可比）
+    if "raw_close" in df.columns:
+        df["raw_prevc"] = df.groupby("ts_code", sort=False)["raw_close"].shift(1)
+    else:  # 兜底：未复权输入时 raw == close
+        df["raw_prevc"] = df["prevc"]
+        df["raw_close"] = df["close"]
     # 中期动量形成期（2026-10-13 审查: 20日处于A股反转区间 → 120日=6个月中期动量）
     df["mom"] = g.pct_change(cfg.momentum_lookback)
     # 当日截面动能百分位（替代绝对阈值，随 regime 归一）
@@ -182,29 +225,55 @@ def not_limit_up(d: pd.DataFrame) -> pd.Series:
     """当日收盘未涨停（可买入）。
 
     2026-10-13 审查修复（问题7）: 原 `pct_chg < 9.9` 对创业板/科创板（20cm）
-    与北交所（30cm）全部误判。现按板块规则用前收盘计算真实涨停价；
-    仅当 limit_up_price 列有值时优先用库内值。
+    与北交所（30cm）全部误判。现按板块规则用前收盘计算真实涨停价。
+    2026-10-14 审查修复（问题15）: 翻转优先级——以 prevc+板块规则计算值为准
+    （库内 limit_up_price 列历史几乎全空且口径不明），库内值仅作一致性校验，
+    分歧 >0.02 元时记 warning 一次。判定用 raw 价（问题4：复权价与板块
+    规则算出的涨停价不可比）。
     """
-    prev = d["prevc"]
+    prev = d["raw_prevc"] if "raw_prevc" in d.columns else d["prevc"]
+    raw_close = d["raw_close"] if "raw_close" in d.columns else d["close"]
     pct = d["ts_code"].map(limit_pct)
     lu_calc = (prev.astype("float64") * (1.0 + pct)).round(2)
+    lu = lu_calc
     lu_db = d.get("limit_up_price")
     if lu_db is not None:
-        ok = lu_db.notna() & (lu_db > 0)
-        lu = pd.Series(np.where(ok, lu_db.astype("float64"), lu_calc), index=d.index)
-    else:
-        lu = lu_calc
+        # 库内值仅校验：与板块规则计算值分歧过大时告警（不改判定结果）
+        ok = lu_db.notna() & (lu_db > 0) & prev.notna()
+        mismatch = ok & ((lu_db.astype("float64") - lu_calc).abs() > 0.02)
+        if bool(mismatch.any()):
+            logger.warning(
+                "limit_up_price 列与板块规则计算值分歧 %d 行（以板块规则为准）",
+                int(mismatch.sum()))
     # 前收盘缺失（首根K线）无法判断 → 视为未涨停（次新股已被剔除）
-    not_lu = (d["close"].astype("float64") < lu - 0.001) | prev.isna()
+    not_lu = (raw_close.astype("float64") < lu - 0.001) | prev.isna()
     return not_lu
 
 
 def not_limit_down(d: pd.DataFrame) -> pd.Series:
-    """当日收盘未跌停（跌停次日常继续跌，且卖出困难）——板块感知。"""
-    prev = d["prevc"]
+    """当日收盘未跌停（跌停次日常继续跌，且卖出困难）——板块感知。
+
+    2026-10-14: 同 not_limit_up，改用 raw 价判定（问题4）。
+    """
+    prev = d["raw_prevc"] if "raw_prevc" in d.columns else d["prevc"]
+    raw_close = d["raw_close"] if "raw_close" in d.columns else d["close"]
     pct = d["ts_code"].map(limit_pct)
     ld = (prev.astype("float64") * (1.0 - pct)).round(2)
-    return (d["close"].astype("float64") > ld + 0.001) | prev.isna()
+    return (raw_close.astype("float64") > ld + 0.001) | prev.isna()
+
+
+def limit_down_mask(g: pd.DataFrame) -> np.ndarray:
+    """逐日跌停判定（用于回测出场建模，2026-10-14 审查修复问题13）。
+
+    g: 单只股票按日升序 DataFrame（含 raw_close/raw_prevc）。
+    返回 bool 数组：当日 raw 收盘 <= 板块规则跌停价（容差 1 分）。
+    """
+    prev = g["raw_prevc"] if "raw_prevc" in g.columns else g["prevc"]
+    raw_close = g["raw_close"] if "raw_close" in g.columns else g["close"]
+    pct = g["ts_code"].map(limit_pct)
+    ld = (prev.astype("float64") * (1.0 - pct)).round(2)
+    return ((raw_close.astype("float64") <= ld + 0.001)
+            & prev.notna()).to_numpy()
 
 
 def generate_signals(df: pd.DataFrame, cfg: PullbackConfig, meta: pd.DataFrame,
@@ -258,17 +327,35 @@ def generate_signals(df: pd.DataFrame, cfg: PullbackConfig, meta: pd.DataFrame,
         s3 &= (d["close"] >= d["ema21"])
 
     # ---- 基础过滤 ----
-    age_ok = (d["trade_date"] - d["list_date"]).dt.days >= cfg.exclude_new_days
+    # 2026-10-14 审查修复（问题10）: list_date 缺失（NaT）原会静默永久剔除，
+    # 现放行并计数告警（次新误剔与 ST 快照误剔都属数据缺失，不能无声吃掉）
+    age_missing = d["list_date"].isna()
+    if bool(age_missing.any()):
+        logger.warning("list_date 缺失 %d 行（不按次新剔除，放行）",
+                       int(age_missing.sum()))
+    age_ok = age_missing | (
+        (d["trade_date"] - d["list_date"]).dt.days >= cfg.exclude_new_days)
     base = (
         (d["amount"] >= cfg.min_amount_yi * 1e8)
         & (d["close"] >= cfg.min_close)
-        & (~d["is_st"].astype(bool))
         & age_ok
         & not_limit_up(d)                              # 当日未涨停（可成交，板块感知）
         & not_limit_down(d)                            # 当日未跌停（原 pct_chg>-9.5 近似已替换）
     )
 
-    sig = d[s1 & s2 & s3 & base].copy()
+    # 2026-10-14 审查修复（问题3）: ST 改按信号日 PIT 判定（stock_st_history），
+    # 原 is_st 来自当前快照回溯历史属未来函数。先粗筛再按日查，控制查询量。
+    cand = d[s1 & s2 & s3 & base]
+    st_mask = pd.Series(False, index=cand.index)
+    if cfg.exclude_st and not cand.empty:
+        conn = get_db_fresh()
+        try:
+            for dt, idx in cand.groupby(cand["trade_date"].dt.date).groups.items():
+                codes = cand.loc[idx, "ts_code"].tolist()
+                st_mask.loc[idx] = is_st_mask(conn, codes, dt)
+        finally:
+            _close(conn)
+    sig = cand[~st_mask].copy()
 
     # ---- 步骤4: ATR 波动率止损（2026-10-13 审查问题6）----
     # 原实现: 止损=min(低点,EMA21,EMA50)-1% 且硬压到风险≤3%，比 A 股日噪声还窄，
@@ -304,11 +391,22 @@ def step_counts(df: pd.DataFrame, cfg: PullbackConfig, meta: pd.DataFrame,
     if d.empty:
         return {}
     m = d.merge(meta, on="ts_code", how="left")
-    m["is_st"] = m["is_st"].fillna(False)
-    age_ok = (m["trade_date"] - pd.to_datetime(m["list_date"])).dt.days >= cfg.exclude_new_days
+    m["stock_name"] = m["stock_name"].fillna("")
+    m["list_date"] = pd.to_datetime(m["list_date"])
+    # 问题10: list_date 缺失放行；问题3: ST 按当日 PIT 判定（与 generate_signals 一致）
+    age_missing = m["list_date"].isna()
+    age_ok = age_missing | (
+        (m["trade_date"] - pd.to_datetime(m["list_date"])).dt.days >= cfg.exclude_new_days)
+    st_mask = np.zeros(len(m), dtype=bool)
+    if cfg.exclude_st and len(m):
+        conn = get_db_fresh()
+        try:
+            st_mask = is_st_mask(conn, m["ts_code"].tolist(), pd.Timestamp(date).date())
+        finally:
+            _close(conn)
     base = (
         (m["amount"] >= cfg.min_amount_yi * 1e8) & (m["close"] >= cfg.min_close)
-        & (~m["is_st"].astype(bool)) & age_ok
+        & (~pd.Series(st_mask, index=m.index).astype(bool)) & age_ok
         & not_limit_up(m) & not_limit_down(m)
     )
     n_base = int(base.sum())

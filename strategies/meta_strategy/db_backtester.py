@@ -49,8 +49,8 @@ class MetaBacktestConfig:
     start_date: str = "2025-06-01"
     end_date: str = "2026-05-22"
     initial_capital: float = 1_000_000.0
-    commission_rate: float = 0.001
-    slippage_pct: float = 0.001
+    commission_rate: float = 0.0005
+    slippage_pct: float = 0.00075
     max_positions: int = 3
     single_position_pct: float = 0.30
 

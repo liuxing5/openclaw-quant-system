@@ -28,6 +28,7 @@ from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.db.connection import get_db_fresh, get_db
+from strategies.shared.adjust import qfq_grouped
 
 try:
     from tqdm import tqdm
@@ -100,6 +101,11 @@ def _batch_load_and_precompute(
     for col in ['open', 'high', 'low', 'close', 'volume',
                 'pct_chg', 'amplitude', 'volume_ratio']:
         df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
+
+    # EMA/乖离/布林/近N日涨幅等价格指标一律用前复权价（除权缺口会误判
+    # 乖离与近涨幅）；原始价保留在 raw_close/raw_open 列；成交量/成交额
+    # （流动性）与 pct_chg（交易所口径）不受影响。
+    df_all = qfq_grouped(df_all, by='ts_code')
 
     ohlcv_cache = {}
     precomputed = {}
@@ -228,6 +234,7 @@ def _check_single(
         'passed': False, 'signal_type': 'none',
         'score_bonus': 0.0, 'details': {}, 'reject_reason': '',
         'pct_chg': 0.0, 'bias_pct': 0.0, 'vol_ratio': 0.0,
+        'fallback_only': False,  # True=仅靠 trend_continuation 兜底通过（无K线形态信号）
     }
 
     rows = ohlcv_cache.get(ts_code)
@@ -348,10 +355,14 @@ def _check_single(
             if close_above_ema12 and bullish_candle and vol_ratio >= cfg.layer4_volume_ratio_min:
                 result['signal_type'] = 'trend_continuation'
                 result['score_bonus'] += 3.0
+                # 兜底条件较宽（仅 EMA 多头+阳线+量比），单独计数供
+                # verbose/JSON 可观测性审计（策略阈值由主线程决定，不改行为）
+                result['fallback_only'] = True
+                result['details']['fallback_only'] = True
                 signal_found = True
 
     if not signal_found:
-        result['reject_reason'] = '无买入信可K线形态不符'
+        result['reject_reason'] = '无买入信号(K线形态不符)'
         return result
 
     result['passed'] = True
@@ -423,7 +434,7 @@ def run_layer4_momentum_filter(
 
     n_loaded = len(ohlcv_cache)
     if verbose:
-        print(f"  ✅数据就绪: {n_loaded}/{n_total} 可(EMA/乖离/布林已预计算)")
+        print(f"  ✅数据就绪: {n_loaded}/{n_total} 可(EMA/乖离/布林已预计算, 前复权价)")
 
     # ── 阶段2: 快速预筛选（仅量比，纯 dict 查找）──
     # 2026-10-13 审查：原"量比 + 乖离"快速预筛中的乖离项已停用（与 RSI/近5日涨幅重复），
@@ -453,11 +464,15 @@ def run_layer4_momentum_filter(
         return passed
 
     # 线Python 检查极快（~0.01ms/只），串行即可避免线程调度开销
-    _run_serial(quick_pass, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose)
+    n_fallback_only = _run_serial(
+        quick_pass, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose)
 
     if verbose:
         print(f"  ✅通过: {len(passed)} 只")
         print(f"  ✅淘汰: {n_total - len(passed)} 只")
+        if n_fallback_only:
+            print(f"    ⚠️ 其中仅兜底通过(trend_continuation, 无K线形态信号): "
+                  f"{n_fallback_only} 只 / {len(passed)}")
         for reason, count in reject_stats.items():
             if count > 0:
                 print(f"    {reason}: {count} 只")
@@ -466,8 +481,9 @@ def run_layer4_momentum_filter(
 
 
 def _run_parallel(stock_list, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose):
-    """多线程并行（Python 数据，无 GIL 竞争）"""
+    """多线程并行（Python 数据，无 GIL 竞争）；返回仅兜底通过的股票数"""
     n_total = len(stock_list)
+    n_fallback_only = 0
 
     with ThreadPoolExecutor(max_workers=LAYER4_WORKERS) as executor:
         futures = {
@@ -484,6 +500,8 @@ def _run_parallel(stock_list, cfg, ohlcv_cache, precomputed, passed, reject_stat
             ts_code = futures[future]
             check = future.result()
             if check['passed']:
+                if check.get('fallback_only'):
+                    n_fallback_only += 1
                 passed.append({
                     'ts_code': ts_code,
                     'score_bonus': check['score_bonus'],
@@ -492,20 +510,25 @@ def _run_parallel(stock_list, cfg, ohlcv_cache, precomputed, passed, reject_stat
                     'pct_chg': check.get('pct_chg', 0.0),
                     'bias_pct': check.get('bias_pct', 0.0),
                     'vol_ratio': check.get('vol_ratio', 0.0),
+                    'fallback_only': check.get('fallback_only', False),
                 })
             else:
                 _count_reject(check['reject_reason'], reject_stats)
+    return n_fallback_only
 
 
 def _run_serial(stock_list, cfg, ohlcv_cache, precomputed, passed, reject_stats, verbose):
-    """串行分析"""
+    """串行分析；返回仅兜底通过的股票数"""
     n_total = len(stock_list)
+    n_fallback_only = 0
     for i, ts_code in enumerate(stock_list):
         if verbose and (i + 1) % 100 == 0:
             print(f"  进度: {i+1}/{n_total}")
 
         check = _check_single(ts_code, cfg, ohlcv_cache, precomputed)
         if check['passed']:
+            if check.get('fallback_only'):
+                n_fallback_only += 1
             passed.append({
                 'ts_code': ts_code,
                 'score_bonus': check['score_bonus'],
@@ -514,9 +537,11 @@ def _run_serial(stock_list, cfg, ohlcv_cache, precomputed, passed, reject_stats,
                 'pct_chg': check.get('pct_chg', 0.0),
                 'bias_pct': check.get('bias_pct', 0.0),
                 'vol_ratio': check.get('vol_ratio', 0.0),
+                'fallback_only': check.get('fallback_only', False),
             })
         else:
             _count_reject(check['reject_reason'], reject_stats)
+    return n_fallback_only
 
 
 def _count_reject(reason: str, stats: dict):

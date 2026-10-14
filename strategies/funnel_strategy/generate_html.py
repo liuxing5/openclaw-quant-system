@@ -10,6 +10,7 @@ import json
 import os
 import sys
 from datetime import date, datetime, timezone, timedelta
+from html import escape as html_escape
 from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -20,9 +21,13 @@ for _env_path in [Path('.env'), Path('strategies/llm_multisource/.env')]:
         load_dotenv(_env_path)
         break
 
+import psycopg2  # load_candidates 里显式引用 psycopg2.OperationalError，必须导入
 from core.db.connection import get_db_fresh
 from core.utils.env import load_project_env
 from psycopg2.extras import RealDictCursor
+
+from strategies.funnel_strategy.funnel_config import DEFAULT_FUNNEL_CONFIG
+from strategies.shared.backtest_stats import COST_NOTE, SIGNIFICANCE_NOTE
 
 load_project_env()
 
@@ -77,6 +82,111 @@ def clean_nan(obj):
             return None
         return obj
     return obj
+
+
+def _fnum(v, default=0.0):
+    """数值兜底：None / NaN / 非数值 → default（final_score 等列可为 NULL）。"""
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return default
+    return default if f != f else f
+
+
+def build_layer_rules(cfg=None):
+    """L0~L6 漏斗文案 —— 全部由 FunnelConfig 动态生成，阈值改了文案跟着改。
+
+    2026-10-14 审查：此前 L0/L1/L2/L4/L5 文案与 DEFAULT_FUNNEL_CONFIG 不符
+    （上涨占比写 35% 实际 30%、营收同比写 >0% 实际 -10%、流通市值写 20亿 实际 50亿、
+    综合评分写 ≥80 实际 70、涨幅写 3~5% 实际 2~6%），L4 还把两条剔除条件写成了
+    通过条件。现统一读配置，方向性条件按"通过 vs 剔除"如实描述。
+    """
+    cfg = cfg or DEFAULT_FUNNEL_CONFIG
+
+    def _yi(v):
+        """元 → 亿（去掉多余小数）。"""
+        return f"{v / 1e8:g}"
+
+    def _yi_cap(v):
+        """元 → 万亿/亿 自适应。"""
+        return f"{v / 1e8:g}亿"
+
+    return {
+        'L0': (f"上涨占比≥{cfg.layer0_min_breadth_ratio:.0%} 且 广度>"
+               f"{cfg.layer0_index_ema_period}EMA → 满仓；否则限仓≤"
+               f"{cfg.layer0_partial_cap:.0%}（绝对家数阈值已退出判定，2026-10-13审查）"),
+        'L1': (f"剔除ST/退市/次新股(上市<{cfg.layer1_exclude_new_ipo_days}天)；"
+               f"流动比率>{cfg.layer1_min_current_ratio}；负债率<{cfg.layer1_max_debt_ratio:g}%；"
+               f"营收同比≥{cfg.layer1_min_revenue_yoy:g}%（连续负增≤"
+               f"{cfg.layer1_max_consecutive_rev_decline}次）"),
+        'L2': (f"20日均成交额>{_yi(cfg.layer2_min_avg_amount_20d)}亿；"
+               f"流通市值{_yi_cap(cfg.layer2_min_circulating_mcap)}~"
+               f"{_yi_cap(cfg.layer2_max_circulating_mcap)}；"
+               f"换手率{cfg.layer2_turn_rate_min:g}~{cfg.layer2_turn_rate_max:g}%"
+               f"（⚠绝对阈值待分位数化）"),
+        'L3': (f"周线CLOSE>{cfg.layer3_weekly_ma_period}MA；"
+               f"EMA{cfg.layer3_ema_fast}>{cfg.layer3_ema_mid}>{cfg.layer3_ema_slow}多头排列；"
+               f"股价>EMA{cfg.layer3_ema_fast}（剔除：RSI>{cfg.layer3_max_rsi:g} 超买）"),
+        'L4': (f"通过条件：量比{cfg.layer4_volume_ratio_min:g}~{cfg.layer4_volume_ratio_max:g} + "
+               f"买入信号（回踩反弹/需求吸收/强势接力，三者皆无时以 trend_continuation "
+               f"EMA{cfg.layer3_ema_fast}>{cfg.layer3_ema_mid} 多头+阳线+量比达标兜底）；"
+               f"剔除条件：RSI>{cfg.layer3_max_rsi:g}（L3层）、"
+               f"近{cfg.layer4_recent_gain_days}日涨幅>{cfg.layer4_max_recent_gain_pct:g}%、"
+               f"天量上轨（乖离率/EMA12距离两项冗余条件已停用）"),
+        'L5': (f"综合评分≥{cfg.layer5_min_composite_score}；"
+               f"涨幅{cfg.layer5_pct_range_low:g}~{cfg.layer5_pct_range_high:g}%；贴MA5；"
+               f"人气榜≤{cfg.layer5_popularity_rank_threshold} + LLM联动加分"),
+        'L6': (f"{cfg.layer6_entry_after_time}后买入；止损=入场价-1ATR（上限"
+               f"{cfg.layer6_max_stop_loss_pct:g}%）；目标=入场价+{cfg.layer6_target_atr_mult:g}ATR；"
+               f"盈亏比≥{cfg.layer6_min_profit_loss_ratio:g}:1"),
+    }
+
+
+def stale_data_note(data_date, label="候选数据"):
+    """候选数据日期滞后提示（load_candidates 只回看 7 天，可能拿到非当日数据）。
+
+    2026-10-14 审查新增：卡片区域显示数据日期 + 滞后天数，>3 天标红。
+    """
+    if not data_date:
+        return ""
+    try:
+        d = data_date if isinstance(data_date, date) else date.fromisoformat(str(data_date)[:10])
+    except (TypeError, ValueError):
+        return ""
+    lag = (get_beijing_date() - d).days
+    if lag <= 0:
+        return ""
+    color = "#f85149" if lag > 3 else "#f0883e"
+    return (f'<div style="font-size:.66rem;color:{color};margin:4px 0 6px;">'
+            f'⚠ {label}日期 <strong>{d}</strong> · 滞后 <strong>{lag}</strong> 天'
+            f'（非当日数据，回看窗口 7 天）</div>')
+
+
+def fwd_generated_note(fwd_json):
+    """前向收益 JSON 的生成时间提示：>14 天变色告警。"""
+    if not fwd_json:
+        return ""
+    gen = str(fwd_json.get("generated_at") or "")[:10]
+    data_as_of = str(fwd_json.get("data_as_of") or "")[:10]
+    if not gen:
+        return ""
+    try:
+        lag = (get_beijing_date() - date.fromisoformat(gen)).days
+    except ValueError:
+        lag = None
+    parts = [f"生成于 {gen}（北京时间）"]
+    if data_as_of:
+        parts.append(f"数据截止 {data_as_of}")
+    if lag is not None and lag > 14:
+        parts.append(f"⚠ 已 {lag} 天未更新")
+        color = "#f85149"
+    elif lag is not None and lag > 0:
+        parts.append(f"{lag} 天前")
+        color = "#f0883e"
+    else:
+        color = "var(--text-secondary)"
+    return (f'<div style="font-size:.64rem;color:{color};margin-top:2px;">'
+            f'{" · ".join(parts)}</div>')
 
 
 # ---- 8步法步骤定义 ----
@@ -192,6 +302,10 @@ def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, m
                     cur.close()
                     return [], None
                 latest = row['max_date']
+                # 2026-10-14 审查：回看 7 天拿到的可能不是当日数据，必须显式提示
+                if latest < ref_date:
+                    print(f"  ⚠ load_candidates({source}): 最新数据 {latest} "
+                          f"落后 {(ref_date - latest).days} 天（回看窗口 7 天）")
 
             if run_mode:
                 cur.execute("""
@@ -331,10 +445,12 @@ def _sig_mark(p):
     return ''
 
 
-def render_fwd_table(fwd, benchmark=None, excess=None, title="前向收益统计"):
+def render_fwd_table(fwd, benchmark=None, excess=None, title="前向收益统计",
+                     excess_sig=None):
     """统一渲染前向收益表（含 t 值显著性 / 全市场基准 / 超额）。
 
     fwd: {days: {count, win_rate, mean, median, t, p, n_eff, nonoverlap{...}}}
+    excess_sig: {days: cluster_t_stat(...) 按信号日配对差分的超额显著性}
     """
     if not fwd:
         return ""
@@ -343,12 +459,12 @@ def render_fwd_table(fwd, benchmark=None, excess=None, title="前向收益统计
         fd = fwd.get(days_key) or fwd.get(int(days_key)) or {}
         if not fd:
             continue
-        wr = fd.get('win_rate', 0) or 0
-        n = fd.get('count', 0)
-        mn = fd.get('mean', 0) or 0
-        md = fd.get('median', 0) or 0
-        a5 = fd.get('above_5pct', 0) or 0
-        a10 = fd.get('above_10pct', 0) or 0
+        wr = _fnum(fd.get('win_rate'))
+        n = int(_fnum(fd.get('count')))
+        mn = _fnum(fd.get('mean'))
+        md = _fnum(fd.get('median'))
+        a5 = _fnum(fd.get('above_5pct'))
+        a10 = _fnum(fd.get('above_10pct'))
         t_v = fd.get('t')
         p_v = fd.get('p')
         mark = _sig_mark(p_v)
@@ -362,8 +478,8 @@ def render_fwd_table(fwd, benchmark=None, excess=None, title="前向收益统计
         ex_str = f"{ex:+.2%}" if isinstance(ex, (int, float)) else '—'
         ex_color = '#3fb950' if isinstance(ex, (int, float)) and ex > 0 else '#f85149'
         non = fd.get('nonoverlap') or {}
-        non_str = (f"n={non.get('count', 0)} {non.get('mean', 0):+.2%} "
-                   f"t={non.get('t', 0):.2f}{_sig_mark(non.get('p'))}") if non.get('count') else '—'
+        non_str = (f"n={int(_fnum(non.get('count')))} {_fnum(non.get('mean')):+.2%} "
+                   f"t={_fnum(non.get('t')):.2f}{_sig_mark(non.get('p'))}") if non.get('count') else '—'
         rows += f"""
         <tr>
           <td><strong>{days_key}日</strong></td>
@@ -380,6 +496,23 @@ def render_fwd_table(fwd, benchmark=None, excess=None, title="前向收益统计
         </tr>"""
     if not rows:
         return ""
+    # 脚注：直接复用 shared.backtest_stats.SIGNIFICANCE_NOTE（2026-10-14 审查），
+    # 其中已含"多重比较未校正、参数与评估同区间 p 值偏乐观"提示
+    sig_note = html_escape(SIGNIFICANCE_NOTE)
+    ex_sig_html = ""
+    if excess_sig:
+        ex_parts = []
+        for _dk in ('10', '20', '60'):
+            _es = excess_sig.get(_dk) or excess_sig.get(int(_dk))
+            if not _es or not isinstance(_es.get('t'), (int, float)):
+                continue
+            _mk = '（低功效）' if _es.get('low_power') else _sig_mark(_es.get('p'))
+            ex_parts.append(f"{_dk}日 t={_es['t']:.2f}{_mk}")
+        if ex_parts:
+            ex_sig_html = (
+                '<div style="font-size:.62rem;color:var(--text-secondary);margin-top:2px;">'
+                '超额显著性（按信号日配对差分·按日聚类 t）：'
+                + ' · '.join(ex_parts) + '</div>')
     return f"""
     <div style="overflow-x:auto;margin:8px 0;">
     <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">{title}</div>
@@ -391,9 +524,10 @@ def render_fwd_table(fwd, benchmark=None, excess=None, title="前向收益统计
     <tbody>{rows}</tbody>
     </table>
     <div style="font-size:.62rem;color:var(--text-secondary);margin-top:4px;">
-      含 0.25% 往返成本 · t 值按重叠窗口有效样本量 n=count/窗口 校正（* p&lt;0.05，** p&lt;0.01）
-      · 基准=全市场等权同窗口 · 非重叠=窗口不重叠的独立子样本
+      {html_escape(COST_NOTE)} · 基准=全市场等权同窗口 · 非重叠=窗口不重叠的独立子样本
+      （价格为前复权价）<br>{sig_note}
     </div>
+    {ex_sig_html}
     </div>"""
 
 
@@ -404,11 +538,11 @@ def render_by_year(by_year):
     rows = ""
     for year in sorted(by_year.keys()):
         yr = by_year[year] or {}
-        rows += (f"<tr><td>{year}</td><td>{yr.get('count', 0)}</td>"
-                 f"<td>{yr.get('win_rate', 0):.1%}</td>"
-                 f"<td>{yr.get('mean', 0):+.2%}</td>"
-                 f"<td>{yr.get('fwd10_mean', 0):+.2%}</td>"
-                 f"<td>{yr.get('fwd10_win', 0):.1%}</td></tr>")
+        rows += (f"<tr><td>{year}</td><td>{int(_fnum(yr.get('count')))}</td>"
+                 f"<td>{_fnum(yr.get('win_rate')):.1%}</td>"
+                 f"<td>{_fnum(yr.get('mean')):+.2%}</td>"
+                 f"<td>{_fnum(yr.get('fwd10_mean')):+.2%}</td>"
+                 f"<td>{_fnum(yr.get('fwd10_win')):.1%}</td></tr>")
     return f"""
     <div style="overflow-x:auto;margin:8px 0;">
     <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">📅 分子期稳定性（检验结果是否由单段行情主导）</div>
@@ -552,7 +686,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
         total = fwd_json.get("total_candidates", 0)
         head = (f'<div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">'
                 f'{title}<br>样本 {rng[0]} ~ {rng[1]} · 候选 {total} 只 · '
-                f'{fwd_json.get("entry_convention", "")}</div>')
+                f'{fwd_json.get("entry_convention", "")}'
+                f'{fwd_generated_note(fwd_json)}</div>')
         extra = ""
         decomp = fwd_json.get("overnight_decomp")
         if decomp:
@@ -561,9 +696,23 @@ def generate_unified_html(output_dir=None, trade_date=None):
                      f'隔夜段 {o.get("mean", 0):+.2%} t={o.get("t", 0):.2f} · '
                      f'日内段 {i.get("mean", 0):+.2%} t={i.get("t", 0):.2f}'
                      f'（验证"A股隔夜收益为负"文献结论）</div>')
+        excl = fwd_json.get("excluded_morning_reuse", 0) or 0
+        if excl:
+            extra += (f'<div style="font-size:.64rem;color:var(--text-secondary);margin-top:2px;">'
+                      f'已剔除 {excl} 条盘前回退复用信号（morning_reuse），'
+                      f'避免虚增样本量</div>')
+        dropped = fwd_json.get("dropped_by_reason") or {}
+        if dropped:
+            d10 = dropped.get("10") or {}
+            if d10:
+                extra += (f'<div style="font-size:.62rem;color:var(--text-secondary);margin-top:2px;">'
+                          f'10日口径剔除样本：超范围 {d10.get("out_of_range", 0)} · '
+                          f'无入场价 {d10.get("no_entry", 0)} · '
+                          f'无出场价 {d10.get("no_exit", 0)}</div>')
         return head + render_fwd_table(
             fwd_json.get("forward"), fwd_json.get("benchmark"),
-            fwd_json.get("excess")) + extra
+            fwd_json.get("excess"),
+            excess_sig=fwd_json.get("excess_sig")) + extra
 
     funnel_fwd_html = _fwd_block(funnel_fwd)
     llm_fwd_html = _fwd_block(llm_fwd)
@@ -571,16 +720,15 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     display_date = str(funnel_date or llm_date or eight_date or get_beijing_date())
 
-    # ── 漏斗步骤 ──
-    LAYER_RULES = {
-        'L0': '上涨占比≥35% 且 广度>20EMA → 满仓；否则限仓（绝对家数阈值已退出判定，2026-10-13审查）',
-        'L1': '剔除ST/退市/次新股；流动比率>1.2；负债率<65%；营收同比>0%',
-        'L2': '20日均成交额>1亿；流通市值>20亿；换手率3~15%（⚠绝对阈值待分位数化）',
-        'L3': '周线CLOSE>20MA；EMA12>26>50多头排列；股价>EMA12',
-        'L4': '量比1.5~3.0；RSI>75；近5日涨幅>15%；需求吸收K线或强势接力形态（乖离率/EMA12距离两项冗余条件已停用）',
-        'L5': '综合评分≥80；涨幅3~5%；贴MA5；人气榜+LLM联动加分',
-        'L6': '14:30后买入；止损=入场价-1ATR；目标=入场价+2ATR；盈亏比≥2:1',
-    }
+    # ── 候选数据滞后提示（load_candidates 只回看 7 天，可能不是当日数据）──
+    funnel_stale_html = stale_data_note(funnel_date, "漏斗候选")
+    llm_stale_html = stale_data_note(llm_date, "LLM多源候选")
+    eight_stale_html = stale_data_note(eight_date, "八步法候选")
+    pb_stale_html = stale_data_note(pb_date, "回调买入候选")
+    uptrend_stale_html = stale_data_note(uptrend_date, "主升浪候选")
+
+    # ── 漏斗步骤（文案全部由 DEFAULT_FUNNEL_CONFIG 动态生成，2026-10-14 审查）──
+    LAYER_RULES = build_layer_rules()
     SIGNAL_MAP = {
         'pullback_bounce': '回踩反弹',
         'trend_continuation': '趋势延续',
@@ -603,7 +751,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
             steps_data = [
                 ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
                 ("L0 大盘风控", "🌤️", funnel['layer0_pass'], 0,
-                 "✅满仓" if funnel['layer0_pass'] else "⚠️限仓", "#fff3e0"),
+                 ("✅满仓" if funnel['layer0_pass'] else "⚠️限仓") + " · " + LAYER_RULES['L0'],
+                 "#fff3e0"),
                 ("L1 硬性防雷", "⚡", funnel['layer1_pass'], total - funnel['layer1_pass'],
                  LAYER_RULES['L1'], "#fce4ec"),
                 ("L2 流动性", "💧", funnel['layer2_pass'], funnel['layer1_pass'] - funnel['layer2_pass'],
@@ -619,8 +768,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
             ]
             for name, icon, cnt, elim, rule, color in steps_data:
                 elim_html = f'<span class="elim">{elim}</span>' if elim else ''
-                rule_html = f'<span class="rule-inline">{rule}</span>' if rule else ''
-                title_attr = f' title="{rule}"' if rule else ''
+                rule_html = (f'<span class="rule-inline">{html_escape(rule)}</span>'
+                             if rule else '')
+                title_attr = f' title="{html_escape(rule)}"' if rule else ''
                 funnel_steps_html += f"""
             <div class="step-row"{title_attr}>
               <span class="step-icon">{icon}</span>
@@ -884,21 +1034,21 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
         top10_html = ""
         for s in bt.get('top10_signals', [])[:5]:
-            frets = s.get('forward_rets', {})
-            ret_10 = f"{frets.get('10', 0):.1%}" if '10' in frets else '—'
-            ret_20 = f"{frets.get('20', 0):.1%}" if '20' in frets else '—'
-            ret_60 = f"{frets.get('60', 0):.1%}" if '60' in frets else '—'
-            _ts_code = s.get('ts_code', '')
-            _name = s.get('stock_name', '')
-            _score = s.get('composite_score', 0)
+            frets = s.get('forward_rets', {}) or {}
+            ret_10 = f"{_fnum(frets.get('10')):.1%}" if '10' in frets else '—'
+            ret_20 = f"{_fnum(frets.get('20')):.1%}" if '20' in frets else '—'
+            ret_60 = f"{_fnum(frets.get('60')):.1%}" if '60' in frets else '—'
+            _ts_code = str(s.get('ts_code', '') or '')
+            _name = html_escape(str(s.get('stock_name', '') or ''))
+            _score = _fnum(s.get('composite_score'))
             _eval = s.get('eval_date', '')
             _signal = s.get('signal_type', '')
             _signal_map = {'pullback_bounce': '回踩反弹', 'trend_continuation': '趋势延续', 'demand_absorption': '需求吸收', 'strong_relay': '强势接力'}
-            _signal_label = _signal_map.get(_signal, _signal)
+            _signal_label = html_escape(str(_signal_map.get(_signal, _signal) or ''))
             _tags = []
             if _signal_label:
                 _tags.append(_signal_label)
-            _win = frets.get('win_rate', 0)
+            _win = _fnum(frets.get('win_rate'))
             if _win > 0:
                 _tags.append(f'胜率{_win:.0%}')
             _tags_str = ' · '.join(_tags) if _tags else ''
@@ -993,16 +1143,18 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
         # 回测 Top5 作为无当日候选时的兜底卡片
         for s in bt.get('top10_signals', [])[:5]:
-            frets = s.get('forward_rets', {})
-            ret_10 = f"{frets.get('10', 0):.1%}" if '10' in frets else '—'
-            ret_20 = f"{frets.get('20', 0):.1%}" if '20' in frets else '—'
-            ret_60 = f"{frets.get('60', 0):.1%}" if '60' in frets else '—'
-            _ts_code = s.get('ts_code', '')
-            _name = s.get('stock_name', '')
-            _score = s.get('composite_score', 0)
-            _exit_ret = s.get('exit_ret', 0)
+            frets = s.get('forward_rets', {}) or {}
+            ret_10 = f"{_fnum(frets.get('10')):.1%}" if '10' in frets else '—'
+            ret_20 = f"{_fnum(frets.get('20')):.1%}" if '20' in frets else '—'
+            ret_60 = f"{_fnum(frets.get('60')):.1%}" if '60' in frets else '—'
+            _ts_code = str(s.get('ts_code', '') or '')
+            _name = html_escape(str(s.get('stock_name', '') or ''))
+            _score = _fnum(s.get('composite_score'))
+            _exit_ret = _fnum(s.get('exit_ret'))
             _exit_map = {'stop': '止损', 'target': '止盈', 'timeout': '超时'}
-            _tags_str = f"{s.get('eval_date', '')} · {_exit_map.get(s.get('exit_type'), s.get('exit_type', ''))} {_exit_ret:+.1%}"
+            _exit_label = html_escape(str(s.get('exit_type', '') or ''))
+            _tags_str = (f"{s.get('eval_date', '')} · "
+                         f"{_exit_map.get(_exit_label, _exit_label)} {_exit_ret:+.1%}")
             _stock_url = ''
             if _ts_code:
                 _parts = _ts_code.split('.')
@@ -1034,18 +1186,26 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     # ── 候选卡片渲染 ──
     def render_candidate_card(c, badge_class='', badge_text=''):
-        code = c.get('ts_code', '')
-        name = c.get('stock_name', '')
-        score = c.get('final_score', c.get('score', 0))
-        quant = c.get('quant_score') or c.get('score', 0)
-        llm_score = c.get('llm_score', 0)
+        code = str(c.get('ts_code', '') or '')
+        name = html_escape(str(c.get('stock_name', '') or ''))
+        # final_score 可能为 NULL（DB 默认可空），必须兜底否则 {score:.0f} TypeError
+        raw_score = c.get('final_score')
+        if raw_score is None:
+            raw_score = c.get('score')
+        try:
+            score = float(raw_score) if raw_score is not None else 0.0
+        except (TypeError, ValueError):
+            score = 0.0
+        quant = c.get('quant_score') or c.get('score', 0) or 0
+        llm_score = c.get('llm_score', 0) or 0
         entry_l = c.get('entry_low') or c.get('entry_price')
         stop_l = c.get('stop_loss')
         target = c.get('target_1') or c.get('target_price')
         tags = c.get('logic_tags') or c.get('tags', [])
         if isinstance(tags, str):
             tags = tags.replace('/', '|').split('|')
-        tags = [t.strip() for t in tags if t.strip()][:4]
+        # 标签来自库内文本，转义后再进 HTML（防注入）
+        tags = [html_escape(str(t).strip()) for t in tags if t and str(t).strip()][:4]
         selected = c.get('selected', False)
         sel_cls = 'selected' if selected else ''
 
@@ -1067,7 +1227,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
                 stock_url = f'https://finance.baidu.com/stock/ab-{numeric_code}'
 
         onclick_attr = f' onclick="window.open(\'{stock_url}\',\'_blank\')" style="cursor:pointer"' if stock_url else ''
-        code_link = f'<a href="{stock_url}" target="_blank" style="color:inherit;text-decoration:none">{code}</a>' if stock_url else code
+        code_link = (f'<a href="{stock_url}" target="_blank" '
+                     f'style="color:inherit;text-decoration:none">{html_escape(code)}</a>'
+                     if stock_url else html_escape(code))
 
         return f"""
         <div class="candidate-card {sel_cls}"{onclick_attr}>
@@ -1093,8 +1255,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if funnel and funnel.get('candidates'):
         for c in funnel['candidates']:
             signal = c.get('signal_type', '')
-            signal_text = SIGNAL_MAP.get(signal, signal)
-            llm_bonus = c.get('llm_bonus', 0)
+            signal_text = html_escape(str(SIGNAL_MAP.get(signal, signal) or ''))
+            llm_bonus = c.get('llm_bonus', 0) or 0
             bonus_text = f' <span class="llm-badge">LLM+{llm_bonus}</span>' if llm_bonus > 0 else ''
             card = render_candidate_card(c, badge_text=f'<span class="signal-badge">{signal_text}</span>{bonus_text}')
             funnel_cards += card
@@ -1122,8 +1284,10 @@ def generate_unified_html(output_dir=None, trade_date=None):
         seen_codes = {}
         for c in eight_candidates:
             code = c.get('ts_code', '')
-            score = c.get('final_score', 0)
-            if code not in seen_codes or score > seen_codes[code].get('final_score', 0):
+            # final_score 可能为 NULL → 兜底 0，避免 None > float TypeError
+            score = c.get('final_score') or 0
+            prev = seen_codes.get(code)
+            if prev is None or score > (prev.get('final_score') or 0):
                 seen_codes[code] = c
         deduped_candidates = list(seen_codes.values())
 
@@ -1393,6 +1557,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
       <div class="steps-area">{eight_steps_html}{eight_fwd_html}</div>
       {eight_h3}
+      {eight_stale_html}
       <div class="cards-grid">{eight_cards}</div>
     </div>
 
@@ -1401,6 +1566,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h2>🎯 七步漏斗选股<span class="section-subtitle">{funnel_timestamp or funnel_date or '—'}</span></h2>
       <div class="steps-area">{funnel_steps_html}{funnel_fwd_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 ({funnel_count}只)</h3>
+      {funnel_stale_html}
       <div class="cards-grid">{funnel_cards}</div>
     </div>
 
@@ -1409,6 +1575,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h2>🤖 LLM多源策略<span class="section-subtitle">{llm_timestamp or llm_date or '—'}</span></h2>
       <div class="steps-area">{llm_steps_html}{llm_fwd_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({llm_count}只)</h3>
+      {llm_stale_html}
       <div class="cards-grid">{llm_cards}</div>
     </div>
 
@@ -1417,6 +1584,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h2>📈 主升浪检测<span class="section-subtitle">{uptrend_run_stats.get('run_timestamp', '') if uptrend_run_stats else (uptrend_backtest.get('backtest_start', '') if uptrend_backtest else (uptrend_date or '—'))}</span></h2>
       <div class="steps-area">{uptrend_steps_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('回测 Top 5 (' + str(uptrend_backtest.get('total_signals', 0)) + '只)' if uptrend_backtest and not uptrend_daily else '今日候选') + (' (' + str(len(uptrend_daily)) + '只)' if uptrend_daily else '')}</h3>
+      {uptrend_stale_html}
       <div class="cards-grid">{uptrend_cards}</div>
     </div>
 
@@ -1425,6 +1593,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <h2>🪝 回调买入法<span class="section-subtitle">{pb_timestamp or (pb_scan.get('snapshot_date', '') if pb_scan else '') or (pb_backtest.get('backtest_start', '') if pb_backtest else '') or '—'}</span></h2>
       <div class="steps-area" style="overflow-y:auto;">{pullback_steps_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('今日候选 (' + str(pullback_count) + '只)') if pullback_count else ('回测 Top 5 (' + str(pb_backtest.get('total_signals', 0)) + '笔)' if pb_backtest else '候选标的')}</h3>
+      {pb_stale_html}
       <div class="cards-grid">{pullback_cards}</div>
     </div>
   </div>

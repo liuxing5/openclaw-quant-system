@@ -757,24 +757,24 @@ def test_l1_field_missing():
     # 缺少 total_assets → current_ratio=None → 跳过检查 → 通过
     r1 = check_fundamental('T.SZ', base_info,
                           {'total_liabilities': 50, 'debt_ratio': 50.0, 'revenue_yoy': 5.0},
-                          cfg, today, False)
+                          cfg, today, verbose=False)
     chk(r1['passed'], f"缺少total_assets通过: {r1.get('reject_reason','OK')}")
     chk(r1['details'].get('current_ratio') is None, "current_ratio=None")
 
     # 缺少 debt_ratio → 跳过负债率检查 → 通过
     r2 = check_fundamental('T.SZ', base_info,
                           {'total_assets': 100, 'total_liabilities': 50, 'revenue_yoy': 5.0},
-                          cfg, today, False)
+                          cfg, today, verbose=False)
     chk(r2['passed'], f"缺少debt_ratio通过: {r2.get('reject_reason','OK')}")
 
     # 缺少 revenue_yoy → 跳过营收检查 → 通过
     r3 = check_fundamental('T.SZ', base_info,
                           {'total_assets': 100, 'total_liabilities': 50, 'debt_ratio': 50.0},
-                          cfg, today, False)
+                          cfg, today, verbose=False)
     chk(r3['passed'], f"缺少revenue_yoy通过: {r3.get('reject_reason','OK')}")
 
     # 完全没有财务数据 → 通过(带警告)
-    r4 = check_fundamental('T.SZ', base_info, {}, cfg, today, False)
+    r4 = check_fundamental('T.SZ', base_info, {}, cfg, today, verbose=False)
     chk(r4['passed'], "无财务数据通过")
     chk(r4['details'].get('no_fundamental_data') == True, "标记无财务数据")
 
@@ -791,7 +791,7 @@ def test_l1_none_field_values():
     # revenue_yoy=None → None < -10.0 是 False (Python中 None < number 是 TypeError,
     # 但代码中是 `if revenue_yoy is not None and revenue_yoy < cfg...`)
     fin = {'total_assets': 100, 'total_liabilities': 50, 'debt_ratio': 50.0, 'revenue_yoy': None}
-    r = check_fundamental('T.SZ', base_info, fin, cfg, today, False)
+    r = check_fundamental('T.SZ', base_info, fin, cfg, today, verbose=False)
     chk(r['passed'], f"revenue_yoy=None通过: {r.get('reject_reason','OK')}")
 
 

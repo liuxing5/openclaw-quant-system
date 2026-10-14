@@ -1,12 +1,21 @@
-"""每日候选池生成 - 盘后运行（15:10+）
+"""每日候选池生成 - 盘后运行（15:10+）为主，保留 morning 盘前回退分支
 
 信号链路：
   Day T 收盘后(15:10): LLM策略运行 → 写入 daily_candidates (辅助数据)
   Day T+1 14:30: 八步法读取昨日LLM结果 → 生成买入信号
   Day T+2 09:30: 卖出系统读取昨日LLM结果 → 辅助卖出决策
 
-注意：LLM策略只在收盘后运行，产出次日辅助数据。
-      不再支持 morning 模式，避免盘前数据不完整导致误判。
+运行模式（RUN_MODE，默认 afternoon）：
+  - afternoon / intraday: 正常聚合当日信号（主链路，15:10 后运行），
+    避免盘前数据不完整导致误判；
+  - morning: 盘前参考。若当日聚合无合格候选、而昨日 afternoon 有选中候选，
+    走"回退复制"分支（见 aggregate_today 内 morning 分支）：把昨日候选改
+    snapshot_date 为今日写入。该分支写入行的 logic_tags 同时打 'morning_reuse'
+    与 '盘前复用' 标记，strategies/funnel_strategy/forward_stats.py 读库时按
+    标记剔除并披露 excluded_morning_reuse，否则"改日期复制"会虚增前向收益样本量 n。
+    （本 docstring 原写"不再支持 morning 模式"，与代码不一致，2026-10-14 更正。）
+
+失败策略：写库/聚合异常一律 raise（非零退出），不再仅打日志吞掉。
 """
 import json
 import os, sys, math
@@ -239,14 +248,25 @@ def aggregate_today():
             }
         logger.info(f"加载 {len(valuation_cache)} 条PE/PB估值数据")
 
-        # 加载财务质量数据（最新季报）
+        # 财务质量数据（评估日前已"法定披露"的最新报告期）
+        # 2026-10-14 审查：原 SQL 只取 report_date DESC 最新一期，没有 as-of 过滤，
+        # 会把评估日尚未披露的未来报告期喂给评分（前视偏差）。
+        # 法定披露截止日近似：Q1(3-31)/年报(12-31)→次年4-30，半年(6-30)→8-31，Q3(9-30)→10-31
         cur.execute("""
             SELECT DISTINCT ON (ts_code)
                    ts_code, net_margin, gross_margin, debt_ratio,
-                   revenue, net_profit, operating_cashflow
+                   revenue, net_profit, operating_cashflow, report_date
             FROM stock_fundamentals
+            WHERE report_date <= %s
+              AND CASE EXTRACT(MONTH FROM report_date)::int
+                    WHEN 3  THEN make_date(EXTRACT(YEAR FROM report_date)::int, 4, 30)
+                    WHEN 6  THEN make_date(EXTRACT(YEAR FROM report_date)::int, 8, 31)
+                    WHEN 9  THEN make_date(EXTRACT(YEAR FROM report_date)::int, 10, 31)
+                    WHEN 12 THEN make_date(EXTRACT(YEAR FROM report_date)::int + 1, 4, 30)
+                    ELSE make_date(EXTRACT(YEAR FROM report_date)::int, 4, 30)
+                  END <= %s
             ORDER BY ts_code, report_date DESC;
-        """)
+        """, (today, today))
         fundamentals_cache = {}
         for r in cur.fetchall():
             fundamentals_cache[r['ts_code']] = {
@@ -256,8 +276,10 @@ def aggregate_today():
                 'revenue': float(r['revenue']) if r['revenue'] else None,
                 'net_profit': float(r['net_profit']) if r['net_profit'] else None,
                 'operating_cashflow': float(r['operating_cashflow']) if r['operating_cashflow'] else None,
+                'report_date': str(r['report_date']) if r.get('report_date') else None,
             }
-        logger.info(f"加载 {len(fundamentals_cache)} 条财务质量数据")
+        logger.info(f"加载 {len(fundamentals_cache)} 条财务质量数据"
+                    f"（as-of {today}，按法定披露截止日过滤）")
 
         # 加载上市时间（用于次新股过滤）
         cur.execute("""
@@ -900,7 +922,8 @@ def aggregate_today():
                     item = dict(c)
                     item['snapshot_date'] = today
                     item['run_mode'] = 'morning'
-                    # 添加回退标记
+                    # 添加回退标记（2026-10-14：'morning_reuse' 供 forward_stats
+                    # 在读库侧识别并剔除，避免"改日期复制"虚增前向收益样本量）
                     if 'logic_tags' not in item or not item['logic_tags']:
                         item['logic_tags'] = []
                     tags = item['logic_tags']
@@ -909,9 +932,12 @@ def aggregate_today():
                             tags = json.loads(tags)
                         except Exception:
                             tags = []
+                    if 'morning_reuse' not in tags:
+                        tags.append('morning_reuse')
                     if '盘前复用' not in tags:
                         tags.append('盘前复用')
                     item['logic_tags'] = tags
+                    item['entry_note'] = 'morning_reuse'
                     items.append(item)
                 n = write_candidates(items, today, source=SOURCE, run_mode=RUN_MODE, conn=conn)
                 _persist_llm_scan_stats(today, len(afternoon_selected), len(afternoon_selected), len(afternoon_selected), conn)
@@ -954,7 +980,10 @@ def aggregate_today():
         cur.close()
         logger.info(f"候选池生成完毕，snapshot_date={today}，共写入 {n} 条记录")
     except Exception as e:
+        # 2026-10-14 审查：写库/聚合失败此前只打日志（吞掉异常），CI 会 0 退出
+        # 并让页面以为"今日无候选"。现在记录后重新抛出，保证非零退出。
         logger.error(f"aggregate_today 失败: {e}")
+        raise
     finally:
         if conn and not conn.closed:
             conn.close()

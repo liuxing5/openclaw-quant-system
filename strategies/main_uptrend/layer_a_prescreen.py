@@ -39,7 +39,31 @@ class LayerAPrescreener:
         self.cfg = cfg
         self.loader = loader or DataLoader()
         self._pool_cache: Dict[str, Set[str]] = {}
-        self._profit_cache: Optional[Set[str]] = None  # A1业绩加速缓存
+        # A1 业绩加速缓存：键=报告期（ISO 季度），值=该报告期口径下通过的股票集合
+        self._profit_cache: Dict[str, Set[str]] = {}
+
+    @staticmethod
+    def _report_period_key(as_of_date: str) -> str:
+        """eval_date 所属报告期（ISO 季度）。
+
+        stock_fundamentals.report_date 为季末日期（如 2025-09-30），
+        `report_date <= eval_date` 的结果集只在季度切换时变化，
+        故以季度做缓存键既 PIT 正确又避免逐日查库。
+        """
+        y, m = int(as_of_date[:4]), int(as_of_date[5:7])
+        return f"{y}Q{(m - 1) // 3 + 1}"
+
+    def _pool_cache_key(self, as_of_date: str) -> str:
+        """A 层池缓存键。
+
+        2026-10-14 审查 26：旧实现按自然月复用（as_of_date[:7]），月内所有交易日
+        共用第一份结果，与"逐日 PIT 预筛"语义不符。默认改为 ISO 周；
+        cfg.a_pool_cache_mode = "daily" 时按日（不做跨日复用）。
+        """
+        if getattr(self.cfg, "a_pool_cache_mode", "iso_week") == "daily":
+            return as_of_date
+        iso = datetime.strptime(as_of_date, "%Y-%m-%d").isocalendar()
+        return f"{iso[0]}-W{int(iso[1]):02d}"
 
     def prescreen(self, as_of_date: Optional[str] = None) -> Set[str]:
         """
@@ -50,13 +74,14 @@ class LayerAPrescreener:
         if as_of_date is None:
             as_of_date = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
 
-        cache_key = as_of_date[:7]
+        # 审查 26：缓存键由"自然月"改为 ISO 周（或按日），见 _pool_cache_key
+        cache_key = self._pool_cache_key(as_of_date)
         if cache_key in self._pool_cache:
             return self._pool_cache[cache_key]
 
         codes: Set[str] = set()
 
-        codes_1 = self._filter_profit_acceleration()
+        codes_1 = self._filter_profit_acceleration(as_of_date)
         if codes_1:
             codes.update(codes_1)
             logger.info(f"A1 业绩加速: {len(codes_1)} 只通过")
@@ -102,29 +127,42 @@ class LayerAPrescreener:
     # ================================================================
     # A1: 业绩加速
     # ================================================================
-    def _filter_profit_acceleration(self) -> Set[str]:
-        # 使用缓存（整个回测期间不变）
-        if self._profit_cache is not None:
-            return self._profit_cache
+    def _filter_profit_acceleration(self, as_of_date: str) -> Set[str]:
+        """A1 业绩加速（Point-in-Time）。
+
+        2026-10-14 审查 4：
+          - 旧 SQL 无 report_date 上界，回测早期会用到未来才披露的财报；
+          - 旧缓存是整个回测期唯一一份（`self._profit_cache: Set`），首个评估日
+            的结果被后续所有日期复用。
+        现改为 `report_date <= eval_date` 的 PIT 判定，缓存键含报告期（ISO 季度）。
+        """
+        period_key = self._report_period_key(as_of_date)
+        if period_key in self._profit_cache:
+            return self._profit_cache[period_key]
 
         conn = None
         codes = set()
         try:
             conn = get_db_fresh()
+            cur = conn.cursor()
+            cur.execute("SET statement_timeout = '300000'")
+            cur.close()
             cur = conn.cursor(cursor_factory=RealDictCursor)
 
             # 使用 stock_fundamentals 表，筛选 profit_yoy > 阈值
+            # 审查 4：report_date <= eval_date（PIT），并保留原有现金流质量条件
             cur.execute("""
                 SELECT DISTINCT ts_code
                 FROM stock_fundamentals
                 WHERE profit_yoy IS NOT NULL
                   AND profit_yoy > %s
+                  AND report_date <= %s
                   AND report_date >= '2025-01-01'
                   AND net_profit IS NOT NULL
                   AND net_profit > 0
                   AND operating_cashflow IS NOT NULL
                   AND operating_cashflow >= net_profit
-            """, (self.cfg.a_profit_growth_min * 100,))
+            """, (self.cfg.a_profit_growth_min * 100, as_of_date))
             for row in cur.fetchall():
                 codes.add(row['ts_code'])
             cur.close()
@@ -133,7 +171,8 @@ class LayerAPrescreener:
         finally:
             if conn and not conn.closed:
                 conn.close()
-        self._profit_cache = codes
+        self._profit_cache[period_key] = codes
+        logger.info(f"A1 业绩加速: 报告期 {period_key} ({as_of_date} 口径) {len(codes)} 只")
         return codes
 
     # ================================================================
@@ -185,7 +224,12 @@ class LayerAPrescreener:
 
         # 向量化计算市值
         turnover_rate = pd.to_numeric(day_data['turnover_rate'], errors='coerce')
-        close = pd.to_numeric(day_data['close'], errors='coerce')
+        # 审查 6：预加载数据已前复权，市值估算必须用原始收盘价（raw_close），
+        # 复权价是为序列连续性缩放的历史价，会系统性低估除权前的市值。
+        if 'raw_close' in day_data.columns:
+            close = pd.to_numeric(day_data['raw_close'], errors='coerce')
+        else:
+            close = pd.to_numeric(day_data['close'], errors='coerce')
         volume = pd.to_numeric(day_data['volume'], errors='coerce')
 
         # 过滤有效数据

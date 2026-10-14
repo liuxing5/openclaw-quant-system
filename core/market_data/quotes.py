@@ -29,6 +29,25 @@ def is_trading_day(d):
     return _calendar_is_trading_day(d)
 
 
+def _derive_pre_close(close, pct_chg):
+    """由收盘价与交易所口径涨跌幅推导昨收：pre_close = close / (1 + pct_chg/100)。
+
+    仅在 close 与 pct_chg 均有效且分母非零时返回，否则 None（避免污染）。
+    """
+    try:
+        if close is None or pct_chg is None:
+            return None
+        if pd.isna(close) or pd.isna(pct_chg):
+            return None
+        denom = 1 + float(pct_chg) / 100.0
+        if denom == 0:
+            return None
+        val = float(close) / denom
+        return round(val, 3) if val > 0 else None
+    except Exception:
+        return None
+
+
 def ensure_market_tables():
     sql = """
     CREATE TABLE IF NOT EXISTS daily_quotes (
@@ -39,6 +58,11 @@ def ensure_market_tables():
         pct_chg FLOAT, turnover_rate FLOAT,
         PRIMARY KEY (ts_code, trade_date)
     );
+    -- pre_close（昨收）为后续新增列：老表无此列，用幂等 ALTER 补齐。
+    -- 限制：AKShare 现货快照不直接给出昨收，主源路径用 close/(1+pct_chg/100) 推导
+    -- （涨跌幅为交易所口径，除权日可能有舍入误差）；BaoStock/Tushare 直接取
+    -- preclose/pre_close 原始字段；yfinance 取前一交易日未复权收盘。
+    ALTER TABLE daily_quotes ADD COLUMN IF NOT EXISTS pre_close FLOAT;
     
     CREATE TABLE IF NOT EXISTS lhb_detail (
         id BIGSERIAL PRIMARY KEY,
@@ -142,6 +166,7 @@ def fetch_with_akshare_full():
                 int(r['成交量']) if pd.notna(r.get('成交量')) else None,
                 r.get('成交额'),
                 r.get('涨跌幅'), r.get('换手率'),
+                _derive_pre_close(latest, r.get('涨跌幅')),
             ))
         else:
             latest = r.get('trade')
@@ -154,6 +179,7 @@ def fetch_with_akshare_full():
                 int(r.get('volume', 0)) if pd.notna(r.get('volume')) else None,
                 r.get('amount'),
                 r.get('changepercent'), r.get('turnoverratio'),
+                _derive_pre_close(latest, r.get('changepercent')),
             ))
 
     logger.info(f"解析完成: {len(rows)} 条有效, 跳过前缀{skipped_prefix}, 跳过价格{skipped_price}")
@@ -189,7 +215,7 @@ def fetch_with_baostock():
             try:
                 rs = bs.query_history_k_data_plus(
                     code,
-                    "date,code,open,high,low,close,volume,amount,turn",
+                    "date,code,open,high,low,close,preclose,volume,amount,turn",
                     start_date=today_str, end_date=today_str,
                     frequency="d", adjustflag="3"
                 )
@@ -198,7 +224,7 @@ def fetch_with_baostock():
                     continue
 
                 row_data = rs.get_row_data()
-                if not row_data or len(row_data) < 9:
+                if not row_data or len(row_data) < 10:
                     continue
 
                 ts_code = code[3:] + ('.SH' if code.startswith('sh.') else '.SZ')
@@ -206,14 +232,15 @@ def fetch_with_baostock():
                 rows.append((
                     ts_code,
                     pd.to_datetime(row_data[0]).date(),
-                    float(row_data[2]) if row_data[2] else None,
-                    float(row_data[3]) if row_data[3] else None,
-                    float(row_data[4]) if row_data[4] else None,
-                    float(row_data[5]) if row_data[5] else None,
-                    int(float(row_data[6])) if row_data[6] else None,
-                    float(row_data[7]) if row_data[7] else None,
-                    None,
-                    float(row_data[8]) if row_data[8] else None,
+                    float(row_data[2]) if row_data[2] else None,   # open
+                    float(row_data[3]) if row_data[3] else None,   # high
+                    float(row_data[4]) if row_data[4] else None,   # low
+                    float(row_data[5]) if row_data[5] else None,   # close
+                    int(float(row_data[7])) if row_data[7] else None,  # volume
+                    float(row_data[8]) if row_data[8] else None,   # amount
+                    None,                                          # pct_chg
+                    float(row_data[9]) if row_data[9] else None,   # turnover_rate
+                    float(row_data[6]) if row_data[6] else None,   # pre_close
                 ))
             except Exception as e:
                 logger.debug(f"BaoStock {code} 失败: {e}")
@@ -272,6 +299,7 @@ def fetch_with_tushare():
             int(vol_raw * 100) if pd.notna(vol_raw) and vol_raw else None,
             amt_raw * 1000 if pd.notna(amt_raw) and amt_raw else None,
             r.get('pct_chg'), None,
+            r.get('pre_close') if pd.notna(r.get('pre_close')) else None,
         ))
 
     return rows
@@ -297,7 +325,9 @@ def fetch_with_yfinance():
     for code in major_stocks:
         try:
             ticker = yf.Ticker(code)
-            hist = ticker.history(period='2d')
+            # auto_adjust=False：返回未复权价（Open/High/Low/Close 为原始价，
+            # 另有 Adj Close 列）。避免与 AKShare/BaoStock 等不复权源混写。
+            hist = ticker.history(period='2d', auto_adjust=False)
             if hist.empty:
                 continue
             latest = hist.iloc[-1]
@@ -312,6 +342,7 @@ def fetch_with_yfinance():
                 float(latest['Low']), float(latest['Close']),
                 int(latest['Volume']), float(latest['Volume'] * latest['Close']),
                 float(pct_chg), None,
+                float(prev['Close']),
             ))
         except Exception as e:
             logger.debug(f"yfinance {code} 失败: {e}")
@@ -322,20 +353,32 @@ def fetch_with_yfinance():
 
 
 def fetch_daily_quotes_today():
-    """全市场当日行情快照 - AKShare 优先"""
+    """全市场当日行情快照 - AKShare 优先
+
+    数据源优先级：AKShare（主源）→ BaoStock → Tushare → yfinance（兜底）。
+    写入策略：主源（AKShare）对同日已有行执行 COALESCE 更新；兜底源仅插入
+    缺失行（ON CONFLICT DO NOTHING），避免低优先级源覆盖主源数据。
+    """
     rows = None
+    source = None
 
     # 1. AKShare 全市场（首选，5300+ 只）
     rows = fetch_with_akshare_full()
+    if rows:
+        source = 'akshare'
 
     # 2. BaoStock 写死列表（兜底）
     if not rows:
         rows = fetch_with_baostock()
+        if rows:
+            source = 'baostock'
 
     # 3. Tushare（兜底）
     if not rows:
         try:
             rows = fetch_with_tushare()
+            if rows:
+                source = 'tushare'
         except ModuleNotFoundError:
             pass
 
@@ -343,19 +386,21 @@ def fetch_daily_quotes_today():
     if not rows:
         try:
             rows = fetch_with_yfinance()
+            if rows:
+                source = 'yfinance'
         except ModuleNotFoundError:
             pass
 
-    if not rows:
+    if not rows or not source:
         logger.error("所有数据源均失败")
         return
 
-    conn = None
-    try:
-        conn = get_db_fresh()
-        cur = conn.cursor()
-        execute_values(cur, """
-            INSERT INTO daily_quotes (ts_code, trade_date, open, high, low, close, volume, amount, pct_chg, turnover_rate)
+    # 主源（AKShare）可更新已有行；兜底源仅插入缺失行
+    is_primary = (source == 'akshare')
+
+    if is_primary:
+        conflict_sql = """
+            INSERT INTO daily_quotes (ts_code, trade_date, open, high, low, close, volume, amount, pct_chg, turnover_rate, pre_close)
             VALUES %s
             ON CONFLICT (ts_code, trade_date) DO UPDATE SET
                 open=COALESCE(EXCLUDED.open, daily_quotes.open),
@@ -365,10 +410,23 @@ def fetch_daily_quotes_today():
                 volume=COALESCE(EXCLUDED.volume, daily_quotes.volume),
                 amount=COALESCE(EXCLUDED.amount, daily_quotes.amount),
                 pct_chg=COALESCE(EXCLUDED.pct_chg, daily_quotes.pct_chg),
-                turnover_rate=COALESCE(EXCLUDED.turnover_rate, daily_quotes.turnover_rate);
-        """, rows)
+                turnover_rate=COALESCE(EXCLUDED.turnover_rate, daily_quotes.turnover_rate),
+                pre_close=COALESCE(EXCLUDED.pre_close, daily_quotes.pre_close);
+        """
+    else:
+        conflict_sql = """
+            INSERT INTO daily_quotes (ts_code, trade_date, open, high, low, close, volume, amount, pct_chg, turnover_rate, pre_close)
+            VALUES %s
+            ON CONFLICT (ts_code, trade_date) DO NOTHING;
+        """
+
+    conn = None
+    try:
+        conn = get_db_fresh()
+        cur = conn.cursor()
+        execute_values(cur, conflict_sql, rows)
         conn.commit()
-        logger.info(f"daily_quotes 入库: {len(rows)} 条")
+        logger.info(f"daily_quotes 入库[{source}{'/主源' if is_primary else '/兜底仅补缺'}]: {len(rows)} 条")
         cur.close()
     except Exception as e:
         logger.error(f"daily_quotes 入库失败: {e}")
@@ -660,6 +718,17 @@ if __name__ == '__main__':
     # 非交易日跳过行情采集
     if not is_trading_day(today):
         logger.warning(f"{today} 非交易日，跳过行情采集")
+        exit(0)
+
+    # 未收盘不执行全天采集：需北京时间 >= 15:05 才能拿到完整收盘数据，
+    # 否则盘中不完整快照会覆盖/污染当日行。此处直接拒绝执行。
+    _now_bj = datetime.now(BEIJING_TZ)
+    _cutoff_bj = _now_bj.replace(hour=15, minute=5, second=0, microsecond=0)
+    if _now_bj < _cutoff_bj:
+        logger.warning(
+            f"北京时间 {_now_bj.strftime('%H:%M:%S')} 未到收盘 15:05，"
+            f"拒绝执行全天行情采集（避免用盘中不完整快照覆盖当日数据）"
+        )
         exit(0)
     
     import concurrent.futures

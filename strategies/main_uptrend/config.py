@@ -20,7 +20,6 @@ class MainUptrendConfig:
     a_enabled: bool = True
 
     a_profit_growth_min: float = 0.20
-    a_profit_acceleration: bool = True
 
     a_market_cap_min: float = 30e8
     a_market_cap_max: float = 500e8
@@ -34,9 +33,11 @@ class MainUptrendConfig:
     # 若按证据区间上沿（4-6 个月）取值需 ~150 自然日，留待主会话回测对比后决定。
     a_industry_momentum_days: int = 60
 
-    a_incentive_lookback_months: int = 6
-
     a_use_union: bool = True
+
+    # A 层池缓存粒度（2026-10-14 审查 26：旧实现按自然月复用，与"逐日 PIT"语义不符）。
+    # 改为 ISO 周键（ISOWeek）；如需更细粒度可改为按日（0=按 ISO 周，1=按日）。
+    a_pool_cache_mode: str = "iso_week"
 
     # ============================================================
     # Layer B: 启动信号识别（日频）
@@ -60,9 +61,10 @@ class MainUptrendConfig:
     # 本阈值仅用于评分归一化，不再一票否决。
     b_main_force_inflow_min_pct: float = 0.03
 
-    b_seal_amount_ratio_min: float = 0.005
-
-    b_next_day_hold_avg_price: bool = True
+    # 涨停日"放量强度"下限（2026-10-14 审查 15）：旧字段 b_seal_amount_ratio_min
+    # 名为"封单金额比"，实际是 成交额/60日均额×0.001 的伪封单比（无 L2 封单数据），
+    # 语义实为放量强度。改名并去掉 ×0.001 缩放：阈值等价换算 0.005 × 1000 = 5.0。
+    b_volume_strength_min: float = 5.0
 
     # ============================================================
     # Layer C: 持续性判定（日频）
@@ -73,15 +75,10 @@ class MainUptrendConfig:
     c_intraday_morning_amplitude_max: float = 0.02
     c_intraday_up_ratio_min: float = 0.60
 
-    # 大单净买占成交额阈值。2026-10-13 参数审查：订单分类类指标（主力/大单）同属
-    # 伪指标，降级为弱加权，不再一票否决。当前代码中没有任何硬条件引用本字段
-    # （C 层实际用的是"成交额/20日均额"放量倍数，见 layer_c_sustain C2），
-    # 字段保留仅作兼容与后续弱评分归一化用。
-    c_big_order_net_buy_min_pct: float = 0.05
-    c_big_order_threshold: float = 500000
-
-    c_volume_shrink_ratio_min: float = 0.35
-    c_volume_shrink_ratio_max: float = 0.80
+    # 大单净买占成交额阈值已删除（2026-10-14 审查 29：死字段）。C 层实际使用的是
+    # "成交额/20日均额"放量倍数（见 layer_c_sustain C2），订单分类类指标属伪指标；
+    # 原 c_big_order_net_buy_min_pct / c_big_order_threshold /
+    # c_volume_shrink_ratio_min / c_volume_shrink_ratio_max 均无代码引用，一并删除。
 
     c_seal_early_time: str = "10:00"
     c_seal_max_open_times: int = 0
@@ -100,15 +97,20 @@ class MainUptrendConfig:
     d_share_reduction_days: int = 30
 
     d_trap_volume_ratio: float = 5.0
-    d_trap_seal_ratio_max: float = 0.003
+    # 诱多判定的"放量强度"上限（2026-10-14 审查 15）：旧字段 d_trap_seal_ratio_max
+    # 是伪封单比阈值（0.003），语义等价于 成交额/60日均额 < 3，改名并去掉 ×0.001 缩放。
+    d_trap_volume_strength_max: float = 3.0
 
     d_pledge_ratio_max: float = 0.50
     d_pledge_consecutive_limit_days: int = 3
+    # 2026-10-14 审查 29：d_max_gain_20d / d_max_turnover 为死字段（无代码引用），已删除。
 
-    d_max_gain_20d: float = 0.80
-    d_near_high_pct: float = 1.0
+    # D5 高位接盘：收盘价达到前 52 周高点（shift-1，不含当日）的该比例以上视为
+    # "高位滞涨"剔除；真正创 52 周新高（close > high_52w）的突破信号显式豁免，
+    # 不再像旧实现（阈值 1.0）那样把 B2 突破信号全部否决。
+    # 2026-10-14 审查 14：旧值 1.0 与注释"95%"矛盾，此处按注释意图对齐为 0.95。
+    d_near_high_pct: float = 0.95
     d_max_drop_5d: float = 0.20
-    d_max_turnover: float = 45.0
 
     # ============================================================
     # Layer E: 趋势持续型检测（日频）
@@ -120,10 +122,8 @@ class MainUptrendConfig:
     e_max_drawdown_20d: float = 0.12
 
     e_volume_staircase_min: float = 1.1
-    e_volume_staircase_periods: int = 5
 
     e_momentum_positive_min: int = 3
-    e_momentum_slope_stable: bool = True
 
     e_adx_threshold: float = 25.0
     e_rsi_range_min: float = 45.0
@@ -132,7 +132,11 @@ class MainUptrendConfig:
     e_trend_duration_min: int = 10
     e_top_n_daily: int = 5
     e_min_total_score: float = 4.0  # E层总信号硬门槛
-    e_top_percentile: float = 66.7  # 只保留综合分前1/3
+    # 2026-10-14 审查 10：旧字段 e_top_percentile=66.7 配注释"只保留综合分前1/3"，
+    # 实际代码 `np.percentile(scores, 100-66.7)` 保留的是前 66.7%（约前 2/3）。
+    # 二选一对齐：保留既有行为（前 2/3），字段改名 e_keep_pct 并如实注释；
+    # 向量化与 fallback 两条路径统一按本字段截断（layer_e_trend）。
+    e_keep_pct: float = 66.7  # 保留综合分前 66.7%（约前 2/3）
 
     # ============================================================
     # LLM 优选模块
@@ -148,8 +152,6 @@ class MainUptrendConfig:
     backtest_end: str = "2026-05-15"
 
     forward_return_days: List[int] = field(default_factory=lambda: [10, 20, 60])
-
-    db_batch_size: int = 1000
 
 
 DEFAULT_CONFIG = MainUptrendConfig()

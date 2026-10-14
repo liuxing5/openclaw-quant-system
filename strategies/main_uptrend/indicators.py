@@ -38,15 +38,30 @@ def volume_ma(volume: pd.Series, n: int = 60) -> pd.Series:
 
 
 def detect_limit_up_pct(symbol: str, name: str = "") -> float:
+    """涨停涨跌幅限制（小数，如 0.10/0.20/0.30）。
+
+    2026-10-14 审查 25：旧实现只认 300/688，漏掉 301/302/303/689 与北交所 ±30%，
+    且返回值是"阈值-0.003 容差"的隐晦口径（0.097/0.197/0.048），极易被当成
+    板块限制本身而再次错位。现统一走 shared/board_rules.limit_pct，直接返回
+    板块真实涨跌幅限制；容差统一在 is_limit_up 内处理。
+    symbol 支持 "600519" / "600519.SH" / "sh.600519" 三种写法。
+    """
+    from ..shared.board_rules import limit_pct as board_limit_pct
     name_upper = (name or "").upper()
     if "ST" in name_upper or "*" in name_upper:
-        return 0.048
-    if symbol.startswith(("300", "688")):
-        return 0.197
-    return 0.097
+        return 0.05  # ST 股 ±5%（无法从代码识别，需名称）
+    code = symbol
+    prefix = symbol[:3].lower()
+    if prefix in ("sh.", "sz.", "bj."):
+        code = f"{symbol[3:]}.{symbol[:2].upper()}"
+    return board_limit_pct(code)
 
 
 def is_limit_up(pct_chg: float, limit_pct: float) -> bool:
+    """pct_chg（小数，如 0.1002）是否涨停。limit_pct 为板块涨跌幅限制（小数）。
+
+    容差 0.003（30bp）用于吸收涨停价四舍五入到分带来的缺口。
+    """
     return pct_chg >= limit_pct - 0.003
 
 

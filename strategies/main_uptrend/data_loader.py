@@ -25,11 +25,50 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..',
 
 from core.db.connection import get_db_fresh
 
+from ..shared.adjust import qfq_adjust, qfq_grouped
+
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
 
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+
+# ================================================================
+# 交易日历窗口换算（审查 7/8）
+# 自然日 → 交易日约 1.45:1，旧版用自然日估算回看窗口
+# （run_daily 的 300 自然日 ≈ 200 交易日），不足以覆盖 52 周高点
+# （250 交易日）与 60 日均线/箱体的预热，导致窗口起点附近的
+# high_52w/ma_60 等指标为 NaN 被静默跳过。
+# 统一改用 core.utils.trading_calendar 精确换算。
+# ================================================================
+def trading_days_before(end_date: str, n: int) -> str:
+    """返回 end_date 往前第 n 个交易日（不含 end_date）的 'YYYY-MM-DD'。
+
+    窗口 [返回值, end_date] 含 n+1 个交易日。
+    """
+    from core.utils.trading_calendar import is_trading_day
+    cur = datetime.strptime(str(end_date)[:10], "%Y-%m-%d").date()
+    count = 0
+    while count < n:
+        cur -= timedelta(days=1)
+        if is_trading_day(cur):
+            count += 1
+    return cur.strftime("%Y-%m-%d")
+
+
+def trading_days_after(start_date: str, n: int) -> str:
+    """返回 start_date 往后第 n 个交易日（不含 start_date）的 'YYYY-MM-DD'。
+
+    用于前向收益窗口（审查 8：旧版按自然日推算，实际交易日不足）。
+    """
+    from core.utils.trading_calendar import is_trading_day
+    cur = datetime.strptime(str(start_date)[:10], "%Y-%m-%d").date()
+    count = 0
+    while count < n:
+        cur += timedelta(days=1)
+        if is_trading_day(cur):
+            count += 1
+    return cur.strftime("%Y-%m-%d")
 
 
 class DataLoader:
@@ -65,7 +104,18 @@ class DataLoader:
     def preload_for_backtest(self, start_date: str, end_date: str):
         """一次性加载回测区间全量日线数据到内存，并构建索引
 
-        注意：调用方应负责扩展start_date以包含足够历史数据（B层需要60日均线等）
+        注意：调用方应负责扩展 start_date 以包含足够历史数据
+        （D 层 52 周高点需 ≥251 交易日；B 层需 120 日均线、60 日箱体等）。
+
+        2026-10-14 审查修复：
+          (6)  取数后逐股前复权（shared.adjust.qfq_grouped）——指标、前向收益与
+               止损退出全部改用复权价；原始价保留在 raw_close/raw_open 列；
+          (20) 预加载失败不再静默清空缓存降级为逐票查询，直接 raise；
+          (21) SQL 过滤 close/volume 为 NULL 的脏行（单个 NaN 会让 cumsum 版
+               滚动均线永久为 NaN）；
+          (28) 行业映射改为 DISTINCT ON ... ORDER BY report_date DESC（旧行为
+               first-row-wins，取到的是任意一期报告的行业）；
+          (31) statement_timeout 在连接建立后统一 SET 一次（原每个 cursor 重复 SET）。
         """
         logger.info(f"预加载回测数据 {start_date} ~ {end_date} ...")
 
@@ -73,26 +123,30 @@ class DataLoader:
         industry_map = {}
         name_map = {}
 
+        conn = get_db_fresh()
         try:
-            conn = get_db_fresh()
-
-            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur = conn.cursor()
             cur.execute("SET statement_timeout = '300000'")
-            cur.execute("SELECT ts_code, industry FROM stock_fundamentals WHERE industry IS NOT NULL")
-            for row in cur.fetchall():
-                if row['ts_code'] not in industry_map:
-                    industry_map[row['ts_code']] = row['industry']
             cur.close()
 
             cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("SET statement_timeout = '300000'")
+            cur.execute("""
+                SELECT DISTINCT ON (ts_code) ts_code, industry
+                FROM stock_fundamentals
+                WHERE industry IS NOT NULL
+                ORDER BY ts_code, report_date DESC
+            """)
+            for row in cur.fetchall():
+                industry_map[row['ts_code']] = row['industry']
+            cur.close()
+
+            cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("SELECT ts_code, stock_name FROM stock_basic_info")
             for row in cur.fetchall():
                 name_map[row['ts_code']] = row['stock_name']
             cur.close()
 
             from datetime import datetime as _dt, timedelta as _td
-            from dateutil.relativedelta import relativedelta
             sd = _dt.strptime(start_date, "%Y-%m-%d")
             ed = _dt.strptime(end_date, "%Y-%m-%d")
             batch_start_dt = sd
@@ -105,7 +159,6 @@ class DataLoader:
                 be = batch_end_dt.strftime("%Y-%m-%d")
 
                 cur = conn.cursor(cursor_factory=RealDictCursor)
-                cur.execute("SET statement_timeout = '300000'")
                 cur.execute("""
                     SELECT ts_code, trade_date, open, high, low, close,
                            volume, amount, pct_chg, turnover_rate,
@@ -114,6 +167,8 @@ class DataLoader:
                     WHERE trade_date >= %s
                       AND trade_date < %s
                       AND amount IS NOT NULL
+                      AND close IS NOT NULL
+                      AND volume IS NOT NULL
                     ORDER BY ts_code, trade_date
                 """, (bs, be))
                 batch_rows = cur.fetchall()
@@ -130,6 +185,15 @@ class DataLoader:
                 df['trade_date'] = df['trade_date'].astype(str)
                 df['industry'] = df['ts_code'].map(industry_map)
                 df['name'] = df['ts_code'].map(name_map)
+
+                # ---- 复权（审查 6）：按股票升序后逐股前复权 ----
+                # 指标（MA/箱体/52周高/RSI/量能基线）与前向收益、止损退出用复权价；
+                # 涨停判定用 pct_chg（交易所口径天然含除权）与 raw_close；
+                # 原始价保留在 raw_close/raw_open（qfq_adjust keep_raw=True）。
+                logger.info("  前复权换算（qfq_grouped）...")
+                df = df.sort_values(['ts_code', 'trade_date'], kind='mergesort')
+                df = qfq_grouped(df)
+
                 self._preloaded_daily = df
                 n_stocks = df['ts_code'].nunique()
                 logger.info(f"  预加载日线: {len(df)} 条, {n_stocks} 只股票")
@@ -155,6 +219,7 @@ class DataLoader:
 
                 logger.info("  索引构建完成")
             else:
+                logger.error(f"预加载无数据：{start_date} ~ {end_date}（daily_quotes 为空或日期越界）")
                 self._preloaded_daily = pd.DataFrame()
                 self._preloaded_by_code = {}
                 self._preloaded_close_map = {}
@@ -175,10 +240,19 @@ class DataLoader:
                 self._preloaded_main_flow_by_code = None
 
         except Exception as e:
+            # 审查 20：预加载失败必须显式暴露。旧实现在这里把缓存清空，
+            # 隐式降级为逐票 DB 查询（回测耗时从分钟级涨到小时级且难以察觉）。
             logger.error(f"预加载失败: {e}")
             self._preloaded_daily = pd.DataFrame()
             self._preloaded_by_code = {}
             self._preloaded_close_map = {}
+            raise
+        finally:
+            if conn is not None and not conn.closed:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
 
         self._precompute_indicators()
 
@@ -229,8 +303,12 @@ class DataLoader:
         t1 = time.time()
         logger.info("    B1: 量能指标...")
         amount_arr = df['amount'].values.astype(np.float64)
+        # 注意：vol_ma_60 是**成交额**的 60 日均值（历史命名遗留），供 B1 量能突破
+        # (vol_breakout_ratio) 与放量强度 (volume_strength) 使用；
+        # E4 阶梯放量所需的**成交量** 60 日均量见下方 volume_ma_60（审查 2）。
         vol_ma_60 = self._fast_rolling_mean(amount_arr, group_starts, group_ends, 60)
         df['vol_ma_60'] = vol_ma_60
+        df['amount_ma_60'] = vol_ma_60
         df['vol_breakout_ratio'] = amount_arr / np.where(vol_ma_60 != 0, vol_ma_60, np.nan)
 
         logger.info("    B2: 价格突破指标...")
@@ -301,7 +379,12 @@ class DataLoader:
         volume_ma_20 = self._fast_rolling_mean_shifted(volume_arr, group_starts, group_ends, 20)
         df['volume_ma_20'] = volume_ma_20
         df['volume_ratio_20'] = volume_arr / np.where(volume_ma_20 != 0, volume_ma_20, np.nan)
-        df['seal_quality_est'] = amount_arr / np.where(vol_ma_60 != 0, vol_ma_60, np.nan) * 0.001
+        # 审查 15：旧列 seal_quality_est = (成交额/60日均额)×0.001，是个与真实封单
+        # 无关的伪封单比（无 L2 数据），语义实为"放量强度"。去掉 ×0.001 缩放并改名；
+        # 保留旧列名作兼容别名（同一数值，勿再按"封单比"阈值解读）。
+        volume_strength = amount_arr / np.where(vol_ma_60 != 0, vol_ma_60, np.nan)
+        df['volume_strength'] = volume_strength
+        df['seal_quality_est'] = volume_strength
 
         # D5: 20日涨幅（用于追高风险过滤）
         close_20 = self._fast_rolling_mean_shifted(close_arr, group_starts, group_ends, 20)
@@ -312,11 +395,17 @@ class DataLoader:
         ma_5 = self._fast_rolling_mean(close_arr, group_starts, group_ends, 5)
         ma_10 = self._fast_rolling_mean(close_arr, group_starts, group_ends, 10)
         ma_20 = self._fast_rolling_mean(close_arr, group_starts, group_ends, 20)
+        # 审查 1：旧实现没有 df['ma_60'] 列，layer_e 向量化路径 pool_df.get('ma_60')
+        # 恒为 NaN → E1 均线多头排列恒 False，e>4.0 时策略退化为 E9 单因子。
+        ma_60 = self._fast_rolling_mean(close_arr, group_starts, group_ends, 60)
         df['ma_5'] = ma_5
         df['ma_10'] = ma_10
         df['ma_20'] = ma_20
+        df['ma_60'] = ma_60
 
-        df['ma_alignment'] = (ma_5 > ma_10) & (ma_10 > ma_20) & (ma_20 > ma_120)
+        # 审查 1：ma_alignment 同步改用 MA60（E1 定义即 MA5>MA10>MA20>MA60），
+        # 旧实现用 MA120 与 layer_e 的 E1 判定不一致，ma_alignment_days 失真。
+        df['ma_alignment'] = (ma_5 > ma_10) & (ma_10 > ma_20) & (ma_20 > ma_60)
 
         ma_alignment_days = np.zeros(len(df), dtype=np.float64)
         align_vals = df['ma_alignment'].values.astype(float)
@@ -338,8 +427,13 @@ class DataLoader:
 
         vol_ma_5 = self._fast_rolling_mean(volume_arr, group_starts, group_ends, 5)
         vol_ma_20_e = self._fast_rolling_mean(volume_arr, group_starts, group_ends, 20)
+        # 审查 2：E4 阶梯放量需要 5/20/60 三档**成交量**均量同量纲对比。
+        # 旧实现拿 vol_ma_5/vol_ma_20（volume）去比 vol_ma_60（amount，量纲错配），
+        # E4 恒不通过；此处补基于 volume 的 60 日均量列。
+        vol_ma_60_e = self._fast_rolling_mean(volume_arr, group_starts, group_ends, 60)
         df['vol_ma_5'] = vol_ma_5
         df['vol_ma_20'] = vol_ma_20_e
+        df['volume_ma_60'] = vol_ma_60_e
 
         max_dd_20d = np.zeros(len(df), dtype=np.float64)
         for i in range(len(group_starts)):
@@ -381,8 +475,11 @@ class DataLoader:
         df['pct_chg_60d'] = (close_arr - close_60) / np.where(close_60 != 0, close_60, np.nan) * 100
 
         logger.info("    E层 RSI/ADX...")
-        rsi_14 = np.full(len(df), 50.0, dtype=np.float64)
-        adx_14 = np.full(len(df), 0.0, dtype=np.float64)
+        # 审查 22：旧实现对 n<30 的短历史股票直接填 RSI=50，50 恰落在 E7
+        # 健康区间(45,80)内 → 短历史票"免费通过"E7。改为 NaN（不可判定），
+        # 由 layer_e 按"不可判定"处理（不通过、不给分、明细标注）。
+        rsi_14 = np.full(len(df), np.nan, dtype=np.float64)
+        adx_14 = np.full(len(df), np.nan, dtype=np.float64)
         for i in range(len(group_starts)):
             s, e = group_starts[i], group_ends[i]
             cc = close_arr[s:e]
@@ -407,7 +504,8 @@ class DataLoader:
                         avg_loss[j] = (avg_loss[j-1] * 13 + loss[j]) / 14
                     rs = np.where(avg_loss != 0, avg_gain / avg_loss, np.nan)
                     rsi_vals = np.where(np.isnan(rs), 50.0, 100 - 100 / (1 + rs))
-                    rsi_vals[:14] = 50.0
+                    # 预热期(<14日差分)不可判定：置 NaN 而非 50（审查 22）
+                    rsi_vals[:14] = np.nan
                     rsi_14[s:e] = rsi_vals
 
                 tr = np.empty(n, dtype=np.float64)
@@ -453,7 +551,7 @@ class DataLoader:
                         100 * np.abs(plus_di - minus_di) / (plus_di + minus_di),
                         0.0
                     )
-                    adx_vals = np.full(n, 0.0, dtype=np.float64)
+                    adx_vals = np.full(n, np.nan, dtype=np.float64)
                     if n > 28:
                         adx_vals[28] = np.mean(dx[15:29])
                         for j in range(29, n):
@@ -466,7 +564,7 @@ class DataLoader:
 
         # ---- 蓄势指标（主升浪前兆） ----
         logger.info("    蓄势指标...")
-        ma_60_e = self._fast_rolling_mean(close_arr, group_starts, group_ends, 60)
+        # ma_60 已在 E 层均线段计算（审查 1），此处直接复用
 
         consolidation_days = np.zeros(len(df), dtype=np.float64)
         volume_drying = np.zeros(len(df), dtype=np.float64)
@@ -485,10 +583,9 @@ class DataLoader:
             m5 = ma_5[s:e]
             m10 = ma_10[s:e]
             m20 = ma_20[s:e]
-            m60 = ma_60_e[s:e]
+            m60 = ma_60[s:e]
             vm5 = vol_ma_5[s:e]
             vm20 = vol_ma_20_e[s:e]
-            pct = pct_chg_arr[s:e] if 'pct_chg_arr' in dir() else np.zeros(n)
 
             for j in range(20, n):
                 if np.isnan(m20[j]) or np.isnan(m60[j]):
@@ -537,32 +634,43 @@ class DataLoader:
         df['breakout_score'] = breakout_signal
 
         # ---- 辅助列 ----
-        df['is_kcb_cyb'] = df['ts_code'].str.startswith(('300', '688'))
+        # 审查 25：旧写法 str.startswith(('300','688')) 漏掉 301/302/303/689，
+        # 统一走 shared/board_rules（20cm 板块 = 涨跌幅限制 20%）。
+        from ..shared.board_rules import limit_pct as _board_limit_pct
+        df['is_kcb_cyb'] = df['ts_code'].map(
+            lambda c: abs(_board_limit_pct(c) - 0.20) < 1e-9)
 
         # ---- C5: 行业统计（用pandas groupby + map替代merge） ----
+        # 审查 27：行业均值/上涨家数需 exclude-self，否则个股自身涨幅会进入
+        # 行业均值与计数（自相关，C5 变成"自己带自己"）。
         logger.info("    行业统计...")
         if 'industry' in df.columns and df['industry'].notna().any():
-            # groupby计算行业统计（比Python循环快）
-            ind_grp = df.groupby(['trade_date', 'industry'], sort=False)
-            industry_stats = ind_grp.agg(
-                industry_avg_pct=('pct_chg', 'mean'),
-                industry_rising_count=('pct_chg', lambda x: (x.dropna() > 0).sum())
-            )
-            # 构建map用于快速查找
-            industry_avg_map = industry_stats['industry_avg_pct'].to_dict()
-            industry_rising_map = industry_stats['industry_rising_count'].to_dict()
+            _pct_num = pd.to_numeric(df['pct_chg'], errors='coerce')
+            industry_stats = pd.DataFrame({
+                'ind_sum': _pct_num.groupby([df['trade_date'], df['industry']]).sum(min_count=1),
+                'ind_count': _pct_num.groupby([df['trade_date'], df['industry']]).count(),
+                'ind_rising': (_pct_num > 0).groupby([df['trade_date'], df['industry']]).sum(),
+            })
+            industry_sum_map = industry_stats['ind_sum'].to_dict()
+            industry_count_map = industry_stats['ind_count'].to_dict()
+            industry_rising_map = industry_stats['ind_rising'].to_dict()
 
-            # 用map填充列（比merge快得多）
             trade_date_vals = df['trade_date'].values
             industry_vals = df['industry'].values
-            df['industry_avg_pct'] = [
-                industry_avg_map.get((trade_date_vals[i], industry_vals[i]), np.nan)
-                for i in range(len(df))
-            ]
-            df['industry_rising_count'] = [
-                industry_rising_map.get((trade_date_vals[i], industry_vals[i]), 0)
-                for i in range(len(df))
-            ]
+            pct_vals = _pct_num.fillna(0.0).values
+            n_rows = len(df)
+            avg_excl = np.full(n_rows, np.nan, dtype=np.float64)
+            rising_excl = np.zeros(n_rows, dtype=np.float64)
+            for i in range(n_rows):
+                key = (trade_date_vals[i], industry_vals[i])
+                cnt = industry_count_map.get(key, 0)
+                if cnt <= 1:
+                    continue  # 无同行业同伴：均值不可判定(NaN)，上涨家数 0
+                s = industry_sum_map.get(key, np.nan)
+                avg_excl[i] = (s - pct_vals[i]) / (cnt - 1)
+                rising_excl[i] = industry_rising_map.get(key, 0) - (1 if pct_vals[i] > 0 else 0)
+            df['industry_avg_pct'] = avg_excl
+            df['industry_rising_count'] = rising_excl
         else:
             df['industry_avg_pct'] = np.nan
             df['industry_rising_count'] = 0
@@ -680,14 +788,8 @@ class DataLoader:
 
     def get_indicators_snapshot(self, trade_date: str) -> pd.DataFrame:
         """获取某日的预计算指标快照"""
-        snap = self._indicators_by_date.get(trade_date, pd.DataFrame())
-        # 调试：首次调用打印快照信息
-        if not snap.empty and not hasattr(self, '_snap_debug_done'):
-            logger.info(f"[DEBUG] 快照 {trade_date}: {len(snap)}行, columns={list(snap.columns)}")
-            logger.info(f"[DEBUG] 快照 amount: min={snap['amount'].min()}, max={snap['amount'].max()}, nan={snap['amount'].isna().sum()}")
-            logger.info(f"[DEBUG] 快照 pct_chg: min={snap['pct_chg'].min()}, max={snap['pct_chg'].max()}")
-            self._snap_debug_done = True
-        return snap
+        # 2026-10-14 审查 32：删除首日一次性 [DEBUG] 快照日志（仓库噪音，无诊断价值）
+        return self._indicators_by_date.get(trade_date, pd.DataFrame())
 
     def get_preloaded_close(self, ts_code: str, trade_date: str) -> Optional[float]:
         ts_code = self.normalize_ts_code(ts_code)
@@ -763,6 +865,9 @@ class DataLoader:
         conn = None
         try:
             conn = get_db_fresh()
+            cur = conn.cursor()
+            cur.execute("SET statement_timeout = '300000'")
+            cur.close()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
                 SELECT trade_date, open, high, low, close, volume, amount,
@@ -770,6 +875,8 @@ class DataLoader:
                 FROM daily_quotes
                 WHERE ts_code = %s
                   AND trade_date >= '2020-01-01'
+                  AND close IS NOT NULL
+                  AND volume IS NOT NULL
                 ORDER BY trade_date
             """, (ts_code,))
             rows = cur.fetchall()
@@ -778,6 +885,9 @@ class DataLoader:
                 return None
             full_df = pd.DataFrame(rows)
             full_df = full_df.sort_values("trade_date").reset_index(drop=True)
+            # 复权（审查 6）：缓存全历史后统一前复权，切片返回复权价；
+            # 涨停判定等 raw 口径请使用 raw_close 列。
+            full_df = qfq_adjust(full_df)
             self._cache[cache_key] = full_df
 
             mask = pd.Series(True, index=full_df.index)
@@ -832,6 +942,9 @@ class DataLoader:
         conn = None
         try:
             conn = get_db_fresh()
+            cur = conn.cursor()
+            cur.execute("SET statement_timeout = '300000'")
+            cur.close()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
                 SELECT ts_code, trade_date, open, high, low, close, volume, amount,
@@ -840,6 +953,8 @@ class DataLoader:
                 WHERE trade_date = %s
                   AND amount > %s
                   AND pct_chg IS NOT NULL
+                  AND close IS NOT NULL
+                  AND volume IS NOT NULL
                 ORDER BY amount DESC
             """, (trade_date, min_amount))
             rows = cur.fetchall()

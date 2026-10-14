@@ -134,9 +134,54 @@ web_interface/
 ai_investment_system/
 .learnings/
 assets/
-scripts/
+# scripts/ 目录下的工具脚本应纳管：排除目录内容后反选顶层 .py
+# （scripts/backtest/*.py 已被 git 跟踪，不受此规则影响）
+scripts/*
+!scripts/*.py
 .hermes-aux/
 strategies/funnel_strategy/docs/main_uptrend_backtest.json
 
 # funnel date snapshot pages (only main funnel.html is published; date pages are generated locally via --all-dates)
 strategies/funnel_strategy/docs/funnel-2*.html
+
+# ===== 调试/优化产物（本地生成，勿入库）=====
+sweep_results*.json
+optimization_results.json
+b_layer_debug.txt
+rec_v6_output.txt
+strategies/main_uptrend/results/
+backtest/*.html
+backtest/*.bak_*
+# 2026-10-14 审查修复: 根目录 59 个调试输出 txt 已 git rm --cached（文件保留磁盘）
+/backtest_*.txt
+/bt_*.txt
+/diag*.txt
+/diagnose_output.txt
+/funnel_combo_result*.txt
+/kline_check_output.txt
+/output.txt
+/overlap_*.txt
+/query_result.txt
+/query_speed.txt
+/rec_result.txt
+/recommend_result.txt
+/test_*_output.txt
+/test_db_*.txt
+/test_trend_sql_result.txt
+/test_write_result.txt
+/trade_details_output.txt
+/backtest_run_output.txt
+/check_db_result.txt
+/test_output.txt
+/debug_compare.py
+/backtest_daily_recs.py
+/verify_backtest.py
+/optimize_strategy*.py
+/param_sweep*.py
+strategies/main_uptrend/check_a_pool.py
+strategies/main_uptrend/check_breadth.py
+strategies/main_uptrend/check_cols.py
+strategies/main_uptrend/check_scale.py
+strategies/main_uptrend/check_tables.py
+strategies/main_uptrend/test_preload.py
+strategies/main_uptrend/test_query_speed.py

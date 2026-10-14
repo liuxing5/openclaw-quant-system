@@ -56,8 +56,12 @@ class MetaBacktestConfig:
     start_date: str = "2025-06-01"
     end_date: str = "2026-05-15"
     initial_capital: float = 1_000_000.0
-    commission_rate: float = 0.001
-    slippage_pct: float = 0.001
+    # 2026-10-14 审查修复: 与 strategies/shared/backtest_stats.py 成本口径对齐。
+    # 原 0.001+0.001（往返 0.4%）与共享模型 0.25% 不一致；改为
+    # 买: 0.05% 佣金 + 0.075% 滑点 ≈ 0.125%；卖同额（含印花税摊入佣金项），
+    # 往返 = 0.25% = ROUND_TRIP_COST。
+    commission_rate: float = 0.0005
+    slippage_pct: float = 0.00075
     max_positions: int = 5
     single_position_pct: float = 0.20
 

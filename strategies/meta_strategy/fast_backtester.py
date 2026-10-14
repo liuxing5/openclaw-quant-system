@@ -43,8 +43,8 @@ class BacktestConfig:
     start_date: str = "2026-01-01"
     end_date: str = "2026-05-15"
     initial_capital: float = 1_000_000.0
-    commission_rate: float = 0.001
-    slippage_pct: float = 0.001
+    commission_rate: float = 0.0005
+    slippage_pct: float = 0.00075
     max_positions: int = 8
     single_position_pct: float = 0.125
     forward_return_days: List[int] = field(default_factory=lambda: [1, 3, 5, 10, 20])

@@ -2,15 +2,21 @@
 Layer D: 风险过滤
 ===================
 提前发现不等于盲目追入，必须过滤掉以下风险：
-  1. ST、退市风险警示股
-  2. 近 30 日内有重大减持公告
-  3. 诱多型涨停：量比 > 5 但封单 < 流通市值 0.3%
+  1. ST（按日 PIT，见 shared.st_history）、退市风险警示股
+  2. 近 30 日内有重大减持公告（按 eval_date 前 30 日窗口判定）
+  3. 诱多型涨停：量比 > 5 但放量强度 < 3（审查 15：旧称"封单比"）
   4. 大股东质押比例 > 50% 的票，连板 > 3 后剔除
 
 v2: 极致优化回测速度
-- 一次性预加载全量风险数据（ST/减持/质押），避免每日查DB
+- 一次性预加载全量风险数据（减持/质押/退市名称），避免每日查DB
+- ST 改为按日 is_st_mask 查询（全模块复用同一连接，见 _shared_conn）
 - 向量化诱多检测，使用预计算指标替代逐只股票get_daily+创建LayerB实例
 - filter_list_vectorized: 批量DataFrame过滤
+
+数据局限（回测 JSON limitations 同步披露）：
+- 大股东质押比例仅有当前快照（financial_data.pledge_ratio），无 PIT 历史，
+  D4 存在未来函数；退市风险警示仅有当前名称快照，同样非 PIT。
+- ST 走 stock_st_history 区间表（PIT），表缺失时回退当前快照并 warning。
 """
 from __future__ import annotations
 
@@ -26,7 +32,7 @@ import sys
 import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from core.db.connection import get_db_fresh
+from core.db.connection import get_db
 from psycopg2.extras import RealDictCursor
 from zoneinfo import ZoneInfo
 
@@ -34,9 +40,19 @@ from .config import MainUptrendConfig
 from .data_loader import DataLoader
 from .indicators import limit_up_mask
 from ..shared.board_rules import is_limit_up as board_is_limit_up
+from ..shared.st_history import is_st_mask
 
 logger = logging.getLogger(__name__)
 BEIJING_TZ = ZoneInfo("Asia/Shanghai")
+
+
+def _to_date(d) -> date:
+    """str/date → datetime.date（is_st_mask 只接受 date）"""
+    if isinstance(d, datetime):
+        return d.date()
+    if isinstance(d, date):
+        return d
+    return datetime.strptime(str(d)[:10], "%Y-%m-%d").date()
 
 
 @dataclass
@@ -55,41 +71,66 @@ class LayerDRiskFilter:
                  loader: Optional[DataLoader] = None):
         self.cfg = cfg
         self.loader = loader or DataLoader()
-        # 全量风险数据缓存（回测期间只加载一次）
-        self._st_cache: Optional[Set[str]] = None
-        self._reduction_cache: Optional[Set[str]] = None
+        # ---- 全量风险数据缓存（回测期间只加载一次）----
+        # 审查 13：ST 不再用"当前名称全历史集合"（未来函数），改为按日
+        # shared.st_history.is_st_mask（PIT），故不再有 _st_cache；
+        # 保留 _delist_cache 承接 d_exclude_delist_warning（无 PIT 数据源，见局限）。
+        self._delist_cache: Optional[Set[str]] = None
+        # 审查 3：减持缓存改为 {ts_code: [pub_date, ...]}，判定时按
+        # [eval_date - d_share_reduction_days, eval_date] 窗口过滤，
+        # 旧版"整个回测区间出现过减持就每天剔除"同时存在未来函数与窗口错误。
+        self._reduction_cache: Optional[Dict[str, List[str]]] = None
         self._pledge_cache: Optional[Set[str]] = None
+        # D 层专用连接（审查 13/31：ST 与所有批量风险查询复用同一连接，
+        # statement_timeout 只在连接建立后 SET 一次，不再每个 cursor 重复 SET）
+        self._shared_conn = None
         # 回测模式标记
         self._backtest_mode: bool = False
+
+    def _conn(self):
+        """返回 D 层共享连接（会话级缓存，.close() 为 no-op，不占连接池名额）"""
+        if self._shared_conn is None or self._shared_conn.closed:
+            conn = get_db()
+            cur = conn.cursor()
+            try:
+                cur.execute("SET statement_timeout = '300000'")  # 审查 31：统一 SET 一次
+            finally:
+                cur.close()
+            self._shared_conn = conn
+        return self._shared_conn
 
     def preload_for_backtest(self, start_date: str, end_date: str):
         """回测开始前一次性加载全量风险数据，避免每日重复查DB"""
         self._backtest_mode = True
         logger.info("D层: 预加载全量风险数据...")
 
-        # D1: ST/退市
-        if self._st_cache is None:
-            self._st_cache = self._batch_load_st()
-            logger.info(f"  ST/退市: {len(self._st_cache)} 只")
+        # D1: 退市风险警示（名称快照，非 PIT；ST 由 is_st_mask 按日查询）
+        if self.cfg.d_exclude_delist_warning and self._delist_cache is None:
+            self._delist_cache = self._batch_load_delist()
+            logger.info(f"  退市风险警示(名称快照): {len(self._delist_cache)} 只")
+        # D1: ST 按日 is_st_mask（stock_st_history 区间表，PIT），
+        # 表存在性与回退逻辑由 shared.st_history 内部处理并 warning 一次
+        if self.cfg.d_exclude_st:
+            logger.info("  ST: 按日 is_st_mask（stock_st_history 区间表，PIT）")
 
-        # D2: 减持（覆盖整个回测区间+30天）
+        # D2: 减持（覆盖整个回测区间+30天，按公告日缓存，判定时再开窗口）
         start_dt = datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=self.cfg.d_share_reduction_days)
         self._reduction_cache = self._batch_load_reductions_range(
             start_dt.strftime("%Y-%m-%d"), end_date
         )
-        logger.info(f"  减持: {len(self._reduction_cache)} 只")
+        logger.info(f"  减持: {len(self._reduction_cache)} 只（含公告日，逐日开窗判定）")
 
         # D4: 高质押
         if self._pledge_cache is None:
             self._pledge_cache = self._batch_load_high_pledge()
-            logger.info(f"  高质押: {len(self._pledge_cache)} 只")
+            logger.info(f"  高质押: {len(self._pledge_cache)} 只（当前快照，非 PIT）")
 
         logger.info("D层: 风险数据预加载完成")
 
     def preload_for_date(self, eval_date: str):
         """单日预加载（实盘模式用）"""
-        if self._st_cache is None:
-            self._st_cache = self._batch_load_st()
+        if self.cfg.d_exclude_delist_warning and self._delist_cache is None:
+            self._delist_cache = self._batch_load_delist()
         if self._reduction_cache is None:
             self._reduction_cache = self._batch_load_reductions(eval_date)
         if self._pledge_cache is None:
@@ -142,14 +183,24 @@ class LayerDRiskFilter:
             return ts_codes
 
         # ---- D1: ST/退市 ----
+        # 审查 13：ST 改用 shared.st_history.is_st_mask 按日 PIT 判定
+        # （旧实现 _batch_load_st 把"当前名称含 ST/退"的股票全历史剔除，
+        # 既漏掉历史上曾 ST 的票，又把摘帽后的票全期误杀——未来函数）。
         d1_fail = pd.Series(False, index=pool_df.index)
-        if self._st_cache:
-            d1_fail = pool_df['ts_code'].isin(self._st_cache)
+        codes = pool_df['ts_code'].tolist()
+        if self.cfg.d_exclude_st:
+            st_mask = is_st_mask(self._conn(), codes, _to_date(eval_date))
+            d1_fail = d1_fail | pd.Series(np.asarray(st_mask, dtype=bool), index=pool_df.index)
+        if self.cfg.d_exclude_delist_warning and self._delist_cache:
+            d1_fail = d1_fail | pool_df['ts_code'].isin(self._delist_cache)
 
         # ---- D2: 减持 ----
+        # 审查 3：缓存是 {ts_code: [pub_date,...]}，这里按 eval_date 开 30 日窗口
+        # （旧实现用整个回测区间出现过减持的股票集合，未来函数+窗口过宽）。
         d2_fail = pd.Series(False, index=pool_df.index)
         if self._reduction_cache:
-            d2_fail = pool_df['ts_code'].isin(self._reduction_cache)
+            recent_codes = self._recent_reduction_codes(eval_date)
+            d2_fail = pool_df['ts_code'].isin(recent_codes)
 
         # ---- D3: 诱多型涨停（向量化） ----
         # 2026-10-13 参数审查（涨停口径）：改用 shared/board_rules 判定，
@@ -159,9 +210,14 @@ class LayerDRiskFilter:
         is_zt = limit_up_mask(pool_df['ts_code'].values, pct_chg.values)
 
         vol_ratio = pool_df.get('volume_ratio_20', pd.Series(0, index=pool_df.index)).fillna(0)
-        seal_quality = pool_df.get('seal_quality_est', pd.Series(0, index=pool_df.index)).fillna(0)
+        # 审查 15：伪封单比列 seal_quality_est → 放量强度 volume_strength
+        # （成交额/60日均额，无 ×0.001 缩放），阈值同步改 d_trap_volume_strength_max。
+        if 'volume_strength' in pool_df.columns:
+            vol_strength = pool_df['volume_strength'].fillna(0)
+        else:
+            vol_strength = pool_df.get('seal_quality_est', pd.Series(0, index=pool_df.index)).fillna(0)
         d3_fail = is_zt & (vol_ratio > self.cfg.d_trap_volume_ratio) & \
-                  (seal_quality < self.cfg.d_trap_seal_ratio_max)
+                  (vol_strength < self.cfg.d_trap_volume_strength_max)
 
         # ---- D4: 高质押+连板 ----
         d4_fail = pd.Series(False, index=pool_df.index)
@@ -175,10 +231,22 @@ class LayerDRiskFilter:
                 d4_fail = pledge_codes & (cons_limits_arr > self.cfg.d_pledge_consecutive_limit_days)
 
         # ---- D5: 高位接盘风险 ----
-        # 收盘价接近52周高点95%以上，剔除（避免高位接盘）
-        high_52w = pool_df.get('high_52w', pd.Series(0, index=pool_df.index)).fillna(0)
-        close = pool_df['close'].fillna(0)
-        d5_fail = (high_52w > 0) & (close / high_52w > self.cfg.d_near_high_pct)
+        # 收盘价接近前 52 周高点（shift-1，不含当日）的 d_near_high_pct 以上
+        # 且并未创新高 → 剔除（避免高位接盘）。
+        # 审查 14：阈值 0.95（旧值 1.0 等价于"只有超过前高才剔"，恰好把 B2 突破
+        # 信号全否决，与注释意图矛盾）；close > high_52w 的创 52 周新高属突破信号，
+        # 显式豁免不剔除。
+        # 审查 7：high_52w/close 为 NaN（上市不足 52 周或数据缺失）时不可判定，
+        # 跳过（不剔除）并记录条数，不再用 fillna(0) 把 NaN 伪装成 0 分母。
+        high_52w = pool_df.get('high_52w', pd.Series(np.nan, index=pool_df.index)).astype(float)
+        close = pool_df['close'].astype(float)
+        d5_valid = high_52w.notna() & (high_52w > 0) & close.notna()
+        d5_ratio = pd.Series(np.nan, index=pool_df.index)
+        d5_ratio[d5_valid] = close[d5_valid] / high_52w[d5_valid]
+        d5_fail = d5_valid & (d5_ratio > self.cfg.d_near_high_pct) & (close <= high_52w)
+        d5_skipped = int((~d5_valid).sum())
+        if d5_skipped:
+            logger.debug(f"D5: {d5_skipped} 只因 high_52w/close 缺失跳过（不可判定）")
 
         # ---- D6: 接飞刀风险 ----
         # 近5日跌幅超过15%，剔除（避免接飞刀）
@@ -205,18 +273,18 @@ class LayerDRiskFilter:
         verdict = RiskVerdict(ts_code=ts_code, eval_date=eval_date)
 
         # D1: ST / 退市风险
-        if self.cfg.d_exclude_st or self.cfg.d_exclude_delist_warning:
-            if self._st_cache is not None and ts_code in self._st_cache:
+        # 审查 13：ST 走 shared.st_history.is_st_mask（按日 PIT，复用 D 层共享连接）
+        if self.cfg.d_exclude_st:
+            if bool(is_st_mask(self._conn(), [ts_code], _to_date(eval_date))[0]):
                 verdict.passed = False
                 verdict.blacklist_reasons.append("D1: ST/退市风险")
-            elif self._st_cache is None:
-                if self._is_st_or_delist(ts_code):
-                    verdict.passed = False
-                    verdict.blacklist_reasons.append("D1: ST/退市风险")
+        if self.cfg.d_exclude_delist_warning and self._delist_cache and ts_code in self._delist_cache:
+            verdict.passed = False
+            verdict.blacklist_reasons.append("D1: 退市风险警示(名称快照)")
 
-        # D2: 近 30 日重大减持
+        # D2: 近 30 日重大减持（审查 3：按 eval_date 窗口判定，非"全期出现过"）
         if self._reduction_cache is not None:
-            if ts_code in self._reduction_cache:
+            if ts_code in self._recent_reduction_codes(eval_date):
                 verdict.passed = False
                 verdict.blacklist_reasons.append("D2: 近30日有减持")
         else:
@@ -245,83 +313,87 @@ class LayerDRiskFilter:
     # ================================================================
     # 批量加载方法
     # ================================================================
-    def _batch_load_st(self) -> Set[str]:
-        """批量加载ST/退市股票"""
+    def _batch_load_delist(self) -> Set[str]:
+        """批量加载"退市风险警示"股（按当前名称含'退'）。
+
+        审查 13：旧 `_batch_load_st` 把名称含 ST/*/退 的股票一次拉成全历史集合，
+        既是未来函数（用当前名称回溯历史）又把 ST 判定和退市判定混在一起。
+        ST 已改走 shared.st_history.is_st_mask（PIT）；本方法只保留
+        d_exclude_delist_warning 对应的退市风险警示，且**无 PIT 数据源**，
+        只能用当前名称快照——已在回测 JSON limitations 中披露。
+        """
         codes = set()
         conn = None
         try:
-            conn = get_db_fresh()
+            conn = self._conn()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
                 SELECT DISTINCT d.ts_code FROM daily_quotes d
                 LEFT JOIN stock_basic_info sb ON d.ts_code = sb.ts_code
-                WHERE sb.stock_name IS NOT NULL
-                  AND (UPPER(sb.stock_name) LIKE '%%ST%%' OR sb.stock_name LIKE '%%*%%' OR sb.stock_name LIKE '%%退%%')
+                WHERE sb.stock_name IS NOT NULL AND sb.stock_name LIKE '%%退%%'
             """)
             for row in cur.fetchall():
                 codes.add(row['ts_code'])
             cur.close()
         except Exception:
             pass
-        finally:
-            if conn and not conn.closed:
-                conn.close()
         return codes
 
-    def _batch_load_reductions(self, eval_date: str) -> Set[str]:
-        """批量加载近期有减持的股票（单日模式）"""
-        codes = set()
-        conn = None
-        try:
-            conn = get_db_fresh()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            start_date = (
-                datetime.strptime(eval_date, "%Y-%m-%d") -
-                timedelta(days=self.cfg.d_share_reduction_days)
-            ).strftime("%Y-%m-%d")
-            cur.execute("""
-                SELECT DISTINCT ts_code FROM announcement_data
-                WHERE pub_date BETWEEN %s AND %s
-                  AND (title ILIKE '%%减持%%' OR title ILIKE '%%reduction%%')
-            """, (start_date, eval_date))
-            for row in cur.fetchall():
-                codes.add(row['ts_code'])
-            cur.close()
-        except Exception:
-            pass
-        finally:
-            if conn and not conn.closed:
-                conn.close()
-        return codes
+    def _recent_reduction_codes(self, eval_date: str) -> Set[str]:
+        """缓存中在 [eval_date - d_share_reduction_days, eval_date] 有减持公告的股票"""
+        if not self._reduction_cache:
+            return set()
+        start = (
+            datetime.strptime(eval_date[:10], "%Y-%m-%d") -
+            timedelta(days=self.cfg.d_share_reduction_days)
+        ).strftime("%Y-%m-%d")
+        end = eval_date[:10]
+        return {
+            code for code, dates in self._reduction_cache.items()
+            if any(start <= d <= end for d in dates)
+        }
 
-    def _batch_load_reductions_range(self, start_date: str, end_date: str) -> Set[str]:
-        """批量加载区间内所有有减持的股票（回测模式用）"""
-        codes = set()
+    def _batch_load_reductions(self, eval_date: str) -> Dict[str, List[str]]:
+        """批量加载近期有减持的股票（单日模式），返回 {ts_code: [pub_date, ...]}"""
+        return self._batch_load_reductions_range(
+            (datetime.strptime(eval_date, "%Y-%m-%d") -
+             timedelta(days=self.cfg.d_share_reduction_days)).strftime("%Y-%m-%d"),
+            eval_date,
+        )
+
+    def _batch_load_reductions_range(self, start_date: str, end_date: str) -> Dict[str, List[str]]:
+        """批量加载区间内所有减持公告（回测模式用），返回 {ts_code: [pub_date, ...]}
+
+        审查 3：旧版只返回 ts_code 集合，导致"区间内任一天出现减持"的股票
+        在整个回测期每天都被剔除（未来函数 + 窗口过宽）。改为保留公告日，
+        由 _recent_reduction_codes(eval_date) 按日开窗判定。
+        """
+        result: Dict[str, List[str]] = {}
         conn = None
         try:
-            conn = get_db_fresh()
+            conn = self._conn()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
-                SELECT DISTINCT ts_code FROM announcement_data
+                SELECT ts_code, pub_date FROM announcement_data
                 WHERE pub_date BETWEEN %s AND %s
                   AND (title ILIKE '%%减持%%' OR title ILIKE '%%reduction%%')
             """, (start_date, end_date))
             for row in cur.fetchall():
-                codes.add(row['ts_code'])
+                code = row['ts_code']
+                pd_ = str(row['pub_date'])[:10]
+                result.setdefault(code, []).append(pd_)
             cur.close()
+            for dates in result.values():
+                dates.sort()
         except Exception:
             pass
-        finally:
-            if conn and not conn.closed:
-                conn.close()
-        return codes
+        return result
 
     def _batch_load_high_pledge(self) -> Set[str]:
-        """批量加载高质押股票"""
+        """批量加载高质押股票（当前快照，非 PIT——见模块 docstring 局限）"""
         codes = set()
-        conn = None
         try:
-            conn = get_db_fresh()
+            conn = self._conn()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
                 SELECT DISTINCT ts_code FROM financial_data
@@ -333,46 +405,14 @@ class LayerDRiskFilter:
             cur.close()
         except Exception:
             pass
-        finally:
-            if conn and not conn.closed:
-                conn.close()
         return codes
 
     # ================================================================
     # 逐只检查方法（实盘降级用）
     # ================================================================
-    def _is_st_or_delist(self, ts_code: str) -> bool:
-        if self._st_cache is not None and ts_code in self._st_cache:
-            return True
-        conn = None
-        try:
-            conn = get_db_fresh()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("""
-                SELECT sb.stock_name FROM stock_basic_info sb
-                WHERE sb.ts_code = %s AND sb.stock_name IS NOT NULL
-                LIMIT 1
-            """, (ts_code,))
-            row = cur.fetchone()
-            cur.close()
-            if row:
-                name = (row['stock_name'] or '').upper()
-                if 'ST' in name or '*' in name or '退' in name:
-                    if self._st_cache is None:
-                        self._st_cache = set()
-                    self._st_cache.add(ts_code)
-                    return True
-        except Exception:
-            pass
-        finally:
-            if conn and not conn.closed:
-                conn.close()
-        return False
-
     def _has_recent_reduction(self, ts_code: str, eval_date: str) -> bool:
-        conn = None
         try:
-            conn = get_db_fresh()
+            conn = self._conn()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             start_date = (
                 datetime.strptime(eval_date, "%Y-%m-%d") -
@@ -390,9 +430,6 @@ class LayerDRiskFilter:
             return exists
         except Exception:
             return False
-        finally:
-            if conn and not conn.closed:
-                conn.close()
 
     def _is_trap_limit_up(self, ts_code: str, eval_date: str) -> bool:
         """诱多型涨停检测（实盘模式用，回测模式用向量化版本）"""
@@ -417,17 +454,18 @@ class LayerDRiskFilter:
         if vol_ratio <= self.cfg.d_trap_volume_ratio:
             return False
 
+        # 审查 15：伪封单比 → 放量强度（成交额/60日均额），阈值同步改名
         from .layer_b_launch import LayerBLaunchDetector
         detector = LayerBLaunchDetector(self.cfg, self.loader)
-        seal_score = detector._estimate_seal_quality(
+        vol_strength = detector._estimate_volume_strength(
             ts_code, eval_date, float(last["amount"])
         )
-        return seal_score < self.cfg.d_trap_seal_ratio_max
+        return vol_strength < self.cfg.d_trap_volume_strength_max
 
     def _is_high_pledge(self, ts_code: str, eval_date: str) -> bool:
-        conn = None
+        """单票高质押查询（当前快照，非 PIT）"""
         try:
-            conn = get_db_fresh()
+            conn = self._conn()
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
                 SELECT 1 FROM financial_data
@@ -441,6 +479,3 @@ class LayerDRiskFilter:
             return exists
         except Exception:
             return False
-        finally:
-            if conn and not conn.closed:
-                conn.close()

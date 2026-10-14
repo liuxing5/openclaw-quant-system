@@ -26,7 +26,7 @@ from psycopg2.extras import RealDictCursor
 from zoneinfo import ZoneInfo
 
 from .config import MainUptrendConfig, DEFAULT_CONFIG
-from .data_loader import DataLoader
+from .data_loader import DataLoader, trading_days_before
 from .layer_a_prescreen import LayerAPrescreener
 from .layer_b_launch import LayerBLaunchDetector, LaunchSignal
 from .layer_c_sustain import LayerCSustainAnalyzer, SustainSignal
@@ -82,10 +82,11 @@ class MainUptrendEngine:
         # 预加载数据（加速 A/B/C/D 层查询）
         import time
         preload_start = time.time()
-        lookback_days = 300  # 覆盖 120日均线 + 60日箱体 + 52周高点
-        preload_start_date = (
-            datetime.strptime(eval_date, "%Y-%m-%d") - timedelta(days=lookback_days)
-        ).strftime("%Y-%m-%d")
+        # 审查 7：回看窗口按交易日历取 ≥260 个交易日（52 周高点需 250 交易日 +
+        # 60 日均线/箱体预热）。旧版 300 自然日 ≈ 200 交易日，窗口起点附近的
+        # high_52w / ma_60 会算不出来。
+        preload_start_date = trading_days_before(eval_date, 260)
+        logger.info(f"回看窗口: {preload_start_date} ~ {eval_date}（≥260 交易日）")
         self.loader.preload_for_backtest(preload_start_date, eval_date)
         logger.info(f"数据预加载完成，耗时 {time.time()-preload_start:.1f}s")
 
@@ -301,11 +302,11 @@ class MainUptrendEngine:
                 b_s = c_sig.b_signal.score if c_sig.b_signal else 0
                 c_s = c_sig.score
                 e_s = e_score_map.get(c_sig.ts_code, 0)
-                # launch信号：E层蓄势分主导，B/C层辅助
-                composite = e_s * 3.0 + c_s * 0.3 + b_s * 0.1
-                # launch信号必须有E层确认（e_s > 0）
-                if e_s <= 0:
-                    continue
+                # 审查 11：launch 信号不再强制要求 E 层确认。
+                # 旧实现 `if e_s <= 0: continue` 把没有同时命中 E 层（每日只取
+                # top5）的 B/C 漏斗产出全部丢弃，E 层几乎决定 launch 候选的生死；
+                # 现改为 E 分只作加分项（权重 0.5），B/C 分主导。
+                composite = b_s * 1.0 + c_s * 1.0 + e_s * 0.5
                 candidates.append({
                     'ts_code': c_sig.ts_code,
                     'eval_date': eval_date,
@@ -341,7 +342,7 @@ class MainUptrendEngine:
         _n_launch_raw = sum(1 for c in candidates if c['signal_type'] == 'launch')
         _n_trend_raw = sum(1 for c in candidates if c['signal_type'] == 'trend')
         logger.info(f"[归因] {eval_date}: C过{len(c_signals)} E过{len(e_passed_codes)} D过{len(d_passed_set)}"
-                    f" -> launch候选{_n_launch_raw}(需E确认) + trend候选{_n_trend_raw} = {len(candidates)}")
+                    f" -> launch候选{_n_launch_raw}(E分为加分项) + trend候选{_n_trend_raw} = {len(candidates)}")
         candidates = candidates[:15]
 
         # 入场量能确认：过滤掉当日量比<1.2的候选（无量上涨不可靠）
@@ -388,8 +389,9 @@ class MainUptrendEngine:
                     if m5 > 0:
                         c['pct_chg_5d'] = m5
                         filtered.append(c)
-                if filtered:
-                    candidates = filtered
+                # 审查 12：无条件采用过滤结果。旧版 `if filtered:` 在全部被剔除时
+                # 回退到未过滤列表，等于这条过滤规则形同虚设（只在部分通过时生效）。
+                candidates = filtered
 
         # 行业集中度限制：同行业最多保留2只（按综合分排序）
         if candidates:

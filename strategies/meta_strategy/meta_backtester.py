@@ -52,8 +52,8 @@ class BacktestConfig:
     start_date: str = "2025-06-01"
     end_date: str = "2026-05-15"
     initial_capital: float = 1_000_000.0
-    commission_rate: float = 0.001    # 买卖各0.1%
-    slippage_pct: float = 0.001       # 滑点0.1%
+    commission_rate: float = 0.0005    # 买卖各0.05%，往返合计0.25%对齐shared
+    slippage_pct: float = 0.00075     # 往返0.25%对齐shared
     max_positions: int = 5
     single_position_pct: float = 0.20
     forward_return_days: List[int] = field(default_factory=lambda: [1, 3, 5, 10, 20])

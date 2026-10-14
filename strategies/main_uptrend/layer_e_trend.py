@@ -31,6 +31,30 @@ from .data_loader import DataLoader
 logger = logging.getLogger(__name__)
 
 
+# ================================================================
+# 审查 24：向量化路径与 fallback 路径共享的权重表 / 通过阈值
+# （旧版 fallback 用另一套权重且硬编码 sig.score > 3.5，
+#  与回测走的向量化路径完全不可比）
+# ================================================================
+E_WEIGHTS: Dict[str, float] = {
+    'e1_ma_alignment': 0.5,
+    'e2_price_stability': 0.5,
+    'e3_drawdown': 1.0,
+    'e4_volume_staircase': 0.5,
+    'e5_momentum': 0.5,
+    'e6_adx': 0.3,
+    'e7_rsi': 0.3,
+    'e8_trend_duration': 0.5,
+    'e9_accumulation': 3.0,   # fallback 无预计算蓄势指标时按 0 分计
+}
+
+# 各项在 total_score 上的惩罚/奖励（两条路径一致）
+E_PENALTY_VOL_DIVERGENCE = -1.5   # 量价背离
+E_PENALTY_OVERBOUGHT = -2.0       # 趋势过热（RSI>70 或 ADX>40）
+E_BONUS_EARLY_ONLY = 1.5          # 仅 E9 蓄势通过（早期信号）
+E_PENALTY_MATURE = -1.0           # E1/E5/E9 全通过（趋势成熟）
+
+
 @dataclass
 class TrendSignal:
     ts_code: str
@@ -103,21 +127,30 @@ class LayerETrendDetector:
             np.where(above_ma5, "MA5上方偏离大", "MA5下方"))
 
         # E3: 回撤控制
-        max_dd = pool_df.get('max_drawdown_20d', pd.Series(0, index=pool_df.index)).fillna(0).values
-        e3_pass = (max_dd > -self.cfg.e_max_drawdown_20d) & (max_dd < 0)
-        e3_score = np.where(max_dd > -0.05, 1.0,
-                   np.where(max_dd > -self.cfg.e_max_drawdown_20d, 0.7,
-                   np.where(max_dd > -0.20, 0.3, 0.0)))
+        # 审查 22：max_drawdown_20d 为 NaN（历史不足）时不可判定，
+        # 旧版 fillna(0) 会给出"回撤<5%"满分——把无数据伪装成最优。
+        dd_raw = pool_df.get('max_drawdown_20d', pd.Series(np.nan, index=pool_df.index)).astype(float)
+        dd_valid = dd_raw.notna().values
+        max_dd = np.where(dd_valid, dd_raw.values, 0.0)
+        e3_pass = dd_valid & (max_dd > -self.cfg.e_max_drawdown_20d) & (max_dd < 0)
+        e3_score = np.where(~dd_valid, 0.0,
+                    np.where(max_dd > -0.05, 1.0,
+                    np.where(max_dd > -self.cfg.e_max_drawdown_20d, 0.7,
+                    np.where(max_dd > -0.20, 0.3, 0.0))))
         scores['e3_drawdown'] = e3_score
         details_map['e3_drawdown'] = np.where(
-            max_dd > -0.05, "回撤<5%",
+            ~dd_valid, "回撤数据不足(不可判定)",
+            np.where(max_dd > -0.05, "回撤<5%",
             np.where(max_dd > -self.cfg.e_max_drawdown_20d, f"回撤可控",
-                     "回撤过大"))
+                     "回撤过大")))
 
         # E4: 阶梯式放量
+        # 审查 2：旧版读 vol_ma_60 —— 那是**成交额**的 60 日均值（历史命名遗留），
+        # 与 vol_ma_5/vol_ma_20（成交量）量纲错配，阶梯放量恒不成立；
+        # 改用 data_loader 新增的 volume_ma_60（成交量 60 日均量）。
         vol_5 = pool_df.get('vol_ma_5', pd.Series(0, index=pool_df.index)).fillna(0).values
         vol_20 = pool_df.get('vol_ma_20', pd.Series(0, index=pool_df.index)).fillna(0).values
-        vol_60 = pool_df.get('vol_ma_60', pd.Series(0, index=pool_df.index)).fillna(0).values
+        vol_60 = pool_df.get('volume_ma_60', pd.Series(0, index=pool_df.index)).fillna(0).values
         staircase = (vol_5 > vol_20 * self.cfg.e_volume_staircase_min) & \
                     (vol_20 > vol_60 * self.cfg.e_volume_staircase_min) & \
                     (vol_60 > 0)
@@ -142,28 +175,39 @@ class LayerETrendDetector:
             np.where(positive_count > 0, "部分动量正", "动量不足"))
 
         # E6: ADX 趋势强度
-        adx = pool_df.get('adx_14', pd.Series(0, index=pool_df.index)).fillna(0).values
-        e6_pass = adx > self.cfg.e_adx_threshold
-        e6_score = np.minimum(1.0, adx / 50.0)
+        # 审查 22：adx_14 为 NaN（历史不足/预热期，data_loader 已置 NaN）时
+        # 不可判定——旧版 fillna(0) 只是运气好没通过；显式区分"数据不足"。
+        adx_raw = pool_df.get('adx_14', pd.Series(np.nan, index=pool_df.index)).astype(float)
+        adx_valid = adx_raw.notna().values
+        adx = np.where(adx_valid, adx_raw.values, 0.0)
+        e6_pass = adx_valid & (adx > self.cfg.e_adx_threshold)
+        e6_score = np.where(adx_valid, np.minimum(1.0, adx / 50.0), 0.0)
         scores['e6_adx'] = e6_score
         details_map['e6_adx'] = np.where(
-            e6_pass,
-            np.array([f"趋势强(ADX={v:.0f})" for v in adx]),
-            np.array([f"趋势弱(ADX={v:.0f})" for v in adx]))
+            ~adx_valid, "ADX数据不足(不可判定)",
+            np.where(e6_pass,
+                     np.array([f"趋势强(ADX={v:.0f})" for v in adx]),
+                     np.array([f"趋势弱(ADX={v:.0f})" for v in adx])))
 
         # E7: RSI 区间
-        rsi = pool_df.get('rsi_14', pd.Series(50, index=pool_df.index)).fillna(50).values
-        e7_pass = (rsi > self.cfg.e_rsi_range_min) & (rsi < self.cfg.e_rsi_range_max)
-        e7_score = np.where(e7_pass, 1.0,
-                   np.where(rsi > 80, 0.2,
-                   np.where(rsi < 45, 0.3, 0.6)))
+        # 审查 22：rsi_14 为 NaN 时旧版 fillna(50) → 50 落在 (45,80) 区间内，
+        # 等于把"无数据"判成"RSI 健康"直接通过——必须显式置为不可判定。
+        rsi_raw = pool_df.get('rsi_14', pd.Series(np.nan, index=pool_df.index)).astype(float)
+        rsi_valid = rsi_raw.notna().values
+        rsi = np.where(rsi_valid, rsi_raw.values, 50.0)
+        e7_pass = rsi_valid & (rsi > self.cfg.e_rsi_range_min) & (rsi < self.cfg.e_rsi_range_max)
+        e7_score = np.where(~rsi_valid, 0.0,
+                     np.where(e7_pass, 1.0,
+                     np.where(rsi > 80, 0.2,
+                     np.where(rsi < 45, 0.3, 0.6))))
         scores['e7_rsi'] = e7_score
         details_map['e7_rsi'] = np.where(
-            e7_pass,
-            np.array([f"RSI健康({v:.0f})" for v in rsi]),
-            np.where(rsi > 80,
-                     np.array([f"超买(RSI={v:.0f})" for v in rsi]),
-                     np.array([f"偏弱(RSI={v:.0f})" for v in rsi])))
+            ~rsi_valid, "RSI数据不足(不可判定)",
+            np.where(e7_pass,
+                     np.array([f"RSI健康({v:.0f})" for v in rsi]),
+                     np.where(rsi > 80,
+                              np.array([f"超买(RSI={v:.0f})" for v in rsi]),
+                              np.array([f"偏弱(RSI={v:.0f})" for v in rsi]))))
 
         # E8: 趋势持续时间
         above_ma20_days = pool_df.get('above_ma20_days', pd.Series(0, index=pool_df.index)).fillna(0).values
@@ -190,21 +234,9 @@ class LayerETrendDetector:
             np.where(e9_pass, "蓄势充分",
             np.where(consol_days >= 3, "蓄势中", "无蓄势")))
 
-        # 综合评分
-        weights = {
-            'e1_ma_alignment': 0.5,
-            'e2_price_stability': 0.5,
-            'e3_drawdown': 1.0,
-            'e4_volume_staircase': 0.5,
-            'e5_momentum': 0.5,
-            'e6_adx': 0.3,
-            'e7_rsi': 0.3,
-            'e8_trend_duration': 0.5,
-            'e9_accumulation': 3.0,
-        }
-
+        # 综合评分（审查 24：权重表 E_WEIGHTS 为两条路径共享常量）
         total_score = np.zeros(len(pool_df))
-        for key, weight in weights.items():
+        for key, weight in E_WEIGHTS.items():
             total_score += scores[key] * weight
 
         # 量价背离惩罚：价格在MA20上方但5日均量<20日均量的70%，扣分
@@ -212,22 +244,22 @@ class LayerETrendDetector:
         vol_20_vals = pool_df.get('vol_ma_20', pd.Series(0, index=pool_df.index)).fillna(0).values
         above_ma20_vals = (close > pool_df.get('ma_20', pd.Series(0, index=pool_df.index)).fillna(0).values)
         vol_divergence = above_ma20_vals & (vol_20_vals > 0) & (vol_5_vals < vol_20_vals * 0.7)
-        total_score = np.where(vol_divergence, total_score - 1.5, total_score)
+        total_score = np.where(vol_divergence, total_score + E_PENALTY_VOL_DIVERGENCE, total_score)
 
         # 趋势过热惩罚：RSI>70或ADX>40时扣分（趋势晚期信号）
-        rsi_vals = pool_df.get('rsi_14', pd.Series(50, index=pool_df.index)).fillna(50).values
-        adx_vals = pool_df.get('adx_14', pd.Series(20, index=pool_df.index)).fillna(20).values
-        overbought = (rsi_vals > 70) | (adx_vals > 40)
-        total_score = np.where(overbought, total_score - 2.0, total_score)
+        # 审查 22：RSI/ADX 为 NaN 时不可判定，不触发过热惩罚
+        #（未知不等于过热，也不等于健康——只在打分环节按 0 分处理）
+        overbought = (rsi_valid & (rsi > 70)) | (adx_valid & (adx > 40))
+        total_score = np.where(overbought, total_score + E_PENALTY_OVERBOUGHT, total_score)
 
         # 早期趋势奖励：仅E9蓄势通过（E1-E5不通过）时加分
         # 这说明趋势还没被确认，是早期信号，反而更有价值
         early_only = e9_pass & ~(e1_pass | e5_pass)
-        total_score = np.where(early_only, total_score + 1.5, total_score)
+        total_score = np.where(early_only, total_score + E_BONUS_EARLY_ONLY, total_score)
 
         # 趋势成熟惩罚：E1-E5全部通过时扣分（趋势已过热）
         mature_trend = e1_pass & e5_pass & e9_pass
-        total_score = np.where(mature_trend, total_score - 1.0, total_score)
+        total_score = np.where(mature_trend, total_score + E_PENALTY_MATURE, total_score)
 
         # 通过条件：(E1或E5通过) 或 (E9蓄势通过且E3回撤可控) + 总分 > 阈值
         trend_confirmed = (e1_pass | e5_pass)
@@ -238,24 +270,33 @@ class LayerETrendDetector:
         pool_df['e_passed'] = passed
 
         passed_df = pool_df[pool_df['e_passed']].sort_values('e_total_score', ascending=False)
-        # 只保留综合分前 e_top_percentile 分位的信号，减少低质噪声
+        # 只保留综合分前 e_keep_pct 分位的信号，减少低质噪声。
+        # 审查 10：旧字段 e_top_percentile 名为"分位"、注释却写"前 1/3"，
+        # 实际 np.percentile(scores, 100-66.7) 保留的是前 66.7%（前 2/3）；
+        # 改名 e_keep_pct 如实表达"保留前百分之多少"，两条路径统一按它截断。
         if len(passed_df) > 0:
-            cutoff = np.percentile(passed_df["e_total_score"], 100.0 - self.cfg.e_top_percentile)
+            cutoff = np.percentile(passed_df["e_total_score"], 100.0 - self.cfg.e_keep_pct)
             passed_df = passed_df[passed_df["e_total_score"] >= cutoff]
         top = passed_df.head(top_n)
 
+        # 审查 23：scores / details 是按 pool_df 行序排列的 ndarray，
+        # 而 top.index 是 ind_df 的原始行标签，旧版 `v[idx]` 拿标签当下标会串行
+        # （展示层的因子分与详情对不上股票）。改为 ts_code → pool_df 行位置 映射。
+        pos_map = {code: i for i, code in enumerate(pool_df['ts_code'].values)}
         results = []
         for i in range(len(top)):
-            idx = top.index[i]
-            code = top.iloc[i]['ts_code']
-            score = float(top.iloc[i]['e_total_score'])
+            code = top['ts_code'].iloc[i]
+            score = float(top['e_total_score'].iloc[i])
+            pos = pos_map.get(code)
+            if pos is None:
+                continue
 
             sig = TrendSignal(
                 ts_code=code,
                 eval_date=eval_date,
                 score=score,
-                factors={k: float(v[idx]) if idx < len(v) else 0 for k, v in scores.items()},
-                details={k: str(v[idx]) if idx < len(v) else "" for k, v in details_map.items()},
+                factors={k: float(v[pos]) for k, v in scores.items()},
+                details={k: str(v[pos]) for k, v in details_map.items()},
                 passed=True,
                 trend_type="sustained",
             )
@@ -273,6 +314,11 @@ class LayerETrendDetector:
                 results.append(sig)
 
         results.sort(key=lambda x: x.score, reverse=True)
+        # 审查 10：与向量化路径一致，先按 e_keep_pct 截断（同一公式
+        # np.percentile(scores, 100 - e_keep_pct)），再取 Top N
+        if len(results) > 1:
+            cutoff = np.percentile([s.score for s in results], 100.0 - self.cfg.e_keep_pct)
+            results = [s for s in results if s.score >= cutoff]
         top = results[:top_n]
         logger.info(f"E层扫描 {len(pool)} 只，通过 {len(results)} 只，输出 Top {len(top)} 只")
         return top
@@ -370,28 +416,34 @@ class LayerETrendDetector:
             passed_count += 1
 
         # E6: ADX (需要至少30日数据)
+        adx_val = np.nan   # 审查 22：数据不足 = 不可判定（NaN），不给中性默认分
         if n >= 30:
             adx_val = self._calc_adx(df, period=14)
+        if pd.notna(adx_val):
             e6_pass = adx_val > self.cfg.e_adx_threshold
             scores['e6_adx'] = min(1.0, adx_val / 50.0)
             details['e6_adx'] = f"ADX={adx_val:.1f}"
             if e6_pass:
                 passed_count += 1
         else:
-            scores['e6_adx'] = 0.5
-            details['e6_adx'] = "数据不足(短模式默认0.5)"
+            e6_pass = False
+            scores['e6_adx'] = 0
+            details['e6_adx'] = "ADX数据不足(不可判定)"
 
         # E7: RSI
+        rsi_val = np.nan   # 审查 22：数据不足 = 不可判定（NaN）
         if n >= 20:
             rsi_val = self._calc_rsi(close, period=14)
+        if pd.notna(rsi_val):
             e7_pass = self.cfg.e_rsi_range_min < rsi_val < self.cfg.e_rsi_range_max
             scores['e7_rsi'] = 1.0 if e7_pass else (0.3 if rsi_val > 80 or rsi_val < 45 else 0.6)
             details['e7_rsi'] = f"RSI={rsi_val:.1f}"
             if e7_pass:
                 passed_count += 1
         else:
-            scores['e7_rsi'] = 0.5
-            details['e7_rsi'] = "数据不足(短模式默认0.5)"
+            e7_pass = False
+            scores['e7_rsi'] = 0
+            details['e7_rsi'] = "RSI数据不足(不可判定)"
 
         # E8: 趋势持续时间
         above_ma20 = close > ma20
@@ -407,18 +459,28 @@ class LayerETrendDetector:
         if e8_pass:
             passed_count += 1
 
-        weights = {
-            'e1_ma_alignment': 1.5, 'e2_price_stability': 1.0,
-            'e3_drawdown': 1.2, 'e4_volume_staircase': 1.0,
-            'e5_momentum': 1.5, 'e6_adx': 1.0,
-            'e7_rsi': 0.8, 'e8_trend_duration': 1.5,
-        }
+        weights = E_WEIGHTS  # 审查 24：与向量化路径共享同一张权重表
 
         sig.factors = scores
         sig.details = details
-        sig.score = sum(scores.get(k, 0) * w for k, w in weights.items())
-        min_pass_count = 3 if has_ma60 else 2
-        sig.passed = (e1_pass or e5_pass) and passed_count >= min_pass_count and sig.score > 3.5
+        details['dimension_pass'] = f"通过维度={passed_count}/8"
+        # 审查 24：与向量化共享 E_WEIGHTS 与 cfg.e_min_total_score
+        # （旧版另一套权重 + 硬编码 score>3.5，与回测路径不可比）
+        # E9 蓄势指标（consolidation/volume_drying/...）依赖 data_loader 预计算，
+        # 降级路径没有该列，按 0 分计——故此路径总分天然少 E9 的 3.0 分上限。
+        total = sum(scores.get(k, 0) * w for k, w in weights.items())
+
+        # 惩罚项（与向量化路径一致）
+        if above_ma20.iloc[-1] and vol_ma20 > 0 and vol_ma5 < vol_ma20 * 0.7:
+            total += E_PENALTY_VOL_DIVERGENCE   # 量价背离
+        if (pd.notna(rsi_val) and rsi_val > 70) or (pd.notna(adx_val) and adx_val > 40):
+            total += E_PENALTY_OVERBOUGHT       # 趋势过热
+        # 早期奖励 / 成熟惩罚依赖 E9，本路径不可判定，不加不减
+
+        sig.score = total
+        # 通过条件（与向量化 _scan_vectorized 对齐）：趋势确认 且 总分过阈值。
+        # 旧版额外的 passed_count>=3（5维取3）在向量化路径中不存在，已删除。
+        sig.passed = bool((e1_pass or e5_pass) and sig.score > self.cfg.e_min_total_score)
 
         return sig
 
@@ -429,7 +491,9 @@ class LayerETrendDetector:
         loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
         rs = gain / loss.replace(0, np.nan)
         rsi = 100 - (100 / (1 + rs))
-        return float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else 50.0
+        # 审查 22：历史不足/全零涨跌时返回 NaN（不可判定），
+        # 旧版返回 50.0 占位会被判成"RSI 健康"（50 落在 45~80 区间内）
+        return float(rsi.iloc[-1]) if pd.notna(rsi.iloc[-1]) else float('nan')
 
     @staticmethod
     def _calc_adx(df: pd.DataFrame, period: int = 14) -> float:
@@ -455,4 +519,5 @@ class LayerETrendDetector:
         dx = 100 * ((plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan))
         adx = dx.rolling(period).mean()
 
-        return float(adx.iloc[-1]) if pd.notna(adx.iloc[-1]) else 0.0
+        # 审查 22：历史不足时返回 NaN（不可判定），旧版返回 0.0 会被当成"趋势极弱"
+        return float(adx.iloc[-1]) if pd.notna(adx.iloc[-1]) else float('nan')

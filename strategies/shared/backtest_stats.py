@@ -40,8 +40,31 @@ def net_returns(gross) -> np.ndarray:
 
 
 def _norm_sf(z: float) -> float:
-    """标准正态分布上尾概率（不依赖 scipy）。"""
+    """标准正态分布上尾概率（scipy 不可用时的回退）。"""
     return 0.5 * math.erfc(z / math.sqrt(2.0))
+
+
+try:  # scipy 可用时用 Student-t 分布（小样本/低自由度下 p 值更诚实）
+    from scipy import stats as _sp_stats
+
+    def _t_sf(t: float, df: int) -> float:
+        if df < 1:
+            return 1.0
+        return float(2.0 * _sp_stats.t.sf(abs(t), df))
+
+    def _t_ppf(p: float, df: int) -> float:
+        if df < 1:
+            return 0.0
+        return float(_sp_stats.t.ppf(1.0 - p / 2.0, df))
+except Exception:  # pragma: no cover
+    def _t_sf(t: float, df: int) -> float:
+        return _norm_sf(t)
+
+    def _t_ppf(p: float, df: int) -> float:
+        return 1.96
+
+
+LOW_POWER_MIN = 10  # 有效样本量低于该值时标注"低功效"，不作显著性结论
 
 
 def t_stat(values: Sequence[float], n_eff: Optional[int] = None) -> Dict[str, float]:
@@ -50,31 +73,64 @@ def t_stat(values: Sequence[float], n_eff: Optional[int] = None) -> Dict[str, fl
     values: 样本（已扣成本）
     n_eff : 有效样本量。重叠窗口下传入 count // horizon 做校正；
             传 None 表示按原始样本量（非重叠或独立样本）。
-    返回 {t, p, mean, std, ci95_low, ci95_high}
+    返回 {t, p, mean, std, ci95_low, ci95_high, n, n_eff, low_power}
+      low_power=True 表示 n_eff < 10，p/CI 仅供参照、不作显著性结论。
     """
     arr = np.asarray(values, dtype=np.float64)
     arr = arr[~np.isnan(arr)]
     n = int(arr.size)
     if n == 0:
         return {"t": 0.0, "p": 1.0, "mean": 0.0, "std": 0.0,
-                "ci95_low": 0.0, "ci95_high": 0.0, "n": 0, "n_eff": 0}
+                "ci95_low": 0.0, "ci95_high": 0.0, "n": 0, "n_eff": 0,
+                "low_power": True}
     mean = float(arr.mean())
     if n < 2:
         return {"t": 0.0, "p": 1.0, "mean": mean, "std": 0.0,
-                "ci95_low": mean, "ci95_high": mean, "n": n, "n_eff": n}
+                "ci95_low": mean, "ci95_high": mean, "n": n, "n_eff": n,
+                "low_power": True}
     std = float(arr.std(ddof=1))
     n_eff = int(n if n_eff is None else max(1, min(n_eff, n)))
     if std == 0:
         return {"t": 0.0, "p": 1.0, "mean": mean, "std": 0.0,
-                "ci95_low": mean, "ci95_high": mean, "n": n, "n_eff": n_eff}
+                "ci95_low": mean, "ci95_high": mean, "n": n, "n_eff": n_eff,
+                "low_power": n_eff < LOW_POWER_MIN}
     se = std / math.sqrt(n_eff)
     t = mean / se
-    # 双侧 p 值（正态近似，n_eff 通常足够大）
-    p = 2.0 * _norm_sf(abs(t))
-    ci = 1.96 * se
+    df = max(1, n_eff - 1)
+    p = _t_sf(t, df)
+    ci = _t_ppf(0.05, df) * se
     return {"t": float(t), "p": float(p), "mean": mean, "std": std,
             "ci95_low": mean - ci, "ci95_high": mean + ci,
-            "n": n, "n_eff": n_eff}
+            "n": n, "n_eff": n_eff,
+            "low_power": n_eff < LOW_POWER_MIN}
+
+
+def cluster_t_stat(values: Sequence[float], dates: Sequence,
+                   horizon: int = 1) -> Dict[str, float]:
+    """按评估日聚类的 t 检验（修截面相关 + 时间重叠双重校正）。
+
+    逐样本 t 检验假设样本独立，但 (a) 同日多只股票共享市场因子（截面相关），
+    (b) 前向窗口跨日重叠。本函数先取每日截面均值形成日收益序列，
+    再以 n_eff = 日数 // horizon 做重叠校正后检验。
+    horizon=1 时即"按日聚类"（同日相关性由聚合本身消除）。
+    """
+    if len(values) == 0 or len(dates) != len(values):
+        return {**t_stat(values), "n_days": 0, "method": "naive"}
+    by_day: Dict = {}
+    for v, d in zip(values, dates):
+        if v is None or (isinstance(v, float) and np.isnan(v)):
+            continue
+        by_day.setdefault(d, []).append(float(v))
+    if not by_day:
+        return {**t_stat(values), "n_days": 0, "method": "naive"}
+    daily = [float(np.mean(vs)) for _, vs in sorted(by_day.items(),
+                                                    key=lambda kv: str(kv[0]))]
+    n_days = len(daily)
+    n_eff = max(1, n_days // max(1, horizon))
+    st = t_stat(daily, n_eff=n_eff)
+    st["n_days"] = n_days
+    st["method"] = "cluster_by_date"
+    return st
 
 
 def nonoverlap_indices(dates: Sequence, horizon: int,
@@ -135,8 +191,12 @@ def fwd_stats(values: Sequence[float], dates: Optional[Sequence] = None,
 
     返回:
       count, win_rate, mean, median, std          —— 全样本（重叠窗口）
-      t, p, ci95_low, ci95_high, n_eff            —— 重叠校正后的显著性
-      nonoverlap: {count, win_rate, mean, t, p}    —— 非重叠独立子样本
+      t, p, ci95_low, ci95_high, n_eff            —— 显著性：有 dates 时
+                                                     按日聚类（cluster_t_stat，
+                                                     修截面相关+重叠），否则
+                                                     n_eff=count//horizon 校正
+      low_power                                   —— True 时结论不显著/仅参照
+      nonoverlap: {count, win_rate, mean, t, p, low_power}
     """
     arr = np.asarray(values, dtype=np.float64)
     arr = arr[~np.isnan(arr)]
@@ -144,10 +204,17 @@ def fwd_stats(values: Sequence[float], dates: Optional[Sequence] = None,
     if n == 0:
         return {"count": 0, "win_rate": 0.0, "mean": 0.0, "median": 0.0, "std": 0.0,
                 "t": 0.0, "p": 1.0, "ci95_low": 0.0, "ci95_high": 0.0, "n_eff": 0,
+                "low_power": True,
                 "nonoverlap": {"count": 0, "win_rate": 0.0, "mean": 0.0,
-                               "t": 0.0, "p": 1.0}}
+                               "t": 0.0, "p": 1.0, "low_power": True}}
     mean = float(arr.mean())
-    sig = t_stat(arr, n_eff=(n // horizon if horizon else None))
+    if dates is not None and len(dates) == n and horizon > 0:
+        # 按评估日聚类：消除同日截面相关，n_eff = 日数 // horizon 消除窗口重叠
+        sig = cluster_t_stat(arr, dates, horizon=horizon)
+        sig_source = "cluster_by_date"
+    else:
+        sig = t_stat(arr, n_eff=(n // horizon if horizon else None))
+        sig_source = "n_eff"
     result = {
         "count": n,
         "win_rate": float((arr > 0).mean()),
@@ -157,6 +224,9 @@ def fwd_stats(values: Sequence[float], dates: Optional[Sequence] = None,
         "t": sig["t"], "p": sig["p"],
         "ci95_low": sig["ci95_low"], "ci95_high": sig["ci95_high"],
         "n_eff": sig["n_eff"],
+        "low_power": bool(sig.get("low_power", sig["n_eff"] < LOW_POWER_MIN)),
+        "sig_source": sig_source,
+        "n_days": int(sig.get("n_days", 0)),
     }
     if dates is not None and horizon > 0 and len(dates) == n:
         idx = nonoverlap_indices(dates, horizon, trading_days)
@@ -168,22 +238,28 @@ def fwd_stats(values: Sequence[float], dates: Optional[Sequence] = None,
                 "win_rate": float((sub > 0).mean()),
                 "mean": float(sub.mean()),
                 "t": st["t"], "p": st["p"],
+                "low_power": bool(st.get("low_power", False)),
             }
         else:
             result["nonoverlap"] = {"count": 0, "win_rate": 0.0, "mean": 0.0,
-                                    "t": 0.0, "p": 1.0}
+                                    "t": 0.0, "p": 1.0, "low_power": True}
     else:
         result["nonoverlap"] = {"count": 0, "win_rate": 0.0, "mean": 0.0,
-                                "t": 0.0, "p": 1.0}
+                                "t": 0.0, "p": 1.0, "low_power": True}
     return result
 
 
 def format_sig(stats: Dict) -> str:
-    """把 fwd_stats / t_stat 摘要格式化为页面用的显著性短语，如 't=2.41**'。"""
+    """把 fwd_stats / t_stat 摘要格式化为页面用的显著性短语。
+
+    't=2.41**' / 't=-1.2 (低功效)' —— low_power 时不加星号并明示。
+    """
     if not stats:
         return "—"
     t = stats.get("t", 0.0)
     p = stats.get("p", 1.0)
+    if stats.get("low_power"):
+        return f"t={t:.2f}（低功效，不作结论）"
     if p < 0.01:
         mark = "**"
     elif p < 0.05:
@@ -194,4 +270,9 @@ def format_sig(stats: Dict) -> str:
 
 
 COST_NOTE = "含交易成本 0.25%（买 0.10%+卖 0.15%）"
-SIGNIFICANCE_NOTE = "* p<0.05，** p<0.01；t 值按重叠窗口有效样本量 n=count/窗口 校正"
+SIGNIFICANCE_NOTE = (
+    "* p<0.05，** p<0.01；t 检验用 Student-t 分布，"
+    "按评估日聚类（同日截面相关聚合为日均值）并以 日数//窗口 校正重叠；"
+    "n_eff<10 标注'低功效'不作显著性结论；多重比较未校正，"
+    "参数与评估同区间，p 值偏乐观"
+)

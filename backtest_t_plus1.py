@@ -7,6 +7,7 @@
 最大持股: 不超过3天
 止损: -2%
 """
+import os
 import sys
 import psycopg2
 import pandas as pd

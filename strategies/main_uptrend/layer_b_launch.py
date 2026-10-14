@@ -5,7 +5,8 @@ Layer B: 启动信号识别（日频）
   1. 量能突破：成交额 > 60日均值的 2.5 倍，换手率 > 5%
   2. 价格突破：突破前 60 日箱体上沿，或突破半年线且距半年线涨幅 < 8%
   3. 主力资金净流入（2026-10-13 起降级为弱确认项，不再参与通过判定）
-  4. 封单质量（涨停日）：封单金额 / 流通市值 > 0.5%
+  4. 放量强度（涨停日）：成交额 / 60日均额（审查 15：旧称"封单质量"，
+     实际无 L2 封单数据，指标为伪封单比，语义是放量强度）
   5. 次日强度：次日不破当日均价，缩量整理或继续放量上攻
 
 v2: 向量化扫描优化
@@ -136,7 +137,10 @@ class LayerBLaunchDetector:
             today_flow = flow_df[flow_df["trade_date"].astype(str) == eval_date]
             if len(today_flow) > 0:
                 net_inflow = float(today_flow["main_net_inflow"].iloc[0] or 0)
-                inflow_pct = abs(net_inflow) / today_amount if today_amount > 0 else 0
+                # 审查 19：去掉 abs()。净流出也会被算成"满分流入"，
+                # 与向量化路径（main_inflow_ratio 带符号、见 data_loader）口径不一致；
+                # 这里改为带符号比值（净流出为负分），两路径一致。
+                inflow_pct = net_inflow / today_amount if today_amount > 0 else 0.0
                 scores["main_force"] = min(1.0, inflow_pct / (self.cfg.b_main_force_inflow_min_pct * 5))
                 details["main_force"] = f"主力净流入={net_inflow / 1e4:.0f}万({inflow_pct * 100:.1f}%)[弱确认项]"
             else:
@@ -156,25 +160,32 @@ class LayerBLaunchDetector:
         prev_close = float(df["close"].iloc[-2]) if len(df) >= 2 else 0.0
         is_zt = board_is_limit_up(ts_code, today_close, prev_close)
         if is_zt:
-            seal_score = self._estimate_seal_quality(ts_code, eval_date, today_amount)
-            b4_pass = seal_score > self.cfg.b_seal_amount_ratio_min
-            scores["seal_quality"] = min(1.0, seal_score / (self.cfg.b_seal_amount_ratio_min * 2))
-            details["seal_quality"] = f"涨停封单比={seal_score * 100:.2f}%"
+            seal_score = self._estimate_volume_strength(ts_code, eval_date, today_amount)
+            scores["seal_quality"] = min(1.0, seal_score / (self.cfg.b_volume_strength_min * 2))
+            details["seal_quality"] = f"涨停放量强度={seal_score:.1f}x(60日均额)"
         else:
-            b4_pass = True
-            scores["seal_quality"] = 0.3
+            # 与向量化路径一致：非涨停日仅当当日涨幅 > 3% 才给 0.3 基础分，
+            # 否则 0 分（旧版无条件给 0.3，等于该维度恒有分）。
+            scores["seal_quality"] = 0.3 if today_pct > 3.0 else 0.0
             details["seal_quality"] = "非涨停日"
 
-        # 通过条件（2026-10-14 定稿，与向量化路径 _scan_pool_vectorized 对齐）：
-        # 主力净流入降级为弱确认项后，维度只剩 量能/价格/封单；封单在非涨停日
-        # 恒有 0.3 基础分，故 >=2 等效于"量能或价格有分"，与旧版漏斗松紧度一致，
-        # 不因主力剔除而额外收紧。
+        # 通过条件（与向量化路径 _scan_pool_vectorized 的定稿口径对齐，审查 24）：
+        # 主力净流入降级为弱确认项后，硬维度只剩 量能/价格/封单；封单在非涨停日
+        # 恒有 0.3 基础分，故 >=2 等效于"量能或价格有分"。
+        # 向量化路径实测口径为 >=1 维有分 + 近5日动量>0（见下），此处照抄同一规则，
+        # 避免实盘降级路径与回测向量化路径给出不同的通过判定。
         hard_dims = [
             scores.get("vol_breakout", 0) > 0,
             scores.get("price_breakout", 0) > 0,
             scores.get("seal_quality", 0) > 0,
         ]
-        passed_b1_b4 = sum(hard_dims) >= 2
+        # 近5日动量：close / close[-6] - 1（与 data_loader 的 pct_chg_5d 同口径）
+        if len(df) >= 6 and float(df["close"].iloc[-6]) > 0:
+            momentum_5d = today_close / float(df["close"].iloc[-6]) - 1.0
+        else:
+            momentum_5d = 0.0
+        details["momentum_5d"] = f"近5日涨幅={momentum_5d * 100:.1f}%"
+        passed_b1_b4 = (sum(hard_dims) >= 1) and (momentum_5d > 0)
 
         # --------------------------------------------------
         # B5: 次日强度（需要 T+1 数据验证，此处返回到外部判断）
@@ -186,16 +197,21 @@ class LayerBLaunchDetector:
 
         return sig
 
-    def _estimate_seal_quality(self, ts_code: str, eval_date: str,
-                                today_amount: float) -> float:
-        """估算封单质量（简化版，无 L2 数据时按历史规律估算）"""
+    def _estimate_volume_strength(self, ts_code: str, eval_date: str,
+                                  today_amount: float) -> float:
+        """估算涨停日放量强度（成交额 / 60日均额，倍数）。
+
+        审查 15：旧名 _estimate_seal_quality 返回 成交额/60日均额×0.001 的
+        "伪封单比"（无 L2 封单数据，真实封单金额不可得），语义实为放量强度。
+        去掉 ×0.001 缩放，阈值相应改为 b_volume_strength_min（0.005×1000=5.0）。
+        """
         try:
             df = self.loader.get_daily(ts_code, start_date="2025-01-01", end_date=eval_date)
             if df is None or len(df) < 60:
                 return 0
             avg_amount = df["amount"].iloc[-60:].mean()
             if avg_amount > 0:
-                return today_amount / avg_amount * 0.001
+                return today_amount / avg_amount
         except Exception:
             pass
         return 0
@@ -234,26 +250,10 @@ class LayerBLaunchDetector:
                 logger.info(f"B层调试 - ind_df columns: {list(ind_df.columns)}, 前5行ts_code: {ind_df['ts_code'].head().tolist()}")
             return []
 
-        # 调试：检查数据（只打印一次）
-        if not hasattr(self, '_debug_logged'):
-            debug_msg = f"[B层调试] pool_df有{len(pool_df)}行, columns: {list(pool_df.columns)}\n"
-            if 'amount' in pool_df.columns:
-                amt_stats = pool_df['amount'].describe()
-                debug_msg += f"[B层调试] amount统计: min={amt_stats.get('min', 'N/A')}, max={amt_stats.get('max', 'N/A')}, mean={amt_stats.get('mean', 'N/A')}\n"
-                debug_msg += f"[B层调试] amount NaN数量: {pool_df['amount'].isna().sum()}/{len(pool_df)}\n"
-            else:
-                debug_msg += f"[B层调试] pool_df没有amount列!\n"
-            if 'pct_chg' in pool_df.columns:
-                debug_msg += f"[B层调试] pct_chg统计: min={pool_df['pct_chg'].min()}, max={pool_df['pct_chg'].max()}\n"
-            
-            # 同时写入文件和logger
-            logger.info(debug_msg)
-            try:
-                with open('d:/pythonProject/openclaw-quant-system/b_layer_debug.txt', 'w', encoding='utf-8') as f:
-                    f.write(debug_msg)
-            except:
-                pass
-            self._debug_logged = True
+        # 审查 29：删除一次性调试块（原会把 pool_df 统计写入仓库根目录
+        # b_layer_debug.txt），改为一条常规 info 日志。
+        amt_nan = int(pool_df['amount'].isna().sum()) if 'amount' in pool_df.columns else -1
+        logger.info(f"B层向量化 pool_df={len(pool_df)}行, ind_df={len(ind_df)}行, amount NaN={amt_nan}")
 
         # 快速预筛：至少满足量能或涨幅门槛之一
         quick_mask = (pool_df['amount'] >= 1e8) | (pool_df['pct_chg'].abs() >= 3)
@@ -318,10 +318,14 @@ class LayerBLaunchDetector:
             index=quick.index,
         )
         # 放宽：涨停给高分，非涨停但涨幅>3%也给基础分
+        # 审查 15：列 seal_quality_est（伪封单比）已改为 volume_strength（放量强度，
+        # 无 ×0.001 缩放），阈值相应改为 b_volume_strength_min。
+        vol_strength_col = (quick['volume_strength'] if 'volume_strength' in quick.columns
+                            else quick['seal_quality_est'])
         seal_quality_score = pd.Series(
             np.where(
                 is_zt,
-                np.minimum(1.0, quick['seal_quality_est'].fillna(0) / (self.cfg.b_seal_amount_ratio_min * 2)),
+                np.minimum(1.0, vol_strength_col.fillna(0) / (self.cfg.b_volume_strength_min * 2)),
                 np.where(quick['pct_chg'].fillna(0) > 3.0, 0.3, 0.0)  # 非涨停但涨幅>3%给基础分
             ),
             index=quick.index,
@@ -358,13 +362,11 @@ class LayerBLaunchDetector:
         top = passed_df.head(top_n)
 
         # 直接从DataFrame构建结果（无iterrows）
+        # 审查 29：删除未被使用的 vol_scores / turn_rates / price_scores 三个死变量
+        # （原 price_scores 重复计算价格分，且从不被读取）。
         results = []
         ts_codes_arr = top['ts_code'].values
         scores_arr = top['total_score'].values
-        vol_scores = top.get('vol_breakout_ratio', pd.Series(0, index=top.index))
-        turn_rates = top.get('turnover_rate', pd.Series(0, index=top.index))
-        price_scores = np.where(top.index.isin(top[breakout_box.reindex(top.index, fill_value=False)].index), 0.8,
-                                np.where(top.index.isin(top[above_ma.reindex(top.index, fill_value=False)].index), 0.6, 0.0))
 
         for i in range(len(top)):
             idx = top.index[i]

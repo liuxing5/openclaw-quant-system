@@ -11,7 +11,6 @@ import csv
 import json
 import logging
 import time
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import List, Dict, Optional, Set, Tuple
 
@@ -26,7 +25,7 @@ except ImportError:
     tqdm = None
 
 from .config import MainUptrendConfig, DEFAULT_CONFIG
-from .data_loader import DataLoader
+from .data_loader import DataLoader, trading_days_before, trading_days_after
 from .engine import MainUptrendEngine
 from ..shared.backtest_stats import (
     net_return, fwd_stats, format_sig,
@@ -77,11 +76,22 @@ class MainUptrendBacktester:
         logger.info(f"=" * 60)
 
         # ---- 预加载全量数据（核心优化） ----
-        # 扩展预加载范围：B层需要60日均线，至少往前推4个月
-        preload_start = (
-            datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=150)
-        ).strftime("%Y-%m-%d")
-        self.loader.preload_for_backtest(preload_start, end_date)
+        # 审查 7/8：回看窗口按交易日历取 ≥260 个交易日（52 周高点需 250 交易日
+        # + 60 日均线/箱体预热），前向窗口向后延伸 70 个交易日（60 日持有 +
+        # 缓冲），旧版 start-150 自然日 ≈ 100 交易日，既不够算 52 周高点，
+        # 也让区间末尾信号的前向收益/退出全部落空。
+        preload_start = trading_days_before(start_date, 260)
+        preload_end = trading_days_after(end_date, 70)
+        logger.info(f"预加载窗口: {preload_start} ~ {preload_end}"
+                    f"（回看≥260交易日，前向+70交易日）")
+        self.loader.preload_for_backtest(preload_start, preload_end)
+
+        # 审查 20：指标索引为空说明预加载实际没跑成（静默降级会让回测变成
+        # "全放行"的假回测），直接断言失败，不产出无意义的结果。
+        assert self.loader._indicators_by_date, (
+            f"预加载后指标索引为空（{preload_start} ~ {preload_end}），"
+            "回测无法运行：B/C/D/E 层会退化为全放行"
+        )
 
         # 通知引擎各层使用预加载模式
         self.engine.layer_c.skip_1min = True  # 回测模式跳过1分钟线
@@ -89,15 +99,21 @@ class MainUptrendBacktester:
         # D层：一次性预加载全量风险数据
         self.engine.layer_d.preload_for_backtest(start_date, end_date)
 
-        trading_days = self.loader.get_trading_days(start_date, end_date)
-        if not trading_days:
+        # 信号产生区间 vs 前向计算区间（审查 8）：信号只在 [start, end] 内产生，
+        # 但索引列表额外含 end 之后的 70 个交易日，供前向收益/退出模拟取价。
+        signal_days = self.loader.get_trading_days(start_date, end_date)
+        all_days = self.loader.get_trading_days(start_date, preload_end)
+        if not signal_days:
             logger.error("无交易日数据")
             return {}
+        if len(all_days) < len(signal_days):   # 日历异常兜底
+            all_days = signal_days
 
-        logger.info(f"交易日: {len(trading_days)} 天")
+        trading_days = signal_days
+        logger.info(f"交易日: {len(signal_days)} 天（前向索引共 {len(all_days)} 天）")
 
         # 构建交易日索引（避免list.index()的O(n)查找）
-        trading_day_idx = {d: i for i, d in enumerate(trading_days)}
+        trading_day_idx = {d: i for i, d in enumerate(all_days)}
 
         # 预加载 A 层池（全市场时做一次周频更新）
         pool_a_cache: Dict[str, Set[str]] = {}
@@ -107,6 +123,9 @@ class MainUptrendBacktester:
         day_count = len(trading_days)
         t_day_start = 0
         t_total_start = time.time()
+
+        # 审查 5：漏斗计数（候选 → 冷却后 → 信号 → 确认入场）
+        funnel = {'candidates': 0, 'after_cooldown': 0, 'signals': 0, 'confirmed': 0}
 
         signal_cooldown: Dict[str, str] = {}
         cooldown_days = 20
@@ -120,24 +139,39 @@ class MainUptrendBacktester:
                 t2 = time.time()
 
                 if candidates:
+                    funnel['candidates'] += len(candidates)
                     filtered = []
                     for c in candidates:
                         code = c['ts_code']
-                        if code in signal_cooldown:
-                            last_date = signal_cooldown[code]
-                            if last_date in trading_day_idx and trade_date in trading_day_idx:
-                                gap = trading_day_idx[trade_date] - trading_day_idx[last_date]
-                                if gap < cooldown_days:
-                                    continue
+                        # 审查 17：冷却只检查、不在此写入——冷却日志在信号真正
+                        # 产出收益记录（确认入场且有前向收益）后才登记，
+                        # 否则一个被 T+1 破位否决的信号会白白吃掉 20 个交易日冷却。
+                        last_date = signal_cooldown.get(code)
+                        if last_date is not None and last_date in trading_day_idx and trade_date in trading_day_idx:
+                            gap = trading_day_idx[trade_date] - trading_day_idx[last_date]
+                            if gap < cooldown_days:
+                                continue
                         filtered.append(c)
-                        signal_cooldown[code] = trade_date
 
                     if filtered:
+                        funnel['after_cooldown'] += len(filtered)
                         signals = self._calc_forward_returns(
-                            filtered, trade_date, trading_days, i,
+                            filtered, trade_date, all_days, i,
                             trading_day_idx,
                         )
                         all_signals.extend(signals)
+                        funnel['signals'] += len(signals)
+                        funnel['confirmed'] += sum(1 for s in signals
+                                                   if s.get('confirmed'))
+
+                        # 审查 17：冷却登记后置——确认入场且至少有一个前向收益
+                        # 的信号才进入冷却窗口。
+                        for s in signals:
+                            if not s.get('confirmed'):
+                                continue
+                            if any(s.get(f'ret_{d}d') is not None
+                                   for d in self.cfg.forward_return_days):
+                                signal_cooldown[s['ts_code']] = trade_date
 
                         # 2026-10-13 修复：这段循环原来在 `if filtered:` 之外，
                         # filtered 为空时会用上一次循环残留的 signals 重复计入前向收益样本
@@ -169,18 +203,91 @@ class MainUptrendBacktester:
                 logger.warning(f"{trade_date} 评估失败: {e}")
                 logger.warning(traceback.format_exc())
 
+        # 审查 30：全市场等权基准（须在 clear_cache 之前用预加载行情计算）
+        benchmark = self._market_benchmark(trading_days)
+
         self.loader.clear_cache()
 
         # 汇总统计
-        summary = self._build_summary(all_signals, forward_data, trading_days=trading_days)
+        logger.info(f"信号漏斗: 候选{funnel['candidates']} → 冷却后{funnel['after_cooldown']} "
+                    f"→ 信号{funnel['signals']} → 确认{funnel['confirmed']}")
+        summary = self._build_summary(all_signals, forward_data,
+                                      trading_days=trading_days, funnel=funnel)
 
         return {
             'signals': all_signals,
+            'funnel': funnel,
             'forward_returns': {d: pd.DataFrame(forward_data[d]) for d in self.cfg.forward_return_days},
             'summary': summary,
             # 2026-10-13 参数审查：透出交易日历，供显著性统计做非重叠子样本采样
             'trading_days': trading_days,
+            # 审查 30：全市场等权基准（{horizon: {count, mean, win_rate, ...}}）
+            'benchmark': benchmark,
         }
+
+    # ================================================================
+    # 全市场等权基准（审查 30）
+    # ================================================================
+    def _market_benchmark(self, signal_days: List[str]) -> Dict[str, Dict]:
+        """全市场等权基准：信号日 T+1 开盘入场、T+1+d 收盘出场，扣 0.25% 往返成本。
+
+        口径（与策略同窗口）：
+          - 标的池：当日成交额 >= 1e8 的全市场股票（复权价，前复权）；
+          - 逐股取 T+1 开盘 / T+1+d 收盘，缺任一价格的样本剔除；
+          - 每个信号日先算全市场等权平均毛收益，再统一扣成本得净收益。
+        返回 {str(days): {count, mean, win_rate, ...}}。
+        """
+        out: Dict[str, Dict] = {}
+        base = getattr(self.loader, '_preloaded_daily', None)
+        if base is None or base.empty:
+            logger.warning("基准：无预加载行情，跳过 benchmark 计算")
+            return out
+
+        cols = [c for c in ('ts_code', 'trade_date', 'open', 'close', 'amount')
+                if c in base.columns]
+        q = base[cols].copy()
+        if 'open' not in q.columns or 'close' not in q.columns:
+            logger.warning("基准：预加载行情缺 open/close，跳过")
+            return out
+        q = q.sort_values(['ts_code', 'trade_date'], kind='mergesort')
+        g = q.groupby('ts_code', sort=False)
+        amount_ok = q['amount'].astype(float) >= 1e8 if 'amount' in q.columns \
+            else pd.Series(True, index=q.index)
+
+        for days in self.cfg.forward_return_days:
+            entry = g['open'].shift(-1)
+            exit_ = g['close'].shift(-(1 + days))
+            ok = amount_ok & entry.notna() & exit_.notna() & (entry > 0)
+            fwd = pd.Series(np.nan, index=q.index)
+            fwd[ok] = exit_[ok] / entry[ok] - 1.0
+            per_day = pd.DataFrame({'trade_date': q['trade_date'], 'fwd': fwd})
+            per_day = per_day[per_day['fwd'].notna()]
+            if per_day.empty:
+                continue
+            by_date = per_day.groupby('trade_date')['fwd'].mean()
+
+            gross, used = [], []
+            for d in signal_days:
+                v = by_date.get(d)
+                if v is not None and np.isfinite(float(v)):
+                    gross.append(float(v))
+                    used.append(d)
+            if not gross:
+                continue
+            net = [net_return(x) for x in gross]
+            arr = np.array(net, dtype=float)
+            out[str(days)] = {
+                'count': int(len(arr)),
+                'mean': float(np.mean(arr)),
+                'win_rate': float(np.mean(arr > 0)),
+                'median': float(np.median(arr)),
+                'signal_days': len(used),
+                'filter_note': '全市场等权，当日成交额>=1e8，T+1开盘入场/T+1+d收盘出场，扣0.25%往返成本（前复权价）',
+            }
+        if out:
+            logger.info("基准: " + "; ".join(
+                f"{d}日 n={v['count']} 均值={v['mean']:+.2%}" for d, v in out.items()))
+        return out
 
     # ================================================================
     # A 层池管理（周频缓存）
@@ -219,24 +326,46 @@ class MainUptrendBacktester:
 
             signal = {**c, 'entry_price': entry_price}
 
-            # 确认日检查：T+1收盘价仍站稳MA10才确认入场
+            # 审查 5：确认日检查——T+1收盘价仍站稳MA10才确认入场。被否决的
+            # 信号**保留记录**（confirmed=False、entry_price=None、收益字段
+            # 置 None），供漏斗统计"候选N→确认M"，不再静默丢弃。
+            confirmed = False
             if current_idx + 1 < len(trading_days):
                 next_date = trading_days[current_idx + 1]
                 next_price = self._get_close_price(ts_code, next_date)
                 next_ma10 = self._get_ma_price(ts_code, next_date, 'ma_10')
                 if next_price is not None and next_ma10 is not None:
                     if next_price < next_ma10 * 0.98:
-                        # T+1跌破MA10，信号无效
+                        # T+1跌破MA10，信号未确认：保留骨架记录
+                        signal['confirmed'] = False
+                        signal['entry_price'] = None
+                        signal['confirm_reject'] = 't1_below_ma10'
+                        for days in self.cfg.forward_return_days:
+                            signal[f'ret_{days}d'] = None
+                            signal[f'ret_{days}d_gross'] = None
+                            signal[f'hit_{days}d'] = False
+                        results.append(signal)
                         continue
                     # 确认入场价用T+1收盘价（更真实）
                     entry_price = next_price
                     signal['entry_price'] = entry_price
+                    confirmed = True
                     signal['confirmed'] = True
                     signal['confirm_date'] = next_date
                 else:
                     signal['confirmed'] = False
             else:
                 signal['confirmed'] = False
+
+            if not confirmed:
+                # 未确认（窗口末端无T+1 / 缺行情）：同样保留记录但不计收益
+                signal['entry_price'] = None
+                for days in self.cfg.forward_return_days:
+                    signal[f'ret_{days}d'] = None
+                    signal[f'ret_{days}d_gross'] = None
+                    signal[f'hit_{days}d'] = False
+                results.append(signal)
+                continue
 
             for days in self.cfg.forward_return_days:
                 target_idx = current_idx + days
@@ -332,12 +461,19 @@ class MainUptrendBacktester:
                         signal['max_ret'] = peak_ret
                         break
 
+            # 审查 8：前向窗口不足 max_hold 时标注截断，不伪装成 max_hold 退出
             if exit_ret is None:
                 last_idx = min(current_idx + max_hold, len(trading_days) - 1)
                 last_price = self._get_close_price(ts_code, trading_days[last_idx])
                 if last_price is not None:
                     exit_ret = (last_price - entry_price) / entry_price
-                    signal['exit_type'] = 'max_hold'
+                    if last_idx - current_idx < max_hold:
+                        # 数据窗口到头（非策略规则退出），单独归类
+                        signal['exit_type'] = 'window_end'
+                        signal['exit_truncated'] = True
+                    else:
+                        signal['exit_type'] = 'max_hold'
+                        signal['exit_truncated'] = False
                     signal['exit_day'] = last_idx - current_idx
                     signal['exit_ret'] = exit_ret
                     signal['max_ret'] = peak_ret
@@ -380,13 +516,20 @@ class MainUptrendBacktester:
     # ================================================================
     def _build_summary(self, all_signals: List[Dict],
                        forward_data: Dict[int, List[Dict]],
-                       trading_days: Optional[List[str]] = None) -> str:
+                       trading_days: Optional[List[str]] = None,
+                       funnel: Optional[Dict] = None) -> str:
         lines = []
         lines.append("=" * 60)
         lines.append("主升浪检测策略 — 回测汇总")
         lines.append("=" * 60)
         lines.append(f"回测区间: {self.cfg.backtest_start} ~ {self.cfg.backtest_end}")
         lines.append(f"总信号数: {len(all_signals)}")
+        if funnel:
+            # 审查 5：漏斗透明化——未确认信号也计入总数，避免"信号数=确认数"的错觉
+            lines.append(f"信号漏斗: 候选{funnel.get('candidates', 0)}"
+                         f" → 冷却后{funnel.get('after_cooldown', 0)}"
+                         f" → 信号{funnel.get('signals', 0)}"
+                         f" → 确认入场{funnel.get('confirmed', 0)}")
         lines.append(f"收益口径: {COST_NOTE}")
         lines.append(f"显著性: {SIGNIFICANCE_NOTE}")
         lines.append("")
@@ -509,11 +652,14 @@ class MainUptrendBacktester:
                 rets = np.array([s[ret_col] for s in valid_sigs])
                 lines.append(f"  [{days}日收益]")
                 for col in score_cols:
-                    vals = np.array([s.get(col, 0) for s in valid_sigs])
+                    vals = [s.get(col, 0) for s in valid_sigs]
                     if np.std(vals) < 1e-8:
                         continue
                     ic = np.corrcoef(vals, rets)[0, 1]
-                    rank_ic = np.corrcoef(np.argsort(np.argsort(vals)), np.argsort(np.argsort(rets)))[0, 1]
+                    # 审查 16：RankIC 用标准 Spearman（pandas corr(method=
+                    # 'spearman')），旧的 argsort 双重排序在并列值处理上
+                    # 与标准定义有偏差
+                    rank_ic = pd.Series(vals).corr(pd.Series(rets), method='spearman')
                     lines.append(f"    {col}: IC={ic:.4f}, RankIC={rank_ic:.4f}")
 
             # 按综合分分组收益
@@ -558,9 +704,8 @@ class MainUptrendBacktester:
         """
         logger.info(f"单票深度分析: {ts_code}")
 
-        preload_start = (
-            datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=150)
-        ).strftime("%Y-%m-%d")
+        # 审查 7：同样按交易日历取 ≥260 交易日回看（与 run() 一致）
+        preload_start = trading_days_before(start_date, 260)
         self.loader.preload_for_backtest(preload_start, end_date)
         self.engine.layer_c.skip_1min = True
         self.engine.layer_d.preload_for_backtest(start_date, end_date)

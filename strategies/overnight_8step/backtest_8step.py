@@ -1,5 +1,6 @@
 import sys
 import io
+import os
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, line_buffering=True)
 
 import psycopg2
@@ -7,6 +8,10 @@ import pandas as pd
 import numpy as np
 from psycopg2.extras import RealDictCursor
 import time
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..')))
+# 统一交易成本口径（买 0.10% + 卖 0.15% = 往返 0.25%），与其他回测一致
+from strategies.shared.backtest_stats import COST_NOTE, ROUND_TRIP_COST
 
 DB_URL = os.environ.get('DATABASE_URL', '')
 
@@ -350,8 +355,13 @@ def run_backtest(df, mode="both", hold_days=1):
             last_bar_date = daily_bars[-1]["date"]
             last_bar_idx = date_idx_map.get(last_bar_date, i + 1)
 
-            proceeds = shares * sell_price
-            pnl_amt = proceeds - actual_cost
+            # 2026-10-14：接入统一往返成本（买 0.10% + 卖 0.15% = 0.25%），
+            # 与 shared.backtest_stats.net_return 同口径：净 = (1+毛)/(1+成本)-1
+            gross_pnl_pct = pnl_pct
+            net_pnl_pct = (1.0 + gross_pnl_pct) / (1.0 + ROUND_TRIP_COST) - 1.0
+            proceeds = shares * sell_price / (1.0 + ROUND_TRIP_COST)  # 净回款
+            pnl_amt = proceeds - actual_cost          # == actual_cost * net_pnl_pct
+            pnl_pct = net_pnl_pct
             day_pnl += pnl_amt
             total_trades += 1
             if pnl_pct > 0:
@@ -368,6 +378,8 @@ def run_backtest(df, mode="both", hold_days=1):
                 "proceeds": proceeds,
                 "pnl_amt": pnl_amt,
                 "pnl_pct": pnl_pct,
+                "gross_pnl_pct": gross_pnl_pct,
+                "fee": shares * sell_price - proceeds,
                 "reason": reason,
                 "sell_date": last_bar_date,
             })
@@ -406,6 +418,7 @@ def print_report(trade_log, final_capital, total_trades, win_trades, mode_label,
     log(f"  交易笔数:   {total_trades:>12d}")
     log(f"  盈利笔数:   {win_trades:>12d}")
     log(f"  胜率:       {win_trades / max(total_trades, 1) * 100:>11.1f}%")
+    log(f"  交易成本:   往返 {ROUND_TRIP_COST:.2%}（{COST_NOTE}，已从毛收益扣除）")
 
     if total_trades > 0:
         pnls = []

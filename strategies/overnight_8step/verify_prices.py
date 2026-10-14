@@ -75,7 +75,10 @@ def main():
                                 "..", "..", "recommend", "选股记录汇总.txt")
 
     if not os.path.exists(filepath):
+        # 2026-10-14 审查修复: 默认路径指向仓库外的用户记录文件（不入库），
+        # 不存在时给出明确用法提示而非裸报错。
         print(f"❌ 文件不存在: {filepath}")
+        print("   用法: python verify_prices.py <记录文件路径>")
         sys.exit(1)
 
     with open(filepath, "r", encoding="utf-8") as f:

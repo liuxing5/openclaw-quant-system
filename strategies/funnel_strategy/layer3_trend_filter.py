@@ -21,6 +21,7 @@ from psycopg2.extras import RealDictCursor
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from core.db.connection import get_db_fresh, get_db
+from strategies.shared.adjust import qfq_adjust
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
@@ -62,7 +63,7 @@ def _batch_load_history(
 
     cur = db_conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("""
-        SELECT ts_code, trade_date, open, high, low, close, volume
+        SELECT ts_code, trade_date, open, high, low, close, volume, pct_chg
         FROM daily_quotes
         WHERE ts_code = ANY(%s) AND trade_date >= %s AND trade_date <= %s
         ORDER BY ts_code, trade_date ASC;
@@ -78,8 +79,11 @@ def _batch_load_history(
 
     for ts_code, group in df_all.groupby('ts_code'):
         group = group.set_index('trade_date').sort_index()
-        for col in ['open', 'high', 'low', 'close', 'volume']:
+        for col in ['open', 'high', 'low', 'close', 'volume', 'pct_chg']:
             group[col] = pd.to_numeric(group[col], errors='coerce')
+        # 周线/EMA/年线/RSI/结构识别全部用前复权价（除权缺口会误判断线）；
+        # 原始价保留在 raw_close/raw_open 列（如需涨停判定等用 raw）。
+        group = qfq_adjust(group)
         result[ts_code] = group
 
     return result
@@ -125,12 +129,12 @@ def _check_single(
 
     df = ohlcv_cache.get(ts_code)
     if df is None or len(df) < 5:
-        result['reject_reason'] = '历史数据不足(<5失'
+        result['reject_reason'] = '历史数据不足(<5日)'
         return result
 
     close = df['close'].dropna()
     if len(close) < 5:
-        result['reject_reason'] = '有效数据不足(<5失'
+        result['reject_reason'] = '有效数据不足(<5日)'
         return result
 
     close_now = close.iloc[-1]
@@ -145,7 +149,7 @@ def _check_single(
         result['details']['weekly_ma'] = round(ma_weekly_now, 2)
         result['details']['weekly_above'] = close_now > ma_weekly_now
         if close_now <= ma_weekly_now:
-            result['reject_reason'] = '周线CLOSE≥0MA'
+            result['reject_reason'] = f'周线CLOSE≤{cfg.layer3_weekly_ma_period}周MA'
             return result
     elif data_days >= 10:
         # 降级：用全量数据均值近估
@@ -154,7 +158,8 @@ def _check_single(
         result['details']['weekly_above'] = close_now > ma_weekly_now
         result['details']['weekly_ma_degraded'] = True
         if close_now <= ma_weekly_now:
-            result['reject_reason'] = '收盘≤全量均代数据不足100失'
+            result['reject_reason'] = (
+                f'收盘≤全量均价(周线数据不足{weekly_ma_period}日,降级)')
             return result
     else:
         # 数据极少，跳过周线检查
@@ -182,7 +187,8 @@ def _check_single(
         alignment_ok = ema12_now > ema26_now > ema50_now
         result['details']['ema_alignment'] = 'bullish' if alignment_ok else 'mixed'
         if not alignment_ok:
-            result['reject_reason'] = 'EMA未多头排利12>26>50)'
+            result['reject_reason'] = (
+                f'EMA未多头排列(EMA{fast}>{mid}>{slow})')
             return result
     elif data_days >= 5:
         # 数据不足：仅检查EMA12 趋势方向（至少需当前>3天前：
@@ -307,7 +313,8 @@ def run_layer3_trend_filter(
 
     # ── 阶段2: 并行分析 ──
     passed = []
-    reject_stats = {'周线MA': 0, 'EMA排列': 0, '股价位置': 0, '数据不足': 0}
+    reject_stats = {'周线MA': 0, 'EMA排列': 0, '股价位置': 0,
+                    'RSI超买': 0, '数据不足': 0}
 
     if len(stock_list) > 100:
         _run_parallel(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose)
@@ -358,11 +365,15 @@ def _run_parallel(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose):
                     reject_stats['EMA排列'] += 1
                 elif '股价' in reason:
                     reject_stats['股价位置'] += 1
+                elif 'RSI' in reason:
+                    reject_stats['RSI超买'] += 1
                 elif '不足' in reason:
                     reject_stats['数据不足'] += 1
 
     if passed_codes:
-        ordered = sorted(passed, key=lambda x: stock_list.index(x['ts_code']))
+        # 预建顺序字典，避免 stock_list.index() 的 O(n²) 重排
+        order_map = {c: i for i, c in enumerate(stock_list)}
+        ordered = sorted(passed, key=lambda x: order_map[x['ts_code']])
         passed.clear()
         passed.extend(ordered)
 
@@ -389,5 +400,7 @@ def _run_serial(stock_list, cfg, ohlcv_cache, passed, reject_stats, verbose):
                 reject_stats['EMA排列'] += 1
             elif '股价' in reason:
                 reject_stats['股价位置'] += 1
+            elif 'RSI' in reason:
+                reject_stats['RSI超买'] += 1
             elif '不足' in reason:
                 reject_stats['数据不足'] += 1

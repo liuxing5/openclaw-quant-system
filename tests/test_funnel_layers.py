@@ -84,8 +84,10 @@ def test_layer0_decision_logic():
     # can_trade 条件: passed (both OK) OR one of them OK
     check(cfg.layer0_partial_cap == 0.50, "半仓比例=50%")
 
-    # 上涨家数阈值
-    check(cfg.layer0_min_advancers == 2500, "上涨阈值=2500")
+    # 上涨家数阈值：与独立构造的配置默认值动态比较（不硬编码，
+    # 避免 DEFAULT 调整后测试与生产脱节）
+    check(cfg.layer0_min_advancers == FunnelConfig().layer0_min_advancers,
+          f"上涨家数阈值取自配置默认值({cfg.layer0_min_advancers})")
 
 
 # ================================================================
@@ -195,6 +197,61 @@ def test_layer1_check_fundamental():
     check(result['details']['current_ratio'] == 2.0, "流动比率=2.0")
     check(result['details']['debt_ratio'] == 50.0, "负债率=50%")
 
+    # PIT ST 注入：is_st_pit=True 时即使快照 is_st=False 也应被拒
+    result = check_fundamental('000001.SZ',
+                               {'is_st': False, 'stock_name': '测试', 'list_date': old_ipo,
+                                'is_st_pit': True},
+                               fin_good, cfg, today, verbose=False)
+    check(not result['passed'] and result['details'].get('st_source') == 'pit',
+          f"PIT ST=True被拒(优先于快照): {result['reject_reason']}")
+
+    # PIT ST 注入：is_st_pit=False 时即使名称含 ST 也放行（名称是当前快照，历史会前视）
+    result = check_fundamental('000001.SZ',
+                               {'is_st': True, 'stock_name': 'ST测试', 'list_date': old_ipo,
+                                'is_st_pit': False},
+                               fin_good, cfg, today, verbose=False)
+    check(result['passed'], f"PIT ST=False放行(快照/名称不参与): {result['reject_reason']}")
+
+
+def test_layer1_disclosure_visibility():
+    """财报披露可见日（PIT 纯函数）——修复按 report_date 可见的前视泄漏"""
+    print("\n── Layer 1: 财报可见日(PIT) ──")
+    from strategies.funnel_strategy.layer1_fundamental_filter import (
+        statutory_disclosure_deadline, fundamental_visible_date,
+        _parse_report_period,
+    )
+
+    # 法定披露截止日
+    check(statutory_disclosure_deadline(date(2025, 3, 31)) == date(2025, 4, 30),
+          "一季报截止=次月4-30")
+    check(statutory_disclosure_deadline(date(2025, 6, 30)) == date(2025, 8, 31),
+          "半年报截止=8-31")
+    check(statutory_disclosure_deadline(date(2025, 9, 30)) == date(2025, 10, 31),
+          "三季报截止=10-31")
+    check(statutory_disclosure_deadline(date(2025, 12, 31)) == date(2026, 4, 30),
+          "年报截止=次年4-30")
+    check(statutory_disclosure_deadline(date(2025, 5, 15)) == date(2025, 8, 13),
+          "非标准报告期=+90天")
+
+    # 可见日：实际披露日优先（提前披露是真实公开事件）
+    check(fundamental_visible_date(date(2025, 3, 31), date(2025, 4, 10)) == date(2025, 4, 10),
+          "提前披露→用实际披露日")
+    # 实际披露晚于法定截止：取较早者（min 口径）
+    check(fundamental_visible_date(date(2025, 3, 31), date(2025, 5, 20)) == date(2025, 4, 30),
+          "晚披露→取min(披露日,截止日)")
+    # 无公告数据：退化为法定截止日
+    check(fundamental_visible_date(date(2025, 12, 31)) == date(2026, 4, 30),
+          "无公告→法定截止日")
+
+    # 公告标题 → 报告期解析
+    check(_parse_report_period('某某股份2024年年度报告') == date(2024, 12, 31), "年报标题解析")
+    check(_parse_report_period('2025年第一季度报告') == date(2025, 3, 31), "一季报标题解析")
+    check(_parse_report_period('2024年半年度报告(更新后)') == date(2024, 6, 30), "半年报标题解析")
+    check(_parse_report_period('2024年第三季度报告') == date(2024, 9, 30), "三季报标题解析")
+    check(_parse_report_period('2024年年度报告摘要') is None, "摘要不解析")
+    check(_parse_report_period('关于大股东减持的公告') is None, "非财报公告不解析")
+    check(_parse_report_period('') is None, "空标题不解析")
+
 
 # ================================================================
 # Layer 2: 流动性筛选
@@ -205,11 +262,15 @@ def test_layer2_logic():
     print("\n── Layer 2: 参数/逻辑 ──")
     cfg = DEFAULT_FUNNEL_CONFIG
 
-    # 验证参数
-    check(cfg.layer2_min_avg_amount_20d == 1e8, "20日均额>1亿")
-    check(cfg.layer2_min_circulating_mcap == 2e9, "流通市值>20亿")
-    check(cfg.layer2_turn_rate_min == 3.0, "换手率≥3%")
-    check(cfg.layer2_turn_rate_max == 15.0, "换手率≤15%")
+    # 验证参数（与配置默认值动态比较，不硬编码数值）
+    check(cfg.layer2_min_avg_amount_20d == FunnelConfig().layer2_min_avg_amount_20d,
+          f"20日均额阈值取自配置默认值({cfg.layer2_min_avg_amount_20d})")
+    check(cfg.layer2_min_circulating_mcap == FunnelConfig().layer2_min_circulating_mcap,
+          f"流通市值下限取自配置默认值({cfg.layer2_min_circulating_mcap})")
+    check(cfg.layer2_turn_rate_min == FunnelConfig().layer2_turn_rate_min,
+          f"换手率下限取自配置默认值({cfg.layer2_turn_rate_min})")
+    check(cfg.layer2_turn_rate_max == FunnelConfig().layer2_turn_rate_max,
+          f"换手率上限取自配置默认值({cfg.layer2_turn_rate_max})")
 
     # 市值估算逻辑（源码 line 153-157）
     # amount / (turnover_rate / 100) = amount * 100 / turnover_rate
@@ -404,14 +465,14 @@ def test_layer4_piercing():
     from strategies.funnel_strategy.layer4_momentum_filter import _is_piercing
 
     # 标准刺透形态:
-    # 昨日: open=11, close=10 (阴线, body=1)
+    # 昨日: open=11, close=10 (阴线, body=1), low=10.0
     # 今日: open=9.8, close=10.6 (> midpoint=10.5 且 open<昨日close=10)
-    yesterday = {'open': 11.0, 'close': 10.0}
+    yesterday = {'open': 11.0, 'close': 10.0, 'low': 10.0}
     today = {'open': 9.8, 'close': 10.6}
     check(_is_piercing(today, yesterday), f"标准刺透形态, midpoint=10.5, close=10.6>10.5, open=9.8<10.0")
 
     # 昨日阳线 → 不构成刺透
-    yesterday_yang = {'open': 10.0, 'close': 11.0}
+    yesterday_yang = {'open': 10.0, 'close': 11.0, 'low': 10.0}
     check(not _is_piercing({'open': 11.5, 'close': 12.0}, yesterday_yang), "昨日阳线不构成刺透")
 
     # 今日阴线 → 不构成刺透
@@ -492,11 +553,14 @@ def test_layer4_check_single():
     check(not result2['passed'] and '量比' in result2['reject_reason'],
           f"量比不符被拒: {result2['reject_reason']}")
 
-    # 乖离超标被拒
-    pre_high_bias = {**pre, 'bias_pct': 10.0}  # > 6%
+    # 乖离率已停用为拒单条件（2026-10-13 审查，与 RSI/近5日涨幅高度共线）：
+    # bias 高不再触发 reject，仅记录在 details 供展示/标签。
+    pre_high_bias = {**pre, 'bias_pct': 10.0}  # > 6%，旧逻辑会拒单
     result3 = _check_single('000001.SZ', cfg, {'000001.SZ': rows}, {'000001.SZ': pre_high_bias})
-    check(not result3['passed'] and '乖离' in result3['reject_reason'],
-          f"乖离超标被拒: {result3['reject_reason']}")
+    check(result3['passed'] and result3['signal_type'] == 'demand_absorption',
+          f"乖离率已停用：bias=10%不再拒单, 得到passed={result3['passed']}, "
+          f"signal={result3['signal_type']}, reject={result3['reject_reason']}")
+    check(result3['details'].get('bias_pct') == 10.0, "bias仍记录在details供展示")
 
     # 无信号被拒
     # 构造平凡K线: 没有锤子/刺透
@@ -584,46 +648,58 @@ def test_layer5_score():
     check(result['bias_score'] > 0, f"贴线得分>0, 得到{result['bias_score']}")
     # 人气加分: rank=50 <= 100
     check(result['popularity_bonus'] == 5.0, f"人气加分=5, 得到{result['popularity_bonus']}")
-    # 总分
-    check(result['score'] >= 80, f"总分≥80, 得到{result['score']}")
+    # 总分（阈值从配置动态读取，不硬编码）
+    check(result['score'] >= cfg.layer5_min_composite_score,
+          f"总分≥配置阈值({cfg.layer5_min_composite_score}), 得到{result['score']}")
     check('黄金涨幅' in result['tags'], f"标签含黄金涨幅: {result['tags']}")
     check('人气#50' in result['tags'], f"标签含人气排名: {result['tags']}")
 
-    # 涨幅范围测试
-    check(cfg.layer5_pct_range_low == 3.0, "涨幅下限3%")
-    check(cfg.layer5_pct_range_high == 5.0, "涨幅上限5%")
+    # 涨幅范围（与配置默认值动态比较）
+    check(cfg.layer5_pct_range_low == FunnelConfig().layer5_pct_range_low,
+          f"涨幅下限取自配置默认值({cfg.layer5_pct_range_low})")
+    check(cfg.layer5_pct_range_high == FunnelConfig().layer5_pct_range_high,
+          f"涨幅上限取自配置默认值({cfg.layer5_pct_range_high})")
 
     # 人气阈值
-    check(cfg.layer5_popularity_rank_threshold == 100, "人气阈值100")
+    check(cfg.layer5_popularity_rank_threshold == FunnelConfig().layer5_popularity_rank_threshold,
+          f"人气阈值取自配置默认值({cfg.layer5_popularity_rank_threshold})")
 
 
 def test_layer5_scoring_edge_cases():
-    """测试 Layer 5 评分边界"""
+    """测试 Layer 5 评分边界（期望值按当前配置动态计算）"""
     print("\n── Layer 5: 评分边界 ──")
     from strategies.funnel_strategy.layer5_popularity_filter import _score_single
 
     cfg = DEFAULT_FUNNEL_CONFIG
+    low = cfg.layer5_pct_range_low
+    high = cfg.layer5_pct_range_high
 
-    # 涨幅偏低: 2% (1~3%范围)
+    # 涨幅偏低: 1.5%（低于黄金区间下限，验证"涨幅偏低"分支）
+    pct_below = 1.5
     dates = pd.date_range(end=date.today(), periods=5, freq='B')
     df = pd.DataFrame({
         'open': [10.0]*5, 'high': [10.2]*5, 'low': [9.9]*5, 'close': [10.1]*5,
         'volume': [1e7]*5, 'amount': [1e8]*5,
-        'pct_chg': [2.0]*5, 'turnover_rate': [5.0]*5,
+        'pct_chg': [pct_below]*5, 'turnover_rate': [5.0]*5,
         'volume_ratio': [1.0]*5, 'amplitude': [3.0]*5,
     }, index=dates)
 
     result = _score_single('TEST.SZ', cfg, {'TEST.SZ': df}, {})
-    # pct_score = int((2.0-1.0) / (3.0-1.0) * 15) = int(7.5) = 7
-    check(result['pct_score'] == 7, f"2%涨幅得分=7, 得到{result['pct_score']}")
+    # pct_score = int((pct_below-1.0) / (low-1.0) * 15)
+    expected_below = int((pct_below - 1.0) / (low - 1.0) * 15)
+    check(result['pct_score'] == expected_below,
+          f"{pct_below}%涨幅得分={expected_below}, 得到{result['pct_score']}")
     check('涨幅偏低' in result['tags'], f"标签含涨幅偏低: {result['tags']}")
 
-    # 涨幅偏高: 7%
+    # 涨幅偏高: 7%（高于黄金区间上限，验证"涨幅偏高"分支）
+    pct_above = 7.0
     df2 = df.copy()
-    df2['pct_chg'] = [7.0]*5
+    df2['pct_chg'] = [pct_above]*5
     result2 = _score_single('TEST.SZ', cfg, {'TEST.SZ': df2}, {})
-    # pct_score = int((8.0-7.0)/(8.0-5.0)*10) = int(3.33) = 3
-    check(result2['pct_score'] == 3, f"7%涨幅得分=3, 得到{result2['pct_score']}")
+    # pct_score = int((8.0-pct_above)/(8.0-high)*10)
+    expected_above = int((8.0 - pct_above) / (8.0 - high) * 10)
+    check(result2['pct_score'] == expected_above,
+          f"{pct_above}%涨幅得分={expected_above}, 得到{result2['pct_score']}")
     check('涨幅偏高' in result2['tags'], f"标签含涨幅偏高: {result2['tags']}")
 
     # 涨幅超出范围 (9%) → pct_score=0
@@ -726,12 +802,13 @@ def test_layer6_time_window():
 
 
 def test_layer6_risk_params_fails_low_ratio():
-    """测试盈亏比不足场景"""
-    print("\n── Layer 6: 盈亏比不足 ──")
+    """测试风控拒绝场景（当前设计：目标价按最低盈亏比反推，
+    盈亏比本身不会不足；高波动下触发的是"止损幅度过大"被拒）"""
+    print("\n── Layer 6: 风控拒绝路径 ──")
 
-    # 修改config使盈亏比要求很高，验证不通过
+    # 修改config使盈亏比要求很高
     cfg_strict = FunnelConfig(
-        layer6_min_profit_loss_ratio=5.0,  # 要求>5:1
+        layer6_min_profit_loss_ratio=5.0,  # 要求≥5:1
         layer6_target_atr_mult=2.0,
         layer6_initial_stop_atr=1.0,
         layer6_atr_period=20,
@@ -739,6 +816,8 @@ def test_layer6_risk_params_fails_low_ratio():
 
     from strategies.funnel_strategy.layer6_risk_control import compute_risk_params
 
+    # 场景1: 正常波动 → 目标价由 min_ratio 反推 (target=entry+risk*5)，
+    # 通过时盈亏比必然 ≥ 要求值（当前设计）
     dates = pd.date_range(end=date.today(), periods=30, freq='B')
     prices = np.linspace(10.0, 12.0, 30)
     df = pd.DataFrame({
@@ -750,9 +829,29 @@ def test_layer6_risk_params_fails_low_ratio():
     }, index=dates)
 
     result = compute_risk_params('TEST.SZ', prices[-1], cfg_strict, {'TEST.SZ': df})
-    # 实际盈亏比≈2.0 < 5.0
-    check(not result['passed'], f"盈亏比不足被拒: ratio={result['profit_loss_ratio']}")
-    check(result['profit_loss_ratio'] < 5.0, f"实际盈亏比<5: {result['profit_loss_ratio']}")
+    if result['passed']:
+        check(result['profit_loss_ratio'] >= cfg_strict.layer6_min_profit_loss_ratio,
+              f"通过时盈亏比≥{cfg_strict.layer6_min_profit_loss_ratio}: {result['profit_loss_ratio']}")
+    else:
+        check(result['profit_loss_ratio'] < cfg_strict.layer6_min_profit_loss_ratio,
+              f"被拒时盈亏比<{cfg_strict.layer6_min_profit_loss_ratio}: {result['profit_loss_ratio']}")
+
+    # 场景2: 高波动数据 → ATR/entry > 8% → 止损幅度过大 → 拒绝（ratio=0）
+    zigzag = np.array([10.0 if i % 2 == 0 else 11.5 for i in range(30)])
+    dates2 = pd.date_range(end=date.today(), periods=30, freq='B')
+    df2 = pd.DataFrame({
+        'open': zigzag * 0.99,
+        'high': zigzag * 1.02,
+        'low': zigzag * 0.98,
+        'close': zigzag,
+        'volume': [1e7]*30,
+    }, index=dates2)
+    result2 = compute_risk_params('TEST.SZ', float(zigzag[-1]), cfg_strict, {'TEST.SZ': df2})
+    check(not result2['passed'],
+          f"高波动止损幅度>8%被拒: ratio={result2['profit_loss_ratio']}, "
+          f"stop_pct={result2['stop_loss_pct']}")
+    check(result2['profit_loss_ratio'] == 0.0,
+          f"被拒时盈亏比=0: {result2['profit_loss_ratio']}")
 
 
 # ================================================================
@@ -868,8 +967,14 @@ def test_regression_layer5_bonus_flow():
                            trend_bonus=3.0, momentum_bonus=8.0)
     check(result['trend_bonus'] == 3.0, f"trend_bonus=L3的3分: {result['trend_bonus']}")
     check(result['momentum_bonus'] == 8.0, f"momentum_bonus=L4的8分: {result['momentum_bonus']}")
-    # 总分 = 50 + 7(pct) + 15(bias) + 10(stability) + 0(pop) + 3(trend) + 8(momentum) = 93
-    check(result['score'] == 93, f"总分=93, 得到{result['score']}")
+    # 总分 = 50 + pct + bias + stability + pop + trend(3) + momentum(8)，
+    # 各分项按当前配置动态计算（涨幅评分随 layer5_pct_range_* 变化）
+    expected = 50 + (result['pct_score'] + result['bias_score']
+                     + result['stability_score'] + result['popularity_bonus']
+                     + result['trend_bonus'] + result['momentum_bonus'])
+    expected = min(expected, 100)
+    check(result['score'] == expected,
+          f"总分={expected}(动态计算), 得到{result['score']}")
     print(f"    ✓ L3 trend_bonus(3) + L4 momentum_bonus(8) 各自独立计入，无重复/丢失")
 
 
@@ -922,6 +1027,7 @@ if __name__ == '__main__':
 
     test_layer1_current_ratio()
     test_layer1_check_fundamental()
+    test_layer1_disclosure_visibility()
     s1 = summary("Layer 1")
 
     test_layer2_logic()

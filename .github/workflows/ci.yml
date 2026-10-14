@@ -23,3 +23,13 @@ jobs:
         run: |
           pip install pyyaml
           python tools/pre_deploy_check.py
+
+      # 2026-10-14 审查修复: 此前 CI 只做 YAML+AST 静态检查，单测回归
+      # 完全不跑（5 处断言脱节长期无人发现）。这里跑无 DB 依赖的四套单测。
+      - name: Unit tests (no DB required)
+        run: |
+          pip install "pandas>=2.0.0" "numpy>=1.24.0" "scipy>=1.10.0" python-dotenv psycopg2-binary
+          python tests/test_shared_base.py
+          python tests/test_funnel_round3.py
+          python tests/test_funnel_deep.py
+          python tests/test_funnel_layers.py
