@@ -1135,7 +1135,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         </div>
         <div class="step-row">
           <span class="step-name">出场分布</span>
-          <span class="rule-inline">止损 {es.get('stop_count', 0)} · 止盈 {es.get('target_count', 0)} · 超时 {es.get('timeout_count', 0)}</span>
+          <span class="rule-inline">止损 {es.get('stop_count', 0)} · 止盈 {es.get('target_count', 0)} · 超时 {es.get('timeout_count', 0)}{(' · 时间止损 ' + str(es.get('time_stop_count', 0))) if es.get('time_stop_count', 0) else ''}</span>
         </div>
         {fwd_table_html}
         {render_by_year(bt.get('by_year'))}
@@ -1151,7 +1151,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
             _name = html_escape(str(s.get('stock_name', '') or ''))
             _score = _fnum(s.get('composite_score'))
             _exit_ret = _fnum(s.get('exit_ret'))
-            _exit_map = {'stop': '止损', 'target': '止盈', 'timeout': '超时'}
+            _exit_map = {'stop': '止损', 'target': '止盈', 'timeout': '超时',
+                         'time_stop': '时间止损', 'data_end': '数据中断'}
             _exit_label = html_escape(str(s.get('exit_type', '') or ''))
             _tags_str = (f"{s.get('eval_date', '')} · "
                          f"{_exit_map.get(_exit_label, _exit_label)} {_exit_ret:+.1%}")

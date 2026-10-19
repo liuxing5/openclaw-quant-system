@@ -6,6 +6,8 @@
   2. 各策略门控阈值配置留痕（reward_risk / min_market_breadth / max_breadth_ma20
      / 8step MIN_MARKET_BREADTH）——防静默回改
   3. main_uptrend data_loader.get_market_breadth 数据库口径（0..1 合法值）
+以及 2026-10-19 出场改造:
+  4. pullback 时间止损 V3b 行为（触发 / 盈利不触发 / 同日止损优先 / 关闭回退）
 """
 import os
 import re
@@ -101,6 +103,136 @@ def test_pullback_breadth_gate():
     check("预热期宽度=NaN", pd.isna(b.iloc[0]), f"got {b.iloc[0]}")
 
 
+def test_pullback_time_stop():
+    """2026-10-19 出场改造（预注册 V3b）: 时间止损行为 + 配置开关。"""
+    print("[pullback 时间止损 V3b]")
+    from strategies.pullback_strategy.config import PullbackConfig
+    from strategies.pullback_strategy.run_backtest import simulate
+
+    code = "000001.SZ"
+    dates = pd.bdate_range("2026-03-02", periods=12)
+
+    def mkq(path):                     # path: 12 × (open, high, low, close)
+        df = pd.DataFrame({
+            "ts_code": code, "trade_date": dates,
+            "open": [p[0] for p in path], "high": [p[1] for p in path],
+            "low": [p[2] for p in path], "close": [p[3] for p in path],
+        })
+        df["raw_open"], df["raw_close"] = df["open"], df["close"]
+        df["raw_prevc"] = df["close"].shift(1)
+        return df
+
+    def mksig():                       # 信号日=dates[0], 入场=dates[1] 开盘 10.0
+        return pd.DataFrame({
+            "ts_code": [code], "trade_date": [dates[0]],
+            "close": [10.0], "raw_close": [10.0],
+            "stop_loss": [9.4], "target_1": [11.8],
+            "final_score": [80.0], "stock_name": ["测试"],
+        })
+
+    # 横盘微跌: 第5持有日(dates[5])收盘 9.8 < 入场 10.0 → 应 time_stop
+    flat = [(10.0, 10.1, 9.9, 10.0), (10.0, 10.1, 9.9, 10.0),
+            (10.0, 10.1, 9.8, 9.95), (9.95, 10.0, 9.7, 9.9),
+            (9.9, 10.0, 9.65, 9.9), (9.9, 10.0, 9.6, 9.8)] + \
+           [(9.8, 10.0, 9.6, 9.8)] * 6
+    # 上行: 第5持有日收盘 10.4 > 入场 → 不触发，走满 10 日超时
+    up = [(10.0, 10.1, 9.9, 10.0), (10.0, 10.1, 9.9, 10.0),
+          (10.0, 10.3, 9.95, 10.2), (10.2, 10.45, 10.1, 10.4),
+          (10.4, 10.55, 10.3, 10.5), (10.5, 10.6, 10.3, 10.4),
+          (10.4, 10.6, 10.3, 10.45), (10.45, 10.6, 10.3, 10.4),
+          (10.4, 10.5, 10.25, 10.4), (10.4, 10.5, 10.2, 10.4),
+          (10.4, 10.5, 10.3, 10.4), (10.4, 10.5, 10.3, 10.4)]
+    stopd = list(flat)
+    stopd[5] = (9.9, 10.0, 9.3, 9.7)   # 第5持有日最低 9.3 触及止损 9.4
+
+    cfg = PullbackConfig()
+    check("config 默认 bt_time_stop_days==5", cfg.bt_time_stop_days == 5,
+          f"got {cfg.bt_time_stop_days}")
+
+    def one(tr):
+        return tr.iloc[0] if len(tr) == 1 else None
+
+    # A: 第5持有日收盘未盈利 → time_stop，按当日收盘出场
+    tr, _ = simulate(mksig(), mkq(flat), cfg)
+    r = one(tr)
+    check("第5持有日未盈利 → time_stop", r is not None and r["exit_type"] == "time_stop",
+          f"got {None if r is None else r['exit_type']} (n={len(tr)})")
+    check("time_stop hold_days==5", r is not None and int(r["hold_days"]) == 5,
+          f"got {None if r is None else r['hold_days']}")
+    check("time_stop 按第5日收盘出场", r is not None
+          and abs(float(r["exit_price"]) - 9.8) < 1e-6,
+          f"got {None if r is None else r['exit_price']}")
+    check("time_stop 收益为负(未盈利才触发)", r is not None and float(r["exit_ret"]) < 0,
+          f"got {None if r is None else r['exit_ret']}")
+
+    # B: 第5持有日已盈利 → 不触发，走满 max_hold 超时出场
+    tr2, _ = simulate(mksig(), mkq(up), cfg)
+    r2 = one(tr2)
+    check("第5持有日盈利不触发 → timeout",
+          r2 is not None and r2["exit_type"] == "timeout",
+          f"got {None if r2 is None else r2['exit_type']}")
+    check("盈利单持有满 10 日", r2 is not None and int(r2["hold_days"]) == 10,
+          f"got {None if r2 is None else r2['hold_days']}")
+    check("盈利单收益为正", r2 is not None and float(r2["exit_ret"]) > 0,
+          f"got {None if r2 is None else r2['exit_ret']}")
+
+    # C: 时间止损判定日同日触及止损 → 止损优先（同日判定顺序回归）
+    tr3, _ = simulate(mksig(), mkq(stopd), cfg)
+    r3 = one(tr3)
+    check("同日止损判定优先于时间止损",
+          r3 is not None and r3["exit_type"] == "stop",
+          f"got {None if r3 is None else r3['exit_type']}")
+    check("止损单按 stop 价成交", r3 is not None
+          and abs(float(r3["exit_price"]) - 9.4) < 1e-6,
+          f"got {None if r3 is None else r3['exit_price']}")
+
+    # D: bt_time_stop_days=0 → 关闭，完全回退 V0 超时出场
+    cfg_off = PullbackConfig(bt_time_stop_days=0)
+    tr4, _ = simulate(mksig(), mkq(flat), cfg_off)
+    r4 = one(tr4)
+    check("时间止损=0 关闭 → 走满超时",
+          r4 is not None and r4["exit_type"] == "timeout",
+          f"got {None if r4 is None else r4['exit_type']}")
+    check("关闭后持有满 10 日", r4 is not None and int(r4["hold_days"]) == 10,
+          f"got {None if r4 is None else r4['hold_days']}")
+
+
+def test_a2_market_cap_units():
+    """2026-10-19 A2 口径修复: 流通市值 = close × volume × 100 / 换手率(%)。
+
+    原式漏乘 100 → 系统性低估 100×，[30e8,500e8] 实际筛出 ≥3000 亿超大盘
+    （2026-03-20/10-13 实证 5 票 e1=真实/100；funnel layer2 同口径一直 ×100）。
+    """
+    print("[main_uptrend A2 市值单位 ×100]")
+    from types import SimpleNamespace
+
+    from strategies.main_uptrend.config import MainUptrendConfig
+    from strategies.main_uptrend.layer_a_prescreen import LayerAPrescreener
+
+    cfg = MainUptrendConfig()
+    check("A2 区间留痕 30e8~500e8",
+          cfg.a_market_cap_min == 30e8 and cfg.a_market_cap_max == 500e8,
+          f"got {cfg.a_market_cap_min}~{cfg.a_market_cap_max}")
+
+    day = pd.Timestamp("2026-10-13")
+    # 1e6 股 × 10 元: 换手 1% → 流通盘 1e8 股 → 10 亿（低于下限出局）；
+    #                  换手 0.1% → 1e9 股 → 100 亿（入围）
+    df = pd.DataFrame({
+        "ts_code": ["000001.SZ", "000002.SZ", "000003.SZ", "000004.SZ"],
+        "trade_date": [day] * 4,
+        "raw_close": [10.0] * 4,
+        "close": [10.0] * 4,
+        "volume": [1e6] * 4,
+        "turnover_rate": [1.0, 0.1, None, 0.0],
+    })
+    p = LayerAPrescreener(cfg, loader=SimpleNamespace(_preloaded_daily=df))
+    got = p._filter_market_cap_preloaded("2026-10-13")
+    check("×100 口径: 100亿(0.1%换手)入围", got == {"000002.SZ"}, f"got {got}")
+    check("10亿(1%换手)低于下限出局", "000001.SZ" not in got, f"got {got}")
+    check("NULL/0 换手率行剔除",
+          "000003.SZ" not in got and "000004.SZ" not in got, f"got {got}")
+
+
 def test_threshold_config_invariants():
     print("[门控阈值配置留痕]")
     from strategies.pullback_strategy.config import PullbackConfig
@@ -110,6 +242,8 @@ def test_threshold_config_invariants():
     check("pullback reward_risk==3.0", pb.reward_risk == 3.0, f"got {pb.reward_risk}")
     check("pullback min_market_breadth==0.4", pb.min_market_breadth == 0.4,
           f"got {pb.min_market_breadth}")
+    check("pullback bt_time_stop_days==5（2026-10-19 预注册 V3b）",
+          pb.bt_time_stop_days == 5, f"got {pb.bt_time_stop_days}")
 
     mu = MainUptrendConfig()
     check("main_uptrend max_breadth_ma20==0.6", mu.max_breadth_ma20 == 0.6,
@@ -171,6 +305,8 @@ def test_uptrend_preload_offbyone():
 
 def main():
     test_pullback_breadth_gate()
+    test_pullback_time_stop()
+    test_a2_market_cap_units()
     test_threshold_config_invariants()
     test_main_uptrend_breadth_source()
     test_uptrend_preload_offbyone()

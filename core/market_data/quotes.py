@@ -97,41 +97,53 @@ def ensure_market_tables():
 
 
 def fetch_with_akshare_full():
-    """全 A 股一次性快照 - 新浪源优先，东财兜底"""
+    """全 A 股一次性快照 - 东财源优先（含换手率），新浪源兜底
+
+    2026-10-19 A2 修复: 原为新浪源优先，但 akshare>=1.18 的新浪快照
+    （stock_zh_a_spot）改为中文列且不再提供“换手率”列（2026-06 起新浪源
+    每次成功 → 东财源再未被触发），导致 daily_quotes.turnover_rate 自
+    2026-06 起恒 NULL → 预筛过滤器2（mktcap 由 close*volume/turnover_rate
+    推导）恒空 → main_uptrend A 层降级全市场。东财源提供“换手率”，故改为
+    东财优先、新浪兜底；兜底源若缺换手率，下游
+    _supplement_with_tushare_daily_basic 仍会 COALESCE 补缺。
+    """
     import akshare as ak
 
     df = None
 
-    logger.info("AKShare 全市场快照（新浪源）...")
+    logger.info("AKShare 全市场快照（东财源）...")
     for attempt in range(3):
-        try:
-            df = ak.stock_zh_a_spot()
-            if df is not None and not df.empty:
-                logger.info(f"新浪源成功: {len(df)} 条")
-                break
-        except Exception as e:
-            if attempt < 2:
-                wait = 2 * (attempt + 1)
-                logger.warning(f"AKShare 新浪源失败 (尝试 {attempt+1}/3), 等待 {wait}s: {e}")
-                time.sleep(wait)
-            else:
-                logger.warning(f"AKShare 新浪源最终失败，切换东财: {e}")
-                break
-
-    if df is None or df.empty:
-        logger.info("AKShare 全市场快照（东财源）...")
         try:
             df = ak.stock_zh_a_spot_em()
             if df is not None and not df.empty:
                 logger.info(f"东财源成功: {len(df)} 条")
+                break
         except Exception as e:
-            logger.error(f"AKShare 东财源失败: {e}")
+            if attempt < 2:
+                wait = 2 * (attempt + 1)
+                logger.warning(f"AKShare 东财源失败 (尝试 {attempt+1}/3), 等待 {wait}s: {e}")
+                time.sleep(wait)
+            else:
+                logger.warning(f"AKShare 东财源最终失败，切换新浪: {e}")
+                df = None
+                break
+
+    if df is None or df.empty:
+        logger.info("AKShare 全市场快照（新浪源兜底）...")
+        try:
+            df = ak.stock_zh_a_spot()
+            if df is not None and not df.empty:
+                logger.info(f"新浪源成功: {len(df)} 条")
+        except Exception as e:
+            logger.error(f"AKShare 新浪源失败: {e}")
             return None
 
     if df is None or df.empty:
         logger.warning("AKShare 所有源均返回空")
         return None
 
+    # 中文列名（东财/新浪现行快照均含“最新价”）走中文分支；老版新浪英文列走 else。
+    # 注: 新浪中文快照无“换手率”列 → r.get('换手率')=None，由下游 tushare 补。
     is_em = '最新价' in df.columns
     code_col = '代码' if is_em else 'code'
 
@@ -184,6 +196,70 @@ def fetch_with_akshare_full():
 
     logger.info(f"解析完成: {len(rows)} 条有效, 跳过前缀{skipped_prefix}, 跳过价格{skipped_price}")
     return rows
+
+
+def _supplement_turnover_with_tencent(rows, batch_size=60) -> int:
+    """腾讯 qt.gtimg.cn 批量补换手率（f38, 百分数）。
+
+    2026-10-19 A2 修复兜底: 新浪快照 2026-06 起不再提供“换手率”列；东财
+    akshare 源用 82.push2 子域（本机连接重置，裸域亦被限流）→ rows 中
+    turnover_rate(index 9) 为 None 的行由腾讯源补全，单位与库口径一致（%）。
+    连续 3 批失败即熔断（保留现状，不拖垮整条采集链）。
+    """
+    import urllib.request
+
+    missing = [i for i, r in enumerate(rows) if r[9] is None]
+    if not missing:
+        return 0
+
+    def _qt_code(ts: str):
+        code, _, ex = ts.partition(".")
+        ex = (ex or "").upper()
+        return (ex.lower() + code) if ex in ("SH", "SZ", "BJ") else None
+
+    filled = 0
+    fail_streak = 0
+    for start in range(0, len(missing), batch_size):
+        idxs = missing[start:start + batch_size]
+        qs = [q for q in (_qt_code(str(rows[i][0])) for i in idxs) if q]
+        if not qs:
+            continue
+        try:
+            req = urllib.request.Request(
+                "https://qt.gtimg.cn/q=" + ",".join(qs),
+                headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                text = resp.read().decode("gbk", errors="replace")
+        except Exception as e:
+            fail_streak += 1
+            logger.warning(f"腾讯源换手率批次失败 ({fail_streak}/3): {e}")
+            if fail_streak >= 3:
+                logger.warning("腾讯源连续失败，熔断换手率补充（保持现状）")
+                break
+            continue
+        fail_streak = 0
+        by_code = {}
+        for line in text.split(";"):
+            if "=" not in line:
+                continue
+            _, val = line.split("=", 1)
+            f = val.strip().strip('"').split("~")
+            if len(f) > 38 and f[2]:
+                try:
+                    to = float(f[38])
+                except ValueError:
+                    continue
+                if 0.0 < to < 100.0:            # 换手率合理域（%）
+                    by_code[f[2]] = to
+        for i in idxs:
+            code = str(rows[i][0]).partition(".")[0]
+            if code in by_code:
+                rows[i] = rows[i][:9] + (by_code[code],) + rows[i][10:]
+                filled += 1
+        time.sleep(0.05)                         # 轻微限速，避免触发对方风控
+    if filled:
+        logger.info(f"腾讯源补充换手率: {filled}/{len(missing)} 条")
+    return filled
 
 
 def fetch_with_baostock():
@@ -394,6 +470,10 @@ def fetch_daily_quotes_today():
     if not rows or not source:
         logger.error("所有数据源均失败")
         return
+
+    # 2026-10-19 A2 修复: 主源缺换手率（新浪快照 2026-06 起无该列）→ 腾讯源兜底补
+    if any(r[9] is None for r in rows):
+        _supplement_turnover_with_tencent(rows)
 
     # 主源（AKShare）可更新已有行；兜底源仅插入缺失行
     is_primary = (source == 'akshare')

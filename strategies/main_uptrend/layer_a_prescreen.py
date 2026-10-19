@@ -239,7 +239,13 @@ class LayerAPrescreener:
         if valid_data.empty:
             return set()
 
-        est_mcap = close[valid] * volume[valid] / turnover_rate[valid]
+        # 2026-10-19 A2 口径修复: turnover_rate 存库为百分数(0.51 = 0.51%)、
+        # volume 为股 → 流通市值 = close × volume × 100 / turnover_rate(%)。
+        # 原式漏乘 100 系统性低估 100×，使 [30e8, 500e8] 实际筛出 ≥3000 亿
+        # 超大盘（2026-03-20 与 2026-10-13 各 5 票实证 e1 = 真实市值/100；
+        # funnel layer2 同口径一直为 amount*100/turnover_rate，见
+        # tests/test_funnel_layers.py——两策略自此一致）。
+        est_mcap = close[valid] * volume[valid] * 100.0 / turnover_rate[valid]
         in_range = (est_mcap >= self.cfg.a_market_cap_min) & (est_mcap <= self.cfg.a_market_cap_max)
         return set(valid_data.loc[in_range, 'ts_code'].tolist())
 
@@ -249,7 +255,9 @@ class LayerAPrescreener:
         try:
             cur = conn.cursor(cursor_factory=RealDictCursor)
             cur.execute("""
-                SELECT close * volume / turnover_rate AS est_mcap
+                -- 2026-10-19 A2 口径修复: ×100（turnover 为百分数），原式漏乘
+                -- 系统性低估 100×（详见 _filter_market_cap_preloaded 注释）
+                SELECT close * volume * 100 / turnover_rate AS est_mcap
                 FROM daily_quotes
                 WHERE ts_code = %s
                   AND trade_date = (

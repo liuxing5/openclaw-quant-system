@@ -8,6 +8,8 @@ Usage:
   - 信号日 T 收盘确认四步条件 → T+1 开盘价入场（跳空高开>3% 视为追高放弃，跳空低开照常成交）
   - 止损: min(结构止损, 1.5×ATR14) 波动率止损，风险上限 6%（2026-10-13 审查: 原 3% 比日噪声窄）
   - 止盈: 触及 目标价 出场；否则持有 max_hold 个交易日按收盘出场
+  - 时间止损 (2026-10-19): 持有第 bt_time_stop_days 日收盘未盈利 → 收盘离场
+    （预注册出场网格 V3b; 同日止损/止盈优先; --time-stop-days 0 可关闭回退 V0）
   - 全部收益扣 0.25% 往返交易成本；前向收益报 t 值/非重叠子样本/全市场基准超额
 
 输出 JSON: strategies/funnel_strategy/docs/pullback_backtest.json
@@ -26,6 +28,11 @@ Usage:
   问题18 基准套与策略相同的基础过滤；超额收益按信号日配对差分 + 聚类 t
   问题19 by_year 样本 <30 只报 count，不报比率
   问题4  收益/止损/前向全部复权口径；报告的 entry/exit 价为原始价（raw）
+
+2026-10-19 出场改造（预注册, 详见 docs/收益改造报告_2026-10-14.md 第二轮）:
+  - 时间止损 V3b: 持有第 bt_time_stop_days 日收盘未盈利 → 收盘出场
+    exit_type="time_stop"（预注册 8 变体网格按验证窗>0 入选 + 全样本聚类 t
+    排序选定; 效应量 +0.12 t、噪声级, 如实标注; 0=关闭回退 V0）
 """
 from __future__ import annotations
 
@@ -69,7 +76,7 @@ def holm_adjust(pvals: dict) -> dict:
 
 def simulate(sigs: pd.DataFrame, quotes: pd.DataFrame, cfg,
              calendar: list | None = None) -> tuple[pd.DataFrame, dict]:
-    """逐笔模拟：T+1 开盘入场 → 止损/止盈/超时出场。
+    """逐笔模拟：T+1 开盘入场 → 止损/止盈/时间止损/超时出场。
 
     返回 (trades_df, diag)。diag 含弃单分类计数与最大并发持仓数。
     修复（问题1/2/5/8/9/13）:
@@ -176,6 +183,12 @@ def simulate(sigs: pd.DataFrame, quotes: pd.DataFrame, cfg,
                 exit_price = float(bar["open"]) if float(bar["open"]) >= target else target
                 exit_type, exit_idx = "target", j
                 break
+            # 2026-10-19 出场改造（预注册网格 V3b）: 第 bt_time_stop_days 个持有日
+            # 收盘仍未盈利 → 按当日收盘离场（上面同日止损/止盈判定优先; 0=关闭）
+            if cfg.bt_time_stop_days and hold == cfg.bt_time_stop_days:
+                if float(bar["close"]) / entry - 1.0 <= 0.0:
+                    exit_price, exit_type, exit_idx = float(bar["close"]), "time_stop", j
+                    break
         if exit_price is None:
             k = min(i + cfg.bt_max_hold, len(g) - 1)
             # 问题9: 数据不足以持有到 max_hold → data_end 单列（不再按"最后收盘"算超时）
@@ -380,6 +393,7 @@ def build_summary(trades: pd.DataFrame, start: str, end: str,
             "target_count": int(exits.get("target", 0)),
             "timeout_count": int(exits.get("timeout", 0)),
             # 新增字段（向后兼容：旧字段全保留）
+            "time_stop_count": int(exits.get("time_stop", 0)),
             "data_end_count": int(exits.get("data_end", 0)),
             "limit_down_delayed_count": int(diag.get("limit_down_delayed", 0)),
             "n_eff": exit_sig.get("n_eff", 0),
@@ -507,7 +521,12 @@ def main():
     ap.add_argument("--start", default=CFG.bt_start)
     ap.add_argument("--end", default=CFG.bt_end or None)
     ap.add_argument("--output", default=None, help="输出 JSON 路径")
+    ap.add_argument("--time-stop-days", type=int, default=None,
+                    help="时间止损天数（覆盖 config; 0=关闭回退 V0）")
     args = ap.parse_args()
+
+    if args.time_stop_days is not None:
+        CFG.bt_time_stop_days = int(args.time_stop_days)
 
     end = args.end
     if not end:
@@ -552,6 +571,7 @@ def main():
           f"平均收益: {es['mean']:+.2%}   中位: {es['median']:+.2%}   "
           f"t={es['t']:.2f} (p={es['p']:.3f}, n_eff={es.get('n_eff', 0)}){exit_lp}")
     print(f"出场: 止损 {es['stop_count']} / 止盈 {es['target_count']} / "
+          f"时间止损 {es.get('time_stop_count', 0)} / "
           f"超时 {es['timeout_count']} / 数据中断 {es['data_end_count']}   "
           f"平均持有 {es['avg_hold_days']:.1f} 日")
     print(f"口径: {summary['cost_model']}")

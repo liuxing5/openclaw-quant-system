@@ -160,6 +160,9 @@ def run(date: str | None = None):
                 f"盈亏比{CFG.reward_risk:.0f}:1",
                 # 问题7: 明示次日入场规则（与回测口径一致）
                 "T+1开盘入场：高开>3%放弃，低开照常，开盘<=止损弃单",
+                # 2026-10-19 出场改造: 与回测口径一致的时间止损提示（0=不展示）
+                *([f"持有第{CFG.bt_time_stop_days}日收盘未盈利即离场(时间止损)"]
+                  if CFG.bt_time_stop_days else []),
             ],
             'sources': [{'source': 'pullback_buy', 'score': float(r['final_score'])}],
         })
