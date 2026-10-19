@@ -158,14 +158,24 @@ class DataLoader:
                 bs = batch_start_dt.strftime("%Y-%m-%d")
                 be = batch_end_dt.strftime("%Y-%m-%d")
 
+                # 2026-10-19 收益改造：修 preload 上界 off-by-one。
+                # 旧逻辑恒用 `trade_date < be`（开区间），使 preload(start, end)
+                # 永不包含 end 当日。回测因 preload_end=trading_days_after(end,70)
+                # 外扩而 eval_date 落在内部日、侥幸正常；但 run_daily 调
+                # preload(preload_start, eval_date) 时 eval_date 正是上界被排除，
+                # get_indicators_snapshot(eval_date) 恒空 → B/E 层自 2026-06-01 起
+                # 恒 0（分批重构 1d102ec4 引入）。
+                # 修法：非末批保持开区间（避免与下一批在边界日重叠、污染 rolling 指标），
+                # 仅末批闭区间 `<=` 以含 end 当日。
+                op = "<=" if batch_end_dt >= ed else "<"
                 cur = conn.cursor(cursor_factory=RealDictCursor)
-                cur.execute("""
+                cur.execute(f"""
                     SELECT ts_code, trade_date, open, high, low, close,
                            volume, amount, pct_chg, turnover_rate,
                            main_force_net AS main_net_inflow
                     FROM daily_quotes
                     WHERE trade_date >= %s
-                      AND trade_date < %s
+                      AND trade_date {op} %s
                       AND amount IS NOT NULL
                       AND close IS NOT NULL
                       AND volume IS NOT NULL

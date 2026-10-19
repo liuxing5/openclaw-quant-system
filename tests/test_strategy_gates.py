@@ -152,10 +152,28 @@ def test_main_uptrend_breadth_source():
           f"got {b5!r}")
 
 
+def test_uptrend_preload_offbyone():
+    print("[main_uptrend preload 上界 off-by-one 修复]")
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    dl = os.path.join(root, "strategies", "main_uptrend", "data_loader.py")
+    src = open(dl, encoding="utf-8").read()
+    # 修前恒用 `trade_date < %s`（开区间），使 preload(start,end) 永不含 end 当日；
+    # run_daily 调 preload(preload_start, eval_date) 时 eval_date 被排除 →
+    # get_indicators_snapshot(eval_date) 恒空 → B/E 层自 2026-06-01 起恒 0
+    # （分批重构 1d102ec4 引入）。修后：末批闭区间 `<=`、非末批开区间 `<`。
+    # 断言防止静默回改。（函数级验证见 verify_uptrend_e2e / 手工 diag，
+    #  preload 全市场需数分钟，不纳入快速单测。）
+    check("preload 使用可变上界算子 op（末批<=，非末批<）",
+          'op = "<=" if batch_end_dt >= ed else "<"' in src)
+    check("preload SQL 上界用 {op} 而非硬编码 <",
+          "trade_date {op} %s" in src and "trade_date < %s" not in src)
+
+
 def main():
     test_pullback_breadth_gate()
     test_threshold_config_invariants()
     test_main_uptrend_breadth_source()
+    test_uptrend_preload_offbyone()
     print("=" * 40)
     print(f"PASS={PASS} FAIL={FAIL}")
     sys.exit(1 if FAIL else 0)
