@@ -8,17 +8,25 @@ K线窗口出现断档（8step 30 日历日窗口在缺行下雪上加霜，见�
 
 口径（与 CI 主源 quotes.py 写入惯例对齐，且经 2026-10-16 库内行标定）：
   - 不复权价格（adjust=""，daily_quotes 存原始价）
-  - volume: EM 历史"成交量"= 手 → ×100 转 股（库口径=股）
-  - amount = 元、pct_chg/振幅/换手率 = %（EM 列直取，与库内 EM 来源同口径）
-  - pre_close = 收盘 - 涨跌额（精确昨收，衔接前一交易日收盘价）
-  - pe/pb/流通市值/大单净流等列库内本就 ~71% 覆盖，不回填（不猜口径）
-  - 量比在入库后由 quotes._compute_volume_ratio_sql() 补算（只补 NULL）
+  - --source em（东财 stock_zh_a_hist）: 成交量=手→×100 转股；pct/振幅/换手率列直取；
+    pre_close = 收盘 - 涨跌额。注意：东财对高频/并发请求会断连（RemoteDisconnected），
+    限流期间勿并发（--fetch-workers 1）。
+  - --source sina（新浪 stock_zh_a_daily）: 成交量=股（精确值）；成交额=元；
+    turnover=比例（×100→%）；无昨收列 → 拉目标日前移 12 自然日窗口自链
+    （目标首日昨收=窗口内前一交易日收盘，衔接已实测通过）；无振幅列 → 后置补算。
+  - pct_chg 两源均为 %（em 直取 2 位小数；sina 按 (close/昨收-1)×100 自算 4 位）。
+  - 量比/振幅：入库后按 quotes._compute_*_sql 同公式、日期限定到回填范围补算
+    （那两个函数只算"今天"，历史日必须用本脚本内的限定版）。
+  - pe/pb/流通市值/大单净流等列库内本就 ~71% 覆盖，不回填（不猜口径）。
+  - 已知局限：除权除息日按"前一交易日收盘"自链的昨收/涨幅与交易所除权口径有出入
+    （占比极小；em 源同此局限）。
 
 只补缺：INSERT ... ON CONFLICT (ts_code, trade_date) DO NOTHING，绝不覆盖已有行。
 
 用法：
-    python scripts/backfill_daily_quotes_akshare.py --start 20261008 --end 20261009 --limit 20   # 小规模验证
-    python scripts/backfill_daily_quotes_akshare.py --start 20261008 --end 20261009              # 全量
+    python scripts/backfill_daily_quotes_akshare.py --start 20261008 --end 20261009 --limit 20    # 小规模验证
+    python scripts/backfill_daily_quotes_akshare.py --start 20261008 --end 20261009 --source sina  # 全量（新浪）
+    python scripts/backfill_daily_quotes_akshare.py --start 20261008 --end 20261009 --source em    # 全量（东财）
 """
 import argparse
 import re
@@ -75,10 +83,14 @@ def main():
     ap.add_argument("--end", required=True, help="结束日 YYYYMMDD 或 YYYY-MM-DD")
     ap.add_argument("--limit", type=int, default=0, help="仅处理前 N 只（0=全市场，验证用）")
     ap.add_argument("--throttle", type=float, default=0.12, help="每只请求间歇秒（防限流）")
+    ap.add_argument("--source", choices=["em", "sina"], default="em",
+                    help="行情源：em=东财历史K线；sina=新浪（详见文件头口径说明）。"
+                         "东财限流期间用 sina")
     ap.add_argument("--fetch-workers", type=int, default=1,
-                    help="并发拉取数。默认串行：东财对并发连接直接断开（RemoteDisconnected），"
+                    help="并发拉取数。东财对并发连接直接断开（RemoteDisconnected），"
                          "实测 4 workers 即被拒；如 IP 环境宽松可尝试 2")
-    ap.add_argument("--no-volume-ratio", action="store_true", help="跳过入库后的 volume_ratio 补算")
+    ap.add_argument("--skip-aux-fill", action="store_true",
+                    help="跳过入库后的量比/振幅限定补算")
     args = ap.parse_args()
 
     def _norm(s):
@@ -121,40 +133,78 @@ def main():
 
     s_n, e_n = _norm(args.start), _norm(args.end)
 
+    def _fetch_em(ts_code):
+        """东财历史K线 → 12 列元组列表"""
+        df = ak.stock_zh_a_hist(symbol=ts_code[:6], period="daily",
+                                start_date=s_n, end_date=e_n, adjust="")
+        rows = []
+        if df is not None and not df.empty:
+            for _, r in df.iterrows():
+                if str(r["日期"])[:10] not in target_set:
+                    continue
+                close = _f(r["收盘"])
+                if close is None:
+                    continue
+                vol_hand = _f(r["成交量"])
+                pct = _f(r["涨跌幅"])
+                chg = _f(r["涨跌额"])
+                preclose = None
+                if chg is not None:
+                    preclose = round(close - chg, 4)
+                elif pct is not None:
+                    preclose = round(close / (1 + pct / 100.0), 4)
+                rows.append((
+                    ts_code,
+                    pd.to_datetime(str(r["日期"])).date(),
+                    _f(r["开盘"]), _f(r["最高"]), _f(r["最低"]), close,
+                    int(vol_hand * 100) if vol_hand is not None else None,  # 手→股
+                    _f(r["成交额"]),
+                    pct,
+                    _f(r["换手率"]),
+                    _f(r["振幅"]),
+                    preclose,
+                ))
+        return rows
+
+    def _fetch_sina(ts_code):
+        """新浪日线 → 12 列元组列表。前移 12 自然日窗口自链昨收（新浪无 preclose 列）。"""
+        num, exch = ts_code.split(".")
+        sym = ("sh" if exch == "SH" else "sz" if exch == "SZ" else "bj") + num
+        early = (start - timedelta(days=12)).strftime("%Y%m%d")
+        df = ak.stock_zh_a_daily(symbol=sym, start_date=early, end_date=e_n, adjust="")
+        rows = []
+        prev_close = None
+        if df is not None and not df.empty:
+            for _, r in df.iterrows():
+                close = _f(r["close"])
+                d10 = str(r["date"])[:10]
+                if d10 in target_set and close is not None:
+                    pct = (round((close / prev_close - 1) * 100, 4)
+                           if prev_close else None)
+                    turn = _f(r["turnover"])  # 新浪=比例(0.002=0.2%)
+                    vol = _f(r["volume"])
+                    rows.append((
+                        ts_code,
+                        datetime.fromisoformat(d10).date(),
+                        _f(r["open"]), _f(r["high"]), _f(r["low"]), close,
+                        int(round(vol)) if vol else None,  # 新浪量=股(精确值)
+                        _f(r["amount"]),
+                        pct,
+                        round(turn * 100, 4) if turn is not None else None,
+                        None,  # 振幅 → 后置补算
+                        round(prev_close, 4) if prev_close else None,
+                    ))
+                if close is not None:
+                    prev_close = close
+        return rows
+
     def _fetch(ts_code):
         """单只拉取 → (ts_code, rows, err)；失败重试 1 次"""
         last_err = None
         for attempt in (1, 2):
             try:
-                df = ak.stock_zh_a_hist(symbol=ts_code[:6], period="daily",
-                                        start_date=s_n, end_date=e_n, adjust="")
-                rows = []
-                if df is not None and not df.empty:
-                    for _, r in df.iterrows():
-                        if str(r["日期"])[:10] not in target_set:
-                            continue
-                        close = _f(r["收盘"])
-                        if close is None:
-                            continue
-                        vol_hand = _f(r["成交量"])
-                        pct = _f(r["涨跌幅"])
-                        chg = _f(r["涨跌额"])
-                        preclose = None
-                        if chg is not None:
-                            preclose = round(close - chg, 4)
-                        elif pct is not None:
-                            preclose = round(close / (1 + pct / 100.0), 4)
-                        rows.append((
-                            ts_code,
-                            pd.to_datetime(str(r["日期"])).date(),
-                            _f(r["开盘"]), _f(r["最高"]), _f(r["最低"]), close,
-                            int(vol_hand * 100) if vol_hand is not None else None,  # 手→股
-                            _f(r["成交额"]),
-                            pct,
-                            _f(r["换手率"]),
-                            _f(r["振幅"]),
-                            preclose,
-                        ))
+                rows = (_fetch_sina(ts_code) if args.source == "sina"
+                        else _fetch_em(ts_code))
                 time.sleep(args.throttle)
                 return ts_code, rows, None
             except Exception as e:
@@ -179,7 +229,8 @@ def main():
     from concurrent.futures import ThreadPoolExecutor, as_completed
 
     workers = max(1, min(args.fetch_workers, len(todo)))
-    print(f"并发拉取: {workers} workers, throttle={args.throttle}s/只/worker")
+    print(f"并发拉取: source={args.source}, {workers} workers, "
+          f"throttle={args.throttle}s/只/worker")
     aborted = False
     with ThreadPoolExecutor(max_workers=workers) as ex:
         futs = {ex.submit(_fetch, c): c for c in todo}
@@ -250,13 +301,37 @@ def main():
                 print(f"  ✗ {ts} {d1} close={c1} → {d2} pre_close={pc2}")
     print(f"  衔接链: 通过 {ok}, 断裂 {bad}")
 
-    # 4. 量比补算（只补 NULL）
-    if not args.no_volume_ratio:
-        try:
-            from core.market_data.quotes import _compute_volume_ratio_sql
-            _compute_volume_ratio_sql()
-        except Exception as e:
-            print(f"  volume_ratio 补算跳过: {e}")
+    # 4. 补算量比/振幅（公式同 core.market_data.quotes._compute_*_sql，日期限定到
+    #    回填范围——那两个函数硬编码只算"今天"，历史日用本限定版）
+    if not args.skip_aux_fill:
+        vr_total = amp_total = 0
+        for d in targets:
+            cur.execute("""
+                UPDATE daily_quotes dq
+                SET volume_ratio = CASE WHEN sub.avg_vol > 0
+                    THEN ROUND(dq.volume::numeric / sub.avg_vol, 2) END
+                FROM (
+                    SELECT ts_code, AVG(volume) AS avg_vol
+                    FROM daily_quotes
+                    WHERE trade_date < %s AND trade_date >= %s - INTERVAL '10 days'
+                      AND volume IS NOT NULL AND volume > 0
+                    GROUP BY ts_code HAVING COUNT(*) >= 3
+                ) sub
+                WHERE dq.ts_code = sub.ts_code AND dq.trade_date = %s
+                  AND dq.volume IS NOT NULL AND dq.volume > 0
+                  AND dq.volume_ratio IS NULL;
+            """, (d, d, d))
+            vr_total += cur.rowcount
+            cur.execute("""
+                UPDATE daily_quotes
+                SET amplitude = ROUND(((high - low) / pre_close * 100)::numeric, 2)
+                WHERE trade_date = %s AND high IS NOT NULL AND low IS NOT NULL
+                  AND pre_close > 0 AND amplitude IS NULL;
+            """, (d,))
+            amp_total += cur.rowcount
+        conn.commit()
+        print(f"  补算（仅目标日 NULL 行）: volume_ratio {vr_total} 条, "
+              f"amplitude {amp_total} 条")
 
     cur.close()
     conn.close()

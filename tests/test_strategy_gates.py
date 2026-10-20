@@ -367,6 +367,24 @@ def test_trading_calendar_2026_1008_1009():
           '"2026-10-08"' not in cal and '"2026-10-09"' not in cal)
 
 
+def test_trading_calendar_2025_corrections():
+    print("[交易日历 2025 修正]")
+    from datetime import date
+
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from core.utils.trading_calendar import is_trading_day
+
+    # 2026-10-20 修正（对照上交所 2024-12-23《2025年部分节假日休市安排》官方通知）:
+    # 春节 1/28-2/4、端午 5/31-6/2 休市——原漏标 02-03/04、06-02（误判交易日，
+    # CI 曾空抓）；原误标 05-30 为端午休市（实为正常交易日，库内 3205 行行情）。
+    check("2025-02-03 春节休市", is_trading_day(date(2025, 2, 3)) is False)
+    check("2025-02-04 春节休市", is_trading_day(date(2025, 2, 4)) is False)
+    check("2025-06-02 端午休市", is_trading_day(date(2025, 6, 2)) is False)
+    check("2025-05-30 端午前正常开市", is_trading_day(date(2025, 5, 30)) is True)
+    check("2025-02-05 春节后开市", is_trading_day(date(2025, 2, 5)) is True)
+    check("2025-06-03 端午后开市", is_trading_day(date(2025, 6, 3)) is True)
+
+
 def main():
     test_pullback_breadth_gate()
     test_pullback_time_stop()
@@ -377,6 +395,7 @@ def main():
     test_eight_step_hist_window()
     test_eight_step_zero_persists_stats()
     test_trading_calendar_2026_1008_1009()
+    test_trading_calendar_2025_corrections()
     print("=" * 40)
     print(f"PASS={PASS} FAIL={FAIL}")
     sys.exit(1 if FAIL else 0)
