@@ -8,6 +8,8 @@
   3. main_uptrend data_loader.get_market_breadth 数据库口径（0..1 合法值）
 以及 2026-10-19 出场改造:
   4. pullback 时间止损 V3b 行为（触发 / 盈利不触发 / 同日止损优先 / 关闭回退）
+以及 2026-10-20 八步法窗口黑障事故:
+  5. zuiyou1 HIST_WINDOW_DAYS 留痕（>=45，长假后交易行下界保障）
 """
 import os
 import re
@@ -303,6 +305,27 @@ def test_uptrend_preload_offbyone():
           "trade_date {op} %s" in src and "trade_date < %s" not in src)
 
 
+def test_eight_step_hist_window():
+    print("[8step K线窗口留痕 2026-10-19 黑障]")
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    zy = os.path.join(root, "strategies", "overnight_8step", "zuiyou1.py")
+    src = open(zy, encoding="utf-8").read()
+    # 2026-10-19 事故：30 日历日窗口撞国庆+中秋长假，baostock 实测扫描窗口
+    # [09-19,10-18] 仅 14 根K线 < analyze_ultimate 的 <15 数据不足门槛 →
+    # 144/144 全市场"数据不足"、0 候选（当日情绪 92 高潮反弹强日）。
+    # 平日 30 日历日仅 ~21 交易行（MA20 需 20，余 1-2 行），任何长假后必复发。
+    # v1.8.1 修复：HIST_WINDOW_DAYS=45（最坏长假后 ≈23-25 交易行），指标全
+    # 尾部锚定（[-5/-10/-12/-20]），窗口加长对已过门槛标的行为中性。
+    m = re.search(r"^HIST_WINDOW_DAYS\s*=\s*(\d+)", src, re.M)
+    check("HIST_WINDOW_DAYS 常量存在", m is not None)
+    if m:
+        check("HIST_WINDOW_DAYS >= 45（长假后交易行下界）",
+              int(m.group(1)) >= 45, f"实际={m.group(1)}")
+    check("两处扫描入口均用常量、无硬编码 30",
+          src.count("timedelta(days=HIST_WINDOW_DAYS)") == 2
+          and "timedelta(days=30)" not in src)
+
+
 def main():
     test_pullback_breadth_gate()
     test_pullback_time_stop()
@@ -310,6 +333,7 @@ def main():
     test_threshold_config_invariants()
     test_main_uptrend_breadth_source()
     test_uptrend_preload_offbyone()
+    test_eight_step_hist_window()
     print("=" * 40)
     print(f"PASS={PASS} FAIL={FAIL}")
     sys.exit(1 if FAIL else 0)

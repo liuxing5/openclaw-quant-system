@@ -1,6 +1,14 @@
 """
-隔夜选股法·最优融合版 (zuiyou1 v1.8)
+隔夜选股法·最优融合版 (zuiyou1 v1.8.1)
 ========================================
+v1.8.1 修订（2026-10-20）：
+  ✓ K线窗口回 45 天 —— 30 日历日窗口撞长假后 baostock 仅返回 14 行 <15 数据不足门槛，
+    2026-10-19 扫描 144/144 全灭、0 候选（当日情绪 92 高潮反弹强日，全市场黑障）。
+    30 日历日平日仅 ~21 个交易行（MA20 需 20 行，余 1-2 行），任何长假后必复发；
+    45 日历日最坏情形（春节级长假后）≈23-25 行，余量充足。baostock 实测对照：
+    10-16 扫描窗口 16 行(过)、10-19 窗口 14 行(灭)、10-20 窗口 15 行(临界)。
+    指标全尾部锚定（[-5/-10/-12/-20]），窗口加长对已过门槛标的行为中性。
+
 v1.8 修订（2026-06-15）：
   ✓ 行业缓存批量查询 —— bs.query_stock_industry()不传code一次性获取全部，从800+次请求降为1次
   ✓ K线查询天数优化 —— 45天缩短为30天（MA20只需20天，留余量）
@@ -143,6 +151,12 @@ def _log(msg):
 # -1.05%/夜 t=-6.61*，b20>=0.5 桶 ≈-0.24%/夜(n.s.)。门控为减损而非增益，
 # 启用/停用决策见收益改造报告。0=关闭。
 MIN_MARKET_BREADTH = 0.5
+
+# K线历史窗口（2026-10-20 由 30 回 45，留痕见文件头 v1.8.1）：
+# 30 日历日平日仅 ~21 个交易行，撞长假（2026 国庆+中秋）后 baostock 实测仅 14 行，
+# 全市场卡在 analyze_ultimate 的 <15 数据不足门（10-19: 144/144 全灭、0 候选）。
+# 45 日历日最坏长假后 ≈23-25 交易行 ≥ MA20 所需 20 行；指标全尾部锚定，窗口加长行为中性。
+HIST_WINDOW_DAYS = 45
 
 
 def _market_breadth(as_of: str) -> Optional[float]:
@@ -2408,7 +2422,7 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
     results = []
     total = len(stock_pool)
     end_d = snapshot_date if snapshot_date else beijing_now().strftime("%Y-%m-%d")
-    start_d = (beijing_now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    start_d = (beijing_now() - timedelta(days=HIST_WINDOW_DAYS)).strftime("%Y-%m-%d")
 
     reject_stats = {
         "数据不足": 0, "ST/退市": 0, "情绪冷淡": 0, "涨幅不符": 0,
@@ -3088,7 +3102,7 @@ def debug_stock(code: str, cfg: dict = None):
 
     # 获取历史数据
     end_d = beijing_now().strftime("%Y-%m-%d")
-    start_d = (beijing_now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    start_d = (beijing_now() - timedelta(days=HIST_WINDOW_DAYS)).strftime("%Y-%m-%d")
     k_rs = bs.query_history_k_data_plus(
         code, FIELDS_HIST,
         start_date=start_d, end_date=end_d,
