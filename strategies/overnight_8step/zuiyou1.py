@@ -2836,6 +2836,20 @@ def main():
         print("\n  今日暂无符合条件的标的。")
         _print_reject_summary(total_rejects, cfg=CONFIG_STABLE)
         _save_reject_trend(end_d, total_rejects)
+        # 2026-10-20: 零候选日也写 strategy_scans —— 此前只写审计行，funnel 页
+        # 小节时间戳/最新扫描统计停在上一次有候选日；"扫描成功但 0 候选"的日期
+        # 应照常前进（页面红字"滞后 N 天"由候选日期驱动、语义不变）。
+        # total_scanned/total_passed 口径与成功路径一致（成功路径同式: sum(rejects)+candidates）。
+        _now8 = beijing_now()
+        _persist_scan_stats(
+            end_d, total_rejects,
+            total_scanned=sum(total_rejects.values()),
+            total_passed=0,
+            sentiment_score=sentiment_score,
+            mood=mood,
+            run_mode='afternoon' if (_now8.hour > 15 or (_now8.hour == 15 and _now8.minute >= 10))
+                     else 'intraday',
+        )
         # 零候选场景下也写一行审计，selected=FALSE 不影响下游查询，但留下"今天扫过、什么都没看上"的痕迹
         _persist_zero_result_audit(end_d, total_rejects, sentiment_score, mood)
         return

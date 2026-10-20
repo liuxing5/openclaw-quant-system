@@ -10,6 +10,8 @@
   4. pullback 时间止损 V3b 行为（触发 / 盈利不触发 / 同日止损优先 / 关闭回退）
 以及 2026-10-20 八步法窗口黑障事故:
   5. zuiyou1 HIST_WINDOW_DAYS 留痕（>=45，长假后交易行下界保障）
+  6. 8step 零候选日写 strategy_scans（funnel 页时间戳前进）
+  7. trading_calendar 2026-10-08/09 交易日修正（日历误标→CI 漏抓→缺行事故）
 """
 import os
 import re
@@ -326,6 +328,45 @@ def test_eight_step_hist_window():
           and "timedelta(days=30)" not in src)
 
 
+def test_eight_step_zero_persists_stats():
+    print("[8step 零候选日写 strategy_scans]")
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    zy = os.path.join(root, "strategies", "overnight_8step", "zuiyou1.py")
+    src = open(zy, encoding="utf-8").read()
+    # 2026-10-20 修复: 此前零候选路径只写 daily_candidates 审计行、不写
+    # strategy_scans → funnel 页小节时间戳停在上一次有候选日。修复后
+    # "扫描成功但 0 候选"日照常写 stats（total_passed=0），页面时间戳前进；
+    # 红字"滞后 N 天"由候选日期驱动、语义不变。
+    m = re.search(r"if not all_results:.{0,800}?_persist_scan_stats\(",
+                  src, re.S)
+    check("零候选路径在写审计行之前调用 _persist_scan_stats",
+          m is not None and m.start() < src.find("_persist_zero_result_audit(end_d"))
+    check("零候选路径 stats total_passed=0",
+          re.search(r"_persist_scan_stats\(\s*end_d, total_rejects,\s*"
+                    r"total_scanned=sum\(total_rejects\.values\(\)\),\s*"
+                    r"total_passed=0,", src, re.S) is not None)
+
+
+def test_trading_calendar_2026_1008_1009():
+    print("[交易日历 10-08/09 修正]")
+    from datetime import date
+
+    sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+    from core.utils.trading_calendar import is_trading_day
+
+    # 2026-10-20 修正: HOLIDAYS_2026 原误标 10-08/09 为国庆调休 → CI 跳过抓取
+    # → daily_quotes 缺整天（akshare 实测两日均有真实日K、10-12 pre_close 衔接
+    # 10-09 收盘价）。修复日历 + 回填数据，断言防回改。
+    check("2026-10-08 为交易日", is_trading_day(date(2026, 10, 8)) is True)
+    check("2026-10-09 为交易日", is_trading_day(date(2026, 10, 9)) is True)
+    check("2026-10-01 国庆仍为休市", is_trading_day(date(2026, 10, 1)) is False)
+    check("2026-10-10 周六仍为休市", is_trading_day(date(2026, 10, 10)) is False)
+    cal = open(os.path.join(os.path.dirname(__file__), "..", "core", "utils",
+                            "trading_calendar.py"), encoding="utf-8").read()
+    check("HOLIDAYS_2026 源码不含 2026-10-08/09 条目",
+          '"2026-10-08"' not in cal and '"2026-10-09"' not in cal)
+
+
 def main():
     test_pullback_breadth_gate()
     test_pullback_time_stop()
@@ -334,6 +375,8 @@ def main():
     test_main_uptrend_breadth_source()
     test_uptrend_preload_offbyone()
     test_eight_step_hist_window()
+    test_eight_step_zero_persists_stats()
+    test_trading_calendar_2026_1008_1009()
     print("=" * 40)
     print(f"PASS={PASS} FAIL={FAIL}")
     sys.exit(1 if FAIL else 0)
