@@ -17,7 +17,7 @@
 - 用户要求对OpenClaw开源系统进行自我更新和迭代
 
 ### 2026-10-21 ⭐⭐⭐⭐⭐ (新副业项目：The Prompt Shelf)
-- **项目位置**: `D:\pythonProject\prompt-shelf`（已从量化仓库迁出，独立 git 仓库，待推到 GitHub 私有库）
+- **项目位置**: `D:\pythonProject\prompt-shelf`，已推到私有库 **`github.com/liuxing5/prompt-shelf`**（PRIVATE，2026-10-21，branch `main`）
 - **做什么**: 卖 AI 提示词包给在网上卖东西的人，**仅 Gumroad**，无广告无团队
 - **已完成**: 1 个利基 × 10 个产品 · 590 条提示词 · 1,192 页 PDF · 50 张封面图 · 工具链 · 上架文案
 - **定价**: $11 引流 → $17 甜点价 → $24 高端 → $29 bundle 锚点
@@ -27,6 +27,30 @@
 - **⚠️ 未完成**: 上架需要 Gumroad 收款账户（Stripe 或 PayPal），属外部动作，清单在 `strategy/launch-checklist.md`
 - **✅ 已清出分支**: 产品内容曾误推到公开仓库 `liuxing5/openclaw-quant-system` 的历史里。2026-10-21 已把最后 4 个只涉及该目录和 MEMORY.md 的 commit 压成 1 个并 force push，`master` 上已无任何产品内容（670 commits，前 669 个未受影响）。本地备份分支 `backup/pre-purge` 保留改写前状态
 - **⚠️ 残留风险**: GitHub 对 force push 后的孤儿对象**仍会按旧 SHA 提供访问**（实测 `commit/199548a8` 在 force push 之后仍能打开全部内容）。分支历史里已经找不到，但拿到 SHA 的人仍能看。彻底清除需要联系 GitHub Support 请求 GC，无自助入口
+
+## 机器环境备忘
+
+### 2026-10-21 修复：Windows 根证书存储被剃光
+
+**症状**：`gh` 报 `x509: certificate signed by unknown authority`；PowerShell 的 `Invoke-WebRequest` 报「未为 SSL/TLS 安全通道建立信任关系」。但 `git push`（走 SSH）一直正常，容易误判成网络问题。
+
+**根因**：这台机器的 Windows ROOT 证书存储只有 **52 个**根（正常装机 300–400+），缺了 104 个公共 CA。github.com 在 2026-09 换到 Sectigo 新 ECC 体系（`Sectigo Public Server Authentication Root E46`），而存储里没有对应的根。**证书本身完全合法**，是信任库被精简了。
+
+**排查顺序**（下次直接照做）：
+1. `gh auth status` 报「token invalid」**可能是误报**——TLS 失败时它也会这么说。先用 `gh api rate_limit` 看返回的 `limit`：`5000` = token 正常，`60` = 未认证
+2. 用 Python `ssl` 抓真实证书（绕过校验）看 issuer。若 issuer 是 Sectigo/DigiCert 等真 CA，说明**没有 TLS 拦截**，问题在本机信任库
+3. 对比 `Get-ChildItem Cert:\CurrentUser\Root` 数量。低于 100 就是存储被剃了
+
+**修复**：从 certifi 的 bundle（`...\Python312\Lib\site-packages\certifi\cacert.pem`，114 个 Mozilla 根）里筛出缺失的，导成 .cer，提权 `Import-Certificate` 进 `LocalMachine\Root`。最终 52 → **159**，`gh` / PowerShell / Python 全部恢复，无需任何环境变量。
+
+**踩坑**：`Start-Process -Verb RunAs -Wait` 第一次静默失败了——提权进程没跑完就返回，日志没写出来，只有 63/107 导入成功。**第二次改成逐条追加写日志**才拿到完整结果。以后做提权批量操作，日志必须每条写一次，不能等结束再写。
+
+**⚠️ 未解决**：不知道是什么剃掉的证书。如果是某个「系统优化」类工具，装回去可能再被删。若以后 HTTPS 又开始随机失败，先查 `Get-ChildItem Cert:\LocalMachine\Root` 的数量是不是掉回去了。
+
+### 网络环境
+
+- git 配了本地代理 `http://127.0.0.1:7899`（FlClashCore，pid 会变）。但 `HTTPS_PROXY` 环境变量是空的，`gh` 不读 git 的 proxy 配置
+- SSH 到 github.com 正常（`ssh -T git@github.com` → `Hi liuxing5!`），**推代码优先走 SSH**，不依赖 TLS
 
 ## 用户偏好
 ### 投资偏好（2026-03-13确认）
