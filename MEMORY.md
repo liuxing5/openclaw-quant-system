@@ -25,7 +25,8 @@
 - **🔴 平台红线（做产品前没查，事后才发现）**: Etsy 官方 Seller Handbook 明确 **prohibit the sale of AI prompt bundles**。10 个产品全是提示词包，Etsy 直接不合规，双平台计划作废。Etsy 实证规律：叫 "Ebook" 的卖 8,300 单，叫 "Prompt Pack" 的只卖 4–34 单。教训已写进 `TEMPLATE.md` 阶段 0
 - **踩坑记录**: 大输出会触发流中断（要拆小块）；子代理会在注释里写中文（要最后扫 CJK）；子代理会擅自 git push（要明令禁止）；**选品调研必须包含平台品类政策，且要在做产品之前查**
 - **⚠️ 未完成**: 上架需要 Gumroad 收款账户（Stripe 或 PayPal），属外部动作，清单在 `strategy/launch-checklist.md`
-- **✅ 已清理**: 产品内容曾误推到公开仓库 `liuxing5/openclaw-quant-system` 的历史里。2026-10-21 已改写历史（把最后 4 个只涉及该目录和 MEMORY.md 的 commit 压成 1 个）并 force push，公开历史里已无任何产品内容。本地备份分支 `backup/pre-purge` 保留着改写前的 8e6609ce
+- **✅ 已清出分支**: 产品内容曾误推到公开仓库 `liuxing5/openclaw-quant-system` 的历史里。2026-10-21 已把最后 4 个只涉及该目录和 MEMORY.md 的 commit 压成 1 个并 force push，`master` 上已无任何产品内容（670 commits，前 669 个未受影响）。本地备份分支 `backup/pre-purge` 保留改写前状态
+- **⚠️ 残留风险**: GitHub 对 force push 后的孤儿对象**仍会按旧 SHA 提供访问**（实测 `commit/199548a8` 在 force push 之后仍能打开全部内容）。分支历史里已经找不到，但拿到 SHA 的人仍能看。彻底清除需要联系 GitHub Support 请求 GC，无自助入口
 
 ## 用户偏好
 ### 投资偏好（2026-03-13确认）
