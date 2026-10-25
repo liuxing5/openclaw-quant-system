@@ -1,0 +1,6 @@
+# 依赖与构建产物不入库
+frontend/node_modules/
+frontend/dist/
+**/__pycache__/
+*.pyc
+.vite/
