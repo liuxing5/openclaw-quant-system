@@ -195,11 +195,6 @@ export default function RecommendPage() {
                   subtitle="点击进入本地个股分析；入场/止损/目标来自策略报告"
                   badge={<Badge tone="rose">{current.candidates.length} 只</Badge>}
                 />
-                {current.note ? (
-                  <p className="mt-2 rounded-md bg-amber-50 px-2.5 py-1.5 text-[10px] text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                    {current.note}
-                  </p>
-                ) : null}
                 {current.candidates.length ? (
                   <div className="mt-3 space-y-4">
                     {pathGroups.map((group) => (
