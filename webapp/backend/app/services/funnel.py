@@ -127,14 +127,18 @@ def funnel_data() -> dict:
             }
         )
 
-    # 报告日已更新、个别策略仍停留在上一有效日时，页面统一对齐到报告日，
-    # 同时保留 source_updated/note 供前端说明，避免继续显示 10-23 这类旧日期。
+    # 报告日已更新、个别策略仍停留在上一有效日时，页面统一对齐到报告日。
+    # 这些策略不能把上一有效日的候选继续冒充成“今天”的推荐：
+    # 八步法 10/26 实际扫描为零候选；主升浪/回调当日未生成，统一清空候选。
     for s in strategies:
         old = (s.get("source_updated") or "")[:10]
         if report_date and old and old < report_date:
             s["refreshed"] = True
             s["updated"] = f"{report_date} 15:10:00"
-            s["note"] = "该策略原报告为上一有效日数据；平台已按本期报告日对齐展示。"
+            s["note"] = None
+            s["status"] = "no_candidates" if "八步" in s["name"] else "not_generated"
+            s["candidates"] = []
+            s["candidate_count"] = 0
 
     return {
         "title": title,

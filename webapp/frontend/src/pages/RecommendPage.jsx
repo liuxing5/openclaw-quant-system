@@ -219,7 +219,14 @@ export default function RecommendPage() {
                     ))}
                   </div>
                 ) : (
-                  <EmptyState text="该策略本期无候选" />
+                  <EmptyState
+                    text={current.status === 'no_candidates' ? '本期扫描无候选' : '本期策略未生成候选'}
+                    hint={
+                      current.status === 'no_candidates'
+                        ? '本期没有同时满足漏斗条件的标的'
+                        : '该策略当日未运行，下一期生成后再展示'
+                    }
+                  />
                 )}
 
                 {current.backtest?.length ? (
