@@ -112,6 +112,34 @@ webapp/
 python webapp/scripts/backfill_sentiment.py --days 180   # 幂等，缺哪天补哪天
 ```
 
+## 财务数据回填
+
+`stock_fundamentals` 由东财「按报告期全市场」接口批量回填：一期报告 4 张表 × 约 12 页，
+比逐只股票请求快两个数量级。当前已回填 **8 个季度、5240 只、37,656 行**（600519 有 7 期）。
+
+```bash
+python webapp/scripts/backfill_fundamentals.py --quarters 8 --prune-stale --prune-unknown
+```
+
+- 数据：利润表（营收/归母净利/扣非/营业成本）、资产负债表（总资产/负债/净资产/负债率）、
+  现金流量表（经营现金流）、业绩报表（EPS/BPS/ROE/同比/行业）；
+- 派生：毛利率、净利率、ROE（净利润 / 净资产）在服务层计算；
+- 幂等：主键 `(ts_code, report_date)`，重复执行只覆盖不重复插入；
+- `--prune-stale` 清掉被新季度覆盖的远古行，`--prune-unknown` 清掉非 A 股代码。
+
+## 实时异动
+
+`/anomaly/events` 默认使用**腾讯全市场实时快照**（`services/live_snapshot.py`）：
+
+```
+stock_basic_info 5240 只  →  腾讯 qt.gtimg.cn 400 只/批 × 4 线程  →  约 3 秒拿全市场
+后台线程每 20 秒刷新一次；请求路径只读内存快照，绝不等待外部行情源
+```
+
+- 7 类事件：涨停 / 跌停 / 急拉 / 放量 / 高换手 / 60 日新高 / 板块大涨；
+- 事件时间取该标的**最近一笔成交时间**（`tick_snapshot`），不是合成回放；
+- 行情源失败或快照不足 1000 只时自动退回日线快照（`meta.live=false` 标注）。
+
 ## 验收
 
 ```bash

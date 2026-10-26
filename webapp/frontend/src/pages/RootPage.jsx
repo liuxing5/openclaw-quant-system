@@ -81,8 +81,8 @@ function ratioLabel(s) {
 }
 
 function TodayMetrics({ summary }) {
-  const s = summary.data
-  const empty = !s || !s.trade_date
+  const s = summary.data || {}
+  const empty = !s.trade_date
   return (
     <AsyncBlock
       loading={summary.loading}

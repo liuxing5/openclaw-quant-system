@@ -52,9 +52,18 @@ function normalizeSeries(series) {
 }
 
 function ReportChart({ rows }) {
+  const yMax = useMemo(() => {
+    const maxV = rows.reduce((m, r) => Math.max(m, r.revenue || 0, r.net_profit || 0), 0)
+    if (!maxV) return 1
+    // 取整到 100 亿，避免 ECharts 自动轴在数据刷新时跳动
+    const step = 1e10
+    return Math.ceil(maxV / step) * step
+  }, [rows])
+
   const option = useMemo(
     () => ({
-      grid: { left: 52, right: 52, top: 34, bottom: 30 },
+      animation: false,
+      grid: { left: 64, right: 18, top: 34, bottom: 30 },
       tooltip: { ...TIP, trigger: 'axis' },
       legend: { top: 0, textStyle: { color: '#94a3b8', fontSize: 10 } },
       xAxis: {
@@ -63,20 +72,19 @@ function ReportChart({ rows }) {
         axisLabel: { color: '#94a3b8', fontSize: 10 },
         axisLine: { lineStyle: { color: 'rgba(148,163,184,0.35)' } },
       },
-      yAxis: [
-        {
-          type: 'value',
-          name: '金额',
-          axisLabel: { color: '#94a3b8', fontSize: 10, formatter: (v) => fmtAmount(v) },
-          splitLine: { lineStyle: { color: 'rgba(148,163,184,0.14)' } },
+      yAxis: {
+        type: 'value',
+        name: '金额',
+        min: 0,
+        max: yMax,
+        axisLabel: {
+          color: '#94a3b8',
+          fontSize: 10,
+          // 轴标签用紧凑写法：1800亿（避免 "1800.00 亿" 被左侧裁掉首位数字）
+          formatter: (v) => (Math.abs(v) >= 1e8 ? `${Math.round(v / 1e8)}亿` : `${Math.round(v / 1e4)}万`),
         },
-        {
-          type: 'value',
-          name: '毛利率',
-          axisLabel: { color: '#94a3b8', fontSize: 10, formatter: (v) => `${v}%` },
-          splitLine: { show: false },
-        },
-      ],
+        splitLine: { lineStyle: { color: 'rgba(148,163,184,0.14)' } },
+      },
       series: [
         {
           name: '营业收入',
@@ -92,21 +100,58 @@ function ReportChart({ rows }) {
           itemStyle: { color: 'rgba(244,63,94,0.55)', borderRadius: [3, 3, 0, 0] },
           barMaxWidth: 26,
         },
+      ],
+    }),
+    [rows],
+  )
+  return <Chart option={option} height={280} />
+}
+
+/** 毛利率 / 净利率单独一张图：避免双 Y 轴在部分渲染器下标签重叠 */
+function MarginChart({ rows }) {
+  const option = useMemo(
+    () => ({
+      animation: false,
+      grid: { left: 46, right: 18, top: 28, bottom: 26 },
+      tooltip: { ...TIP, trigger: 'axis' },
+      legend: { top: 0, textStyle: { color: '#94a3b8', fontSize: 10 } },
+      xAxis: {
+        type: 'category',
+        data: rows.map((r) => String(r.report_date).slice(0, 10)),
+        axisLabel: { color: '#94a3b8', fontSize: 10 },
+        axisLine: { lineStyle: { color: 'rgba(148,163,184,0.35)' } },
+      },
+      yAxis: {
+        type: 'value',
+        min: 0,
+        max: 100,
+        axisLabel: { color: '#94a3b8', fontSize: 10, formatter: (v) => `${v}%` },
+        splitLine: { lineStyle: { color: 'rgba(148,163,184,0.14)' } },
+      },
+      series: [
         {
           name: '毛利率',
           type: 'line',
-          yAxisIndex: 1,
           data: rows.map((r) => r.gross_margin),
           showSymbol: true,
+          connectNulls: true,
           lineStyle: { color: ACCENT, width: 2 },
           itemStyle: { color: ACCENT },
+        },
+        {
+          name: '净利率',
+          type: 'line',
+          data: rows.map((r) => r.net_margin),
+          showSymbol: true,
           connectNulls: true,
+          lineStyle: { color: '#f59e0b', width: 2 },
+          itemStyle: { color: '#f59e0b' },
         },
       ],
     }),
     [rows],
   )
-  return <Chart option={option} height={300} />
+  return <Chart option={option} height={190} />
 }
 
 export default function FinanceIndicatorsPage() {
@@ -219,15 +264,21 @@ export default function FinanceIndicatorsPage() {
           <Card>
             <SectionHeader
               title="报告期序列"
-              subtitle={`共 ${series.length} 期 · 柱状为营收/净利润，折线为毛利率`}
+              subtitle={`共 ${series.length} 期 · 上方柱状为营收/净利润，下方折线为毛利率/净利率`}
               badge={<Badge tone="slate">{latest.report_date || '—'}</Badge>}
             />
             {series.length >= 2 ? (
-              <ReportChart rows={series} />
+              <>
+                <ReportChart rows={series} />
+                <div className="mt-1 border-t border-slate-100 pt-2 dark:border-slate-800">
+                  <p className="text-[11px] text-slate-400 dark:text-slate-500">毛利率 / 净利率（%）</p>
+                  <MarginChart rows={series} />
+                </div>
+              </>
             ) : (
               <div className="py-12 text-center text-xs text-slate-400">
                 <p>历史期数不足（当前仅 {series.length} 期），无法绘制趋势。</p>
-                <p className="mt-1">本地 stock_fundamentals 以单期快照为主，补齐多期财报后自动显示。</p>
+                <p className="mt-1">该标的可能为新股、退市或数据源缺报，补齐多期财报后自动显示。</p>
               </div>
             )}
           </Card>

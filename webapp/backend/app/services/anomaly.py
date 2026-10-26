@@ -20,6 +20,7 @@ import uuid
 
 from ..cache import ttl_cache
 from ..db import execute, query, query_one, scalar
+from . import live_snapshot
 from .market import _FX_CTE, latest_trade_date
 
 KIND_LABELS = {
@@ -235,6 +236,159 @@ def _session_time(day: dt.date, idx: int, total: int) -> str:
     return (base + dt.timedelta(minutes=minute)).isoformat(timespec="seconds")
 
 
+# ---------------------------------------------------------------------------
+# 实时事件池（腾讯全市场快照）
+# ---------------------------------------------------------------------------
+
+@ttl_cache(600)
+def _high60(day: dt.date | None) -> dict[str, float]:
+    """最近交易日之前的 60 个交易日最高价（用于「阶段新高」判定）。"""
+    if not day:
+        return {}
+    rows = query(
+        """
+        SELECT ts_code, MAX(high) AS h
+        FROM daily_quotes
+        WHERE trade_date < %s
+          AND trade_date > %s::date - INTERVAL '90 days'
+        GROUP BY ts_code
+        """,
+        (day, day),
+    )
+    return {r["ts_code"]: _f(r["h"]) for r in rows if r.get("ts_code")}
+
+
+@ttl_cache(60)
+def _live_boards() -> list[dict]:
+    """板块大涨：读板块快照的最新交易日（概念/行业表分别取 MAX）。"""
+    rows = query(
+        """
+        SELECT 'concept'::text AS board_type, concept_code AS code, concept_name AS name,
+               pct_chg, lead_stock_name
+        FROM concept_board_quotes
+        WHERE trade_date = (SELECT MAX(trade_date) FROM concept_board_quotes)
+          AND pct_chg >= 4
+        UNION ALL
+        SELECT 'industry'::text, industry_code, industry_name,
+               pct_chg, lead_stock_name
+        FROM industry_board_quotes
+        WHERE trade_date = (SELECT MAX(trade_date) FROM industry_board_quotes)
+          AND pct_chg >= 4
+        ORDER BY pct_chg DESC NULLS LAST
+        LIMIT 30
+        """
+    )
+    out = []
+    for r in rows:
+        pct = _f(r.get("pct_chg")) or 0
+        lead = r.get("lead_stock_name")
+        detail = f"{'概念' if r.get('board_type') == 'concept' else '行业'}板块涨幅 {pct:.2f}%"
+        if lead:
+            detail += f" · 领涨 {lead}"
+        out.append(
+            {
+                "id": f"live:board_surge:{r.get('code')}",
+                "ts_code": r.get("code"),
+                "name": r.get("name"),
+                "kind": "board_surge",
+                "kind_label": KIND_LABELS["board_surge"],
+                "price": None,
+                "pct_chg": round(pct, 2),
+                "detail": detail,
+                "scope": "board",
+                "occurred_at": None,
+            }
+        )
+    return out
+
+
+def _build_live_pool(scope: str = "all_market") -> dict | None:
+    """由全市场实时快照推导异动。快照不足 1000 只时返回 None，交给日线兜底。"""
+    try:
+        snap = live_snapshot.get_snapshot()
+    except Exception:  # noqa: BLE001 行情源异常不阻断页面
+        return None
+    items = snap.get("items") or []
+    if len(items) < 1000:
+        return None
+
+    day = latest_trade_date()
+    highs = _high60(day)
+    buckets: dict[str, list[dict]] = {k: [] for k in KINDS}
+
+    for it in items:
+        price = _f(it.get("price"))
+        pct = _f(it.get("pct_chg"))
+        if not price or pct is None:
+            continue
+        lup = _f(it.get("limit_up_price"))
+        ldp = _f(it.get("limit_down_price"))
+        tr = _f(it.get("turnover_rate"))
+        vr = _f(it.get("volume_ratio"))
+        code = it["ts_code"]
+        occurred = it.get("as_of") or snap.get("as_of")
+
+        def add(kind: str):
+            row = dict(it)
+            row["ref_high"] = highs.get(code)
+            buckets[kind].append(
+                {
+                    "id": f"live:{kind}:{code}",
+                    "ts_code": code,
+                    "name": it.get("name") or code,
+                    "kind": kind,
+                    "kind_label": KIND_LABELS[kind],
+                    "price": round(price, 2),
+                    "pct_chg": round(pct, 2),
+                    "detail": _detail(kind, row),
+                    "scope": "symbol",
+                    "occurred_at": occurred,
+                }
+            )
+
+        if lup and price >= lup - 0.005:
+            add("limit_up")
+        if ldp and price <= ldp + 0.005:
+            add("limit_down")
+        if pct >= 7 and not (lup and price >= lup - 0.005):
+            add("rapid_rise")
+        if vr is not None and vr >= 2.5:
+            add("volume_spike")
+        if tr is not None and tr >= 15:
+            add("turnover_high")
+        h60 = highs.get(code)
+        if h60 and price >= h60 * 0.999 and pct > 0:
+            add("new_high")
+
+    all_items: list[dict] = []
+    for kind in KINDS:
+        # 每类按涨跌幅取前 N，避免某类极端行情把响应撑爆
+        all_items.extend(
+            sorted(buckets[kind], key=lambda x: -(x.get("pct_chg") or 0))[:_LIMITS[kind]]
+        )
+
+    if scope != "symbol":
+        boards = _live_boards()
+        for b in boards:
+            b["occurred_at"] = snap.get("as_of")
+        all_items.extend(boards)
+    if scope == "board":
+        all_items = [x for x in all_items if x["scope"] == "board"]
+
+    all_items.sort(key=lambda x: (_PRIO.get(x["kind"], 99), -(x.get("pct_chg") or 0)))
+    by_kind = {k: 0 for k in KINDS}
+    for it in all_items:
+        by_kind[it["kind"]] = by_kind.get(it["kind"], 0) + 1
+    return {
+        "trade_date": str(day) if day else None,
+        "items": all_items,
+        "by_kind": by_kind,
+        "as_of": snap.get("as_of"),
+        "source": "tencent-live",
+        "count": len(items),
+    }
+
+
 @ttl_cache(30)
 def event_pool(day: dt.date, scope: str = "all_market") -> dict:
     """当日异动事件池（未分页）：个股事件 + 板块事件。"""
@@ -299,7 +453,8 @@ def events(
     page: int = 1,
     size: int = 20,
 ) -> dict:
-    """分页事件流：按发生时间倒序（最新在最上）。"""
+    """分页事件流：盘中优先用实时快照推导，失败/指定日期时退回日线快照。"""
+    explicit_day = day
     day = day or latest_trade_date()
     scope = (scope or "all_market").strip()
     page = max(1, int(page or 1))
@@ -307,7 +462,8 @@ def events(
     if not day:
         return {"items": [], "total": 0, "page": page, "size": size, "meta": {"trade_date": None}}
 
-    pool = event_pool(day, scope)
+    live = _build_live_pool(scope) if explicit_day is None else None
+    pool = live or event_pool(day, scope)
     rows = sorted(pool["items"], key=lambda x: x.get("occurred_at") or "", reverse=True)
     start = (page - 1) * size
     last_scan = _last_scan()
@@ -317,24 +473,42 @@ def events(
         "page": page,
         "size": size,
         "trade_date": str(day),
+        "as_of": pool.get("as_of") or last_scan.get("scanned_at"),
         "by_kind": pool["by_kind"],
         "last_scan_at": last_scan.get("scanned_at"),
         "meta": {
-            "source": "daily_quotes + concept/industry_board_quotes",
-            "time_basis": "session_replay",
-            "time_note": "日线快照无逐笔时间，事件时间按当日 09:30—14:55 稳定回放",
+            "source": pool.get("source") or "daily_quotes + concept/industry_board_quotes",
+            "live": bool(live),
+            "snapshot_count": pool.get("count"),
+            "as_of": pool.get("as_of") or last_scan.get("scanned_at"),
+            "time_basis": "tick_snapshot" if live else "session_replay",
+            "time_note": (
+                "事件时间取实时行情快照中该标的最近一笔成交时间"
+                if live
+                else "日线快照无逐笔时间，事件时间按当日 09:30—14:55 稳定回放"
+            ),
             "scope": scope,
         },
     }
 
 
 def scan(scope: str = "all_market", day: dt.date | None = None) -> dict:
-    """立即重算：刷新事件池、落扫描时间、累加规则运行次数、对比新增事件。"""
+    """立即重算：刷新实时快照 / 日线事件池，落扫描时间并对比新增事件。"""
+    explicit_day = day
     day = day or latest_trade_date()
     if not day:
         return {"scanned": 0, "new": 0, "scanned_at": None, "trade_date": None}
     scope = (scope or "all_market").strip()
-    pool = event_pool.refresh(day, scope)
+
+    live = None
+    if explicit_day is None:
+        try:
+            live_snapshot.refresh_now()  # 强制拉一张最新快照
+        except Exception:  # noqa: BLE001
+            pass
+        live = _build_live_pool(scope)
+
+    pool = live or event_pool.refresh(day, scope)
     ids = [it["id"] for it in pool["items"]]
     prev = _last_scan()
     prev_ids = set(prev.get("ids") or [])
@@ -357,6 +531,9 @@ def scan(scope: str = "all_market", day: dt.date | None = None) -> dict:
         "trade_date": str(day),
         "by_kind": pool["by_kind"],
         "scope": scope,
+        "source": pool.get("source") or "daily_quotes",
+        "live": bool(live),
+        "as_of": pool.get("as_of") or now,
     }
 
 

@@ -340,7 +340,7 @@ def statements(ts_code: str | None, limit: int) -> dict:
 
 # 单票指标里要出的序列（数组长度与 report_date 对齐）
 _SERIES_KEYS = (
-    "revenue", "net_profit", "gross_margin", "eps", "roe",
+    "revenue", "net_profit", "gross_margin", "net_margin", "eps", "bps", "roe",
     "debt_ratio", "revenue_yoy", "profit_yoy",
 )
 
@@ -467,12 +467,17 @@ def _all_indicators(page: int, size: int, sort: str, order: str) -> dict:
     order_col = _IND_SORTS.get(sort, _IND_SORTS["net_profit"])
     rows = query(
         f"""
+        WITH latest AS (
+            SELECT DISTINCT ON (f.ts_code) f.*
+            FROM stock_fundamentals f
+            ORDER BY f.ts_code, f.report_date DESC
+        )
         SELECT f.ts_code, s.stock_name, f.report_date, f.revenue, f.net_profit,
                f.gross_margin, f.net_margin, f.eps, f.bps, f.debt_ratio,
                f.revenue_yoy, f.profit_yoy, f.equity, f.operating_cashflow,
                f.shareholder_count, f.pledge_ratio,
                COUNT(*) OVER () AS total
-        FROM stock_fundamentals f
+        FROM latest f
         LEFT JOIN stock_basic_info s ON s.ts_code = f.ts_code
         ORDER BY {order_col} {order_sql} NULLS LAST, f.ts_code
         LIMIT %s OFFSET %s
@@ -480,7 +485,7 @@ def _all_indicators(page: int, size: int, sort: str, order: str) -> dict:
         (size, (page - 1) * size),
     )
     total = int(rows[0]["total"]) if rows else int(
-        query("SELECT COUNT(*) AS c FROM stock_fundamentals")[0]["c"] or 0
+        query("SELECT COUNT(DISTINCT ts_code) AS c FROM stock_fundamentals")[0]["c"] or 0
     )
     items = []
     for r in rows:
@@ -775,7 +780,7 @@ def data_quotes(page: int, size: int, market: str | None = None,
 
 def data_fundamentals(page: int, size: int, sort: str = "net_profit",
                       order: str = "desc", keyword: str | None = None) -> dict:
-    """全市场基本面表：stock_fundamentals（293 只）服务端分页排序。"""
+    """全市场基本面表：每只股票取最新一期财报，服务端分页排序。"""
     order_sql = "ASC" if str(order).lower() == "asc" else "DESC"
     order_col = _IND_SORTS.get(sort, _IND_SORTS["net_profit"])
     kw = (keyword or "").strip()
@@ -787,13 +792,18 @@ def data_fundamentals(page: int, size: int, sort: str = "net_profit",
 
     rows = query(
         f"""
+        WITH latest AS (
+            SELECT DISTINCT ON (f.ts_code) f.*
+            FROM stock_fundamentals f
+            ORDER BY f.ts_code, f.report_date DESC
+        )
         SELECT f.ts_code, s.stock_name, f.report_date, f.revenue, f.net_profit,
                f.net_profit_deducted, f.gross_margin, f.net_margin,
                f.total_assets, f.total_liabilities, f.equity, f.debt_ratio,
                f.operating_cashflow, f.eps, f.bps, f.revenue_yoy, f.profit_yoy,
                f.industry, f.shareholder_count, f.pledge_ratio,
                COUNT(*) OVER () AS total
-        FROM stock_fundamentals f
+        FROM latest f
         LEFT JOIN stock_basic_info s ON s.ts_code = f.ts_code
         WHERE {where_kw}
         ORDER BY {order_col} {order_sql} NULLS LAST, f.ts_code
@@ -802,7 +812,7 @@ def data_fundamentals(page: int, size: int, sort: str = "net_profit",
         tuple(params),
     )
     total = int(rows[0]["total"]) if rows else int(
-        query("SELECT COUNT(*) AS c FROM stock_fundamentals")[0]["c"] or 0
+        query("SELECT COUNT(DISTINCT ts_code) AS c FROM stock_fundamentals")[0]["c"] or 0
     )
     items = []
     for r in rows:

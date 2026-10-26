@@ -156,7 +156,11 @@ export default function AnomalyPage() {
   return (
     <PageShell
       title="实时异动"
-      subtitle={`数据日 ${data?.trade_date || '—'}（最近交易日快照）· 共 ${data?.total ?? '—'} 条事件 · 30 秒自动刷新`}
+      subtitle={
+        data?.meta?.live
+          ? `全市场实时快照 · ${fmtTime(data.as_of || data.meta.as_of)} 更新 · 共 ${data.total} 条 · 30 秒刷新`
+          : `数据日 ${data?.trade_date || '—'}（最近交易日快照）· 共 ${data?.total ?? '—'} 条事件 · 30 秒自动刷新`
+      }
       actions={
         <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
           <span>

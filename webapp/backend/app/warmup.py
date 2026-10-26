@@ -35,6 +35,7 @@ def _is_trading_moment(now: datetime) -> bool:
 
 def _jobs() -> list[tuple]:
     """返回 (函数, args, kwargs) 列表，必须与业务调用处完全一致（缓存 key 依赖 repr）。"""
+    from .services import anomaly as anom
     from .services import market as svc
 
     day = svc.latest_trade_date()
@@ -56,6 +57,7 @@ def _jobs() -> list[tuple]:
         (svc.limit_ladder, (day,), {"detail": False}),
         (svc.limit_ladder, (day,), {"detail": True}),
         (svc.limit_up_codes, (day,), {}),
+        (anom._high60, (day,), {}),  # 异动「阶段新高」的前置查询，预热后首屏不用等
     ]
 
 
@@ -99,8 +101,20 @@ def start_warmup() -> None:
     _stop.clear()
     _thread = threading.Thread(target=_loop, name="warmup", daemon=True)
     _thread.start()
+    try:
+        from .services import live_snapshot
+
+        live_snapshot.start_refresher()  # 全市场实时快照独立刷新，异动页读热缓存
+    except Exception:  # noqa: BLE001
+        pass
     _log("started")
 
 
 def stop_warmup() -> None:
     _stop.set()
+    try:
+        from .services import live_snapshot
+
+        live_snapshot.stop_refresher()
+    except Exception:  # noqa: BLE001
+        pass
