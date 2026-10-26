@@ -657,8 +657,16 @@ def generate_unified_html(output_dir=None, trade_date=None):
     elif need_retry and not is_today:
         # 历史日期不重试，直接使用已有数据
         print(f"   ⚠ overnight_8step {target_date_str} 无数据，使用最新可用数据 (日期={eight_date})")
+    # 报告日期必须严格匹配：没有当日候选时展示 0，而不是把上一有效日的票挂到报告日。
+    eight_timestamp = None
+    if str(eight_date or "") < target_date_str:
+        print(f"   ⚠ overnight_8step {target_date_str} 无当日数据，按 0 候选展示")
+        eight_candidates = []
+        eight_date = target_date_str
+        eight_timestamp = f"{target_date_str} 15:10:00"
+        eight_scan = None
     eight_date_str = str(eight_date) if eight_date else None
-    eight_timestamp = load_strategy_timestamp('overnight_8step', eight_date)
+    eight_timestamp = load_strategy_timestamp('overnight_8step', eight_date) or eight_timestamp
 
     llm_scan = load_scan_stats('llm_multisource', llm_date)
     eight_scan = load_scan_stats('overnight_8step', eight_date)
