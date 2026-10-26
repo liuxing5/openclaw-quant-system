@@ -100,7 +100,7 @@ export default function AuthPage({ mode = 'login' }) {
             </Link>
           </div>
           <p className="mt-4 border-t border-white/10 pt-3 text-center text-[10px] text-slate-500">
-            本平台仅提供数据辅助分析，不构成投资建议 · 客服 QQ 949394127
+            本平台仅提供数据辅助分析，不构成投资建议 · 客服 QQ 122273233
           </p>
         </div>
       </div>

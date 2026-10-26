@@ -3,9 +3,9 @@ import { Badge, Button } from './ui.jsx'
 import { toast } from '../lib/toast.jsx'
 
 const PLANS = [
-  { id: 'month', name: '月卡', price: 68 },
-  { id: 'quarter', name: '季卡', price: 168, hot: true },
-  { id: 'year', name: '年卡', price: 588 },
+  { id: 'month', name: '月卡', price: 98 },
+  { id: 'quarter', name: '季卡', price: 268, hot: true },
+  { id: 'year', name: '年卡', price: 688 },
 ]
 
 /** 订阅墙：仿原站会员弹窗；embedded=true 时用于 /buy 页内嵌。 */
@@ -15,10 +15,10 @@ export default function MembershipModal({ embedded = false, onClose, onRefresh, 
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText('949394127')
-      toast.success('客服 QQ 已复制', '打开 QQ 添加 949394127 开通')
+      await navigator.clipboard.writeText('122273233')
+      toast.success('客服 QQ 已复制', '打开 QQ 添加 122273233 开通')
     } catch {
-      toast.info('客服 QQ：949394127', '请手动复制')
+      toast.info('客服 QQ：122273233', '请手动复制')
     }
   }
 
@@ -81,7 +81,7 @@ export default function MembershipModal({ embedded = false, onClose, onRefresh, 
 
         <div className="mt-4 rounded-xl border border-emerald-500/20 bg-emerald-950/30 px-4 py-3 text-center">
           <p className="text-sm font-medium text-white">
-            <span className="mr-1">💬</span>请添加客服 QQ：<b className="text-emerald-300">949394127</b> 进行开通
+            <span className="mr-1">💬</span>请添加客服 QQ：<b className="text-emerald-300">122273233</b> 进行开通
           </p>
           <p className="mt-1 text-[11px] text-slate-400">支持微信 / 支付宝转账，管理员确认后为您开通</p>
         </div>
@@ -99,7 +99,7 @@ export default function MembershipModal({ embedded = false, onClose, onRefresh, 
           >
             {refreshing ? '正在检查…' : '已付款？刷新会员状态'}
           </button>
-          <Badge tone="slate">QQ 949394127</Badge>
+          <Badge tone="slate">QQ 122273233</Badge>
         </div>
       </div>
     </div>

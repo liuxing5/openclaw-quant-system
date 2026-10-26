@@ -209,9 +209,9 @@ webapp/
 - 注册 `/register`：邮箱 + 密码，自动获得 **3 天全功能试用**；登录 `/login` 使用 token。
 - 会员状态由后端 `/api/v1/auth/me` 返回：`trial / active / expired`，前端 `AuthProvider` 全局注入 token。
 - 试用或会员到期后，除 `/buy`、`/profile` 外的页面会进入订阅墙（仿原站会员弹窗）：
-  月卡 ¥68 / 季卡 ¥168 / 年卡 ¥588，客服 QQ 949394127，支持复制 QQ。
+  月卡 ¥98 / 季卡 ¥268 / 年卡 ¥688，客服 QQ 122273233，支持复制 QQ。
 - 支付为人工确认：管理员在 `/buy` 底部「管理员开通入口」输入用户邮箱 + 档位 + 管理员密钥，
-  或调用 `POST /api/v1/auth/activate`；密钥默认 `biaoge2026`，可用 `MEMBERSHIP_ADMIN_KEY` 覆盖。
+  或调用 `POST /api/v1/auth/activate`；密钥默认 `lx@610323`，可用 `MEMBERSHIP_ADMIN_KEY` 覆盖。
 - 账号表 `app_users`，密码 PBKDF2-SHA256，token 为 HMAC 自签 7 天有效；token 密钥用 `AUTH_SECRET` 覆盖。
 
 ## 情绪历史回填

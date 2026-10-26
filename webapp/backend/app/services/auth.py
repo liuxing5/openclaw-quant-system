@@ -24,12 +24,12 @@ from ..db import db_session, query, query_one
 TRIAL_DAYS = 3
 TOKEN_DAYS = 7
 _SECRET = os.getenv("AUTH_SECRET", "biaoge-local-auth-2026").encode()
-_ADMIN_KEY = os.getenv("MEMBERSHIP_ADMIN_KEY", "biaoge2026")
+_ADMIN_KEY = os.getenv("MEMBERSHIP_ADMIN_KEY", "lx@610323")
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _PLANS = {
-    "month": {"label": "月卡", "price": 68, "days": 30},
-    "quarter": {"label": "季卡", "price": 168, "days": 90},
-    "year": {"label": "年卡", "price": 588, "days": 365},
+    "month": {"label": "月卡", "price": 98, "days": 30},
+    "quarter": {"label": "季卡", "price": 268, "days": 90},
+    "year": {"label": "年卡", "price": 688, "days": 365},
 }
 
 _TABLE_READY = False
@@ -130,14 +130,20 @@ def public_user(row: dict) -> dict:
     plan = row.get("plan") or "trial"
     if plan == "lifetime":
         status, active_until = "active", None
+        days_left = None
+        label = "终身会员"
     elif expiry and expiry > now:
         status, active_until = "active", expiry
+        days_left = max(0, (expiry - now).days + (1 if (expiry - now).seconds > 0 else 0))
+        label = _PLANS.get(plan, {}).get("label", "会员")
     elif now < trial_end:
         status, active_until = "trial", trial_end
+        days_left = max(0, (trial_end - now).days + (1 if (trial_end - now).seconds > 0 else 0))
+        label = "试用中"
     else:
         status, active_until = "expired", expiry or trial_end
-    end = active_until or (expiry if expiry and expiry > now else trial_end)
-    days_left = max(0, (end - now).days + (1 if (end - now).seconds > 0 else 0)) if end else None
+        days_left = 0
+        label = "已到期"
     return {
         "id": str(row["id"]),
         "username": row.get("nickname") or row["email"].split("@")[0],
@@ -145,7 +151,7 @@ def public_user(row: dict) -> dict:
         "email": row["email"],
         "role": "admin" if row.get("is_admin") else "user",
         "plan": plan,
-        "plan_label": _PLANS.get(plan, {}).get("label", "试用中" if status == "trial" else "已到期"),
+        "plan_label": label,
         "plan_expiry": _iso(expiry),
         "created_at": _iso(row.get("created_at")),
         "last_login_at": _iso(row.get("last_login_at")),
@@ -153,7 +159,7 @@ def public_user(row: dict) -> dict:
         "membership": {
             "status": status,
             "plan": plan,
-            "plan_label": _PLANS.get(plan, {}).get("label", "试用中" if status == "trial" else "已到期"),
+            "plan_label": label,
             "trial_end": _iso(trial_end),
             "active_until": _iso(active_until),
             "days_left": days_left,

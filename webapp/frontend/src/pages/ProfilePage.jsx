@@ -177,14 +177,14 @@ export default function ProfilePage() {
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
                 {[
-                  { name: '月卡', price: 68 },
-                  { name: '季卡', price: 168 },
-                  { name: '年卡', price: 588 },
+                  { name: '月卡', price: 98 },
+                  { name: '季卡', price: 268 },
+                  { name: '年卡', price: 688 },
                 ].map((p) => (
                   <div key={p.name} className="rounded-xl border border-slate-200 px-4 py-3 text-center dark:border-slate-700">
                     <p className="text-xs text-slate-500 dark:text-slate-400">{p.name}</p>
                     <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">¥{p.price}</p>
-                    <p className="mt-1 text-[10px] text-slate-400">联系管理员 QQ：949394127 获取开通</p>
+                    <p className="mt-1 text-[10px] text-slate-400">联系管理员 QQ：122273233 获取开通</p>
                   </div>
                 ))}
               </div>
