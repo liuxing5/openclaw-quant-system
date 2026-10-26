@@ -433,6 +433,7 @@ function StockDetailView({ symbol }) {
 
   const liveQ = useApi(() => api.get('/market-data/realtime', { codes: symbol }), [symbol])
   const techQ = useApi(() => api.get(`/stock-analysis/${symbol}/technical`), [symbol])
+  const multiQ = useApi(() => api.get(`/stock-analysis/${symbol}/multi-level`), [symbol])
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -925,6 +926,46 @@ function StockDetailView({ symbol }) {
         <p className="mt-2 text-[10px] text-slate-400">
           数据日 {techQ.data?.trade_date || '—'} · 取最近 {techQ.data?.bars || 0} 根日线；技术信号只作研究参考。
         </p>
+      </Card>
+
+      {/* 多级别缠论：日线 / 30分钟 / 5分钟 */}
+      <Card>
+        <SectionHeader
+          title="多级别缠论"
+          subtitle="日线 260 根 + 30分钟/5分钟各 320 根，按 线段→中枢→走势类型 判级别共振"
+          badge={
+            <Badge tone={String(multiQ.data?.resonance || '').includes('买') ? 'rose' : String(multiQ.data?.resonance || '').includes('卖') ? 'emerald' : 'slate'}>
+              {multiQ.data?.resonance || (multiQ.loading ? '分析中…' : '—')}
+            </Badge>
+          }
+        />
+        <div className="mt-3 grid gap-2 md:grid-cols-3">
+          {[
+            { key: 'daily', label: '日线级别', bars: '260 根' },
+            { key: 'm30', label: '30分钟级别', bars: '320 根' },
+            { key: 'm5', label: '5分钟级别', bars: '320 根' },
+          ].map((row) => {
+            const x = multiQ.data?.[row.key]
+            const c = x?.chan
+            const point = c?.buy_point ? `买点${c.buy_point}` : c?.sell_point ? `卖点${c.sell_point}` : '—'
+            return (
+              <div key={row.key} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/50">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{row.label}</span>
+                  <span className="text-[10px] text-slate-400">{x?.last_time ? String(x.last_time).slice(0, 12) : row.bars}</span>
+                </div>
+                <p className="mt-1 text-sm font-medium text-slate-800 dark:text-slate-100">{c?.trend_type || '—'}</p>
+                <p className={`mt-0.5 text-xs font-medium ${point.startsWith('买') ? 'text-rose-500' : point.startsWith('卖') ? 'text-emerald-500' : 'text-slate-400'}`}>
+                  {point}
+                </p>
+                <p className="mt-1 text-[10px] text-slate-400">
+                  {c ? `${fmtNum(c.segment_count, 0)} 段 / ${fmtNum(c.pivot_count, 0)} 中枢 / ${fmtNum(c.stroke_count, 0)} 笔` : '数据不足'}
+                </p>
+              </div>
+            )
+          })}
+        </div>
+        <p className="mt-2 text-[10px] text-slate-400">{multiQ.data?.note || '分钟数据按需从腾讯 K 线接口拉取，不落全市场表。'}</p>
       </Card>
 
       {/* AI 量价推演 */}

@@ -3,10 +3,20 @@
 from fastapi import APIRouter, HTTPException
 
 from ..db import query
+from ..services import minute
 from ..services import stock_analysis as svc
 from ..services import technical
 
 router = APIRouter(tags=["analysis"])
+
+
+@router.get("/stock-analysis/{code}/multi-level")
+def multi_level(code: str):
+    ts_code = svc._norm(code)
+    data = minute.multi_level(ts_code)
+    if not data.get("daily") and not data.get("m30"):
+        raise HTTPException(status_code=404, detail="该标的分钟/日线数据不足")
+    return data
 
 
 @router.get("/stock-analysis/{code}/technical")
