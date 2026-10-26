@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from ..services import admin as svc
 
@@ -92,9 +92,9 @@ def workbench_feedback_patch(feedback_id: str, payload: dict):
 
 
 @router.get("/profile")
-def get_profile():
+def get_profile(request: Request):
     """个人资料：/auth/me + app_settings profile/preferences + 真实统计计数。"""
-    return svc.jsonify(svc.profile())
+    return svc.jsonify(svc.profile(request))
 
 
 @router.get("/settings/all")

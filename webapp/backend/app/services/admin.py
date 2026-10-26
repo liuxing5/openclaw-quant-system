@@ -399,7 +399,7 @@ def _local_admin_item() -> dict:
     # 兜底：复用 /auth/me 的 profile（同一份数据源，避免两处口径不一致）
     from ..routers.system import auth_me
 
-    me = auth_me()
+    me = auth_me(None)
     email = me.get("email") or "local@localhost"
     username = me.get("username") or "local"
     stable_id = uuid.uuid5(_FALLBACK_ID_SEED, str(email))  # 每次调用同一 id，前端可用作 key
@@ -998,11 +998,11 @@ def _profile_counts() -> dict:
     return counts
 
 
-def profile() -> dict:
+def profile(request=None) -> dict:
     """个人资料：/auth/me + app_settings 的 profile/preferences + 真实统计。"""
     from ..routers.system import auth_me
 
-    me = auth_me()
+    me = auth_me(request)
     prof = get_setting("profile") or {}
     prefs = get_setting("preferences") or prof.get("preferences") or dict(DEFAULT_PREFERENCES)
 
@@ -1018,6 +1018,7 @@ def profile() -> dict:
         "role": me.get("role"),
         "plan": me.get("plan"),
         "plan_expiry": _iso(me.get("plan_expiry")),
+        "membership": me.get("membership"),
         "created_at": _iso(created_at),
         "last_login": _iso(last_login),
         "preferences": prefs,

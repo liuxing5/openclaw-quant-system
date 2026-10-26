@@ -21,6 +21,7 @@ from .routers import (
     admin,
     analysis,
     anomaly,
+    auth,
     content,
     dashboard,
     feedback,
@@ -53,6 +54,7 @@ app.add_middleware(
 )
 
 api = APIRouter(prefix="/api/v1")
+api.include_router(auth.router)
 api.include_router(system.router)
 api.include_router(dashboard.router)
 api.include_router(market.router)

@@ -3,10 +3,11 @@
 import json
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
 
 from ..cache import ttl_cache
 from ..db import execute, query, query_one, scalar
+from ..services import auth as auth_svc
 
 router = APIRouter(tags=["system"])
 
@@ -89,7 +90,19 @@ def public_settings():
 
 
 @router.get("/auth/me")
-def auth_me():
+def auth_me(request: Request):
+    token = None
+    if request is not None:
+        header = request.headers.get("authorization") or ""
+        if header.lower().startswith("bearer "):
+            token = header[7:].strip()
+    if token:
+        uid = auth_svc.parse_token(token)
+        user = auth_svc.me(uid)
+        if not user:
+            raise HTTPException(status_code=401, detail="登录已失效，请重新登录")
+        return user
+
     profile = get_setting("profile", {}) or {}
     return {
         "username": profile.get("username", "local"),
@@ -104,6 +117,16 @@ def auth_me():
         "is_super_admin": True,
         "avatar": None,
         "created_at": profile.get("created_at", None),
+        "membership": {
+            "status": "active",
+            "plan": "lifetime",
+            "plan_label": "本地拥有者",
+            "trial_end": None,
+            "active_until": None,
+            "days_left": None,
+            "is_trial": False,
+            "is_expired": False,
+        },
     }
 
 

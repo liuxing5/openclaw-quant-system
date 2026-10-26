@@ -1,7 +1,11 @@
 import React, { Suspense, lazy } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import Layout from './components/Layout.jsx'
+import MembershipModal from './components/MembershipModal.jsx'
 import { Spinner } from './components/ui.jsx'
+import { useAuth } from './lib/auth.jsx'
+
+const AuthPage = lazy(() => import('./pages/AuthPage.jsx'))
 
 const RootPage = lazy(() => import('./pages/RootPage.jsx'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx'))
@@ -57,6 +61,43 @@ const SystemPermissionsPage = lazy(() => import('./pages/SystemPermissionsPage.j
 const SystemAuditLogsPage = lazy(() => import('./pages/SystemAuditLogsPage.jsx'))
 
 export default function App() {
+  const { user, loading, membership, refresh } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  if (loading) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[#080d17]">
+        <Spinner label="正在恢复登录状态…" />
+      </div>
+    )
+  }
+
+  if (location.pathname === '/login' || location.pathname === '/register') {
+    return (
+      <Suspense fallback={<div className="grid min-h-screen place-items-center bg-[#080d17]"><Spinner label="加载中…" /></div>}>
+        <AuthPage mode={location.pathname === '/register' ? 'register' : 'login'} />
+      </Suspense>
+    )
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace state={{ from: location.pathname + location.search }} />
+  }
+
+  const paywall = membership?.status === 'expired' && !['/buy', '/profile'].includes(location.pathname)
+  if (paywall) {
+    return (
+      <div className="min-h-screen bg-[#080d17]">
+        <MembershipModal
+          status="expired"
+          onRefresh={refresh}
+          onClose={() => navigate('/profile')}
+        />
+      </div>
+    )
+  }
+
   return (
     <Layout>
       <Suspense
@@ -123,8 +164,6 @@ export default function App() {
           <Route path="/system/users" element={<SystemUsersPage />} />
           <Route path="/system/permissions" element={<SystemPermissionsPage />} />
           <Route path="/system/audit-logs" element={<SystemAuditLogsPage />} />
-          <Route path="/login" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/register" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Suspense>

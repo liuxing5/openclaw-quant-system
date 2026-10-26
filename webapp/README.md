@@ -204,6 +204,16 @@ webapp/
 - 注意：东财 `push2` 在当前网络经常断连，若最新交易日只落了前 50，接口会回退到
   最近一个全量 >=100 的交易日，并在 `trade_date` 中明确返回该日期，避免用 0 或假数据填充。
 
+## 会员制
+
+- 注册 `/register`：邮箱 + 密码，自动获得 **3 天全功能试用**；登录 `/login` 使用 token。
+- 会员状态由后端 `/api/v1/auth/me` 返回：`trial / active / expired`，前端 `AuthProvider` 全局注入 token。
+- 试用或会员到期后，除 `/buy`、`/profile` 外的页面会进入订阅墙（仿原站会员弹窗）：
+  月卡 ¥68 / 季卡 ¥168 / 年卡 ¥588，客服 QQ 949394127，支持复制 QQ。
+- 支付为人工确认：管理员在 `/buy` 底部「管理员开通入口」输入用户邮箱 + 档位 + 管理员密钥，
+  或调用 `POST /api/v1/auth/activate`；密钥默认 `biaoge2026`，可用 `MEMBERSHIP_ADMIN_KEY` 覆盖。
+- 账号表 `app_users`，密码 PBKDF2-SHA256，token 为 HMAC 自签 7 天有效；token 密钥用 `AUTH_SECRET` 覆盖。
+
 ## 情绪历史回填
 
 `app_sentiment_history` 需要的历史序列由离线脚本生成（单日约 3~6 秒，禁止放请求路径）：

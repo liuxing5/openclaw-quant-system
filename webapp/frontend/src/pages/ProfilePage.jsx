@@ -5,8 +5,10 @@
  * 本地系统没有独立的账号服务，退出登录 / 重置密码只保留入口并用 toast 说明，
  * 避免出现「点了没反应」的假按钮。
  */
+import { useNavigate } from 'react-router-dom'
 import { AsyncBlock, Badge, Button, Card, PageShell, SectionHeader, StatTile, TextLink } from '../components/ui.jsx'
 import { api, useApi } from '../lib/api.js'
+import { useAuth } from '../lib/auth.jsx'
 import { fmtDateTime, fmtNum } from '../lib/format.js'
 import { toast } from '../lib/toast.jsx'
 
@@ -19,7 +21,17 @@ const STAT_DEFS = [
 ]
 
 const SCOPE_TEXT = { 1: '全平台', 2: '本部门', 3: '仅本人' }
-const PLAN_TEXT = { free: '免费版', pro: '专业版', premium: '专业版', enterprise: '机构版', lifetime: '终身会员' }
+const PLAN_TEXT = {
+  free: '免费版',
+  trial: '试用会员',
+  month: '月卡会员',
+  quarter: '季卡会员',
+  year: '年卡会员',
+  pro: '专业版',
+  premium: '专业版',
+  enterprise: '机构版',
+  lifetime: '终身会员',
+}
 
 function pick(obj, keys) {
   if (!obj) return null
@@ -47,12 +59,16 @@ function normalize(raw) {
     roles: (raw && raw.roles) || [],
     permissions: (raw && raw.permissions) || [],
     stats: (raw && raw.stats) || user.stats || null,
+    membership: (raw && raw.membership) || user.membership || null,
   }
 }
 
 export default function ProfilePage() {
   const { data, loading, error, reload } = useApi(() => api.get('/profile'), [])
-  const { user, tenant, roles, permissions, stats } = normalize(data)
+  const { logout } = useAuth()
+  const navigate = useNavigate()
+  const { user, tenant, roles, permissions, stats, membership } = normalize(data)
+  const memberUntil = user.plan_expiry || (membership?.status === 'trial' ? membership?.trial_end : null)
 
   const nickname = user.nickname || user.username || '未设置昵称'
   const initial = (nickname || '?').trim().charAt(0).toUpperCase()
@@ -67,7 +83,14 @@ export default function ProfilePage() {
       subtitle="账号资料、会员状态与偏好设置"
       actions={
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => notConnected('退出登录')}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              logout()
+              navigate('/login', { replace: true })
+            }}
+          >
             退出登录
           </Button>
           <Button variant="ghost" size="sm" onClick={() => notConnected('密码重置')}>
@@ -132,10 +155,23 @@ export default function ProfilePage() {
               <SectionHeader
                 title="我的会员"
                 subtitle="MEMBERSHIP · 本地系统按会员状态展示，开通请联系管理员"
-                badge={<Badge tone="amber">{PLAN_TEXT[user.plan] || user.plan || '免费版'}</Badge>}
+                badge={
+                  <Badge tone={membership?.status === 'expired' ? 'rose' : membership?.status === 'trial' ? 'amber' : 'emerald'}>
+                    {PLAN_TEXT[user.plan] || user.plan || '免费版'}
+                  </Badge>
+                }
               />
               <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                <span>会员到期：{fmtDateTime(user.plan_expiry) === '—' ? '—' : fmtDateTime(user.plan_expiry)}</span>
+                <span>会员到期：{fmtDateTime(memberUntil) === '—' ? '—' : fmtDateTime(memberUntil)}</span>
+                <span>
+                  {membership?.status === 'trial'
+                    ? `试用剩余 ${membership.days_left ?? 0} 天`
+                    : membership?.status === 'expired'
+                      ? '已到期，续费后恢复全部功能'
+                      : membership?.status === 'active'
+                        ? '会员生效中'
+                        : '—'}
+                </span>
                 <span>额度：{fmtNum(user.quota_used, 0)} / {fmtNum(user.quota_total, 0)}</span>
                 <TextLink to="/buy">升级会员 / 补充额度 →</TextLink>
               </div>
