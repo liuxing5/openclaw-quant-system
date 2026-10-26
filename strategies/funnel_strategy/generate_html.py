@@ -1718,6 +1718,13 @@ if __name__ == "__main__":
             generate_unified_html(output_dir=output_dir, trade_date=None)
         else:
             generate_unified_html(output_dir=output_dir, trade_date=args.date)
+            # 指定日期生成时，同步刷新根页面 funnel.html，避免 GitHub Pages 一直展示旧报告
+            if args.date:
+                dated = Path(output_dir) / f"funnel-{args.date}.html"
+                root = Path(output_dir) / "funnel.html"
+                if dated.exists():
+                    root.write_text(dated.read_text(encoding="utf-8"), encoding="utf-8")
+                    print(f"  同步根页面: {root}")
     except Exception as e:
         print(f"❌ funnel HTML generation failed: {e}")
         traceback.print_exc()
