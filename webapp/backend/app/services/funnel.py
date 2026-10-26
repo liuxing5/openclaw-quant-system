@@ -8,12 +8,27 @@ from __future__ import annotations
 
 import re
 import urllib.request
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from bs4 import BeautifulSoup
 
 from ..cache import ttl_cache
 
 URL = "https://liuxing5.github.io/openclaw-quant-system/funnel/funnel.html"
+_DOCS = Path(__file__).resolve().parents[4] / "strategies" / "funnel_strategy" / "docs"
+_BEIJING = timezone(timedelta(hours=8))
+
+
+def _html_source() -> tuple[str, str]:
+    """当日有本地生成报告时优先读本地；否则回退 GitHub Pages。"""
+    today = datetime.now(_BEIJING).date().isoformat()
+    local = _DOCS / f"funnel-{today}.html"
+    if local.exists():
+        return local.read_text(encoding="utf-8", errors="replace"), str(local)
+    req = urllib.request.Request(URL, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.read().decode("utf-8", "replace"), URL
 
 
 def _text(node) -> str:
@@ -22,9 +37,7 @@ def _text(node) -> str:
 
 @ttl_cache(300)
 def funnel_data() -> dict:
-    req = urllib.request.Request(URL, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        html = resp.read().decode("utf-8", "replace")
+    html, source = _html_source()
     soup = BeautifulSoup(html, "lxml")
     title = _text(soup.find("h1")) or "五策略对比选股系统"
     date_input = soup.find("input", {"type": "date"})
@@ -91,6 +104,9 @@ def funnel_data() -> dict:
                 "id": f"s{idx + 1}",
                 "name": name,
                 "updated": updated,
+                "source_updated": updated,
+                "refreshed": False,
+                "note": None,
                 "steps": steps,
                 "candidates": candidates,
                 "candidate_count": len(candidates),
@@ -98,9 +114,18 @@ def funnel_data() -> dict:
             }
         )
 
+    # 报告日已更新、个别策略仍停留在上一有效日时，页面统一对齐到报告日，
+    # 同时保留 source_updated/note 供前端说明，避免继续显示 10-23 这类旧日期。
+    for s in strategies:
+        old = (s.get("source_updated") or "")[:10]
+        if report_date and old and old < report_date:
+            s["refreshed"] = True
+            s["updated"] = f"{report_date} 15:10:00"
+            s["note"] = "该策略原报告为上一有效日数据；平台已按本期报告日对齐展示。"
+
     return {
         "title": title,
         "report_date": report_date,
-        "source": URL,
+        "source": source,
         "strategies": strategies,
     }
