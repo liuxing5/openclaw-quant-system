@@ -78,6 +78,19 @@ export default function RecommendPage() {
   }, [active, strategies.length])
 
   const current = strategies[active]
+  const pathGroups = useMemo(() => {
+    const groups = []
+    const index = new Map()
+    for (const c of current?.candidates || []) {
+      const key = c.path || ''
+      if (!index.has(key)) {
+        index.set(key, { path: key, items: [] })
+        groups.push(index.get(key))
+      }
+      index.get(key).items.push(c)
+    }
+    return groups
+  }, [current])
   const totalCandidates = useMemo(() => strategies.reduce((n, s) => n + (s.candidates?.length || 0), 0), [strategies])
   const latest = useMemo(() => {
     const vals = strategies.map((s) => s.updated).filter(Boolean)
@@ -188,9 +201,26 @@ export default function RecommendPage() {
                   </p>
                 ) : null}
                 {current.candidates.length ? (
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
-                    {current.candidates.map((c) => (
-                      <CandidateCard key={`${c.code}-${c.score}`} c={c} onOpen={(code) => navigate(`/stock-analysis/${code}`)} />
+                  <div className="mt-3 space-y-4">
+                    {pathGroups.map((group) => (
+                      <div key={group.path || 'all'}>
+                        {group.path ? (
+                          <div className="mb-2 flex items-center gap-2">
+                            <span
+                              className={`size-2 rounded-full ${
+                                group.path.includes('高位') ? 'bg-amber-500' : 'bg-emerald-500'
+                              }`}
+                            />
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{group.path}</span>
+                            <span className="text-[10px] text-slate-400">{group.items.length} 只</span>
+                          </div>
+                        ) : null}
+                        <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
+                          {group.items.map((c) => (
+                            <CandidateCard key={`${c.code}-${c.score}`} c={c} onOpen={(code) => navigate(`/stock-analysis/${code}`)} />
+                          ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 ) : (

@@ -65,10 +65,11 @@ def funnel_data() -> dict:
             )
         candidates = []
         seen = set()
-        for card in section.select(".candidate-card"):
+
+        def add_card(card, path_label=None):
             code = _text(card.select_one(".cand-code"))
             if not code or code in seen:
-                continue
+                return
             seen.add(code)
             metrics = {}
             for m in card.select(".cand-metrics .metric"):
@@ -76,19 +77,31 @@ def funnel_data() -> dict:
                 value = _text(m.select_one(".mv"))
                 if label:
                     metrics[label] = value
-            candidates.append(
-                {
-                    "code": code,
-                    "name": _text(card.select_one(".cand-name")),
-                    "score": _text(card.select_one(".cand-score")),
-                    "entry": metrics.get("入场"),
-                    "stop": metrics.get("止损"),
-                    "target": metrics.get("目标"),
-                    "quant_score": metrics.get("量化分"),
-                    "tags": [x.strip() for x in _text(card.select_one(".cand-tags")).split("·") if x.strip()],
-                    "source": _text(card.select_one(".src-badge")),
-                }
-            )
+            item = {
+                "code": code,
+                "name": _text(card.select_one(".cand-name")),
+                "score": _text(card.select_one(".cand-score")),
+                "entry": metrics.get("入场"),
+                "stop": metrics.get("止损"),
+                "target": metrics.get("目标"),
+                "quant_score": metrics.get("量化分"),
+                "tags": [x.strip() for x in _text(card.select_one(".cand-tags")).split("·") if x.strip()],
+                "source": _text(card.select_one(".src-badge")),
+            }
+            if path_label:
+                item["path"] = path_label
+            candidates.append(item)
+
+        default_path = _text(section.select_one(".path-label"))
+        groups = section.select(".path-group")
+        if groups:
+            for group in groups:
+                label = _text(group.select_one(".path-label")) or default_path or "稳健路径"
+                for card in group.select(".candidate-card"):
+                    add_card(card, label)
+        # 补齐不在 path-group 里的候选（如“最终推荐”）
+        for card in section.select(".candidate-card"):
+            add_card(card)
 
         backtest = []
         table = section.find("table")

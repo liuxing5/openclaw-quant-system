@@ -98,6 +98,10 @@ export default function Layout({ children }) {
                     <NavLink
                       to={item.to}
                       title={item.label}
+                      reloadDocument={item.to === '/recommend'}
+                      onClick={() => {
+                        if (location.pathname === item.to) window.scrollTo({ top: 0, behavior: 'smooth' })
+                      }}
                       className={({ isActive }) =>
                         `flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
                           isActive
