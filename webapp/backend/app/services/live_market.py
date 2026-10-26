@@ -17,6 +17,7 @@
 """
 from __future__ import annotations
 
+import concurrent.futures
 import json
 import time
 import urllib.parse
@@ -25,7 +26,7 @@ from datetime import date, datetime, timedelta
 
 from ..cache import ttl_cache
 from ..db import query
-from . import live_snapshot, market, realtime
+from . import live_snapshot, market, realtime, ths_boards
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -683,6 +684,114 @@ def board_detail(kind: str, code: str) -> dict | None:
         return None
 
 
+@ttl_cache(60)
+def _limit_concept_sets() -> dict[str, set[str]]:
+    """涨跌停类概念没有成分表，用当日/上一交易日涨停梯队反推成员。"""
+    items = _items()
+    d = market.latest_trade_date()
+    if d == today():
+        d = (market.trade_dates(2) or [None, None])[1]
+    prev = d
+    if not prev:
+        return {}
+    try:
+        ladder = market.limit_ladder(prev, detail=True)
+    except Exception:  # noqa: BLE001
+        return {}
+    prev_all = {m["ts_code"] for t in ladder.get("tiers", []) for m in t.get("members", [])}
+    prev_2 = {m["ts_code"] for t in ladder.get("tiers", []) if t.get("streak", 0) >= 2 for m in t.get("members", [])}
+    prev_1 = {m["ts_code"] for t in ladder.get("tiers", []) if t.get("streak", 0) == 1 for m in t.get("members", [])}
+    return {
+        "昨日涨停": prev_all,
+        "昨日涨停_含一字": prev_all,
+        "昨日连板": prev_2,
+        "昨日连板_含一字": prev_2,
+        "昨日首板": prev_1,
+        "昨日打二板以上表现": prev_2,
+    }
+
+
+def enrich_concept_items(items: list[dict]) -> list[dict]:
+    """补齐概念成分数/涨跌家数：优先实时字段，其次板块成分缓存，最后涨停梯队反推。"""
+    if not items:
+        return items
+    codes = [x.get("code") for x in items if x.get("code")]
+    counts: dict[str, dict] = {}
+    if codes:
+        try:
+            rows = query(
+                """
+                SELECT b.board_code,
+                       COUNT(*) AS n,
+                       COUNT(*) FILTER (WHERE q.pct_chg > 0) AS up,
+                       COUNT(*) FILTER (WHERE q.pct_chg < 0) AS down
+                FROM board_member_cache b
+                LEFT JOIN LATERAL (
+                    SELECT d.pct_chg FROM daily_quotes d
+                    WHERE d.ts_code = b.ts_code
+                    ORDER BY d.trade_date DESC LIMIT 1
+                ) q ON TRUE
+                WHERE b.board_type = 'concept' AND b.board_code = ANY(%s)
+                GROUP BY b.board_code
+                """,
+                (codes,),
+            )
+            counts = {r["board_code"]: r for r in rows}
+        except Exception:  # noqa: BLE001
+            counts = {}
+
+    limit_sets = _limit_concept_sets()
+    live = {x["ts_code"]: x for x in _items()}
+    need = [it for it in items if ths_boards._find_code(it.get("name") or "")]
+    infos: dict[str, dict] = {}
+    if need:
+        def _one(it):
+            return it.get("name"), ths_boards.concept_info(it.get("name") or "")
+
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+                for name, info in ex.map(_one, need):
+                    if info:
+                        infos[name] = info
+        except Exception:  # noqa: BLE001
+            infos = {}
+    for it in items:
+        name = it.get("name") or ""
+        up0, down0 = it.get("up_count"), it.get("down_count")
+        if up0 is not None and down0 is not None and it.get("stock_count") is not None:
+            continue
+        if name in infos:
+            info = infos[name]
+            it["stock_count"] = info.get("stock_count")
+            it["up_count"] = info.get("up_count")
+            it["down_count"] = info.get("down_count")
+            if not it.get("amount"):
+                it["amount"] = info.get("amount")
+            if not it.get("net_inflow"):
+                it["net_inflow"] = info.get("net_inflow")
+            continue
+        count = counts.get(it.get("code"))
+        if count:
+            it["stock_count"] = int(count["n"])
+            it["up_count"] = int(count["up"])
+            it["down_count"] = int(count["down"])
+            continue
+        if name in limit_sets:
+            codes_set = limit_sets[name]
+            ups = sum(1 for c in codes_set if (_f((live.get(c) or {}).get("pct_chg")) or 0) > 0)
+            it["stock_count"] = len(codes_set)
+            it["up_count"] = ups
+            it["down_count"] = len(codes_set) - ups
+            continue
+        # 东财实时字段可能已经给出涨跌家数
+        up, down = it.get("up_count"), it.get("down_count")
+        if up is not None and down is not None:
+            it["stock_count"] = int(up) + int(down)
+        elif not it.get("stock_count"):
+            it["stock_count"] = None
+    return items
+
+
 @ttl_cache(30)
 def boards_page(board_type: str, sort: str = "pct_chg_desc", limit: int = 20, offset: int = 0) -> dict:
     """板块列表分页（东财实时榜单），字段与 market._boards 对齐。"""
@@ -718,13 +827,17 @@ def boards_page(board_type: str, sort: str = "pct_chg_desc", limit: int = 20, of
             "stock_count": None,
             "lead_stock_name": (r.get("f128") or "").strip(),
             "net_inflow": _f(r.get("f62")),
-            "up_count": r.get("f104"),
-            "down_count": r.get("f105"),
+            "up_count": int(r["f104"]) if str(r.get("f104", "")).isdigit() else None,
+            "down_count": int(r["f105"]) if str(r.get("f105", "")).isdigit() else None,
             "amount": None,
             "rank": offset + i + 1,
         }
         for i, r in enumerate(rows[:limit])
     ]
+    for it in items:
+        if it["up_count"] is not None and it["down_count"] is not None:
+            it["stock_count"] = it["up_count"] + it["down_count"]
+    enrich_concept_items(items)
     return {
         "trade_date": str(today()),
         "items": items,

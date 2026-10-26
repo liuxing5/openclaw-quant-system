@@ -308,6 +308,71 @@ def _boards(kind: str, sort: str, limit: int, offset: int) -> dict:
     }.get(sort, "pct_chg DESC NULLS LAST")
 
     total = scalar(f"SELECT COUNT(*) FROM {table} WHERE trade_date = %s", (d,)) or 0
+
+    # 10/26 的概念快照只落了涨幅前 50，领跌方向会全部缺失；
+    # 回退到最近一个「全量 >=100」的交易日，并用最新 50 条覆盖同代码涨幅。
+    if kind == "concept" and total < 100:
+        full = scalar(
+            f"SELECT trade_date FROM {table} GROUP BY trade_date "
+            "HAVING COUNT(*) >= 100 ORDER BY trade_date DESC LIMIT 1"
+        )
+        if full:
+            fd = full.date() if hasattr(full, "date") else full
+            full_rows = query(
+                f"""
+                SELECT {code_col} AS code, {name_col} AS name, pct_chg{select_extra}
+                FROM {table} WHERE trade_date = %s
+                """,
+                (fd,),
+            )
+            latest_rows = query(
+                f"""
+                SELECT {code_col} AS code, {name_col} AS name, pct_chg{select_extra}
+                FROM {table} WHERE trade_date = %s
+                """,
+                (d,),
+            )
+            latest = {r["code"]: r for r in latest_rows}
+            latest_name = {r["name"]: r for r in latest_rows}
+            merged = []
+            for r in full_rows:
+                m = dict(r)
+                if m["code"] in latest:
+                    m.update(latest[m["code"]])
+                elif m.get("name") in latest_name:
+                    m.update(latest_name[m["name"]])
+                merged.append(m)
+            reverse = sort in ("pct_chg_desc", "net_inflow", "stock_count")
+
+            def _key(x):
+                if sort.startswith("pct_chg"):
+                    return _num(x.get("pct_chg")) if _num(x.get("pct_chg")) is not None else (999 if sort == "pct_chg_asc" else -999)
+                if sort == "net_inflow":
+                    return _num(x.get("net_inflow")) or 0
+                if sort == "stock_count":
+                    return _num(x.get("stock_count")) or 0
+                return 0
+
+            merged.sort(key=_key, reverse=reverse)
+            total = len(merged)
+            page_rows = merged[offset : offset + limit]
+            for i, r in enumerate(page_rows):
+                r["rank"] = offset + i + 1
+                r["pct_chg"] = _num(r.get("pct_chg"))
+                for c in ("net_inflow", "amount", "turnover_rate"):
+                    if c in r:
+                        r[c] = _num(r.get(c))
+            page_rows = live_market.enrich_concept_items(page_rows)
+            return {
+                "trade_date": str(fd),
+                "items": page_rows,
+                "total": total,
+                "kind": kind,
+                "up": sum(1 for x in merged if (_num(x.get("pct_chg")) or 0) > 0),
+                "down": sum(1 for x in merged if (_num(x.get("pct_chg")) or 0) < 0),
+                "mixed": True,
+                "latest_date": str(d),
+            }
     rows = query(
         f"""
         SELECT {code_col} AS code, {name_col} AS name, pct_chg{select_extra}
@@ -329,6 +394,8 @@ def _boards(kind: str, sort: str, limit: int, offset: int) -> dict:
         for c in ("net_inflow", "amount"):
             if c in r:
                 r[c] = _num(r.get(c))
+    if kind == "concept":
+        rows = live_market.enrich_concept_items(rows)
     return {
         "trade_date": str(d),
         "items": rows,

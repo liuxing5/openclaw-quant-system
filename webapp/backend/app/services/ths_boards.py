@@ -105,6 +105,53 @@ def _parse_rows(html: str) -> list[dict]:
     return out
 
 
+_BOARD_INFO = re.compile(r"<dt[^>]*>(.*?)</dt>\s*<dd[^>]*>(.*?)</dd>", re.S)
+
+
+@ttl_cache(300)
+def concept_info(name: str) -> dict | None:
+    """解析同花顺概念详情页的板块简介：涨跌家数/涨幅/成交额/净流入。"""
+    code = _find_code(name)
+    if not code:
+        return None
+    try:
+        html = _get(_DETAIL.format(code=code))
+    except Exception:  # noqa: BLE001
+        return None
+    raw = {_clean(k): _clean(v).replace("/", "/") for k, v in _BOARD_INFO.findall(html)}
+    up = down = None
+    pair = re.sub(r"\s+", "/", (raw.get("涨跌家数") or "").strip())
+    if "/" in pair:
+        a, b = pair.split("/", 1)
+        try:
+            up, down = int(a.strip()), int(b.strip())
+        except ValueError:
+            pass
+    def _pct(key):
+        v = raw.get(key) or ""
+        try:
+            return float(v.replace("%", "").strip())
+        except ValueError:
+            return None
+    def _yi(key):
+        v = raw.get(key) or ""
+        try:
+            return float(v.replace("亿", "").strip()) * 1e8
+        except ValueError:
+            return None
+    return {
+        "name": name,
+        "code": code,
+        "up_count": up,
+        "down_count": down,
+        "stock_count": (up + down) if up is not None and down is not None else None,
+        "pct_chg": _pct("板块涨幅"),
+        "amount": _yi("成交额(亿)"),
+        "net_inflow": _yi("资金净流入(亿)"),
+        "turnover_rate": None,
+    }
+
+
 @ttl_cache(3600)
 def concept_code_map() -> dict[str, str]:
     try:
