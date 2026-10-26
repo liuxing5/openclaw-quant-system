@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ..cache import ttl_cache
 from ..db import query, scalar
+from ..services import live_market
 from ..services import market as svc
 
 router = APIRouter(tags=["market"])
@@ -29,12 +30,23 @@ def _parse_date(value):
 
 @router.get("/market-data/summary")
 def market_summary(date: str | None = None):
+    if not date and live_market.available():
+        br = live_market.breadth()
+        return {
+            "trade_date": str(live_market.today()),
+            "live": True,
+            "as_of": live_market._as_of(),
+            "indexes": live_market.indexes(),
+            "breadth": br,
+            "amount_series": live_market.amount_series(30),
+        }
     day = _parse_date(date) or svc.latest_trade_date()
     if not day:
         return {"trade_date": None, "indexes": [], "breadth": {}}
     br = svc.breadth(day)
     return {
         "trade_date": str(day),
+        "live": False,
         "indexes": svc.index_overview(day),
         "breadth": {k: v for k, v in br.items() if k != "limit_up_codes"},
         "amount_series": svc.amount_series(day, 30),
@@ -43,6 +55,10 @@ def market_summary(date: str | None = None):
 
 @router.get("/market-data/breadth")
 def market_breadth(date: str | None = None):
+    if not date and live_market.available():
+        br = live_market.breadth()
+        br["trend"] = svc.trend_and_newhigh(svc.latest_trade_date())
+        return br
     day = _parse_date(date) or svc.latest_trade_date()
     if not day:
         return {}
@@ -58,9 +74,18 @@ def market_rankings(
     limit: int = Query(8, ge=1, le=50),
     date: str | None = None,
 ):
+    if not date and live_market.available():
+        return {
+            "trade_date": str(live_market.today()),
+            "live": True,
+            "as_of": live_market._as_of(),
+            "sort": sort,
+            "items": live_market.rankings(sort, limit),
+        }
     day = _parse_date(date) or svc.latest_trade_date()
     return {
         "trade_date": str(day) if day else None,
+        "live": False,
         "sort": sort,
         "items": svc.rankings(day, sort, limit),
     }
@@ -174,10 +199,16 @@ def limit_ladder(
     board: str | None = Query(None, description="A主板/创业板/科创板/北交所"),
     streak: int | None = Query(None, ge=1, le=30, description="指定连板高度"),
 ):
-    day = _parse_date(date) or svc.latest_trade_date()
-    if not day:
-        return {"trade_date": None, "tiers": [], "max_streak": 0, "limit_up": 0}
-    data = svc.limit_ladder(day, detail=True)
+    use_live = not date and live_market.available()
+    if use_live:
+        data = live_market.limit_ladder(detail=True)
+        br = live_market.breadth()
+    else:
+        day = _parse_date(date) or svc.latest_trade_date()
+        if not day:
+            return {"trade_date": None, "tiers": [], "max_streak": 0, "limit_up": 0}
+        data = svc.limit_ladder(day, detail=True)
+        br = svc.breadth(day)
 
     bd = (board or "").strip()
     if bd:
@@ -190,7 +221,9 @@ def limit_ladder(
     if streak:
         data["tiers"] = [t for t in data["tiers"] if t["streak"] == streak]
 
-    br = svc.breadth(day)
+    data["live"] = bool(use_live)
+    if use_live:
+        data["as_of"] = live_market._as_of()
     data["limit_down"] = br["limit_down"]
     data["broken"] = br["broken"]
     data["touched"] = br["touched"]
@@ -236,6 +269,11 @@ def boards_industries(
 
 
 def _boards(kind: str, sort: str, limit: int, offset: int) -> dict:
+    if live_market.available():
+        try:
+            return live_market.boards_page(kind, sort, limit, offset)
+        except Exception:  # noqa: BLE001 东财偶发断连 → 回退日线板块表
+            pass
     table = "concept_board_quotes" if kind == "concept" else "industry_board_quotes"
     name_col = "concept_name" if kind == "concept" else "industry_name"
     code_col = "concept_code" if kind == "concept" else "industry_code"
@@ -306,6 +344,9 @@ def board_detail(kind: str, code: str, limit: int = Query(50, ge=1, le=500)):
         (code,),
     )
     if not row:
+        live = live_market.board_detail(kind, code)
+        if live:
+            return live
         return {"detail": "板块不存在"}
     snap = dict(row[0])
     snap["trade_date"] = str(snap["trade_date"])

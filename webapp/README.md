@@ -104,6 +104,20 @@ webapp/
 
 日线底表是 T-1 收盘；盘中要看实时变化，以实时行情条与自选行情为准。
 
+## 盘中实时总台（T+0）
+
+日线表 `daily_quotes` 最新只到上一交易日；为了让「每 60 秒刷新」真的刷新出当日数据，
+`services/live_market.py` 用腾讯全市场快照（5224 只、20 秒刷新）重算：
+
+- `/dashboard/overview` `/dashboard/summary`：指数 / 广度 / 涨跌停 / 情绪六维 / 连板梯队 / 四榜单 / 板块热度
+- `/market-data/summary|breadth|rankings`：同一口径
+- `/limit-ladder`：今日涨停 + 截至上一交易日的连板高度
+- `/market-env`、`/index/summary`：指数与广度全部实时覆盖
+- `/boards/concepts|industries`：东财实时板块榜；源断连时自动回退本地板块表
+
+页面每 60 秒轮询一次；`/dashboard/overview?refresh=1` 会强制拉一张新快照（约 3~7 秒）。
+快照不可用时 `meta.live=false`，自动回退到日线口径，接口形状不变。
+
 ## 情绪历史回填
 
 `app_sentiment_history` 需要的历史序列由离线脚本生成（单日约 3~6 秒，禁止放请求路径）：

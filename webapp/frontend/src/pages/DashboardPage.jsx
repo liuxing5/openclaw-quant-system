@@ -523,7 +523,9 @@ export default function DashboardPage() {
       title="总台"
       subtitle={
         data
-          ? `日线数据 ${fmtDate(data.trade_date)}（T-1）· 上方实时条为盘中快照 · 生成于 ${data.generated_at?.replace('T', ' ')}`
+          ? data.live
+            ? `实时数据 ${fmtDate(data.trade_date)} · 全市场快照 ${String(data.as_of || '').slice(11, 19)} · 生成于 ${data.generated_at?.replace('T', ' ')}`
+            : `日线数据 ${fmtDate(data.trade_date)}（T-1）· 上方实时条为盘中快照 · 生成于 ${data.generated_at?.replace('T', ' ')}`
           : '行情看板 · 一屏掌握当日大盘'
       }
       actions={

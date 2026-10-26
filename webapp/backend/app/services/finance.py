@@ -34,6 +34,7 @@ from decimal import Decimal
 
 from ..cache import ttl_cache
 from ..db import query
+from . import live_market
 from . import market as mkt
 
 # --------------------------------------------------------------------------
@@ -155,6 +156,33 @@ ORDER BY ts_code, trade_date
 @ttl_cache(60)
 def index_summary() -> dict:
     """6 大指数一屏：最新价/涨跌幅/OHLC/昨收 + 近 20 日收盘迷你曲线。"""
+    if live_market.available():
+        live = live_market.indexes()
+        items = []
+        for it in live:
+            curve = it.get("curve") or []
+            items.append(
+                {
+                    "ts_code": it.get("ts_code"),
+                    "name": it.get("name"),
+                    "price": _f(it.get("close")),
+                    "pct_chg": _f(it.get("pct_chg")),
+                    "open": _f(it.get("open")),
+                    "high": _f(it.get("high")),
+                    "low": _f(it.get("low")),
+                    "volume": None,
+                    "prev_close": _f(it.get("prev_close")),
+                    "sparkline": [_f(p.get("close")) for p in curve[-20:] if _f(p.get("close")) is not None],
+                }
+            )
+        return {
+            "items": items,
+            "total": len(items),
+            "trade_date": str(live_market.today()),
+            "live": True,
+            "as_of": live_market._as_of(),
+        }
+
     day = mkt.latest_trade_date()
     if not day:
         return {"items": [], "total": 0, "trade_date": None}
@@ -522,15 +550,26 @@ def market_env() -> dict:
         return {"trade_date": None, "indexes": [], "breadth": {}, "sentiment": {},
                 "amount_trend": [], "env_level": None, "notes": []}
 
-    indexes = mkt.index_overview(day)
-    breadth = mkt.breadth(day)
-    sentiment = mkt.sentiment(day) or {}
+    if live_market.available():
+        indexes = live_market.indexes()
+        breadth = live_market.breadth()
+        sentiment = live_market.sentiment() or {}
+        amount_trend = [
+            {"trade_date": a.get("date"), "amount": a.get("amount")}
+            for a in live_market.amount_series(21)
+        ]
+        trade_day = live_market.today()
+    else:
+        trade_day = day
+        indexes = mkt.index_overview(day)
+        breadth = mkt.breadth(day)
+        sentiment = mkt.sentiment(day) or {}
+        amount_trend = [
+            {"trade_date": a.get("date"), "amount": a.get("amount")}
+            for a in mkt.amount_series(day, 21)
+        ]
     # 成交额序列在 amount_trend 里已经给出，情绪对象里那份是重复 payload，去掉
     sentiment.pop("amount_series", None)
-    amount_trend = [
-        {"trade_date": a.get("date"), "amount": a.get("amount")}
-        for a in mkt.amount_series(day, 21)
-    ]
 
     score = _f(sentiment.get("score"))
     up_ratio = _f(breadth.get("up_ratio"), 0) or 0
@@ -541,7 +580,8 @@ def market_env() -> dict:
 
     notes = _env_notes(indexes, breadth, sentiment)
     return {
-        "trade_date": str(day),
+        "trade_date": str(trade_day),
+        "live": bool(live_market.available()),
         "indexes": indexes,
         "breadth": breadth,
         "sentiment": sentiment,
