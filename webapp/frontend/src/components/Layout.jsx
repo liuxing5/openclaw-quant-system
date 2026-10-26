@@ -3,6 +3,7 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { NAV, FOOTER_NOTE } from '../lib/nav.js'
 import { ToastHost } from '../lib/toast.jsx'
 import { api } from '../lib/api.js'
+import Logo from './Logo.jsx'
 
 function useTheme() {
   const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
@@ -73,9 +74,7 @@ export default function Layout({ children }) {
         }`}
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200/60 px-4 dark:border-slate-800/60">
-          <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">
-            量
-          </span>
+          <Logo size={32} className="shrink-0" />
           {!collapsed ? (
             <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
               量化投研平台

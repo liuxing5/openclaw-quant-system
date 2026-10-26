@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import LegalModal from '../components/LegalModal.jsx'
+import Logo from '../components/Logo.jsx'
 import { Button } from '../components/ui.jsx'
 import { useAuth } from '../lib/auth.jsx'
 
@@ -13,6 +15,8 @@ export default function AuthPage({ mode = 'login' }) {
   const [nickname, setNickname] = useState('')
   const [err, setErr] = useState('')
   const [loading, setLoading] = useState(false)
+  const [agree, setAgree] = useState(false)
+  const [doc, setDoc] = useState(null)
 
   useEffect(() => {
     if (user) navigate(location.state?.from || '/dashboard', { replace: true })
@@ -21,6 +25,10 @@ export default function AuthPage({ mode = 'login' }) {
   const submit = async (e) => {
     e.preventDefault()
     setErr('')
+    if (isRegister && !agree) {
+      setErr('请先阅读并同意《用户服务协议》和《风险揭示书》')
+      return
+    }
     setLoading(true)
     try {
       if (isRegister) await register(email, password, nickname)
@@ -39,6 +47,9 @@ export default function AuthPage({ mode = 'login' }) {
       <div className="pointer-events-none absolute -right-40 bottom-0 size-[420px] rounded-full bg-amber-500/10 blur-3xl" />
       <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center px-4 py-10">
         <div className="mb-5 text-center">
+          <div className="mb-3 flex justify-center">
+            <Logo size={64} className="drop-shadow-[0_8px_24px_rgba(37,99,235,0.35)]" />
+          </div>
           <p className="text-xs font-semibold tracking-[0.3em] text-amber-300">QUANT RESEARCH</p>
           <h1 className="mt-2 text-3xl font-bold">量化投研平台</h1>
           <p className="mt-2 text-sm text-slate-400">注册即送 3 天免费试用 · 到期后订阅月/季/年卡</p>
@@ -86,6 +97,26 @@ export default function AuthPage({ mode = 'login' }) {
               />
             </label>
 
+            <label className="flex items-start gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2.5">
+              <input
+                type="checkbox"
+                checked={agree}
+                onChange={(e) => setAgree(e.target.checked)}
+                className="mt-0.5 size-3.5 shrink-0 accent-amber-400"
+              />
+              <span className="text-[11px] leading-5 text-slate-400">
+                我已阅读并同意
+                <button type="button" onClick={() => setDoc('service')} className="mx-0.5 text-amber-300 hover:text-amber-200">
+                  《用户服务协议》
+                </button>
+                和
+                <button type="button" onClick={() => setDoc('risk')} className="mx-0.5 text-amber-300 hover:text-amber-200">
+                  《风险揭示书》
+                </button>
+                ，知悉股市有风险，投资需谨慎，操作盈亏自负。
+              </span>
+            </label>
+
             {err ? <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-300">{err}</p> : null}
 
             <Button type="submit" loading={loading} className="w-full !bg-amber-400 !text-slate-950 hover:!bg-amber-300">
@@ -104,6 +135,7 @@ export default function AuthPage({ mode = 'login' }) {
           </p>
         </div>
       </div>
+      <LegalModal docKey={doc} onClose={() => setDoc(null)} onAgree={() => setAgree(true)} />
     </div>
   )
 }

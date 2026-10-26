@@ -7,6 +7,7 @@
  */
 import { Link, useNavigate } from 'react-router-dom'
 import { AsyncBlock, Badge, Button, Card, SectionHeader, StatTile, TextLink } from '../components/ui.jsx'
+import Logo from '../components/Logo.jsx'
 import { api, useApi } from '../lib/api.js'
 import { fmtAmount, fmtDate, fmtNum, pctTone, ratioPct } from '../lib/format.js'
 import { FOOTER_NOTE } from '../lib/nav.js'
@@ -136,23 +137,26 @@ export default function RootPage() {
           className="pointer-events-none absolute -right-16 -top-16 size-56 rounded-full bg-brand-400/15 blur-3xl dark:bg-brand-500/20"
         />
         <div className="relative flex flex-wrap items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-widest text-brand-600 dark:text-brand-300">
-              Welcome
-            </p>
-            <h2 className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-50">欢迎使用系统</h2>
-            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              股票投研 · 数据一体化 · AI 辅助工具
-            </p>
-            <div className="mt-3">
-              <AsyncBlock
-                loading={pub.loading}
-                error={pub.error}
-                onRetry={pub.reload}
-                loadingLabel="平台信息加载中"
-              >
-                {pub.data ? <PlatformBlock pub={pub.data} /> : null}
-              </AsyncBlock>
+          <div className="flex min-w-0 items-start gap-3">
+            <Logo size={48} className="mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-brand-600 dark:text-brand-300">
+                Welcome
+              </p>
+              <h2 className="mt-1 text-2xl font-bold text-slate-900 dark:text-slate-50">欢迎使用系统</h2>
+              <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                股票投研 · 数据一体化 · AI 辅助工具
+              </p>
+              <div className="mt-3">
+                <AsyncBlock
+                  loading={pub.loading}
+                  error={pub.error}
+                  onRetry={pub.reload}
+                  loadingLabel="平台信息加载中"
+                >
+                  {pub.data ? <PlatformBlock pub={pub.data} /> : null}
+                </AsyncBlock>
+              </div>
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
