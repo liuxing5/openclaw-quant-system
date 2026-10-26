@@ -128,10 +128,12 @@ WITH q AS (
 ), f AS (
   SELECT ts_code, trade_date, pct_chg, close, high, amount, turnover_rate, volume,
          volume_ratio,
-         COALESCE(limit_up_price,
-                  ROUND((pre_close * (1 + thr / 100.0))::numeric, 2)) AS lup,
-         COALESCE(limit_down_price,
-                  ROUND((pre_close * (1 - thr / 100.0))::numeric, 2)) AS ldp
+         CASE WHEN pre_close IS NOT NULL AND pre_close > 0
+              THEN ROUND((pre_close * (1 + thr / 100.0))::numeric, 2)
+              ELSE limit_up_price END AS lup,
+         CASE WHEN pre_close IS NOT NULL AND pre_close > 0
+              THEN ROUND((pre_close * (1 - thr / 100.0))::numeric, 2)
+              ELSE limit_down_price END AS ldp
   FROM q
 ), fx AS (
   SELECT f.*,

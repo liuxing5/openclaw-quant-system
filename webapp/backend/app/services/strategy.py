@@ -657,6 +657,7 @@ def _def_row(row: dict | None) -> dict | None:
         "sort": row.get("sort") or 0,
         "runnable": row["code"] in _SCANNERS
         or base in _SCANNERS
+        or row["code"] in smart_scan.SPEC_CODES
         or (isinstance(params, dict) and params.get("preset") in smart_scan.PRESETS),
         "seeded": row["code"] in {s["code"] for s in SEEDS},
     }
@@ -807,6 +808,10 @@ def run_strategy(code: str) -> dict:
     if fn is None:
         params = d.get("params") or {}
         fn = _SCANNERS.get(params.get("base_code")) if isinstance(params, dict) else None
+        if fn is None and code in smart_scan.SPEC_CODES:
+            fn = lambda p: smart_scan.scan_code(code, limit=MAX_RETURNED_HITS)  # noqa: E731
+        if fn is None and isinstance(params, dict) and params.get("base_code") in smart_scan.SPEC_CODES:
+            fn = lambda p: smart_scan.scan_code(params["base_code"], limit=MAX_RETURNED_HITS)  # noqa: E731
         if fn is None and isinstance(params, dict) and params.get("preset") in smart_scan.PRESETS:
             fn = lambda p: smart_scan.smart_scan(  # noqa: E731
                 preset=p.get("preset", "smart"),

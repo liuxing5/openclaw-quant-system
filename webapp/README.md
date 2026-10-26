@@ -167,8 +167,11 @@ webapp/
   输出综合分与 **趋势/动量/量能/资金/质量/估值/风险** 七因子分，附可解释入选理由。
 - 评分在库端一次计算后物化到 `app_smart_snapshot`（约 30~40s，每日/数据日变化时后台异步刷新），
   API 读取 1~5s；`python webapp/scripts/refresh_smart_snapshot.py` 可手动刷新。
-- 新增策略定义统一走 `smart_scan` 多因子引擎（`params.preset` + `min_score`），
-  点击卡片「立即运行」即扫全市场，不再只有 6 条固定 SQL。
+- 25 条新策略每条都有**独立七因子权重 + 独立形态过滤**（`smart_scan._SPEC_WEIGHTS/_SPEC_FILTERS`），
+  点击卡片「立即运行」走自己的 `scan_code`，不是共用同一套 preset。
+- 连板口径修正：部分交易日交易所 `limit_up_price` 与「前收×板块涨幅」错位，
+  统一按前收计算涨跌停价；默认剔除 ST 与 C 字头新股后，2026-10-26 与参考站一致：
+  4板1 / 3板6 / 2板8 / 首板40，共55只，4板为上海九百。
 
 ## 情绪历史回填
 

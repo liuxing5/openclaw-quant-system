@@ -375,6 +375,10 @@ def limit_ladder(detail: bool = True) -> dict:
         return {"trade_date": None, "tiers": [], "max_streak": 0, "limit_up": 0}
     lu = []
     for it in items:
+        name = str(it.get("name") or "")
+        # 原站默认榜单不计 ST 与 C 字头新股；它们单独有筛选入口
+        if "ST" in name.upper() or name.startswith("C"):
+            continue
         price = _f(it.get("price"))
         lup = _f(it.get("limit_up_price"))
         if price and lup and price >= lup - 0.005:

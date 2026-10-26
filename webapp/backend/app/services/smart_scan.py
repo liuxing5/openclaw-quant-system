@@ -18,7 +18,7 @@ from ..db import db_session, query, scalar
 
 _TABLE = "app_smart_snapshot"
 _COLS = (
-    "trade_date, ts_code, stock_name, industry, close, pct_chg, turnover_rate, amount, "
+    "trade_date, ts_code, stock_name, industry, close, pct_chg, turnover_rate, amount, volume, "
     "total_market_cap, ma5, ma10, ma20, ma60, hh20, ll20, vma20, main_force_net, "
     "revenue_yoy, profit_yoy, roe, debt_ratio, trend_score, momentum_score, volume_score, "
     "capital_score, quality_score, valuation_score, risk_score, score"
@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS {_TABLE} (
     pct_chg numeric,
     turnover_rate numeric,
     amount numeric,
+    volume numeric,
     total_market_cap numeric,
     ma5 numeric, ma10 numeric, ma20 numeric, ma60 numeric,
     hh20 numeric, ll20 numeric, vma20 numeric,
@@ -110,7 +111,7 @@ fund AS (
 ),
 scored AS (
     SELECT (SELECT day FROM days) AS trade_date, l.ts_code, s.stock_name, f.industry,
-           l.close, l.pct_chg, l.turnover_rate, l.amount, l.total_market_cap,
+           l.close, l.pct_chg, l.turnover_rate, l.amount, l.volume, l.total_market_cap,
            l.ma5, l.ma10, l.ma20, l.ma60, l.hh20, l.ll20, l.vma20,
            l.main_force_net, f.revenue_yoy, f.profit_yoy, f.roe, f.debt_ratio,
            -- 趋势 0~100
@@ -169,6 +170,7 @@ def refresh_snapshot() -> int:
         cur = conn.cursor()
         try:
             cur.execute(_DDL)
+            cur.execute(f"ALTER TABLE {_TABLE} ADD COLUMN IF NOT EXISTS volume numeric")
             cur.execute(f"TRUNCATE {_TABLE}")
             cur.execute(f"INSERT INTO {_TABLE} ({_COLS}) {base}")
             n = cur.rowcount
@@ -214,6 +216,149 @@ def ensure_fresh() -> None:
             _refreshing = False
 
     threading.Thread(target=_job, name="smart-scan-refresh", daemon=True).start()
+
+
+_SPEC_WEIGHTS = {
+    "multi_trend": (0.55, 0.10, 0.10, 0.10, 0.05, 0.05, 0.05),
+    "dragon_head": (0.20, 0.35, 0.10, 0.25, 0.05, 0.00, 0.05),
+    "yang_three_yin": (0.25, 0.20, 0.25, 0.10, 0.05, 0.05, 0.10),
+    "hot_theme": (0.20, 0.25, 0.25, 0.20, 0.05, 0.00, 0.05),
+    "low_rebound": (0.15, 0.30, 0.15, 0.10, 0.10, 0.10, 0.10),
+    "trend_quality": (0.30, 0.10, 0.10, 0.10, 0.30, 0.05, 0.05),
+    "macd_golden": (0.35, 0.30, 0.10, 0.10, 0.05, 0.05, 0.05),
+    "double_low": (0.05, 0.05, 0.05, 0.05, 0.10, 0.60, 0.10),
+    "limit_gene": (0.25, 0.35, 0.20, 0.10, 0.05, 0.00, 0.05),
+    "chan_theory": (0.45, 0.10, 0.10, 0.10, 0.05, 0.05, 0.15),
+    "ma_golden": (0.40, 0.20, 0.20, 0.10, 0.05, 0.00, 0.05),
+    "box_breakout": (0.30, 0.20, 0.25, 0.15, 0.05, 0.00, 0.05),
+    "l1l2_resonance": (0.20, 0.20, 0.35, 0.15, 0.05, 0.00, 0.05),
+    "volume_breakout": (0.25, 0.15, 0.40, 0.10, 0.05, 0.00, 0.05),
+    "growth_quality": (0.10, 0.05, 0.05, 0.05, 0.55, 0.10, 0.10),
+    "box_range": (0.15, 0.05, 0.10, 0.10, 0.10, 0.30, 0.20),
+    "capital_heat": (0.10, 0.20, 0.20, 0.40, 0.05, 0.00, 0.05),
+    "w_bottom": (0.35, 0.25, 0.15, 0.10, 0.05, 0.05, 0.05),
+    "bottom_volume": (0.10, 0.25, 0.40, 0.10, 0.05, 0.05, 0.05),
+    "shrink_pullback": (0.40, 0.05, 0.20, 0.10, 0.10, 0.05, 0.10),
+    "bluechip_quality": (0.15, 0.05, 0.05, 0.05, 0.35, 0.20, 0.15),
+    "limit_pullback": (0.35, 0.20, 0.10, 0.10, 0.05, 0.05, 0.15),
+    "wave_theory": (0.40, 0.15, 0.10, 0.10, 0.05, 0.05, 0.15),
+    "balanced_factor": (0.20, 0.15, 0.15, 0.15, 0.15, 0.10, 0.10),
+    "smart_deep_scan": (0.30, 0.10, 0.15, 0.15, 0.15, 0.10, 0.05),
+}
+
+SPEC_CODES = frozenset(_SPEC_WEIGHTS)
+
+_SPEC_FILTERS = {
+    "multi_trend": lambda f: f("close") > f("ma20") and f("ma5") > f("ma10") > f("ma20"),
+    "dragon_head": lambda f: f("pct_chg") >= 5 and f("turnover_rate") >= 5 and f("amount") >= 5e8,
+    "yang_three_yin": lambda f: -3 <= f("pct_chg") <= 3 and f("volume") < f("vma20") * 0.9 and f("close") > f("ma20"),
+    "hot_theme": lambda f: f("pct_chg") >= 3 and f("amount") >= 5e8 and f("turnover_rate") >= 3,
+    "low_rebound": lambda f: f("pct_chg") > 0 and f("close") < f("ma20") * 1.03 and f("close") > f("ma5"),
+    "trend_quality": lambda f: f("close") > f("ma20") and f("roe") >= 8,
+    "macd_golden": lambda f: f("close") > f("ma5") > f("ma10") and f("momentum_score") >= 60,
+    "double_low": lambda f: f("valuation_score") >= 75 and f("pct_chg") > -2,
+    "limit_gene": lambda f: (f("pct_chg") >= 7 or f("close") >= f("hh20") * 0.99) and f("turnover_rate") >= 4,
+    "chan_theory": lambda f: f("close") > f("ma20") and f("ma20") > f("ma60") and f("trend_score") >= 60,
+    "ma_golden": lambda f: f("close") > f("ma5") > f("ma10") > f("ma20") and f("volume") > f("vma20"),
+    "box_breakout": lambda f: f("close") >= f("hh20") * 0.99 and f("pct_chg") >= 5,
+    "l1l2_resonance": lambda f: f("volume") >= f("vma20") * 1.5 and f("pct_chg") >= 3,
+    "volume_breakout": lambda f: f("close") >= f("hh20") * 0.99 and f("volume") >= f("vma20") * 1.5,
+    "growth_quality": lambda f: f("revenue_yoy") >= 20 and f("profit_yoy") >= 20 and f("roe") >= 8,
+    "box_range": lambda f: f("close") < f("hh20") * 0.97 and f("close") > f("ma20") and abs(f("pct_chg")) <= 3,
+    "capital_heat": lambda f: f("main_force_net") > 0 and f("volume") > f("vma20") and f("pct_chg") > 0,
+    "w_bottom": lambda f: f("close") > f("ma20") and f("close") < f("hh20") * 0.96 and f("pct_chg") >= 3,
+    "bottom_volume": lambda f: f("pct_chg") >= 3 and f("close") < f("ma20") and f("volume") >= f("vma20") * 2,
+    "shrink_pullback": lambda f: f("close") > f("ma20") and f("volume") < f("vma20") * 0.8 and f("pct_chg") < 2,
+    "bluechip_quality": lambda f: f("total_market_cap") >= 5e10 and f("roe") >= 10 and f("valuation_score") >= 60,
+    "limit_pullback": lambda f: -3 <= f("pct_chg") <= 3 and f("close") > f("ma5") and f("turnover_rate") >= 3,
+    "wave_theory": lambda f: f("close") > f("ma20") and f("close") >= f("ma60") and f("trend_score") >= 55,
+    "balanced_factor": lambda f: f("trend_score") >= 60 and f("quality_score") >= 55 and f("valuation_score") >= 55,
+    "smart_deep_scan": lambda f: True,
+}
+
+
+def _spec_score(r: dict, code: str) -> float:
+    w = _SPEC_WEIGHTS.get(code)
+    if not w:
+        return _f(r.get("score")) or 0
+    vals = [
+        _f(r.get("trend_score")) or 0,
+        _f(r.get("momentum_score")) or 0,
+        _f(r.get("volume_score")) or 0,
+        _f(r.get("capital_score")) or 0,
+        _f(r.get("quality_score")) or 0,
+        _f(r.get("valuation_score")) or 0,
+        _f(r.get("risk_score")) or 0,
+    ]
+    return round(sum(v * w[i] for i, v in enumerate(vals)), 1)
+
+
+def scan_code(code: str, limit: int = 100) -> dict:
+    """专属策略扫描：独立权重 + 独立形态过滤，全部在物化表上完成。"""
+    ensure_fresh()
+    limit = max(1, min(int(limit or 100), 100))
+    day = scalar(f"SELECT MAX(trade_date) FROM {_TABLE}")
+    if not day:
+        # 物化表没建时给空结果，避免单卡点击触发 40 秒实时 SQL
+        return {
+            "trade_date": None,
+            "preset": code,
+            "preset_label": code,
+            "filters": {},
+            "total_scanned": 0,
+            "total_passed": 0,
+            "elapsed_ms": 0,
+            "hits": [],
+            "stats": {"strategy": code},
+            "error": "智能评分表尚未构建，请先运行 refresh_smart_snapshot.py",
+        }
+    rows = query(
+        f"SELECT * FROM {_TABLE} WHERE trade_date = %s ORDER BY score DESC, amount DESC LIMIT 1800",
+        (day,),
+    )
+    fn = _SPEC_FILTERS.get(code)
+    if fn:
+        rows = [r for r in rows if fn(lambda k, r=r: _f(r.get(k)) or 0)]
+    rows.sort(key=lambda r: -_spec_score(r, code))
+    rows = rows[:limit]
+    scanned = int(scalar("SELECT COUNT(*) FROM daily_quotes WHERE trade_date = %s", (day,)) or 0)
+    hits = []
+    for i, r in enumerate(rows):
+        hits.append(
+            {
+                "ts_code": r["ts_code"],
+                "name": r.get("stock_name") or r["ts_code"],
+                "industry": r.get("industry"),
+                "price": _f(r.get("close")),
+                "pct_chg": _f(r.get("pct_chg")),
+                "turnover_rate": _f(r.get("turnover_rate")),
+                "amount": _f(r.get("amount")),
+                "market_cap": _f(r.get("total_market_cap")),
+                "score": _spec_score(r, code),
+                "factors": {
+                    "trend": _f(r.get("trend_score")),
+                    "momentum": _f(r.get("momentum_score")),
+                    "volume": _f(r.get("volume_score")),
+                    "capital": _f(r.get("capital_score")),
+                    "quality": _f(r.get("quality_score")),
+                    "valuation": _f(r.get("valuation_score")),
+                    "risk": _f(r.get("risk_score")),
+                },
+                "reasons": _reasons(r),
+                "rank": i + 1,
+            }
+        )
+    return {
+        "trade_date": str(day),
+        "preset": code,
+        "preset_label": code,
+        "filters": {"strategy": code},
+        "total_scanned": scanned,
+        "total_passed": len(hits),
+        "elapsed_ms": 0,
+        "hits": hits,
+        "stats": {"strategy": code, "trade_date": str(day)},
+    }
 
 
 def _preset_score(r: dict, preset: str) -> float:
