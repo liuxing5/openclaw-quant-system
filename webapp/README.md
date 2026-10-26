@@ -144,6 +144,14 @@ webapp/
 - `/strategy` 支持创建自定义策略：选择内置扫描器作模板（AI 生成只做关键字到模板的规则映射），
   创建后可直接运行（`params.base_code` 绑定扫描器）。
 
+## 公告回填与板块成分
+
+- `python webapp/scripts/backfill_announcements.py --days 30`：从巨潮资讯（CNINFO）抓全市场公告，
+  按并购/重组/收购等关键词过滤后写入 `stock_announcements`（内容哈希去重），并购重组页直接读这张表。
+- 并购页的 Top10 按个股最新成交额排序，统计卡片显示公告数 / 去重公司数 / 最新公告日。
+- 东财板块成分接口被断连后，行业成分改用 `stock_fundamentals.industry` 匹配 + 最新日线/实时价覆盖；
+  概念成分暂无稳定免费源，页面明确标注。
+
 ## 情绪历史回填
 
 `app_sentiment_history` 需要的历史序列由离线脚本生成（单日约 3~6 秒，禁止放请求路径）：

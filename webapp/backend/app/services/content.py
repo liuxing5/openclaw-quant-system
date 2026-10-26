@@ -1165,12 +1165,50 @@ def merger_restructuring(page: int = 1, size: int = 20) -> dict:
             }
             for r in rows
         ]
+        top_rows = _rows(
+            f"""
+            SELECT a.ts_code, MAX(a.stock_name) AS stock_name, COUNT(*) AS n,
+                   MAX(a.publish_date) AS latest,
+                   (SELECT d.amount FROM daily_quotes d
+                     WHERE d.ts_code = a.ts_code
+                     ORDER BY d.trade_date DESC LIMIT 1) AS amount
+            FROM stock_announcements a
+            WHERE a.ts_code IS NOT NULL AND ({cond})
+            GROUP BY a.ts_code
+            ORDER BY amount DESC NULLS LAST, n DESC
+            LIMIT 10
+            """,
+            tuple(params),
+        )
+        companies = int(
+            scalar(
+                f"SELECT COUNT(DISTINCT ts_code) FROM stock_announcements WHERE ({cond})",
+                tuple(params),
+            )
+            or 0
+        )
+        top = [
+            {
+                "ts_code": r["ts_code"],
+                "stock_name": r.get("stock_name") or r["ts_code"],
+                "count": int(r.get("n") or 0),
+                "latest": str(r.get("latest") or ""),
+                "amount": _f(r.get("amount")),
+            }
+            for r in top_rows
+        ]
         return {
             "items": items,
             "total": total,
             "page": page,
             "size": size,
             "as_of": str(scalar("SELECT MAX(publish_date) FROM stock_announcements") or ""),
+            "summary": {
+                "announcements": total,
+                "companies": companies,
+                "latest": str(scalar("SELECT MAX(publish_date) FROM stock_announcements") or ""),
+                "top": top,
+            },
             "meta": {"source": "stock_announcements", "degraded": False, "note": ""},
         }
 

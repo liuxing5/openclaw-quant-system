@@ -393,13 +393,27 @@ def board_detail(kind: str, code: str, limit: int = Query(50, ge=1, le=500)):
             )
         member_rows.sort(key=lambda x: -(x["pct_chg"] or 0))
 
+    if not member_rows and kind == "industry":
+        lm = live_market.industry_members(snap.get("industry_name") or snap.get("name"), limit=limit)
+        member_rows = [
+            {
+                "ts_code": m["ts_code"],
+                "name": m["name"],
+                "close": m.get("close"),
+                "pct_chg": m.get("pct_chg"),
+                "amount": m.get("amount"),
+                "turnover_rate": m.get("turnover_rate"),
+            }
+            for m in lm
+        ]
+
     return {
         "kind": kind,
         "code": code,
         "snapshot": snap,
-        "member_count": len(members),
+        "member_count": len(member_rows),
         "members": member_rows,
-        "members_available": bool(members),
+        "members_available": bool(member_rows),
     }
 
 
@@ -538,6 +552,73 @@ def board_members(
         if r.get("ts_code")
     ]
     total = int(lead.get("total") or 0)
+
+    if not items and kind == "industry":
+        try:
+            name_row = query(
+                "SELECT industry_name FROM industry_board_quotes "
+                "WHERE industry_code = %s ORDER BY trade_date DESC LIMIT 1",
+                (code,),
+            )
+            name = name_row[0]["industry_name"] if name_row else None
+        except Exception:  # noqa: BLE001
+            name = None
+        lm = live_market.industry_members(name) if name else []
+        if lm:
+            start = (page - 1) * size
+            page_items = lm[start : start + size]
+            return {
+                "kind": kind,
+                "code": code,
+                "page": page,
+                "size": size,
+                "board_name": name,
+                "items": [
+                    {
+                        "ts_code": m.get("ts_code"),
+                        "stock_name": m.get("name") or m.get("ts_code"),
+                        "board_name": name,
+                        "close": m.get("close"),
+                        "pct_chg": m.get("pct_chg"),
+                        "amount": m.get("amount"),
+                        "turnover_rate": m.get("turnover_rate"),
+                    }
+                    for m in page_items
+                ],
+                "total": len(lm),
+                "degraded": False,
+                "live": True,
+            }
+
+    if not items and live_market.available():
+        live = live_market.board_detail(kind, code)
+        lm = (live or {}).get("members") or []
+        if lm:
+            start = (page - 1) * size
+            page_items = lm[start : start + size]
+            snap_name = ((live or {}).get("snapshot") or {}).get("name")
+            return {
+                "kind": kind,
+                "code": code,
+                "page": page,
+                "size": size,
+                "board_name": snap_name,
+                "items": [
+                    {
+                        "ts_code": m.get("ts_code"),
+                        "stock_name": m.get("name") or m.get("ts_code"),
+                        "board_name": snap_name,
+                        "close": m.get("close"),
+                        "pct_chg": m.get("pct_chg"),
+                        "amount": m.get("amount"),
+                        "turnover_rate": m.get("turnover_rate"),
+                    }
+                    for m in page_items
+                ],
+                "total": len(lm),
+                "degraded": False,
+                "live": True,
+            }
 
     return {
         "kind": kind,

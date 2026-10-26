@@ -543,6 +543,53 @@ def _board_page(board_type: str, ascending: bool, limit: int) -> tuple[list[dict
     return out, int(data.get("total") or 0)
 
 
+def industry_members(name: str, limit: int = 200) -> list[dict]:
+    """按本地财报行业字段取行业成分，并用实时快照覆盖价格。"""
+    if not name:
+        return []
+    clean = str(name).replace("Ⅱ", "").replace("Ⅲ", "").replace("Ⅰ", "")
+    try:
+        rows = query(
+            """
+            SELECT f.ts_code, s.stock_name, f.industry,
+                   q.close, q.pct_chg, q.amount, q.turnover_rate
+            FROM (SELECT DISTINCT ON (ts_code) ts_code, industry
+                  FROM stock_fundamentals
+                  WHERE industry IS NOT NULL
+                  ORDER BY ts_code, report_date DESC) f
+            LEFT JOIN stock_basic_info s ON s.ts_code = f.ts_code
+            LEFT JOIN LATERAL (
+                SELECT d.close, d.pct_chg, d.amount, d.turnover_rate
+                FROM daily_quotes d
+                WHERE d.ts_code = f.ts_code
+                ORDER BY d.trade_date DESC LIMIT 1
+            ) q ON TRUE
+            WHERE f.industry ILIKE %s OR %s ILIKE f.industry || '%%'
+            ORDER BY COALESCE(q.amount, 0) DESC
+            LIMIT %s
+            """,
+            (f"%{clean}%", f"%{clean}%", int(limit)),
+        )
+    except Exception:  # noqa: BLE001
+        return []
+    snap = {it["ts_code"]: it for it in _items()}
+    out = []
+    for r in rows:
+        live_it = snap.get(r["ts_code"]) or {}
+        out.append(
+            {
+                "ts_code": r["ts_code"],
+                "name": r.get("stock_name") or r["ts_code"],
+                "close": _f(live_it.get("price")) or _f(r.get("close")),
+                "pct_chg": _f(live_it.get("pct_chg")) if _f(live_it.get("pct_chg")) is not None else _f(r.get("pct_chg")),
+                "amount": _f(live_it.get("amount")) or _f(r.get("amount")),
+                "turnover_rate": _f(live_it.get("turnover_rate")) if _f(live_it.get("turnover_rate")) is not None else _f(r.get("turnover_rate")),
+            }
+        )
+    out.sort(key=lambda x: -(x.get("pct_chg") or 0))
+    return out
+
+
 @ttl_cache(30)
 def board_detail(kind: str, code: str) -> dict | None:
     """东财板块实时详情 + 近 20 日 K 线；成分股接口不稳定，members 返回空。"""
@@ -612,17 +659,21 @@ def board_detail(kind: str, code: str) -> dict | None:
             "lead_stock_name": None,
             "net_inflow": None,
         }
+
+        # 行业成分：东财 clist 被断连，退回本地 stock_fundamentals.industry 匹配 + 实时价覆盖
+        members = industry_members(q.get("f58"), limit=100) if kind == "industry" else []
+
         return {
             "kind": kind,
             "code": code,
             "snapshot": snapshot,
             "history": history,
-            "member_count": 0,
-            "members": [],
-            "members_available": False,
+            "member_count": len(members),
+            "members": members,
+            "members_available": bool(members),
             "live": True,
             "as_of": _as_of(),
-            "note": "东财实时板块行情；成分股接口不稳定，暂不返回成分明细",
+            "note": "东财实时板块行情；行业成分来自本地财报行业字段，概念成分暂无免费源",
         }
     except Exception:  # noqa: BLE001
         return None

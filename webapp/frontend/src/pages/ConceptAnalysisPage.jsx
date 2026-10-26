@@ -77,13 +77,18 @@ function pickItems(raw) {
 
 function normRow(r) {
   const code = r.code || r.sector_code || ''
+  const money = (v) => {
+    const x = num(v)
+    if (x === null) return null
+    return Math.abs(x) < 1e6 ? x * 1e8 : x
+  }
   return {
     code,
-    name: r.name || r.sector_name || '',
+    name: r.name || r.sector_name || r.industry_name || r.concept_name || '',
     trade_date: r.trade_date || null,
     pct_chg: num(r.pct_chg),
-    net_inflow: num(r.net_inflow),
-    amount: num(r.amount),
+    net_inflow: money(r.net_inflow),
+    amount: money(r.amount),
     turnover_rate: num(r.turnover_rate),
     up_count: num(r.up_count),
     down_count: num(r.down_count),
