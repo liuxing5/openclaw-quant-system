@@ -4,3 +4,9 @@ frontend/dist/
 **/__pycache__/
 *.pyc
 .vite/
+
+# 本地运行产物 / 临时脚本
+frontend/dist-check*/
+scripts/*.log
+scripts/smoke_out.json
+

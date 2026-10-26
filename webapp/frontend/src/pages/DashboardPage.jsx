@@ -451,6 +451,54 @@ function SourcesPanel({ sources }) {
   )
 }
 
+/* --------------------------------------------------------------- 实时行情条 */
+
+const TICKER_CODES = '000001.SH,399001.SZ,399006.SZ,000300.SH,000905.SH,000688.SH'
+const TICKER_POLL_MS = 10_000
+
+/**
+ * 实时行情条：日线底表是「上一交易日收盘」，而盘中真正在变的是实时快照。
+ * 这里每 10 秒取一次六大指数实时价（后端 10s 缓存 + 四级降级），
+ * 让总台第一屏就能看到「现在」而不是「昨天」。
+ */
+function RealtimeTicker() {
+  const ticker = useApi(() => api.get('/market-data/realtime', { codes: TICKER_CODES }), [])
+
+  React.useEffect(() => {
+    const id = setInterval(() => {
+      if (document.hidden) return
+      ticker.reload()
+    }, TICKER_POLL_MS)
+    return () => clearInterval(id)
+  }, [ticker.reload])
+
+  const payload = ticker.data
+  const items = payload?.items || []
+  if (!items.length) return null
+
+  return (
+    <Card className="flex flex-wrap items-center gap-x-4 gap-y-2 py-2">
+      <span className="flex items-center gap-1.5 text-[11px] font-medium text-slate-500 dark:text-slate-400">
+        <span className={`inline-block size-1.5 rounded-full ${payload?.trading ? 'animate-pulse bg-rose-500' : 'bg-slate-400'}`} />
+        实时行情
+      </span>
+      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-4 gap-y-1">
+        {items.map((it) => (
+          <span key={it.ts_code} className="flex items-baseline gap-1.5 text-xs">
+            <span className="text-slate-500 dark:text-slate-400">{it.name || it.ts_code}</span>
+            <span className={`font-semibold tabular-nums ${pctTone(it.pct_chg)}`}>{fmtNum(it.price, 2)}</span>
+            <span className={`text-[11px] tabular-nums ${pctTone(it.pct_chg)}`}>{fmtPct(it.pct_chg)}</span>
+          </span>
+        ))}
+      </div>
+      <span className="text-[10px] text-slate-400 dark:text-slate-500">
+        {payload?.as_of ? `${String(payload.as_of).slice(11, 19)} · ${payload.source || '实时'} · 10 秒刷新` : '10 秒刷新'}
+        {ticker.error ? '（实时源不可用，已用缓存）' : ''}
+      </span>
+    </Card>
+  )
+}
+
 /* ------------------------------------------------------------------------ 页面 */
 
 export default function DashboardPage() {
@@ -475,7 +523,7 @@ export default function DashboardPage() {
       title="总台"
       subtitle={
         data
-          ? `行情看板 · 数据日 ${fmtDate(data.trade_date)} · 生成于 ${data.generated_at?.replace('T', ' ')}`
+          ? `日线数据 ${fmtDate(data.trade_date)}（T-1）· 上方实时条为盘中快照 · 生成于 ${data.generated_at?.replace('T', ' ')}`
           : '行情看板 · 一屏掌握当日大盘'
       }
       actions={
@@ -491,6 +539,7 @@ export default function DashboardPage() {
         </div>
       }
     >
+      <RealtimeTicker />
       {!data ? (
         <AsyncBlock loading={loading} error={error} onRetry={reload} loadingLabel="大盘数据加载中（首次约 30 秒）" />
       ) : (

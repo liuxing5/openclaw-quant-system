@@ -2,7 +2,7 @@
 """行情类接口：全市场摘要、广度、榜单、个股日线、证券搜索、连板梯队、板块热度。"""
 from datetime import date as _date
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
 
 from ..cache import ttl_cache
 from ..db import query, scalar
@@ -81,12 +81,18 @@ def _daily_series(ts_code: str, limit: int):
 
 @router.get("/market-data/quotes/daily")
 def quotes_daily(
-    ts_code: str = Query(..., description="如 000001.SZ / 600519.SH"),
+    ts_code: str | None = Query(None, description="如 000001.SZ / 600519.SH"),
+    symbol: str | None = Query(None, description="ts_code 的别名，兼容前端/原站口径"),
     days: int = Query(120, ge=5, le=500),
+    limit: int | None = Query(None, ge=5, le=500, description="days 的别名"),
 ):
-    code = ts_code.strip().upper()
+    code = (ts_code or symbol or "").strip().upper()
+    if not code:
+        raise HTTPException(status_code=422, detail="ts_code 或 symbol 必填")
     if "." not in code:
         code = f"{code}.SH" if code.startswith(("6", "9")) else f"{code}.SZ"
+    if limit:
+        days = limit
     rows = _daily_series(code, days)
     basic = query(
         """
@@ -194,7 +200,13 @@ def limit_ladder(
 
 # ---------------- 板块热度 ----------------
 
-_SORT_PATTERN = "^(pct_chg_desc|pct_chg_asc|net_inflow|stock_count)$"
+_SORT_PATTERN = "^(pct_chg|pct_chg_desc|pct_chg_asc|net_inflow|stock_count)$"
+
+
+def _norm_sort(sort: str) -> str:
+    """`pct_chg` 是原站/前端的默认排序别名，统一映射成降序。"""
+    s = (sort or "").strip()
+    return "pct_chg_desc" if s in ("", "pct_chg", "pct_chg_desc") else s
 
 
 @router.get("/boards/concepts")
@@ -202,8 +214,12 @@ def boards_concepts(
     sort: str = Query("pct_chg_desc", pattern=_SORT_PATTERN),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    page: int = Query(1, ge=1),
+    size: int | None = Query(None, ge=1, le=200),
 ):
-    return _boards("concept", sort, limit, offset)
+    if size is not None:
+        limit, offset = size, (page - 1) * size
+    return _boards("concept", _norm_sort(sort), limit, offset)
 
 
 @router.get("/boards/industries")
@@ -211,8 +227,12 @@ def boards_industries(
     sort: str = Query("pct_chg_desc", pattern=_SORT_PATTERN),
     limit: int = Query(20, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    page: int = Query(1, ge=1),
+    size: int | None = Query(None, ge=1, le=200),
 ):
-    return _boards("industry", sort, limit, offset)
+    if size is not None:
+        limit, offset = size, (page - 1) * size
+    return _boards("industry", _norm_sort(sort), limit, offset)
 
 
 def _boards(kind: str, sort: str, limit: int, offset: int) -> dict:
@@ -334,4 +354,156 @@ def board_detail(kind: str, code: str, limit: int = Query(50, ge=1, le=500)):
         "member_count": len(members),
         "members": member_rows,
         "members_available": bool(members),
+    }
+
+
+# ---------------- 板块成分股（BE-A 追加，只增不改） ----------------
+
+# 一条 SQL 同时取「领涨股 + 分页成分股 + 总数」。
+# 为什么合并：本机到远端库单次往返约 0.3~0.7s，两次往返就是双倍延迟；
+# 领涨股来自板块行情表（一定有数），成分股来自两张空表（可能没数），
+# 用 FULL JOIN ON TRUE 保证「成分股为空时也照样把领涨股带出来」。
+# mem 里的 COUNT(*) OVER () 在 LIMIT/OFFSET 之前求值，所以拿到的是全量总数。
+_MEMBER_SQL = """
+WITH lead AS (
+    SELECT trade_date, {name_col} AS board_name, lead_stock_code, lead_stock_name
+    FROM {board_table}
+    WHERE {code_col} = %s AND trade_date >= CURRENT_DATE - %s::int
+    ORDER BY trade_date DESC LIMIT 1
+),
+mem AS (
+    {mem_body}
+)
+SELECT m.ts_code, m.stock_name, COALESCE(m.board_name, l.board_name) AS board_name,
+       l.lead_stock_code, l.lead_stock_name, l.trade_date, m.total
+FROM lead l
+FULL JOIN mem m ON TRUE
+"""
+
+_MEM_CONCEPT = """
+    SELECT u.ts_code,
+           COALESCE(NULLIF(i.stock_name, ''), '') AS stock_name,
+           u.board_name,
+           COUNT(*) OVER () AS total
+    FROM (
+        SELECT ts_code, concept_name AS board_name FROM concept_membership WHERE concept_code = %s
+        UNION
+        SELECT ts_code, COALESCE(NULLIF(board_name, ''), '') FROM board_member_cache
+        WHERE board_type = 'concept' AND board_code = %s
+    ) u
+    LEFT JOIN stock_basic_info i ON i.ts_code = u.ts_code
+    ORDER BY u.ts_code
+    LIMIT %s OFFSET %s
+"""
+
+_MEM_CACHE = """
+    SELECT m.ts_code,
+           COALESCE(NULLIF(m.stock_name, ''), NULLIF(i.stock_name, ''), '') AS stock_name,
+           m.board_name,
+           COUNT(*) OVER () AS total
+    FROM board_member_cache m
+    LEFT JOIN stock_basic_info i ON i.ts_code = m.ts_code
+    WHERE m.board_type = %s AND m.board_code = %s
+    ORDER BY m.ts_code
+    LIMIT %s OFFSET %s
+"""
+
+# 只取领涨股的降级 SQL：上面的成分股 CTE 依赖两张可能没建的表，
+# 一旦整条 SQL 报错就用它把「板块名 + 领涨股」单独捞出来，保证降级时也有实信息。
+_LEAD_SQL = """
+    SELECT trade_date, {name_col} AS board_name, lead_stock_code, lead_stock_name,
+           NULL::varchar AS ts_code, ''::varchar AS stock_name
+    FROM {board_table}
+    WHERE {code_col} = %s AND trade_date >= CURRENT_DATE - %s::int
+    ORDER BY trade_date DESC LIMIT 1
+"""
+
+
+def _member_rows(sql: str, params: tuple) -> list[dict] | None:
+    """跑一条成分股 SQL；表不存在/权限不足等 SQL 错误返回 ``None``（区别于「查到 0 行」）。
+
+    为什么包异常：``concept_membership`` / ``board_member_cache`` 目前都是 0 行，
+    甚至可能还没建表。成分股属于「锦上添花」的数据，宁可降级，
+    也不能让板块详情页的子请求把接口打成 500。
+    """
+    try:
+        return query(sql, params)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _fetch_members(kind: str, code: str, days: int, size: int, offset: int) -> list[dict]:
+    """成分股分页 + 领涨股，**一条 SQL 一次往返**（远端库往返 0.3~0.7s，能省一次是一次）。
+
+    概念的两张来源表在 SQL 里直接 UNION 合并，避免「第一张空表就跳过第二张」的漏查；
+    合并 SQL 因表缺失整体失败时，再退化成只取领涨股的轻查询。
+    """
+    board_table = "concept_board_quotes" if kind == "concept" else "industry_board_quotes"
+    name_col = "concept_name" if kind == "concept" else "industry_name"
+    head = dict(board_table=board_table, name_col=name_col, code_col=name_col.replace("_name", "_code"))
+
+    if kind == "concept":
+        body, params = _MEM_CONCEPT, (code, days, code, code, size, offset)
+    else:
+        body, params = _MEM_CACHE, (code, days, "industry", code, size, offset)
+
+    rows = _member_rows(_MEMBER_SQL.format(mem_body=body, **head), params)
+    if rows is None:
+        rows = _member_rows(_LEAD_SQL.format(**head), (code, days)) or []
+    return rows
+
+
+@router.get("/boards/{kind}/{code}/members")
+def board_members(
+    kind: str,
+    code: str,
+    days: int = Query(30, ge=1, le=365, description="回看板块行情天数，用于取板块名/领涨股"),
+    page: int = Query(1, ge=1),
+    size: int = Query(20, ge=1, le=100),
+):
+    """板块成分股（分页）。
+
+    数据源优先级：``concept_membership``（概念专用）→ ``board_member_cache``（行业/概念通用）。
+    两张表当前都是空表，因此**必须优雅降级**：返回空 items + ``degraded:true``，
+    同时把板块当日行情里已有的 ``lead_stock_code/lead_stock_name`` 一起给出，
+    前端至少还能显示「领涨股」这条可用信息。表里有数据时正常返回分页成分股。
+    """
+    if kind not in ("concept", "industry"):
+        return {
+            "kind": kind,
+            "code": code,
+            "page": page,
+            "size": size,
+            "items": [],
+            "total": 0,
+            "degraded": True,
+            "message": "未知板块类型",
+        }
+
+    rows = _fetch_members(kind, code, days, size, (page - 1) * size)
+    lead = rows[0] if rows else {}
+    items = [
+        {
+            "ts_code": r["ts_code"],
+            "stock_name": r.get("stock_name") or "",
+            "board_name": r.get("board_name") or "",
+        }
+        for r in rows
+        if r.get("ts_code")
+    ]
+    total = int(lead.get("total") or 0)
+
+    return {
+        "kind": kind,
+        "code": code,
+        "page": page,
+        "size": size,
+        "board_name": lead.get("board_name"),
+        "quote_date": str(lead["trade_date"]) if lead.get("trade_date") else None,
+        "lead_stock_code": lead.get("lead_stock_code"),
+        "lead_stock_name": lead.get("lead_stock_name"),
+        "items": items,
+        "total": total,
+        "degraded": not items,
+        "message": "成分股数据待接入" if not items else None,
     }

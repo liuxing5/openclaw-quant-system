@@ -6,7 +6,7 @@ from datetime import datetime
 from fastapi import APIRouter
 
 from ..cache import ttl_cache
-from ..db import execute, query_one, scalar
+from ..db import execute, query, query_one, scalar
 
 router = APIRouter(tags=["system"])
 
@@ -190,6 +190,54 @@ PROVIDER_KINDS = [
 ]
 
 
+_LOCAL_DATASETS = [
+    ("daily_quotes", "全市场日线", "daily_quotes", "trade_date"),
+    ("stock_basic_info", "股票基础信息", "stock_basic_info", "list_date"),
+    ("index_quotes", "主要指数日线", "index_quotes", "trade_date"),
+    ("concept_board_quotes", "概念板块快照", "concept_board_quotes", "trade_date"),
+    ("industry_board_quotes", "行业板块快照", "industry_board_quotes", "trade_date"),
+    ("lhb_detail", "龙虎榜明细", "lhb_detail", "trade_date"),
+    ("raw_signals", "快讯 / 研报 / 公告", "raw_signals", "fetch_time"),
+    ("daily_candidates", "每日选股池", "daily_candidates", "snapshot_date"),
+    ("hsgt_individual", "沪深港通个股", "hsgt_individual", "trade_date"),
+    ("performance_tracking", "策略绩效跟踪", "performance_tracking", "rec_date"),
+]
+
+
+def _datasets() -> list[dict]:
+    """一次 SQL 取全部数据集的「估算行数 + 最新日期」，避免 10 张表来回 20 次。
+
+    本机到远端库单次往返约 0.25~0.6s，逐表查询会让 /system/data-sources 慢到 6s；
+    合并成 UNION ALL 后固定 1 次往返。行数仍用 pg_class.reltuples 估算。
+    """
+    parts, params = [], []
+    for ds_id, name, table, col in _LOCAL_DATASETS:
+        parts.append(
+            "SELECT %s::text AS id, %s::text AS name, "
+            "(SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = %s::regclass) AS rows, "
+            f"(SELECT MAX({col})::text FROM {table}) AS latest"
+        )
+        params.extend([ds_id, name, table])
+    rows = query(" UNION ALL ".join(parts), tuple(params))
+    by_id = {r["id"]: r for r in rows}
+    out = []
+    for ds_id, name, table, _col in _LOCAL_DATASETS:
+        r = by_id.get(ds_id)
+        if not r:
+            out.append({"id": ds_id, "name": name, "rows": 0, "latest": None, "status": "error"})
+        else:
+            out.append(
+                {
+                    "id": ds_id,
+                    "name": name,
+                    "rows": int(r["rows"] or 0),
+                    "latest": r["latest"],
+                    "status": "ok",
+                }
+            )
+    return out
+
+
 def _dataset(ds_id: str, name: str, table: str, date_col: str) -> dict:
     """单个本地数据集的规模与新鲜度（列缺失也不影响整体接口）。
 
@@ -249,18 +297,12 @@ def _data_sources():
         for r in rows
     ]
 
-    local_datasets = [
-        _dataset("daily_quotes", "全市场日线", "daily_quotes", "trade_date"),
-        _dataset("stock_basic_info", "股票基础信息", "stock_basic_info", "list_date"),
-        _dataset("index_quotes", "主要指数日线", "index_quotes", "trade_date"),
-        _dataset("concept_board_quotes", "概念板块快照", "concept_board_quotes", "trade_date"),
-        _dataset("industry_board_quotes", "行业板块快照", "industry_board_quotes", "trade_date"),
-        _dataset("lhb_detail", "龙虎榜明细", "lhb_detail", "trade_date"),
-        _dataset("raw_signals", "快讯 / 研报 / 公告", "raw_signals", "fetch_time"),
-        _dataset("daily_candidates", "每日选股池", "daily_candidates", "snapshot_date"),
-        _dataset("hsgt_individual", "沪深港通个股", "hsgt_individual", "trade_date"),
-        _dataset("performance_tracking", "策略绩效跟踪", "performance_tracking", "rec_date"),
-    ]
+    try:
+        local_datasets = _datasets()
+    except Exception:  # noqa: BLE001 单表缺失时逐表降级，接口不整体失败
+        local_datasets = [
+            _dataset(ds_id, name, table, col) for ds_id, name, table, col in _LOCAL_DATASETS
+        ]
 
     return {
         "providers": [

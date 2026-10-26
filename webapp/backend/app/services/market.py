@@ -116,7 +116,7 @@ def _boards(codes: list[str]) -> dict[str, str]:
 _FX_CTE = """
 WITH q AS (
   SELECT dq.ts_code, dq.trade_date, dq.pct_chg, dq.close, dq.high, dq.amount,
-         dq.turnover_rate, dq.volume, dq.pre_close,
+         dq.turnover_rate, dq.volume, dq.volume_ratio, dq.pre_close,
          dq.limit_up_price, dq.limit_down_price,
          CASE WHEN strpos(upper(COALESCE(sb.stock_name, '')), 'ST') > 0 THEN 5.0
               WHEN dq.ts_code ~ '^(300|301|688|689)' THEN 20.0
@@ -127,6 +127,7 @@ WITH q AS (
   WHERE {where}
 ), f AS (
   SELECT ts_code, trade_date, pct_chg, close, high, amount, turnover_rate, volume,
+         volume_ratio,
          COALESCE(limit_up_price,
                   ROUND((pre_close * (1 + thr / 100.0))::numeric, 2)) AS lup,
          COALESCE(limit_down_price,

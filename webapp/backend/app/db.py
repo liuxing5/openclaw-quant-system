@@ -45,7 +45,13 @@ _bad: set[int] = set()
 
 
 def _new_conn():
-    return psycopg2.connect(os.environ["DATABASE_URL"])
+    url = os.getenv("WEBAPP_DATABASE_URL") or os.environ["DATABASE_URL"]
+    # Supabase 的 5432 是 session 模式：整个项目共享 15 个客户端，webapp 的常驻连接池
+    # 很容易把它占满（EMAXCONNSESSION）。6543 是事务池模式，支持更多客户端，
+    # 且本项目的 SQL 都是短事务、无会话级状态，可安全切换。
+    if not os.getenv("WEBAPP_DATABASE_URL") and "pooler.supabase.com:5432" in url:
+        url = url.replace("pooler.supabase.com:5432", "pooler.supabase.com:6543")
+    return psycopg2.connect(url)
 
 
 def _checkout():
