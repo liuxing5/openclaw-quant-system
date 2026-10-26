@@ -20,7 +20,7 @@ const GROUPS = [
     title: '平台信息',
     desc: '展示在顶栏、登录页与公告条',
     fields: [
-      { key: 'platform_name', label: '平台名称', paths: ['platform_name', 'site_name', 'site.platform_name', 'site.site_name'], type: 'text', default: '彪哥财经之英雄本色', placeholder: '例如：彪哥财经之英雄本色' },
+      { key: 'platform_name', label: '平台名称', paths: ['platform_name', 'site_name', 'site.platform_name', 'site.site_name'], type: 'text', default: '量化投研平台', placeholder: '例如：量化投研平台' },
       { key: 'slogan', label: '站点标语', paths: ['slogan', 'site.slogan'], type: 'text', default: '股票投研 · 数据一体化 · 本地数据驱动', placeholder: '一句话介绍平台' },
       { key: 'announcement', label: '公告', paths: ['announcement', 'site.announcement'], type: 'textarea', default: '', placeholder: '面向所有用户的公告，留空则不展示' },
       { key: 'icp', label: '备案号', paths: ['icp', 'site.icp'], type: 'text', default: '', placeholder: '例如：京ICP备xxxxxxxx号' },

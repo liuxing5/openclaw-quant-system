@@ -50,7 +50,7 @@ function PlatformBlock({ pub }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Badge tone="blue">{pub?.platform_name || '彪哥财经之英雄本色'}</Badge>
+        <Badge tone="blue">{pub?.platform_name || '量化投研平台'}</Badge>
         {Number(pub?.marketing_total_users) > 0 ? (
           <Badge tone="slate">累计服务 {fmtNum(pub.marketing_total_users, 0)}+ 用户</Badge>
         ) : null}

@@ -1,6 +1,12 @@
 /** 侧边导航配置：与站点信息架构一一对应，页面可按此顺序落地。 */
 export const NAV = [
   {
+    group: '精选',
+    items: [
+      { label: '荐股', to: '/recommend' },
+    ],
+  },
+  {
     group: '行情',
     items: [
       { label: '总台', to: '/dashboard' },

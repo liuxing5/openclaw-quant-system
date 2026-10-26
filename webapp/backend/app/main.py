@@ -40,7 +40,7 @@ from .warmup import start_warmup, stop_warmup
 DIST_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 app = FastAPI(
-    title="彪哥财经之英雄本色",
+    title="量化投研平台",
     description="本地 PostgreSQL 数据底座驱动的股票投研看板",
     version="1.0.0",
 )

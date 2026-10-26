@@ -1,4 +1,4 @@
-# 彪哥财经之英雄本色（webapp）
+# 量化投研平台（webapp）
 
 本地 PostgreSQL 数据底座驱动的股票投研看板：FastAPI 后端 + React/Vite/Tailwind 前端。
 
@@ -165,6 +165,8 @@ webapp/
   箱体突破、成长质量、资金热度、智能深度筛选等），命名与原站对齐。
 - 策略页顶部新增「智能深度筛选」：10 个预设 + 板块 + 最低评分 + 全市场 5,000+ 标的，
   输出综合分与 **趋势/动量/量能/资金/质量/估值/风险** 七因子分，附可解释入选理由。
+- 总台指数卡片下新增「量化引擎」：全市场扫描信号、候选池平均因子、31 条策略、
+  30 日命中数与平均扫描耗时，量化能力不再只藏在策略页。
 - 评分在库端一次计算后物化到 `app_smart_snapshot`（约 30~40s，每日/数据日变化时后台异步刷新），
   API 读取 1~5s；`python webapp/scripts/refresh_smart_snapshot.py` 可手动刷新。
 - 25 条新策略每条都有**独立七因子权重 + 独立形态过滤**（`smart_scan._SPEC_WEIGHTS/_SPEC_FILTERS`），
@@ -213,6 +215,12 @@ webapp/
 - 支付为人工确认：管理员在 `/buy` 底部「管理员开通入口」输入用户邮箱 + 档位 + 管理员密钥，
   或调用 `POST /api/v1/auth/activate`；密钥默认 `lx@610323`，可用 `MEMBERSHIP_ADMIN_KEY` 覆盖。
 - 账号表 `app_users`，密码 PBKDF2-SHA256，token 为 HMAC 自签 7 天有效；token 密钥用 `AUTH_SECRET` 覆盖。
+
+## 荐股
+
+- 左侧「精选 → 荐股」进入 `/recommend`，右侧内嵌原五策略漏斗页面：
+  `https://liuxing5.github.io/openclaw-quant-system/funnel/funnel.html`
+- 右上角提供「新窗口打开」；页面仍走会员登录/试用校验。
 
 ## 情绪历史回填
 

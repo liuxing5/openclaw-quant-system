@@ -11,6 +11,7 @@ const RootPage = lazy(() => import('./pages/RootPage.jsx'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage.jsx'))
 const WatchlistPage = lazy(() => import('./pages/WatchlistPage.jsx'))
 const StrategyPage = lazy(() => import('./pages/StrategyPage.jsx'))
+const RecommendPage = lazy(() => import('./pages/RecommendPage.jsx'))
 const StockAnalysisPage = lazy(() => import('./pages/StockAnalysisPage.jsx'))
 const OilGoldPage = lazy(() => import('./pages/OilGoldPage.jsx'))
 const LimitLadderPage = lazy(() => import('./pages/LimitLadderPage.jsx'))
@@ -110,6 +111,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<RootPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/recommend" element={<RecommendPage />} />
           <Route path="/watchlist" element={<WatchlistPage />} />
           <Route path="/strategy" element={<StrategyPage />} />
           <Route path="/strategy/:id" element={<StrategyPage />} />

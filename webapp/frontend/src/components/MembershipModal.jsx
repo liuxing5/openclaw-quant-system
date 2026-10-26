@@ -45,7 +45,7 @@ export default function MembershipModal({ embedded = false, onClose, onRefresh, 
             ×
           </button>
         ) : null}
-        <p className="text-xs font-semibold tracking-[0.22em] text-amber-300">⚡ 彪哥财经 · 专业会员</p>
+        <p className="text-xs font-semibold tracking-[0.22em] text-amber-300">⚡ 量化投研 · 专业会员</p>
         <h2 className="mt-2 text-2xl font-bold text-white">解锁专业量化与 AI 分析</h2>
         <p className="mt-1.5 text-xs text-slate-400">
           {status === 'trial' ? '免费试用中，到期后订阅即可继续使用全部功能' : '会员已到期，续费后立即恢复全部权限'}
