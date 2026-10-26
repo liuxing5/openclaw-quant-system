@@ -103,18 +103,25 @@ export default function Layout({ children }) {
                         if (location.pathname === item.to) window.scrollTo({ top: 0, behavior: 'smooth' })
                       }}
                       className={({ isActive }) =>
-                        `flex items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition-colors ${
+                        `group flex cursor-pointer items-center gap-2 rounded-lg px-2.5 py-2 text-[13px] transition-all duration-200 ${
                           isActive
-                            ? 'bg-brand-600 text-white shadow-sm'
-                            : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/70'
+                            ? 'bg-blue-600 text-white shadow-sm hover:bg-blue-700'
+                            : item.to === '/recommend'
+                              ? 'text-slate-600 hover:translate-x-0.5 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/70 dark:hover:text-white'
+                              : 'text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/70'
                         }`
                       }
                     >
                       <span
                         aria-hidden="true"
-                        className="size-1.5 shrink-0 rounded-full bg-current opacity-50"
+                        className="size-1.5 shrink-0 rounded-full bg-current opacity-50 transition group-hover:scale-125 group-hover:opacity-100"
                       />
                       {!collapsed ? <span className="truncate">{item.label}</span> : null}
+                      {!collapsed && item.to === '/recommend' ? (
+                        <span className="ml-auto text-[10px] opacity-50 transition group-hover:translate-x-0.5 group-hover:opacity-100">
+                          →
+                        </span>
+                      ) : null}
                     </NavLink>
                   </li>
                 ))}
