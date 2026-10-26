@@ -218,9 +218,11 @@ webapp/
 
 ## 荐股
 
-- 左侧「精选 → 荐股」进入 `/recommend`，右侧内嵌原五策略漏斗页面：
-  `https://liuxing5.github.io/openclaw-quant-system/funnel/funnel.html`
-- 右上角提供「新窗口打开」；页面仍走会员登录/试用校验。
+- 左侧「精选 → 荐股」进入 `/recommend`，后端 `services/funnel.py` 抓取并结构化原五策略报告
+  (`https://liuxing5.github.io/openclaw-quant-system/funnel/funnel.html`)，
+  前端用平台原生卡片/漏斗/表格渲染，不再 iframe 内嵌。
+- 支持五策略切换、漏斗路径、候选入场/止损/目标/量化分、历史前向收益表，
+  候选可直接进入本地个股分析；右上角保留原文链接。
 
 ## 情绪历史回填
 

@@ -29,6 +29,7 @@ from .routers import (
     market,
     portfolio,
     realtime,
+    recommend,
     review,
     simulation,
     strategy,
@@ -59,6 +60,7 @@ api.include_router(system.router)
 api.include_router(dashboard.router)
 api.include_router(market.router)
 api.include_router(analysis.router)
+api.include_router(recommend.router)
 api.include_router(realtime.router)
 api.include_router(portfolio.router)
 api.include_router(simulation.router)
