@@ -20,7 +20,7 @@ import uuid
 
 from ..cache import ttl_cache
 from ..db import execute, query, query_one, scalar
-from . import live_snapshot
+from . import live_snapshot, money_flow
 from .market import _FX_CTE, latest_trade_date
 
 KIND_LABELS = {
@@ -29,6 +29,8 @@ KIND_LABELS = {
     "rapid_rise": "急拉",
     "rapid_fall": "急跌",
     "broken": "炸板",
+    "main_inflow": "主力流入",
+    "main_outflow": "主力流出",
     "volume_spike": "放量",
     "turnover_high": "高换手",
     "new_high": "阶段新高",
@@ -41,6 +43,8 @@ SCOPES = ("symbol", "board", "all_market")
 _LIMITS = {
     "limit_up": 100,
     "broken": 80,
+    "main_inflow": 60,
+    "main_outflow": 60,
     "limit_down": 60,
     "rapid_rise": 150,
     "rapid_fall": 100,
@@ -53,13 +57,15 @@ _LIMITS = {
 _PRIO = {
     "limit_up": 1,
     "broken": 2,
-    "limit_down": 3,
-    "rapid_rise": 4,
-    "rapid_fall": 5,
-    "board_surge": 6,
-    "volume_spike": 7,
-    "new_high": 8,
-    "turnover_high": 9,
+    "main_inflow": 3,
+    "main_outflow": 4,
+    "limit_down": 5,
+    "rapid_rise": 6,
+    "rapid_fall": 7,
+    "board_surge": 8,
+    "volume_spike": 9,
+    "new_high": 10,
+    "turnover_high": 11,
 }
 
 _DEFAULT_RULES = [
@@ -227,6 +233,18 @@ def _detail(kind: str, row: dict) -> str:
         return " · ".join(parts)
     if kind == "broken":
         return "炸板（触及涨停后打开）" + (f" · 换手 {tr:.1f}%" if tr is not None else "")
+    if kind in ("main_inflow", "main_outflow"):
+        net = _f(row.get("net_amount"))
+        sup = _f(row.get("super_net"))
+        parts = []
+        if net is not None:
+            parts.append(f"主力净{'流入' if net >= 0 else '流出'} {_fmt_amount(abs(net))}")
+        if sup is not None:
+            parts.append(f"超大单 {_fmt_amount(abs(sup))}")
+        ratio = _f(row.get("net_ratio"))
+        if ratio is not None:
+            parts.append(f"占比 {ratio:+.2f}%")
+        return " · ".join(parts) or "主力资金异动"
     if kind == "volume_spike":
         parts = [f"量比 {vr:.2f}" if vr is not None else "成交量异常"]
         if pct is not None:
@@ -421,6 +439,42 @@ def _build_live_pool(scope: str = "all_market") -> dict | None:
         all_items.extend(boards)
     if scope == "board":
         all_items = [x for x in all_items if x["scope"] == "board"]
+
+    # 主力资金流（新浪免费榜）：与腾讯快照互相独立，失败不影响其他信号
+    if scope != "board":
+        try:
+            flow = money_flow.main_flow()
+        except Exception:  # noqa: BLE001
+            flow = {}
+        occurred = snap.get("as_of")
+        hm = str(occurred or "")[11:16]
+        flow_session = "竞价" if hm and hm < "09:30" else ("盘中" if hm and hm <= "15:00" else "偏移")
+        for kind, key in (("main_inflow", "inflow"), ("main_outflow", "outflow")):
+            for row in (flow.get(key) or [])[: _LIMITS[kind]]:
+                code = row["ts_code"]
+                all_items.append(
+                    {
+                        "id": f"live:{kind}:{code}",
+                        "ts_code": code,
+                        "name": row.get("name") or code,
+                        "kind": kind,
+                        "kind_label": KIND_LABELS[kind],
+                        "price": row.get("price"),
+                        "pct_chg": row.get("pct_chg"),
+                        "volume_ratio": None,
+                        "turnover_rate": None,
+                        "amplitude": None,
+                        "net_amount": row.get("net_amount"),
+                        "super_net": row.get("super_net"),
+                        "net_ratio": row.get("net_ratio"),
+                        "board": board_of(code),
+                        "is_st": "ST" in str(row.get("name") or ""),
+                        "session": flow_session,
+                        "detail": _detail(kind, row),
+                        "scope": "symbol",
+                        "occurred_at": occurred,
+                    }
+                )
 
     all_items.sort(key=lambda x: (_PRIO.get(x["kind"], 99), -(x.get("pct_chg") or 0)))
     by_kind = {k: 0 for k in KINDS}

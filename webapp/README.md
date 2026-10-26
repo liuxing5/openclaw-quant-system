@@ -150,7 +150,14 @@ webapp/
   按并购/重组/收购等关键词过滤后写入 `stock_announcements`（内容哈希去重），并购重组页直接读这张表。
 - 并购页的 Top10 按个股最新成交额排序，统计卡片显示公告数 / 去重公司数 / 最新公告日。
 - 东财板块成分接口被断连后，行业成分改用 `stock_fundamentals.industry` 匹配 + 最新日线/实时价覆盖；
-  概念成分暂无稳定免费源，页面明确标注。
+- **概念成分**改用同花顺 `q.10jqka.com.cn/gn/detail/code/{code}/` 的 HTML 表格按需抓取：
+  首次打开某个概念时抓取 10 只/页（最多 12 页），写入 `board_member_cache` + `concept_membership`，
+  之后直接读库；东财 `BK` 代码通过概念名映射到同花顺代码。
+- 概念/行业页的成交额在板块快照缺失时按成分股成交额汇总，成分股数取「接口 total / 已加载行数」较大值。
+- **主力资金流**：新浪 `MoneyFlow.ssl_bkzj_ssggzj` 免费榜，取净流入/流出各 100 只，
+  作为实时异动的「主力流入 / 主力流出」信号（`services/money_flow.py`，30s 缓存）。
+- **热搜平台**：微博 `weibo.com/ajax/side/hotSearch`、百度 `top.baidu.com/api/board`、新浪财经滚动新闻
+  三个免费源，按金融关键词/股票名过滤；财联社沿用本地 `raw_signals`。
 
 ## 情绪历史回填
 

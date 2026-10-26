@@ -26,6 +26,7 @@
 from __future__ import annotations
 
 import json
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta
 
@@ -535,6 +536,12 @@ def hot_search(platform: str = "eastmoney", limit: int = 50) -> dict:
     的被提及次数；为空时降级到 raw_signals 标题抽股票名。
     """
     limit = max(1, min(int(limit), 100))
+    plat = (platform or "eastmoney").strip().lower()
+    if plat in ("weibo", "baidu"):
+        return _social_hot(plat, limit)
+    if plat in ("cls", "sina"):
+        return _news_hot(plat, limit)
+
     anchor = scalar("SELECT MAX(pub_time) FROM extracted_recommendations")
 
     rows = _rows(
@@ -619,6 +626,227 @@ def hot_search(platform: str = "eastmoney", limit: int = 50) -> dict:
             "degraded": not rows,
             "reason": "" if rows else "无可用数据源",
         },
+    }
+
+
+_FINANCE_WORDS = (
+    "A股", "股票", "股市", "基金", "券商", "银行", "保险", "央行", "证监会", "交易所",
+    "利率", "汇率", "人民币", "美元", "美联储", "降息", "加息", "国债", "债券", "期货",
+    "黄金", "原油", "比特币", "沪指", "深成指", "创业板", "科创板", "港股", "美股",
+    "纳斯达克", "道琼斯", "标普", "上市", "IPO", "财报", "业绩", "减持", "回购",
+    "并购", "重组", "涨停", "跌停", "关税", "经济", "GDP", "CPI", "PPI", "PMI",
+    "芯片", "半导体", "新能源", "人工智能", "地产", "楼市", "医药", "白酒",
+    "金价", "油价", "房价", "房贷", "存款", "贷款", "降准", "特朗普", "英伟达",
+    "特斯拉", "苹果", "华为", "小米", "比亚迪", "宁德时代", "上市公司", "董事长",
+    "股价", "市值", "营收", "利润", "涨价", "降价", "消费",
+)
+
+
+@ttl_cache(3600)
+def _stock_names() -> list[tuple[str, str]]:
+    try:
+        rows = query(
+            "SELECT stock_name, ts_code FROM stock_basic_info "
+            "WHERE COALESCE(is_active, TRUE) AND char_length(stock_name) >= 3"
+        )
+        return sorted(((r["stock_name"], r["ts_code"]) for r in rows), key=lambda x: -len(x[0]))
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _finance_hit(text: str) -> tuple[bool, str | None]:
+    """返回 (是否金融相关, 命中的股票代码)。"""
+    t = text or ""
+    if any(w in t for w in _FINANCE_WORDS):
+        return True, None
+    for name, code in _stock_names():
+        if name in t:
+            return True, code
+    return False, None
+
+
+def _http_json(url: str, referer: str) -> dict | list:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": _FETCH_UA,
+            "Referer": referer,
+            "Accept": "application/json,text/plain,*/*",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        raw = resp.read().decode("utf-8", "replace")
+    start = raw.find("{")
+    return json.loads(raw[start:] if start >= 0 else raw)
+
+
+def _social_hot(platform: str, limit: int) -> dict:
+    """微博 / 百度实时热搜，过滤出金融相关条目。"""
+    rows: list[dict] = []
+    if platform == "weibo":
+        data = _http_json("https://weibo.com/ajax/side/hotSearch", "https://weibo.com/")
+        for i, x in enumerate((data.get("data") or {}).get("realtime") or []):
+            title = str(x.get("word") or x.get("note") or "").strip()
+            if not title:
+                continue
+            rows.append(
+                {
+                    "title": title,
+                    "heat": int(x.get("num") or 0),
+                    "url": f"https://s.weibo.com/weibo?q=%23{urllib.parse.quote(title)}%23",
+                    "rank": i + 1,
+                }
+            )
+        source = "weibo-hot"
+    else:
+        data = _http_json("https://top.baidu.com/api/board?platform=pc&tab=realtime", "https://top.baidu.com/")
+        cards = (data.get("data") or {}).get("cards") or []
+        content = []
+        for c in cards:
+            if c.get("component") == "hotList":
+                content = c.get("content") or []
+                break
+        for i, x in enumerate(content):
+            title = str(x.get("word") or "").strip()
+            if not title:
+                continue
+            rows.append(
+                {
+                    "title": title,
+                    "heat": int(x.get("hotScore") or 0),
+                    "url": x.get("url") or "",
+                    "rank": i + 1,
+                }
+            )
+        source = "baidu-hot"
+
+    filtered = []
+    for r in rows:
+        ok, code = _finance_hit(r["title"])
+        if ok:
+            r["ts_code"] = code
+            filtered.append(r)
+    filtered.sort(key=lambda x: -(x.get("heat") or 0))
+    top = max([x.get("heat") or 0 for x in filtered[:limit]] or [1])
+    items = []
+    for i, r in enumerate(filtered[:limit]):
+        items.append(
+            {
+                "rank": i + 1,
+                "ts_code": r.get("ts_code"),
+                "stock_name": None,
+                "title": r["title"],
+                "name": r["title"],
+                "code": r.get("ts_code") or "",
+                "mentions": 0,
+                "strength": None,
+                "trend": "flat",
+                "heat": int(round((r.get("heat") or 0) / top * 1000000)),
+                "last_pub": datetime.now().isoformat(timespec="seconds"),
+                "url": r.get("url"),
+                "platform": platform,
+            }
+        )
+    return {
+        "items": items,
+        "total": len(items),
+        "platform": platform,
+        "as_of": datetime.now().isoformat(timespec="seconds"),
+        "meta": {"source": source, "window": "实时热搜（金融关键词/股票名过滤）", "degraded": False},
+    }
+
+
+def _news_hot(platform: str, limit: int) -> dict:
+    """财联社（本地快讯）/ 新浪财经（滚动新闻 API）。"""
+    if platform == "sina":
+        try:
+            data = _http_json(
+                "https://feed.mix.sina.com.cn/api/roll/get?pageid=153&lid=2516&k=&num=50&page=1",
+                "https://finance.sina.com.cn/",
+            )
+            rows = ((data.get("result") or {}).get("data") or [])
+        except Exception:  # noqa: BLE001
+            rows = []
+        items = []
+        for r in rows:
+            title = str(r.get("title") or "").strip()
+            if not title:
+                continue
+            ok, code = _finance_hit(title)
+            if not ok:
+                continue
+            items.append(
+                {
+                    "rank": len(items) + 1,
+                    "ts_code": code,
+                    "stock_name": None,
+                    "title": title,
+                    "name": title,
+                    "code": code or "",
+                    "mentions": 0,
+                    "strength": None,
+                    "trend": "flat",
+                    "heat": max(10000, 1000000 - len(items) * 20000),
+                    "last_pub": None,
+                    "url": r.get("url"),
+                    "platform": platform,
+                }
+            )
+            if len(items) >= limit:
+                break
+        return {
+            "items": items,
+            "total": len(items),
+            "platform": platform,
+            "as_of": datetime.now().isoformat(timespec="seconds"),
+            "meta": {"source": "sina-finance-roll", "window": "新浪财经滚动新闻", "degraded": not bool(rows)},
+        }
+
+    like = "%财联社%"
+    try:
+        rows = _rows(
+            """
+            SELECT title, url, pub_time, source_name
+            FROM raw_signals
+            WHERE title IS NOT NULL AND COALESCE(title, '') <> ''
+              AND source_name ILIKE %s
+              AND pub_time >= (SELECT MAX(pub_time) - INTERVAL '7 days' FROM raw_signals)
+            ORDER BY pub_time DESC
+            LIMIT %s
+            """,
+            (like, limit),
+        )
+    except Exception:  # noqa: BLE001
+        rows = []
+    items = []
+    for i, r in enumerate(rows):
+        title = str(r.get("title") or "").strip()
+        ok, code = _finance_hit(title)
+        if not ok:
+            continue
+        items.append(
+            {
+                "rank": len(items) + 1,
+                "ts_code": code,
+                "stock_name": None,
+                "title": title,
+                "name": title,
+                "code": code or "",
+                "mentions": 0,
+                "strength": None,
+                "trend": "flat",
+                "heat": max(10000, 1000000 - i * 12000),
+                "last_pub": _iso(r.get("pub_time")),
+                "url": r.get("url"),
+                "platform": platform,
+            }
+        )
+    return {
+        "items": items,
+        "total": len(items),
+        "platform": platform,
+        "as_of": _iso(rows[0].get("pub_time")) if rows else None,
+        "meta": {"source": f"raw_signals:{platform}", "window": "最近 7 天", "degraded": not bool(rows)},
     }
 
 

@@ -11,10 +11,12 @@ import { api, useApi } from '../lib/api.js'
 import { fmtDateTime, fmtNum } from '../lib/format.js'
 
 const PLATFORM_OPTIONS = [
-  { value: 'eastmoney', label: '东方财富股吧' },
+  { value: 'eastmoney', label: '股吧人气榜' },
+  { value: 'stock', label: '股票热度' },
   { value: 'cls', label: '财联社热点' },
   { value: 'sina', label: '新浪财经' },
   { value: 'weibo', label: '微博财经' },
+  { value: 'baidu', label: '百度财经' },
 ]
 
 const TOP_STYLE = [

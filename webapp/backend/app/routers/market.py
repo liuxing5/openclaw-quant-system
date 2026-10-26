@@ -8,6 +8,7 @@ from ..cache import ttl_cache
 from ..db import query, scalar
 from ..services import live_market
 from ..services import market as svc
+from ..services import ths_boards
 
 router = APIRouter(tags=["market"])
 
@@ -552,6 +553,68 @@ def board_members(
         if r.get("ts_code")
     ]
     total = int(lead.get("total") or 0)
+
+    # 概念成分来自 THS 缓存时只有代码/名称，补最新日线价格，避免页面显示 —
+    if items and kind == "concept":
+        codes = [x["ts_code"] for x in items if x.get("ts_code")]
+        if codes:
+            try:
+                qrows = query(
+                    """
+                    SELECT DISTINCT ON (ts_code) ts_code, close, pct_chg, amount, turnover_rate
+                    FROM daily_quotes
+                    WHERE ts_code = ANY(%s)
+                    ORDER BY ts_code, trade_date DESC
+                    """,
+                    (codes,),
+                )
+                qmap = {r["ts_code"]: r for r in qrows}
+                for it in items:
+                    q = qmap.get(it["ts_code"]) or {}
+                    it["close"] = q.get("close")
+                    it["pct_chg"] = q.get("pct_chg")
+                    it["amount"] = q.get("amount")
+                    it["turnover_rate"] = q.get("turnover_rate")
+            except Exception:  # noqa: BLE001
+                pass
+
+    if not items and kind == "concept":
+        try:
+            name_row = query(
+                "SELECT concept_name FROM concept_board_quotes "
+                "WHERE concept_code = %s ORDER BY trade_date DESC LIMIT 1",
+                (code,),
+            )
+            name = name_row[0]["concept_name"] if name_row else None
+        except Exception:  # noqa: BLE001
+            name = None
+        lm = ths_boards.get_or_fetch_concept(code, name) if name else []
+        if lm:
+            start = (page - 1) * size
+            page_items = lm[start : start + size]
+            return {
+                "kind": kind,
+                "code": code,
+                "page": page,
+                "size": size,
+                "board_name": name,
+                "items": [
+                    {
+                        "ts_code": m.get("ts_code"),
+                        "stock_name": m.get("name") or m.get("ts_code"),
+                        "board_name": name,
+                        "close": m.get("close"),
+                        "pct_chg": m.get("pct_chg"),
+                        "amount": m.get("amount"),
+                        "turnover_rate": m.get("turnover_rate"),
+                    }
+                    for m in page_items
+                ],
+                "total": len(lm),
+                "degraded": False,
+                "live": False,
+                "source": "ths-concept",
+            }
 
     if not items and kind == "industry":
         try:

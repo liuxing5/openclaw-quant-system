@@ -628,11 +628,13 @@ function DetailView({ code, detail, membersApi, onBack, onPick }) {
   const leaderName = sector?.leader || ''
   const leaderPct =
     num(sector?.leader_pct) ?? (leaderName ? rows.find((r) => r.name === leaderName)?.pct_chg ?? null : null)
+  const memberTotal = Math.max(info?.member_count || 0, membersApi.data?.total || 0, rows.length)
+  const memberAmount = rows.reduce((sum, r) => sum + (num(r.amount) || 0), 0)
 
   const tiles = []
   if (sector) {
     tiles.push({ label: '涨跌幅', value: fmtPct(sector.pct_chg), tone: pctTone(sector.pct_chg) })
-    tiles.push({ label: '成交额', value: fmtAmount(sector.amount) })
+    tiles.push({ label: '成交额', value: fmtAmount(sector.amount || memberAmount) })
     tiles.push({
       label: '主力净流入',
       value: fmtAmount(sector.net_inflow),
@@ -644,7 +646,7 @@ function DetailView({ code, detail, membersApi, onBack, onPick }) {
             : 'text-emerald-600 dark:text-emerald-400',
     })
     if (sector.turnover_rate !== null) tiles.push({ label: '换手率', value: `${fmtNum(sector.turnover_rate, 2)}%` })
-    if (sector.stock_count !== null) tiles.push({ label: '成分股数', value: `${fmtNum(sector.stock_count, 0)} 只` })
+    if (memberTotal) tiles.push({ label: '成分股数', value: `${fmtNum(memberTotal, 0)} 只` })
     tiles.push({ label: '领涨股', value: leaderName || '—', sub: leaderPct !== null ? fmtPct(leaderPct) : null })
   }
 
@@ -655,7 +657,7 @@ function DetailView({ code, detail, membersApi, onBack, onPick }) {
       title={`${KIND_LABEL}分析 / ${sector?.name || code}`}
       subtitle={
         sector
-          ? `${fmtDate(sector.trade_date)} · ${KIND_LABEL}详情 · 成分 ${info?.member_count ?? rows.length} 只`
+          ? `${fmtDate(sector.trade_date)} · ${KIND_LABEL}详情 · 成分 ${memberTotal} 只`
           : `${KIND_LABEL}详情`
       }
       actions={
@@ -719,7 +721,7 @@ function DetailView({ code, detail, membersApi, onBack, onPick }) {
 
               <MembersCard
                 rows={rows}
-                total={info?.member_count}
+                total={memberTotal}
                 degraded={degraded}
                 loading={membersApi.loading && rows.length === 0}
                 error={membersApi.error && rows.length === 0 ? membersApi.error : null}
