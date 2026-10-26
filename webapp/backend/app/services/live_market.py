@@ -267,6 +267,108 @@ def indexes() -> list[dict]:
 # ---------------------------------------------------------------------------
 
 @ttl_cache(10)
+def mode_ladder(mode: str = "limit_up", detail: bool = True) -> dict:
+    """跌停 / 炸板 / 断板 列表（统一成一组 tier，复用连板页渲染）。"""
+    items = _items()
+    br = breadth()
+    day = today()
+
+    def member(it: dict, streak: int = 1) -> dict:
+        code = it.get("ts_code") or it.get("code")
+        return {
+            "ts_code": code,
+            "name": it.get("name") or it.get("stock_name") or code,
+            "board": it.get("board") or _board_name(code or ""),
+            "streak": streak,
+            "status": {"limit_down": "跌停", "broken": "炸板", "failed": "断板"}.get(mode, mode),
+            "close": _f(it.get("price") or it.get("close")),
+            "pct_chg": round(_f(it.get("pct_chg"), 0) or 0, 2),
+            "amount": _f(it.get("amount"), 0) or 0,
+            "turnover_rate": round(_f(it.get("turnover_rate"), 0) or 0, 2),
+            "volume": _f(it.get("volume"), 0) or 0,
+        }
+
+    members: list[dict] = []
+    if mode == "limit_down":
+        for it in items:
+            price = _f(it.get("price"))
+            ldp = _f(it.get("limit_down_price"))
+            if price and ldp and price <= ldp + 0.005:
+                members.append(member(it))
+    elif mode == "broken":
+        for it in items:
+            price = _f(it.get("price"))
+            lup = _f(it.get("limit_up_price"))
+            high = _f(it.get("high"))
+            if price and lup and high and high >= lup - 0.005 and price < lup - 0.005:
+                members.append(member(it))
+    elif mode == "failed":
+        prev_day = (market.trade_dates(2) or [None, None])[1]
+        prev_codes = set(market.limit_up_codes(prev_day)) if prev_day else set()
+        today_lu = {
+            it["ts_code"]
+            for it in items
+            if _f(it.get("limit_up_price")) and (_f(it.get("price")) or 0) >= (_f(it.get("limit_up_price")) or 0) - 0.005
+        }
+        by_code = {it["ts_code"]: it for it in items}
+        for code in prev_codes - today_lu:
+            it = by_code.get(code)
+            if it:
+                members.append(member(it))
+            else:
+                # 今日快照缺失（停牌/源缺失）时退回日线最新价
+                row = query(
+                    "SELECT ts_code, stock_name, close, pct_chg, amount, turnover_rate, volume "
+                    "FROM daily_quotes d LEFT JOIN stock_basic_info s USING (ts_code) "
+                    "WHERE ts_code = %s ORDER BY trade_date DESC LIMIT 1",
+                    (code,),
+                )
+                if row:
+                    r = row[0]
+                    members.append(
+                        {
+                            "ts_code": code,
+                            "name": r.get("stock_name") or code,
+                            "board": _board_name(code),
+                            "streak": 1,
+                            "status": "断板",
+                            "close": _f(r.get("close")),
+                            "pct_chg": round(_f(r.get("pct_chg"), 0) or 0, 2),
+                            "amount": _f(r.get("amount"), 0) or 0,
+                            "turnover_rate": round(_f(r.get("turnover_rate"), 0) or 0, 2),
+                            "volume": _f(r.get("volume"), 0) or 0,
+                        }
+                    )
+
+    members.sort(key=lambda x: (x.get("pct_chg") or 0))
+    tiers = [{"streak": 1, "count": len(members), "members": members if detail else members[:8]}] if members else []
+    return {
+        "trade_date": str(day),
+        "tiers": tiers,
+        "max_streak": 1 if members else 0,
+        "limit_up": br.get("limit_up", 0),
+        "limit_down": br.get("limit_down", 0),
+        "broken": br.get("broken", 0),
+        "touched": br.get("touched", 0),
+        "seal_rate": br.get("seal_rate"),
+        "mode": mode,
+        "live": True,
+        "as_of": _as_of(),
+    }
+
+
+def _board_name(code: str) -> str:
+    pure = (code or "").split(".")[0]
+    if pure.startswith(("688", "689")):
+        return "科创板"
+    if pure.startswith(("300", "301", "302")):
+        return "创业板"
+    if pure.startswith(("4", "8", "920")):
+        return "北交所"
+    return "A主板"
+
+
+@ttl_cache(10)
 def limit_ladder(detail: bool = True) -> dict:
     items = _items()
     if not items:

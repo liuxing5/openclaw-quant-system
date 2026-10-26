@@ -19,7 +19,7 @@ const STAT_DEFS = [
 ]
 
 const SCOPE_TEXT = { 1: '全平台', 2: '本部门', 3: '仅本人' }
-const PLAN_TEXT = { free: '免费版', pro: '专业版', premium: '专业版', enterprise: '机构版' }
+const PLAN_TEXT = { free: '免费版', pro: '专业版', premium: '专业版', enterprise: '机构版', lifetime: '终身会员' }
 
 function pick(obj, keys) {
   if (!obj) return null
@@ -126,6 +126,33 @@ export default function ProfilePage() {
                 )
               })}
             </div>
+
+            {/* 会员 */}
+            <Card>
+              <SectionHeader
+                title="我的会员"
+                subtitle="MEMBERSHIP · 本地系统按会员状态展示，开通请联系管理员"
+                badge={<Badge tone="amber">{PLAN_TEXT[user.plan] || user.plan || '免费版'}</Badge>}
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                <span>会员到期：{fmtDateTime(user.plan_expiry) === '—' ? '—' : fmtDateTime(user.plan_expiry)}</span>
+                <span>额度：{fmtNum(user.quota_used, 0)} / {fmtNum(user.quota_total, 0)}</span>
+                <TextLink to="/buy">升级会员 / 补充额度 →</TextLink>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                {[
+                  { name: '月卡', price: 68 },
+                  { name: '季卡', price: 168 },
+                  { name: '年卡', price: 588 },
+                ].map((p) => (
+                  <div key={p.name} className="rounded-xl border border-slate-200 px-4 py-3 text-center dark:border-slate-700">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{p.name}</p>
+                    <p className="mt-1 text-2xl font-semibold text-slate-900 dark:text-slate-100">¥{p.price}</p>
+                    <p className="mt-1 text-[10px] text-slate-400">联系管理员 QQ：949394127 获取开通</p>
+                  </div>
+                ))}
+              </div>
+            </Card>
 
             <div className="grid gap-4 xl:grid-cols-2">
               {/* 账号资料 */}

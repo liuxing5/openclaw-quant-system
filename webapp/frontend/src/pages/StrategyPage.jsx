@@ -413,6 +413,16 @@ export default function StrategyPage() {
   const [runCode, setRunCode] = useState(null)
   const [toggleCode, setToggleCode] = useState(null)
   const [reloadKey, setReloadKey] = useState(0)
+  const [showCreate, setShowCreate] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [form, setForm] = useState({
+    name: '',
+    code: '',
+    family: 'custom',
+    base_code: 'trend_pullback',
+    description: '',
+    prompt: '',
+  })
 
   const items = useMemo(() => asItems(listQ.data), [listQ.data])
   const stats = useMemo(() => normalizeStats(statsQ.data), [statsQ.data])
@@ -457,6 +467,61 @@ export default function StrategyPage() {
     }
   }
 
+  /** 规则式「AI 生成」：从自然语言里抽关键字匹配内置扫描器，不假装是外部大模型 */
+  const aiFill = () => {
+    const p = (form.prompt || '').trim()
+    const pickBase = () => {
+      if (/涨停|封板|连板/.test(p)) return 'limit_up_breakout'
+      if (/回踩|低吸|趋势/.test(p)) return 'trend_pullback'
+      if (/放量|量能|异动/.test(p)) return 'volume_surge'
+      if (/换手|活跃/.test(p)) return 'high_turnover'
+      if (/龙头|板块/.test(p)) return 'board_leader'
+      if (/北向|外资/.test(p)) return 'northbound_inflow'
+      return 'trend_pullback'
+    }
+    const base = pickBase()
+    const tpl = items.find((x) => strategyOf(x).code === base)
+    const family = tpl ? strategyOf(tpl).family : 'custom'
+    const code = `ai_${Date.now().toString(36)}`
+    setForm((f) => ({
+      ...f,
+      base_code: base,
+      family,
+      code,
+      name: f.name || `AI ${p.slice(0, 12) || '自定义策略'}`,
+      description: f.description || p || '由策略生成器按关键字匹配内置扫描器',
+    }))
+    toast.success('已生成策略草案', '确认参数后点击「创建策略」')
+  }
+
+  const createStrategy = async (e) => {
+    e.preventDefault()
+    if (!form.name.trim() || !form.code.trim()) {
+      toast.error('名称和 code 必填')
+      return
+    }
+    setSaving(true)
+    try {
+      const tpl = items.find((x) => strategyOf(x).code === form.base_code)
+      const baseParams = (tpl && tpl.params) || {}
+      await api.post('/strategies', {
+        code: form.code.trim(),
+        name: form.name.trim(),
+        family: form.family || 'custom',
+        description: form.description || '',
+        params: { ...baseParams, base_code: form.base_code },
+      })
+      toast.success('策略已创建', '已绑定内置扫描器，可直接运行')
+      setShowCreate(false)
+      setForm({ name: '', code: '', family: 'custom', base_code: 'trend_pullback', description: '', prompt: '' })
+      refreshAll()
+    } catch (err) {
+      toast.error('创建失败', err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const tiles = [
     { label: '策略总数', value: fmtNum(stats.total_strategies ?? items.length, 0), sub: '内置可跑策略' },
     { label: '近 30 天运行次数', value: fmtNum(n(stats.runs_30d), 0), sub: '含手动跑批' },
@@ -470,9 +535,14 @@ export default function StrategyPage() {
       title="选股策略"
       subtitle="纯 SQL 全市场扫描 · 命中明细与扫描快照可回溯"
       actions={
-        <Button variant="secondary" size="sm" onClick={refreshAll}>
-          刷新数据
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setShowCreate(true)}>
+            创建策略 / AI 生成
+          </Button>
+          <Button variant="secondary" size="sm" onClick={refreshAll}>
+            刷新数据
+          </Button>
+        </div>
       }
     >
       <div className="space-y-4">
@@ -519,6 +589,76 @@ export default function StrategyPage() {
         </AsyncBlock>
 
         {id ? <StrategyDetail code={id} reloadKey={reloadKey} /> : null}
+
+        {showCreate ? (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4">
+            <Card className="w-full max-w-2xl">
+              <SectionHeader
+                title="创建策略"
+                subtitle="选择内置扫描器作为模板；「AI 生成」只做关键字到模板的规则映射，结果可编辑"
+                action={<Button variant="ghost" size="sm" onClick={() => setShowCreate(false)}>关闭</Button>}
+              />
+              <form onSubmit={createStrategy} className="mt-3 space-y-3">
+                <label className="block">
+                  <span className="mb-1 block text-[11px] text-slate-500">描述你的策略（AI 生成用）</span>
+                  <div className="flex gap-2">
+                    <input
+                      value={form.prompt}
+                      onChange={(e) => setForm((f) => ({ ...f, prompt: e.target.value }))}
+                      placeholder="例如：趋势回踩低吸，放量突破，连板龙头"
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    />
+                    <Button type="button" variant="secondary" size="sm" onClick={aiFill}>AI 生成</Button>
+                  </div>
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] text-slate-500">策略名称</span>
+                    <input
+                      value={form.name}
+                      onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] text-slate-500">策略 code（小写蛇形）</span>
+                    <input
+                      value={form.code}
+                      onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))}
+                      placeholder="my_strategy"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 font-mono text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] text-slate-500">扫描器模板</span>
+                    <select
+                      value={form.base_code}
+                      onChange={(e) => setForm((f) => ({ ...f, base_code: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      {items.filter((x) => strategyOf(x).bestHitRate !== undefined).map((x) => {
+                        const s = strategyOf(x)
+                        return <option key={s.code} value={s.code}>{s.name}（{s.code}）</option>
+                      })}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="mb-1 block text-[11px] text-slate-500">说明</span>
+                    <input
+                      value={form.description}
+                      onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                    />
+                  </label>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="ghost" onClick={() => setShowCreate(false)}>取消</Button>
+                  <Button type="submit" loading={saving}>创建策略</Button>
+                </div>
+              </form>
+            </Card>
+          </div>
+        ) : null}
       </div>
     </PageShell>
   )

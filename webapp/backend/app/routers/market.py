@@ -198,11 +198,15 @@ def limit_ladder(
     date: str | None = None,
     board: str | None = Query(None, description="A主板/创业板/科创板/北交所"),
     streak: int | None = Query(None, ge=1, le=30, description="指定连板高度"),
+    mode: str = Query("limit_up", pattern="^(limit_up|limit_down|broken|failed)$"),
 ):
     use_live = not date and live_market.available()
     if use_live:
-        data = live_market.limit_ladder(detail=True)
         br = live_market.breadth()
+        if mode != "limit_up":
+            data = live_market.mode_ladder(mode)
+        else:
+            data = live_market.limit_ladder(detail=True)
     else:
         day = _parse_date(date) or svc.latest_trade_date()
         if not day:
@@ -218,10 +222,11 @@ def limit_ladder(
         for t in data["tiers"]:
             t["count"] = len(t["members"])
         data["limit_up"] = sum(t["count"] for t in data["tiers"])
-    if streak:
+    if streak and mode == "limit_up":
         data["tiers"] = [t for t in data["tiers"] if t["streak"] == streak]
 
     data["live"] = bool(use_live)
+    data["mode"] = mode
     if use_live:
         data["as_of"] = live_market._as_of()
     data["limit_down"] = br["limit_down"]

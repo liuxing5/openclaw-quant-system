@@ -14,9 +14,10 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { CandlestickChart } from 'echarts/charts'
 import * as echarts from 'echarts/core'
 import Chart, { ACCENT, DOWN, DOWN_SOFT, Sparkline, TIP, UP, UP_SOFT } from '../components/Chart.jsx'
-import { AsyncBlock, Badge, Card, PageShell, SectionHeader, TextLink } from '../components/ui.jsx'
+import { AsyncBlock, Badge, Button, Card, PageShell, SectionHeader, Tabs, TextLink } from '../components/ui.jsx'
 import { api, useApi } from '../lib/api.js'
 import { boardOf, fmtAmount, fmtDate, fmtNum, fmtPct, marketTag, pctTone } from '../lib/format.js'
+import { toast } from '../lib/toast.jsx'
 
 // echarts/core 与 Chart.jsx 共享同一模块实例，注册一次即可让 <Chart> 画 K 线
 echarts.use([CandlestickChart])
@@ -229,7 +230,41 @@ function StockSearchView() {
 
 /* --------------------------------------------------------------- 详情 · K 线 */
 
-function KLinePanel({ bars }) {
+/* --------------------------------------------------------------- 关键位叠加 */
+
+const LEVEL_COLOR = {
+  up: '#f43f5e',
+  down: '#10b981',
+  pivot: '#f59e0b',
+  boll: '#6366f1',
+}
+
+/** 根据当前 Tab 选出一组要画在 K 线上的关键位 */
+function levelLines(levels, overlay) {
+  if (!levels) return []
+  const out = []
+  const push = (label, value, color) => {
+    if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+      out.push({ label, value: Number(value), color })
+    }
+  }
+  if (overlay === 'pivot') {
+    push(`枢轴 P ${fmtNum(levels.pivot, 2)}`, levels.pivot, LEVEL_COLOR.pivot)
+  } else if (overlay === 'prev') {
+    push(`20日高 ${fmtNum(levels.high20, 2)}`, levels.high20, LEVEL_COLOR.up)
+    push(`20日低 ${fmtNum(levels.low20, 2)}`, levels.low20, LEVEL_COLOR.down)
+  } else if (overlay === 'boll') {
+    push(`布林上轨 ${fmtNum(levels.bollUp, 2)}`, levels.bollUp, LEVEL_COLOR.boll)
+    push(`布林中轨 ${fmtNum(levels.ma20, 2)}`, levels.ma20, LEVEL_COLOR.pivot)
+    push(`布林下轨 ${fmtNum(levels.bollLow, 2)}`, levels.bollLow, LEVEL_COLOR.down)
+  } else {
+    push(`压力 R1 ${fmtNum(levels.r1, 2)}`, levels.r1, LEVEL_COLOR.up)
+    push(`支撑 S1 ${fmtNum(levels.s1, 2)}`, levels.s1, LEVEL_COLOR.down)
+  }
+  return out
+}
+
+function KLinePanel({ bars, levels, overlay = 'support' }) {
   const option = useMemo(() => {
     const dates = bars.map((b) => b.date.slice(5))
     const closes = bars.map((b) => b.close)
@@ -267,7 +302,7 @@ function KLinePanel({ bars }) {
         },
       },
       legend: {
-        data: ['MA5', 'MA10', 'MA20'],
+        data: ['MA5', 'MA10', 'MA20', 'MA60'],
         top: 0,
         right: 8,
         textStyle: { color: '#94a3b8', fontSize: 11 },
@@ -347,11 +382,30 @@ function KLinePanel({ bars }) {
         { name: 'MA5', type: 'line', data: ma(5), showSymbol: false, smooth: true, lineStyle: { width: 1.4, color: UP_SOFT } },
         { name: 'MA10', type: 'line', data: ma(10), showSymbol: false, smooth: true, lineStyle: { width: 1.4, color: ACCENT } },
         { name: 'MA20', type: 'line', data: ma(20), showSymbol: false, smooth: true, lineStyle: { width: 1.4, color: DOWN_SOFT } },
+        { name: 'MA60', type: 'line', data: ma(60), showSymbol: false, smooth: true, lineStyle: { width: 1.3, color: '#f59e0b' } },
+        {
+          name: '关键位',
+          type: 'line',
+          data: [],
+          markLine: {
+            silent: true,
+            symbol: 'none',
+            animation: false,
+            label: { color: '#94a3b8', fontSize: 10, formatter: '{b}' },
+            lineStyle: { type: 'dashed', width: 1, color: 'rgba(148,163,184,0.7)' },
+            data: levelLines(levels, overlay).map((x) => ({
+              yAxis: x.value,
+              name: x.label,
+              lineStyle: { color: x.color },
+              label: { color: x.color },
+            })),
+          },
+        },
       ],
     }
-  }, [bars])
+  }, [bars, levels, overlay])
 
-  return <Chart option={option} height={430} className="mt-2" />
+  return <Chart option={option} height={460} className="mt-2" />
 }
 
 /* --------------------------------------------------------------- 详情 · 指标 */
@@ -377,9 +431,21 @@ function StockDetailView({ symbol }) {
     return { daily, profile }
   }, [symbol])
 
+  const liveQ = useApi(() => api.get('/market-data/realtime', { codes: symbol }), [symbol])
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.hidden) return
+      liveQ.reload()
+    }, 10_000)
+    return () => clearInterval(id)
+  }, [liveQ.reload])
+
   // 记忆化：dataQ.data 未就绪时也不会每次渲染都换引用，避免下面的 memo 反复重算
   const daily = useMemo(() => (dataQ.data && dataQ.data.daily) || {}, [dataQ.data])
   const profile = (dataQ.data && dataQ.data.profile) || null
+  const live = useMemo(() => (liveQ.data?.items || [])[0] || {}, [liveQ.data])
+  const liveMeta = liveQ.data || {}
 
   const bars = useMemo(() => {
     const raw = daily.series || daily.bars || daily.items || (Array.isArray(daily) ? daily : [])
@@ -416,20 +482,75 @@ function StockDetailView({ symbol }) {
     return inRange.length ? inRange : bars
   }, [bars])
 
-  // 四态之一：接口 404/500 时给可重试的错误块，绝不白屏（所有 hook 必须在此之前调用完）
-  if (dataQ.error) {
-    return (
-      <PageShell title="个股分析" subtitle={`代码 ${symbol}`}>
-        <AsyncBlock loading={dataQ.loading} error={dataQ.error} onRetry={dataQ.reload} loadingLabel="个股数据加载中">
-          <Card>
-            <p className="text-sm text-slate-500 dark:text-slate-400">暂无该标的数据</p>
-          </Card>
-        </AsyncBlock>
-      </PageShell>
-    )
-  }
+  const [overlay, setOverlay] = useState('support')
+  const [alertOpen, setAlertOpen] = useState(false)
+  const [alertPrice, setAlertPrice] = useState('')
+  const [alertType, setAlertType] = useState('price_above')
+  const [savingAlert, setSavingAlert] = useState(false)
+  const [target, setTarget] = useState('')
+  const [proj, setProj] = useState(null)
+  const [projLoading, setProjLoading] = useState(false)
 
-  const last = bars[bars.length - 1] || {}
+  // 今日实时价追加成一根「盘中 K」，让 K 线也跟到 10-26 而不是停在 10-23
+  const chartBars = useMemo(() => {
+    const price = num(live.price)
+    if (!price) return bars
+    const now = new Date()
+    if (now.getDay() === 0 || now.getDay() === 6) return bars
+    const day = String(liveMeta.as_of || '').slice(0, 10) || now.toISOString().slice(0, 10)
+    if (!day) return bars
+    if (bars.length && bars[bars.length - 1].date === day) return bars
+    return [
+      ...bars,
+      {
+        date: day,
+        open: num(live.open) ?? price,
+        high: num(live.high) ?? price,
+        low: num(live.low) ?? price,
+        close: price,
+        volume: num(live.volume),
+        amount: num(live.amount),
+        pct_chg: num(live.pct_chg),
+        pre_close: num(live.pre_close),
+        turnover_rate: num(live.turnover_rate),
+        limit_up: num(live.limit_up_price),
+        limit_down: num(live.limit_down_price),
+      },
+    ]
+  }, [bars, live])
+
+  const levels = useMemo(() => {
+    const src = chartBars.length ? chartBars : bars
+    if (!src.length) return null
+    const lastBar = src[src.length - 1]
+    const h = lastBar.high ?? lastBar.close
+    const l = lastBar.low ?? lastBar.close
+    const c = lastBar.close
+    const pivot = (h + l + c) / 3
+    const recent = src.slice(-20)
+    const high20 = Math.max(...recent.map((x) => x.high ?? x.close).filter((v) => v !== null))
+    const low20 = Math.min(...recent.map((x) => x.low ?? x.close).filter((v) => v !== null))
+    const closes20 = recent.map((x) => x.close).filter((v) => v !== null)
+    const ma20 = closes20.length ? closes20.reduce((a, b) => a + b, 0) / closes20.length : null
+    const mean = ma20 ?? c
+    const variance = closes20.length
+      ? closes20.reduce((a, b) => a + (b - mean) ** 2, 0) / closes20.length
+      : 0
+    const std = Math.sqrt(variance)
+    return {
+      pivot,
+      r1: 2 * pivot - l,
+      s1: 2 * pivot - h,
+      high20,
+      low20,
+      ma20,
+      bollUp: mean + 2 * std,
+      bollLow: mean - 2 * std,
+    }
+  }, [bars, chartBars])
+
+  // 所有 hook 必须在提前 return 之前调用完
+  const last = chartBars[chartBars.length - 1] || bars[bars.length - 1] || {}
   const latest = profile?.latest || daily.latest || {}
   const name = profile?.name || daily.name || symbol
   const market = profile?.market || daily.market || ''
@@ -437,22 +558,29 @@ function StockDetailView({ symbol }) {
   const industry = profile?.industry || daily.industry
   const listDate = profile?.list_date || daily.list_date
 
-  const price = num(latest.close) ?? last.close
-  const pct = num(latest.pct_chg) ?? last.pct_chg
-  const preClose = num(latest.prev_close) ?? last.pre_close
+  const price = num(live.price) ?? num(latest.close) ?? last.close
+  const pct = num(live.pct_chg) ?? num(latest.pct_chg) ?? last.pct_chg
+  const preClose = num(live.pre_close) ?? num(latest.prev_close) ?? last.pre_close
   const chg = price !== null && preClose !== null ? Math.round((price - preClose) * 100) / 100 : null
-  const quoteTime = daily.quote_time || (last.date ? `截至 ${last.date} 收盘` : '')
+  const quoteTime = liveMeta.as_of
+    ? `行情时间：${String(liveMeta.as_of).replace('T', ' ').slice(0, 16)}（实时）`
+    : daily.quote_time || (last.date ? `截至 ${last.date} 收盘` : '')
 
-  // 52 周高低与区间涨跌：全部由日线数组前端计算（≤250 根）
-  const high52 = yearBars.reduce((m, b) => (b.high !== null && b.high > m ? b.high : m), -Infinity)
-  const low52 = yearBars.reduce((m, b) => (b.low !== null && b.low < m ? b.low : m), Infinity)
+  // 52 周高低与区间涨跌：日线数组前端计算，实时价作为区间终点
+  const high52 = Math.max(
+    yearBars.reduce((m, b) => (b.high !== null && b.high > m ? b.high : m), -Infinity),
+    num(live.high) || -Infinity,
+  )
+  const low52 = Math.min(
+    yearBars.reduce((m, b) => (b.low !== null && b.low < m ? b.low : m), Infinity),
+    num(live.low) || Infinity,
+  )
 
   const rangeReturn = (k) => {
-    if (bars.length < 2) return null
+    if (bars.length < 2 || price === null) return null
     const from = bars[Math.max(0, bars.length - 1 - k)].close
-    const to = bars[bars.length - 1].close
-    if (from === null || !from || to === null) return null
-    return ((to / from - 1) * 100)
+    if (from === null || !from) return null
+    return ((price / from - 1) * 100)
   }
   const ranges = [
     { label: '近 5 日', v: rangeReturn(5) },
@@ -462,23 +590,77 @@ function StockDetailView({ symbol }) {
     { label: '近 250 日', v: rangeReturn(250) },
   ]
 
+  const quote = {
+    open: num(live.open) ?? num(latest.open) ?? last.open,
+    high: num(live.high) ?? num(latest.high) ?? last.high,
+    low: num(live.low) ?? num(latest.low) ?? last.low,
+    amount: num(live.amount) ?? num(latest.amount) ?? last.amount,
+    turnover_rate: num(live.turnover_rate) ?? num(latest.turnover_rate) ?? last.turnover_rate,
+    volume_ratio: num(live.volume_ratio) ?? num(pick(latest, ['volume_ratio', 'vol_ratio'])),
+    pe: num(live.pe_ratio) ?? num(pick(latest, ['pe', 'pe_ttm', 'pe_lyr'])),
+    pb: num(live.pb_ratio) ?? num(pick(latest, ['pb'])),
+    total_mv: num(live.market_cap) ?? num(pick(latest, ['total_mv', 'total_market_cap', 'market_cap'])),
+    float_mv: num(live.circulating_market_cap) ?? num(pick(latest, ['float_mv', 'float_market_cap'])),
+    limit_up: num(live.limit_up_price) ?? last.limit_up,
+    limit_down: num(live.limit_down_price) ?? last.limit_down,
+  }
+
   const metrics = [
-    { label: '今开', value: fmtNum(num(latest.open) ?? last.open, 2), raw: num(latest.open) ?? last.open, base: preClose },
-    { label: '最高', value: fmtNum(num(latest.high) ?? last.high, 2), raw: num(latest.high) ?? last.high, base: preClose },
-    { label: '最低', value: fmtNum(num(latest.low) ?? last.low, 2), raw: num(latest.low) ?? last.low, base: preClose },
+    { label: '今开', value: fmtNum(quote.open, 2), raw: quote.open, base: preClose },
+    { label: '最高', value: fmtNum(quote.high, 2), raw: quote.high, base: preClose },
+    { label: '最低', value: fmtNum(quote.low, 2), raw: quote.low, base: preClose },
     { label: '昨收', value: fmtNum(preClose, 2) },
-    { label: '成交额', value: fmtAmount(num(latest.amount) ?? last.amount) },
-    { label: '换手率', value: num(latest.turnover_rate) ?? last.turnover_rate ? `${fmtNum(num(latest.turnover_rate) ?? last.turnover_rate, 2)}%` : '—' },
-    { label: '量比', value: fmtNum(num(pick(latest, ['volume_ratio', 'vol_ratio'])), 2) },
-    { label: 'PE(动)', value: fmtNum(num(pick(latest, ['pe', 'pe_ttm', 'pe_lyr'])), 2) },
-    { label: 'PB', value: fmtNum(num(pick(latest, ['pb'])), 2) },
-    { label: '总市值', value: fmtAmount(num(pick(latest, ['total_mv', 'total_market_cap', 'market_cap']))) },
-    { label: '流通市值', value: fmtAmount(num(pick(latest, ['float_mv', 'float_market_cap']))) },
-    { label: '涨停价', value: fmtNum(last.limit_up, 2), tone: 'text-rose-600 dark:text-rose-400' },
-    { label: '跌停价', value: fmtNum(last.limit_down, 2), tone: 'text-emerald-600 dark:text-emerald-400' },
+    { label: '成交额', value: fmtAmount(quote.amount) },
+    { label: '换手率', value: quote.turnover_rate !== null ? `${fmtNum(quote.turnover_rate, 2)}%` : '—' },
+    { label: '量比', value: fmtNum(quote.volume_ratio, 2) },
+    { label: 'PE(动)', value: fmtNum(quote.pe, 2) },
+    { label: 'PB', value: fmtNum(quote.pb, 2) },
+    { label: '总市值', value: fmtAmount(quote.total_mv) },
+    { label: '流通市值', value: fmtAmount(quote.float_mv) },
+    { label: '涨停价', value: fmtNum(quote.limit_up, 2), tone: 'text-rose-600 dark:text-rose-400' },
+    { label: '跌停价', value: fmtNum(quote.limit_down, 2), tone: 'text-emerald-600 dark:text-emerald-400' },
   ]
 
-  const spark = bars.map((b) => b.close).filter((v) => v !== null)
+  const spark = chartBars.map((b) => b.close).filter((v) => v !== null)
+
+  async function runProjection() {
+    setProjLoading(true)
+    try {
+      const res = await api.post(`/stock-analysis/${encodeURIComponent(symbol)}/projection`, {
+        target: num(target) || undefined,
+      })
+      setProj(res)
+    } catch (e) {
+      toast.error('推演失败', e.message)
+    } finally {
+      setProjLoading(false)
+    }
+  }
+
+  async function saveAlert(e) {
+    e.preventDefault()
+    const p = num(alertPrice)
+    if (!p || p <= 0) {
+      toast.error('请填写有效价格')
+      return
+    }
+    setSavingAlert(true)
+    try {
+      await api.post('/alerts', {
+        ts_code: symbol,
+        alert_type: alertType,
+        threshold: p,
+        direction: alertType.includes('above') ? 'up' : 'down',
+      })
+      toast.success('点位提醒已创建', `${symbol} ${alertType.includes('above') ? '突破' : '跌破'} ${p}`)
+      setAlertOpen(false)
+      setAlertPrice('')
+    } catch (e2) {
+      toast.error('创建失败', e2.message)
+    } finally {
+      setSavingAlert(false)
+    }
+  }
 
   return (
     <div className="space-y-4">
@@ -503,13 +685,52 @@ function StockDetailView({ symbol }) {
               {profile ? null : <span className="text-amber-500">档案接口暂不可用，已用行情数据降级</span>}
             </div>
           </div>
-          <div className="text-right">
-            <p className={`text-3xl font-bold tabular-nums ${pctTone(pct)}`}>{fmtNum(price, 2)}</p>
-            <p className={`mt-0.5 text-sm font-medium tabular-nums ${pctTone(pct)}`}>
-              {chg === null ? '—' : `${chg > 0 ? '+' : ''}${fmtNum(chg, 2)}`} · {fmtPct(pct)}
-            </p>
+          <div className="flex flex-col items-end gap-2">
+            <div className="flex items-center gap-2">
+              {live.price ? <Badge tone="rose">实时</Badge> : null}
+              <Button size="sm" variant="secondary" onClick={() => setAlertOpen((v) => !v)}>
+                点位提醒
+              </Button>
+            </div>
+            <div className="text-right">
+              <p className={`text-3xl font-bold tabular-nums ${pctTone(pct)}`}>{fmtNum(price, 2)}</p>
+              <p className={`mt-0.5 text-sm font-medium tabular-nums ${pctTone(pct)}`}>
+                {chg === null ? '—' : `${chg > 0 ? '+' : ''}${fmtNum(chg, 2)}`} · {fmtPct(pct)}
+              </p>
+            </div>
           </div>
         </div>
+
+        {alertOpen ? (
+          <form onSubmit={saveAlert} className="mt-4 flex flex-wrap items-end gap-3 border-t border-slate-200 pt-3 dark:border-slate-700">
+            <label className="block">
+              <span className="mb-1 block text-[11px] text-slate-500">提醒类型</span>
+              <select
+                value={alertType}
+                onChange={(e) => setAlertType(e.target.value)}
+                className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              >
+                <option value="price_above">价格突破</option>
+                <option value="price_below">价格跌破</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[11px] text-slate-500">触发价（元）</span>
+              <input
+                type="number"
+                step="0.01"
+                value={alertPrice}
+                onChange={(e) => setAlertPrice(e.target.value)}
+                placeholder={fmtNum(levels?.r1, 2)}
+                className="w-36 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs tabular-nums dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+              />
+            </label>
+            <Button size="sm" type="submit" loading={savingAlert}>
+              创建提醒
+            </Button>
+            <span className="text-[11px] text-slate-400">触发记录在「持仓提醒」页查看</span>
+          </form>
+        ) : null}
       </Card>
 
       <div className="grid gap-4 xl:grid-cols-3">
@@ -528,7 +749,48 @@ function StockDetailView({ symbol }) {
             empty={!dataQ.loading && !dataQ.error && bars.length === 0}
             emptyText="该标的暂无日线数据"
           >
-            <KLinePanel bars={bars} />
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+              <Tabs
+                tabs={[
+                  { value: 'support', label: '压力支撑' },
+                  { value: 'pivot', label: '枢轴点' },
+                  { value: 'prev', label: '前高前低' },
+                  { value: 'boll', label: '布林带' },
+                ]}
+                value={overlay}
+                onChange={setOverlay}
+              />
+              <span className="text-[11px] text-slate-400">最近 {bars.length} 个交易日 · 实时价已追加为最后一根</span>
+            </div>
+            <KLinePanel bars={chartBars} levels={levels} overlay={overlay} />
+            <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+              {[
+                { label: '压力位 R1', value: levels?.r1, tone: 'rose' },
+                { label: '枢轴 P', value: levels?.pivot, tone: 'amber' },
+                { label: '支撑位 S1', value: levels?.s1, tone: 'emerald' },
+                { label: '20 日区间', value: levels ? `${fmtNum(levels.low20, 2)} - ${fmtNum(levels.high20, 2)}` : '—' },
+              ].map((x) => (
+                <div key={x.label} className="rounded-lg border border-slate-200 bg-slate-50/60 px-3 py-2 dark:border-slate-700 dark:bg-slate-800/50">
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">{x.label}</p>
+                  <p
+                    className={`mt-0.5 text-sm font-semibold tabular-nums ${
+                      x.tone === 'rose'
+                        ? 'text-rose-500'
+                        : x.tone === 'emerald'
+                          ? 'text-emerald-500'
+                          : x.tone === 'amber'
+                            ? 'text-amber-500'
+                            : 'text-slate-700 dark:text-slate-200'
+                    }`}
+                  >
+                    {typeof x.value === 'number' ? fmtNum(x.value, 2) : x.value ?? '—'}
+                  </p>
+                  {typeof x.value === 'number' && price ? (
+                    <p className={`text-[10px] tabular-nums ${pctTone(x.value - price)}`}>{fmtPct(((x.value / price) - 1) * 100)}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
           </AsyncBlock>
           <div className="mt-2 flex items-center justify-between gap-3 text-[11px] text-slate-500 dark:text-slate-400">
             <span>红涨绿跌 · 滚轮缩放，拖拽平移</span>
@@ -592,6 +854,70 @@ function StockDetailView({ symbol }) {
             />
           ))}
         </div>
+      </Card>
+
+      {/* AI 量价推演 */}
+      <Card>
+        <SectionHeader
+          title="AI 量价推演"
+          subtitle="由本地量化引擎结合均线、量价、枢轴与资金流，推演目标价路径、触发条件和概率"
+          badge={proj ? <Badge tone="blue">概率 {proj.probability}%</Badge> : null}
+        />
+        <div className="mt-3 flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="mb-1 block text-[11px] text-slate-500 dark:text-slate-400">目标价格（可空，默认取最近阻力）</span>
+            <input
+              type="number"
+              step="0.01"
+              value={target}
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder={fmtNum(levels?.r1, 2)}
+              className="w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm tabular-nums text-slate-700 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            />
+          </label>
+          <Button loading={projLoading} onClick={runProjection}>
+            开始推演
+          </Button>
+          <span className="text-[11px] text-slate-400">当前价 {fmtNum(price, 2)} · {proj ? `数据日 ${proj.trade_date}` : '点击开始'}</span>
+        </div>
+
+        {proj ? (
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+              <p className="text-[11px] text-slate-500">目标价 / 上行空间</p>
+              <p className="mt-1 text-xl font-semibold tabular-nums text-rose-500">{fmtNum(proj.target, 2)}</p>
+              <p className="text-[11px] text-slate-400">{fmtPct(proj.upside_pct)} · 止损 {fmtNum(proj.stop, 2)}（{fmtPct(proj.downside_pct)}）</p>
+              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div className="h-full rounded-full bg-brand-500" style={{ width: `${proj.probability}%` }} />
+              </div>
+              <p className="mt-1 text-[10px] text-slate-400">趋势分 {fmtNum(proj.trend_score, 0)} · 量比 {fmtNum(proj.volume_ratio, 2)}</p>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+              <p className="mb-2 text-[11px] text-slate-500">推演路径</p>
+              <ol className="space-y-1.5">
+                {proj.path.map((x) => (
+                  <li key={x.label} className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">{x.label}</span>
+                    <span className="tabular-nums text-slate-700 dark:text-slate-200">{fmtNum(x.price, 2)}</span>
+                    <Badge tone="slate">{x.prob}%</Badge>
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div className="rounded-xl border border-slate-200 p-3 dark:border-slate-700">
+              <p className="mb-2 text-[11px] text-slate-500">触发条件</p>
+              <ul className="space-y-2">
+                {proj.triggers.map((t, i) => (
+                  <li key={i} className="text-xs leading-5">
+                    <p className={t.tone === 'up' ? 'text-rose-500' : 'text-emerald-500'}>{t.condition}</p>
+                    <p className="text-slate-400">{t.action}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        ) : null}
+        <p className="mt-3 text-[10px] text-slate-400">{proj?.disclaimer || '数据仅供研究参考，不构成投资建议。'}</p>
       </Card>
     </div>
   )

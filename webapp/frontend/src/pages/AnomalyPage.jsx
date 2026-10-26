@@ -1,107 +1,117 @@
 /**
- * 实时异动（/anomaly）：盘中异动事件时间流。
+ * 实时异动（/anomaly）：全市场实时信号表。
  *
- * 为什么做成时间轴而不是表格：异动是「事件」而不是「指标」，盯盘时要按发生顺序
- * 从新到旧读；类型徽标 + 说明文字比列对齐更能交代一次异动的上下文。
- * 30 秒静默轮询保证流式更新，「立即扫描」触发后端即时重算并提示新增条数。
+ * 对齐原站信息结构：板块 / 信号 / 方向 / 时段 / 只看持仓 五组筛选 + 固定列宽表格 +
+ * 30 秒静默轮询 + 立即扫描。数据来自 `/anomaly/events`（腾讯全市场快照推导）。
  */
 import { useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { AsyncBlock, Badge, Button, Card, EmptyState, PageShell, Pagination, SectionHeader, Tabs } from '../components/ui.jsx'
 import { api, useApi } from '../lib/api.js'
-import { fmtDate, fmtNum, fmtPct, fmtTime, pctTone } from '../lib/format.js'
+import { baseCode, fmtNum, fmtPct, fmtTime, pctTone } from '../lib/format.js'
 import { toast } from '../lib/toast.jsx'
 
 const POLL_MS = 30_000
-const PAGE_SIZE = 20
+const PAGE_SIZE = 50
 
-const SCOPE_TABS = [
-  { value: 'all_market', label: '全市场（含板块）' },
-  { value: 'symbol', label: '个股' },
+const SIGNAL_OPTIONS = [
+  { value: '', label: '全部信号' },
+  { value: 'limit_up', label: '涨停' },
+  { value: 'broken', label: '炸板' },
+  { value: 'limit_down', label: '跌停' },
+  { value: 'rapid_rise', label: '急拉' },
+  { value: 'rapid_fall', label: '急跌' },
+  { value: 'volume_spike', label: '量能异动' },
+  { value: 'turnover_high', label: '高换手' },
+  { value: 'new_high', label: '阶段新高' },
+  { value: 'board_surge', label: '板块大涨' },
 ]
 
-/** kind -> 中文名 + 徽标色 + 时间轴圆点色（涨 rose / 跌 emerald / 量能 amber / 结构 brand） */
 const KIND_META = {
-  rapid_rise: { label: '急拉', tone: 'rose', dot: 'bg-rose-500' },
-  volume_spike: { label: '放量', tone: 'amber', dot: 'bg-amber-500' },
-  limit_up: { label: '涨停', tone: 'rose', dot: 'bg-rose-600' },
-  limit_down: { label: '跌停', tone: 'emerald', dot: 'bg-emerald-500' },
-  turnover_high: { label: '高换手', tone: 'amber', dot: 'bg-amber-400' },
-  new_high: { label: '新高', tone: 'blue', dot: 'bg-brand-500' },
-  board_surge: { label: '板块大涨', tone: 'rose', dot: 'bg-rose-400' },
-}
-const KIND_UNKNOWN = { label: '其他异动', tone: 'slate', dot: 'bg-slate-400' }
-
-const metaOf = (kind) => KIND_META[kind] || { ...KIND_UNKNOWN, label: kind || KIND_UNKNOWN.label }
-
-/** 兼容字段别名：契约字段优先，历史 schema 字段兜底，避免后端口径微调导致整页空 */
-function pick(raw, main, alias) {
-  const v = raw[main]
-  return v === undefined || v === null ? raw[alias] : v
+  limit_up: { label: '涨停', tone: 'rose' },
+  broken: { label: '炸板', tone: 'amber' },
+  limit_down: { label: '跌停', tone: 'emerald' },
+  rapid_rise: { label: '急拉', tone: 'rose' },
+  rapid_fall: { label: '急跌', tone: 'emerald' },
+  volume_spike: { label: '量能异动', tone: 'amber' },
+  turnover_high: { label: '高换手', tone: 'amber' },
+  new_high: { label: '阶段新高', tone: 'blue' },
+  board_surge: { label: '板块大涨', tone: 'rose' },
 }
 
-function normalize(raw, idx) {
-  const tsCode = pick(raw, 'ts_code', 'target') || ''
-  return {
-    id: raw.id || `${tsCode}-${idx}`,
-    code: tsCode,
-    name: raw.name || tsCode || '—',
-    kind: pick(raw, 'kind', 'event_type') || '',
-    price: raw.price,
-    pct: pick(raw, 'pct_chg', 'change_pct'),
-    detail: raw.detail || '',
-    at: pick(raw, 'occurred_at', 'detected_at') || raw.data_timestamp || null,
-    scope: raw.scope || 'symbol',
-  }
-}
+const BOARD_TABS = [
+  { value: '', label: '全部' },
+  { value: '主板', label: '主板' },
+  { value: '创业板', label: '创业板' },
+  { value: '科创板', label: '科创板' },
+  { value: '北交所', label: '北交所' },
+  { value: 'ST', label: 'ST' },
+  { value: '板块', label: '板块' },
+]
+const DIRECTION_TABS = [
+  { value: '', label: '全部方向' },
+  { value: 'up', label: '上涨 / 流入' },
+  { value: 'down', label: '下跌 / 流出' },
+]
+const SESSION_TABS = [
+  { value: '', label: '全部' },
+  { value: '竞价', label: '竞价' },
+  { value: '盘中', label: '盘中' },
+  { value: '偏移', label: '偏移' },
+]
 
-function EventRow({ ev, isLast }) {
-  const meta = metaOf(ev.kind)
+const num = (v) => (v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? null : Number(v))
+
+function Row({ ev, index, onOpen }) {
+  const meta = KIND_META[ev.kind] || { label: ev.kind_label || ev.kind, tone: 'slate' }
+  const pct = num(ev.pct_chg)
   return (
-    <li className="relative flex gap-3 pb-4 last:pb-0">
-      {!isLast ? (
-        <span
-          aria-hidden="true"
-          className="absolute left-[4.5rem] top-5 bottom-0 w-px bg-slate-200 dark:bg-slate-800"
-        />
-      ) : null}
-
-      {/* 时间列：事件流的“轴刻度” */}
-      <div className="w-14 shrink-0 pt-0.5 text-right">
-        <p className="text-xs font-medium tabular-nums text-slate-600 dark:text-slate-300">{fmtTime(ev.at)}</p>
-        <p className="text-[10px] tabular-nums text-slate-400 dark:text-slate-500">{fmtDate(ev.at)}</p>
-      </div>
-
-      <span
-        aria-hidden="true"
-        className={`relative z-10 mt-2 size-2.5 shrink-0 rounded-full ring-4 ring-white dark:ring-slate-900 ${meta.dot}`}
-      />
-
-      <Card className="min-w-0 flex-1 p-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 items-center gap-2">
-            <Badge tone={meta.tone}>{meta.label}</Badge>
-            <span className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{ev.name}</span>
-            <span className="shrink-0 text-[11px] tabular-nums text-slate-400 dark:text-slate-500">{ev.code}</span>
-            {ev.scope !== 'symbol' ? <Badge tone="slate">板块</Badge> : null}
-          </div>
-          <div className="flex shrink-0 items-center gap-3 tabular-nums">
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-200">
-              {ev.price === null || ev.price === undefined ? '—' : fmtNum(ev.price, 2)}
+    <tr
+      className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
+      onClick={() => ev.scope !== 'board' && onOpen(ev.ts_code)}
+    >
+      <td className="px-2 py-1.5 text-center text-slate-400">{index}</td>
+      <td className="px-2 py-1.5">
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium text-slate-700 dark:text-slate-200">{ev.name || baseCode(ev.ts_code)}</span>
+          <span className="font-mono text-[10px] text-slate-400">{ev.ts_code}</span>
+          {ev.board && ev.board !== '板块' ? (
+            <span className="rounded bg-slate-100 px-1 text-[9px] text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              {ev.board === '主板' ? '主' : ev.board === '创业板' ? '创' : ev.board === '科创板' ? '科' : '北'}
             </span>
-            <span className={`text-sm font-semibold ${pctTone(ev.pct)}`}>{fmtPct(ev.pct)}</span>
-          </div>
+          ) : null}
         </div>
-        {ev.detail ? (
-          <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">{ev.detail}</p>
-        ) : null}
-      </Card>
-    </li>
+      </td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">
+        {ev.price === null ? '—' : fmtNum(ev.price, 2)}
+      </td>
+      <td className={`px-2 py-1.5 text-right tabular-nums ${pctTone(pct)}`}>{fmtPct(pct)}</td>
+      <td className="px-2 py-1.5">
+        <Badge tone={meta.tone}>{meta.label}</Badge>
+        <span className="ml-1 max-w-48 truncate text-[10px] text-slate-400" title={ev.detail}>
+          {ev.detail}
+        </span>
+      </td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">{fmtNum(ev.volume_ratio, 2)}</td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+        {ev.amplitude === null || ev.amplitude === undefined ? '—' : `${fmtNum(ev.amplitude, 2)}%`}
+      </td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+        {ev.turnover_rate === null || ev.turnover_rate === undefined ? '—' : `${fmtNum(ev.turnover_rate, 2)}%`}
+      </td>
+      <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">{fmtTime(ev.occurred_at)}</td>
+    </tr>
   )
 }
 
 export default function AnomalyPage() {
-  const [scope, setScope] = useState('all_market')
+  const navigate = useNavigate()
   const [page, setPage] = useState(1)
+  const [signal, setSignal] = useState('')
+  const [board, setBoard] = useState('')
+  const [direction, setDirection] = useState('')
+  const [session, setSession] = useState('')
+  const [onlyHoldings, setOnlyHoldings] = useState(false)
   const [scanning, setScanning] = useState(false)
   const [scannedAt, setScannedAt] = useState(null)
 
@@ -110,64 +120,64 @@ export default function AnomalyPage() {
       api.get('/anomaly/events', {
         page,
         size: PAGE_SIZE,
-        scope,
-        all_market: scope === 'all_market' ? 1 : 0,
+        scope: 'all_market',
+        signal: signal || undefined,
+        board: board || undefined,
+        direction: direction || undefined,
+        session: session || undefined,
+        only_holdings: onlyHoldings ? 1 : undefined,
       }),
-    [page, scope],
+    [page, signal, board, direction, session, onlyHoldings],
   )
 
-  // 轮询：异动是盘中高频信息，30 秒静默刷新一次；隐藏标签页不空转
   useEffect(() => {
     const id = setInterval(() => {
-      if (document.hidden) return
-      reload()
+      if (!document.hidden) reload()
     }, POLL_MS)
     return () => clearInterval(id)
   }, [reload])
 
-  const items = useMemo(() => {
-    const rows = (data?.items || []).map(normalize)
-    // 后端默认按时间倒序，这里再兜一次底，保证「最新在最上」
-    return rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')))
-  }, [data])
-
-  const lastScan = scannedAt || data?.last_scan_at || data?.scanned_at || null
+  const items = data?.items || []
+  const live = !!data?.meta?.live
+  const lastScan = scannedAt || data?.last_scan_at
 
   const scan = async () => {
     setScanning(true)
     try {
-      const r = await api.post('/anomaly/events/scan', { scope })
-      const scanned = r?.scanned ?? r?.scanned_count ?? r?.total
-      const added = r?.new ?? r?.new_count ?? r?.added
-      const parts = []
-      if (scanned !== undefined && scanned !== null) parts.push(`扫描 ${scanned} 条`)
-      if (added !== undefined && added !== null) parts.push(`新增异动 ${added} 条`)
-      toast.success('扫描完成', parts.length ? parts.join('，') : '已按最新行情重新计算异动')
+      const r = await api.post('/anomaly/events/scan', { scope: 'all_market' })
+      toast.success('扫描完成', `扫描 ${r?.scanned ?? 0} 条，新增 ${r?.new ?? 0} 条`)
       setScannedAt(new Date().toISOString())
       reload()
     } catch (e) {
-      // 失败不吞错：按钮保持可用，用户可直接再次点击重试
       toast.error('扫描失败', e.message)
     } finally {
       setScanning(false)
     }
   }
 
+  const active = useMemo(() => {
+    const parts = []
+    if (signal) parts.push(SIGNAL_OPTIONS.find((x) => x.value === signal)?.label)
+    if (board) parts.push(board)
+    if (direction === 'up') parts.push('上涨')
+    if (direction === 'down') parts.push('下跌')
+    if (session) parts.push(session)
+    if (onlyHoldings) parts.push('只看持仓')
+    return parts.join(' · ')
+  }, [signal, board, direction, session, onlyHoldings])
+
   return (
     <PageShell
       title="实时异动"
       subtitle={
-        data?.meta?.live
-          ? `全市场实时快照 · ${fmtTime(data.as_of || data.meta.as_of)} 更新 · 共 ${data.total} 条 · 30 秒刷新`
-          : `数据日 ${data?.trade_date || '—'}（最近交易日快照）· 共 ${data?.total ?? '—'} 条事件 · 30 秒自动刷新`
+        live
+          ? `全市场实时快照 · ${fmtTime(data?.as_of || data?.meta?.as_of)} 更新 · 共 ${data?.total ?? 0} 条 · 30 秒刷新`
+          : `最近交易日快照 · 共 ${data?.total ?? 0} 条 · 30 秒刷新`
       }
       actions={
-        <div className="flex items-center gap-2 text-[11px] text-slate-400 dark:text-slate-500">
+        <div className="flex items-center gap-2 text-[11px] text-slate-400">
           <span>
-            最近扫描：
-            <b className="font-medium tabular-nums text-slate-600 dark:text-slate-300">
-              {lastScan ? fmtTime(lastScan) : '—'}
-            </b>
+            最近成功扫描 <b className="tabular-nums text-slate-600 dark:text-slate-300">{lastScan ? fmtTime(lastScan) : '—'}</b>
           </span>
           <Button size="sm" loading={scanning} onClick={scan}>
             立即扫描
@@ -175,50 +185,66 @@ export default function AnomalyPage() {
         </div>
       }
     >
-      <Card className="flex flex-wrap items-center justify-between gap-3">
-        <Tabs
-          tabs={SCOPE_TABS}
-          value={scope}
-          onChange={(v) => {
-            setScope(v)
-            setPage(1)
-          }}
-        />
-        <p className="text-[11px] text-slate-500 dark:text-slate-400">
-          按发生时间倒序 · 每页 {PAGE_SIZE} 条 · 行情与异动由后端扫描任务实时计算
-        </p>
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <Tabs tabs={BOARD_TABS} value={board} onChange={(v) => { setBoard(v); setPage(1) }} />
+          <select
+            value={signal}
+            onChange={(e) => { setSignal(e.target.value); setPage(1) }}
+            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            {SIGNAL_OPTIONS.map((x) => (
+              <option key={x.value} value={x.value}>{x.label}</option>
+            ))}
+          </select>
+          <Tabs tabs={DIRECTION_TABS} value={direction} onChange={(v) => { setDirection(v); setPage(1) }} />
+          <Tabs tabs={SESSION_TABS} value={session} onChange={(v) => { setSession(v); setPage(1) }} />
+          <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+            <input type="checkbox" checked={onlyHoldings} onChange={(e) => { setOnlyHoldings(e.target.checked); setPage(1) }} />
+            只看持仓股
+          </label>
+          {active ? <span className="text-[11px] text-brand-500">{active}</span> : null}
+        </div>
+        <p className="text-[11px] text-slate-400">按发生时间倒序 · 每页 {PAGE_SIZE} 条 · 点击个股行进入 AI 量价推演</p>
       </Card>
 
-      {/* 首屏才走三态；已有数据时轮询只做静默刷新，避免整页闪烁 */}
       {!data ? (
-        <AsyncBlock loading={loading} error={error} onRetry={reload} loadingLabel="异动事件加载中…" />
+        <AsyncBlock loading={loading} error={error} onRetry={reload} loadingLabel="异动事件加载中" />
+      ) : items.length === 0 ? (
+        <Card>
+          <EmptyState text="当前筛选下没有异动" hint="可放宽板块 / 信号 / 方向筛选，或点击「立即扫描」重算" />
+        </Card>
       ) : (
-        <div className="space-y-4">
-          <Card>
-            <SectionHeader
-              title="异动事件流"
-              subtitle={`${SCOPE_TABS.find((t) => t.value === scope)?.label || ''} · 最新事件在最上方`}
-              badge={<Badge tone="blue">{items.length} 条 / 本页</Badge>}
-            />
-
-            {items.length === 0 ? (
-              <div className="mt-3">
-                <EmptyState
-                  text="暂无异动事件"
-                  hint={error ? `数据加载失败：${error.message}` : '可点击右上角「立即扫描」主动计算一次盘中异动'}
-                />
-              </div>
-            ) : (
-              <ol className="mt-4">
+        <Card>
+          <SectionHeader
+            title="异动信号"
+            subtitle={`${items.length} 条 / 本页 · 固定高度表格`}
+            badge={<Badge tone={live ? 'rose' : 'slate'}>{live ? '实时' : 'T-1'}</Badge>}
+          />
+          <div className="mt-2 max-h-[70vh] overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
+            <table className="w-full text-left text-xs">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+                <tr>
+                  <th className="px-2 py-2 text-center">#</th>
+                  <th className="px-2 py-2">代码 / 名称</th>
+                  <th className="px-2 py-2 text-right">现价</th>
+                  <th className="px-2 py-2 text-right">今日</th>
+                  <th className="px-2 py-2">信号</th>
+                  <th className="px-2 py-2 text-right">量比</th>
+                  <th className="px-2 py-2 text-right">振幅</th>
+                  <th className="px-2 py-2 text-right">换手</th>
+                  <th className="px-2 py-2 text-right">时间</th>
+                </tr>
+              </thead>
+              <tbody>
                 {items.map((ev, i) => (
-                  <EventRow key={ev.id} ev={ev} isLast={i === items.length - 1} />
+                  <Row key={ev.id} ev={ev} index={(page - 1) * PAGE_SIZE + i + 1} onOpen={(code) => navigate(`/stock-analysis/${baseCode(code)}`)} />
                 ))}
-              </ol>
-            )}
-
-            <Pagination page={page} pageSize={PAGE_SIZE} total={data.total || 0} onChange={setPage} />
-          </Card>
-        </div>
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={data.total || 0} onChange={setPage} />
+        </Card>
       )}
     </PageShell>
   )

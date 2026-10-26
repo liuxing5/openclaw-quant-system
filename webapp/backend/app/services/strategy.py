@@ -602,15 +602,17 @@ RUNNABLE = tuple(_SCANNERS)
 def _def_row(row: dict | None) -> dict | None:
     if not row:
         return None
+    params = row["params"] or {}
+    base = params.get("base_code") if isinstance(params, dict) else None
     return {
         "code": row["code"],
         "name": row["name"],
         "family": row["family"],
         "description": row["description"],
-        "params": row["params"] or {},
+        "params": params,
         "enabled": bool(row["enabled"]),
         "sort": row.get("sort") or 0,
-        "runnable": row["code"] in _SCANNERS,
+        "runnable": row["code"] in _SCANNERS or base in _SCANNERS,
         "seeded": row["code"] in {s["code"] for s in SEEDS},
     }
 
@@ -757,6 +759,9 @@ def run_strategy(code: str) -> dict:
     if d is None:
         raise KeyError(code)
     fn = _SCANNERS.get(code)
+    if fn is None:
+        params = d.get("params") or {}
+        fn = _SCANNERS.get(params.get("base_code")) if isinstance(params, dict) else None
     if fn is None:
         raise NotImplementedError(code)
 

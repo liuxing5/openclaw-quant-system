@@ -17,6 +17,11 @@ def anomaly_events(
     size: int = Query(20, ge=1, le=100),
     scope: str = Query("all_market", pattern="^(all_market|symbol|board)$"),
     all_market: bool = Query(True),
+    signal: str | None = Query(None, description="事件类型，逗号分隔"),
+    board: str | None = Query(None, description="主板/创业板/科创板/北交所/ST/板块"),
+    direction: str | None = Query(None, pattern="^(up|down)?$"),
+    only_holdings: bool = Query(False),
+    session: str | None = Query(None, description="竞价/盘中/偏移"),
     date_str: str | None = Query(None, alias="date"),
 ):
     day = None
@@ -27,7 +32,17 @@ def anomaly_events(
             raise HTTPException(status_code=400, detail="date 必须是 YYYY-MM-DD") from None
     # all_market=false 与 scope=symbol 等价，保留两个参数是为了兼容原站口径
     eff_scope = scope if scope != "all_market" else ("all_market" if all_market else "symbol")
-    return svc.events(day, eff_scope, page, size)
+    return svc.events(
+        day,
+        eff_scope,
+        page,
+        size,
+        signal=signal,
+        board=board,
+        direction=direction,
+        only_holdings=only_holdings,
+        session=session,
+    )
 
 
 @router.post("/anomaly/events/scan")

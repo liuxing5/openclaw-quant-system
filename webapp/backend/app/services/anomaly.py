@@ -27,6 +27,8 @@ KIND_LABELS = {
     "limit_up": "涨停",
     "limit_down": "跌停",
     "rapid_rise": "急拉",
+    "rapid_fall": "急跌",
+    "broken": "炸板",
     "volume_spike": "放量",
     "turnover_high": "高换手",
     "new_high": "阶段新高",
@@ -37,23 +39,27 @@ SCOPES = ("symbol", "board", "all_market")
 
 # 每类事件的采样上限：保证单次响应 < 100KB，同时覆盖最极端的一批标的
 _LIMITS = {
-    "limit_up": 45,
-    "limit_down": 30,
-    "rapid_rise": 45,
-    "volume_spike": 45,
-    "turnover_high": 35,
-    "new_high": 35,
-    "board_surge": 30,
+    "limit_up": 100,
+    "broken": 80,
+    "limit_down": 60,
+    "rapid_rise": 150,
+    "rapid_fall": 100,
+    "volume_spike": 150,
+    "turnover_high": 100,
+    "new_high": 80,
+    "board_surge": 40,
 }
 
 _PRIO = {
     "limit_up": 1,
-    "limit_down": 2,
-    "rapid_rise": 3,
-    "board_surge": 4,
-    "volume_spike": 5,
-    "new_high": 6,
-    "turnover_high": 7,
+    "broken": 2,
+    "limit_down": 3,
+    "rapid_rise": 4,
+    "rapid_fall": 5,
+    "board_surge": 6,
+    "volume_spike": 7,
+    "new_high": 8,
+    "turnover_high": 9,
 }
 
 _DEFAULT_RULES = [
@@ -212,6 +218,15 @@ def _detail(kind: str, row: dict) -> str:
         if amt:
             parts.append(f"成交 {_fmt_amount(amt)}")
         return " · ".join(parts)
+    if kind == "rapid_fall":
+        parts = [f"跌幅 {pct:.2f}%" if pct is not None else "快速跳水"]
+        if vr is not None:
+            parts.append(f"量比 {vr:.2f}")
+        if amt:
+            parts.append(f"成交 {_fmt_amount(amt)}")
+        return " · ".join(parts)
+    if kind == "broken":
+        return "炸板（触及涨停后打开）" + (f" · 换手 {tr:.1f}%" if tr is not None else "")
     if kind == "volume_spike":
         parts = [f"量比 {vr:.2f}" if vr is not None else "成交量异常"]
         if pct is not None:
@@ -296,6 +311,9 @@ def _live_boards() -> list[dict]:
                 "pct_chg": round(pct, 2),
                 "detail": detail,
                 "scope": "board",
+                "board": "板块",
+                "session": "盘中",
+                "is_st": False,
                 "occurred_at": None,
             }
         )
@@ -316,6 +334,16 @@ def _build_live_pool(scope: str = "all_market") -> dict | None:
     highs = _high60(day)
     buckets: dict[str, list[dict]] = {k: [] for k in KINDS}
 
+    def board_of(code: str) -> str:
+        pure = code.split(".")[0]
+        if pure.startswith(("688", "689")):
+            return "科创板"
+        if pure.startswith(("300", "301", "302")):
+            return "创业板"
+        if pure.startswith(("4", "8", "920")):
+            return "北交所"
+        return "主板"
+
     for it in items:
         price = _f(it.get("price"))
         pct = _f(it.get("pct_chg"))
@@ -325,8 +353,14 @@ def _build_live_pool(scope: str = "all_market") -> dict | None:
         ldp = _f(it.get("limit_down_price"))
         tr = _f(it.get("turnover_rate"))
         vr = _f(it.get("volume_ratio"))
+        high = _f(it.get("high"))
+        low = _f(it.get("low"))
+        pre = _f(it.get("pre_close"))
         code = it["ts_code"]
         occurred = it.get("as_of") or snap.get("as_of")
+        amplitude = round((high - low) / pre * 100, 2) if high and low and pre else None
+        hm = str(occurred or "")[11:16]
+        session = "竞价" if hm and hm < "09:30" else ("盘中" if hm and hm <= "15:00" else "偏移")
 
         def add(kind: str):
             row = dict(it)
@@ -340,18 +374,31 @@ def _build_live_pool(scope: str = "all_market") -> dict | None:
                     "kind_label": KIND_LABELS[kind],
                     "price": round(price, 2),
                     "pct_chg": round(pct, 2),
+                    "volume_ratio": round(vr, 2) if vr is not None else None,
+                    "turnover_rate": round(tr, 2) if tr is not None else None,
+                    "amplitude": amplitude,
+                    "board": board_of(code),
+                    "is_st": bool(it.get("is_st")),
+                    "session": session,
                     "detail": _detail(kind, row),
                     "scope": "symbol",
                     "occurred_at": occurred,
                 }
             )
 
-        if lup and price >= lup - 0.005:
+        is_lu = bool(lup and price >= lup - 0.005)
+        is_ld = bool(ldp and price <= ldp + 0.005)
+        touched = bool(lup and high and high >= lup - 0.005)
+        if is_lu:
             add("limit_up")
-        if ldp and price <= ldp + 0.005:
+        if is_ld:
             add("limit_down")
-        if pct >= 7 and not (lup and price >= lup - 0.005):
+        if touched and not is_lu:
+            add("broken")
+        if pct >= 7 and not is_lu:
             add("rapid_rise")
+        if pct <= -7 and not is_ld:
+            add("rapid_fall")
         if vr is not None and vr >= 2.5:
             add("volume_spike")
         if tr is not None and tr >= 15:
@@ -447,11 +494,27 @@ def event_pool(day: dt.date, scope: str = "all_market") -> dict:
     return {"trade_date": str(day), "items": items, "by_kind": by_kind}
 
 
+@ttl_cache(60)
+def _holding_codes() -> set[str]:
+    try:
+        rows = query(
+            "SELECT ts_code FROM app_watchlist_items UNION SELECT ts_code FROM app_holdings"
+        )
+        return {r["ts_code"] for r in rows if r.get("ts_code")}
+    except Exception:  # noqa: BLE001
+        return set()
+
+
 def events(
     day: dt.date | None = None,
     scope: str = "all_market",
     page: int = 1,
     size: int = 20,
+    signal: str | None = None,
+    board: str | None = None,
+    direction: str | None = None,
+    only_holdings: bool = False,
+    session: str | None = None,
 ) -> dict:
     """分页事件流：盘中优先用实时快照推导，失败/指定日期时退回日线快照。"""
     explicit_day = day
@@ -464,7 +527,33 @@ def events(
 
     live = _build_live_pool(scope) if explicit_day is None else None
     pool = live or event_pool(day, scope)
-    rows = sorted(pool["items"], key=lambda x: x.get("occurred_at") or "", reverse=True)
+    rows = list(pool["items"])
+
+    sig = (signal or "").strip()
+    if sig and sig not in ("all", "全部"):
+        wanted = {x.strip() for x in sig.split(",") if x.strip()}
+        rows = [x for x in rows if x["kind"] in wanted]
+    bd = (board or "").strip()
+    if bd and bd not in ("全部", "all"):
+        if bd == "ST":
+            rows = [x for x in rows if x.get("is_st")]
+        elif bd in ("板块", "board"):
+            rows = [x for x in rows if x.get("scope") == "board"]
+        else:
+            rows = [x for x in rows if x.get("board") == bd]
+    dr = (direction or "").strip()
+    if dr in ("up", "down"):
+        rows = [x for x in rows if (x.get("pct_chg") or 0) > 0] if dr == "up" else [
+            x for x in rows if (x.get("pct_chg") or 0) < 0
+        ]
+    ss = (session or "").strip()
+    if ss and ss not in ("全部", "all"):
+        rows = [x for x in rows if x.get("session") == ss]
+    if only_holdings:
+        codes = _holding_codes()
+        rows = [x for x in rows if x.get("ts_code") in codes]
+
+    rows.sort(key=lambda x: x.get("occurred_at") or "", reverse=True)
     start = (page - 1) * size
     last_scan = _last_scan()
     return {
@@ -488,6 +577,13 @@ def events(
                 else "日线快照无逐笔时间，事件时间按当日 09:30—14:55 稳定回放"
             ),
             "scope": scope,
+            "filters": {
+                "signal": sig or None,
+                "board": bd or None,
+                "direction": dr or None,
+                "only_holdings": bool(only_holdings),
+                "session": ss or None,
+            },
         },
     }
 

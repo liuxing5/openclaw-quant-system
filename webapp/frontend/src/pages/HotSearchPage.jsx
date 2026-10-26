@@ -45,10 +45,10 @@ function strengthOf(item, rank) {
 }
 
 function splitTitle(item) {
-  const raw = item.title || `${item.name || '—'}`
+  const raw = item.title || item.name || item.stock_name || '—'
   const parts = raw.split('·').map((s) => s.trim())
   if (parts.length >= 2) return { name: parts[0], code: parts.slice(1).join(' · ') }
-  return { name: item.name || raw, code: item.code || item.ts_code || '' }
+  return { name: item.name || item.stock_name || raw, code: item.code || item.ts_code || '' }
 }
 
 export default function HotSearchPage() {

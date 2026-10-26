@@ -28,6 +28,13 @@ const BOARD_TABS = [
   { value: '北交所', label: '北交所' },
 ]
 
+const MODE_TABS = [
+  { value: 'limit_up', label: '涨停' },
+  { value: 'limit_down', label: '跌停' },
+  { value: 'broken', label: '炸板' },
+  { value: 'failed', label: '断板' },
+]
+
 const num = (v) =>
   v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? null : Number(v)
 
@@ -113,14 +120,16 @@ function normalizeLadder(raw) {
 
 /* ---------------------------------------------------------------- 统计条 / 层卡 */
 
-function StatStrip({ summary, highest }) {
+function StatStrip({ summary, highest, mode = 'limit_up', shown = 0 }) {
   const tiles = [
     { label: '涨停', value: fmtNum(summary.limit_up, 0), tone: 'text-rose-600 dark:text-rose-400' },
     { label: '跌停', value: fmtNum(summary.limit_down, 0), tone: 'text-emerald-600 dark:text-emerald-400' },
     { label: '炸板', value: fmtNum(summary.broken, 0), tone: 'text-amber-600 dark:text-amber-400' },
     { label: '触板', value: fmtNum(summary.touched, 0), tone: 'text-slate-900 dark:text-slate-100' },
     { label: '封板率', value: fmtRate(summary.seal_rate), tone: 'text-slate-900 dark:text-slate-100' },
-    { label: '最高板', value: highest ? `${highest} 板` : '—', tone: 'text-rose-600 dark:text-rose-400' },
+    mode === 'limit_up'
+      ? { label: '最高板', value: highest ? `${highest} 板` : '—', tone: 'text-rose-600 dark:text-rose-400' }
+      : { label: '在榜', value: `${shown}`, tone: 'text-slate-900 dark:text-slate-100' },
   ]
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
@@ -156,7 +165,7 @@ function LevelBar({ levels, maxLevel, maxCount }) {
   )
 }
 
-function MemberCard({ m, fields, onOpen }) {
+function MemberCard({ m, fields, onOpen, mode = 'limit_up' }) {
   return (
     <button
       type="button"
@@ -168,8 +177,8 @@ function MemberCard({ m, fields, onOpen }) {
         <span className="min-w-0 truncate text-[13px] font-medium text-slate-800 group-hover:text-rose-600 dark:text-slate-100 dark:group-hover:text-rose-300">
           {m.name}
         </span>
-        <Badge tone="rose" className="shrink-0">
-          {m.level}板
+        <Badge tone={mode === 'limit_up' ? 'rose' : mode === 'limit_down' ? 'emerald' : 'amber'} className="shrink-0">
+          {mode === 'limit_up' ? `${m.level}板` : m.status || '名单'}
         </Badge>
       </div>
       <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] text-slate-400 dark:text-slate-500">
@@ -203,35 +212,46 @@ function MemberCard({ m, fields, onOpen }) {
   )
 }
 
-function TierCard({ tier, maxLevel, maxCount, fields, onOpen }) {
+function TierCard({ tier, maxLevel, maxCount, fields, onOpen, mode = 'limit_up' }) {
   const color = tierColor(tier.level, maxLevel)
   const pct = maxCount > 0 ? Math.max(3, (tier.count / maxCount) * 100) : 0
+  const isUp = mode === 'limit_up'
+  const modeLabel = { limit_down: '跌停', broken: '炸板', failed: '断板' }[mode] || '名单'
   return (
     <Card className="overflow-hidden" style={{ borderLeft: `4px solid ${color}` }}>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex items-baseline gap-1">
-          <span className="text-3xl font-bold leading-none tabular-nums" style={{ color }}>
-            {tier.level}
-          </span>
-          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">板</span>
+          {isUp ? (
+            <>
+              <span className="text-3xl font-bold leading-none tabular-nums" style={{ color }}>
+                {tier.level}
+              </span>
+              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">板</span>
+            </>
+          ) : (
+            <span className="text-lg font-bold" style={{ color }}>{modeLabel}</span>
+          )}
         </div>
         <div className="min-w-24 flex-1">
           <div className="flex items-center justify-between gap-2 text-[11px] text-slate-400">
             <span>
-              {tier.level <= 1 ? '今日涨停（首板）' : '昨日连板晋级'}
-              {tier.level === maxLevel && tier.level > 1 ? ' · 空间板' : ''}
+              {isUp
+                ? `${tier.level <= 1 ? '今日涨停（首板）' : '昨日连板晋级'}${tier.level === maxLevel && tier.level > 1 ? ' · 空间板' : ''}`
+                : `${modeLabel}名单`}
             </span>
             <span className="font-semibold tabular-nums text-slate-600 dark:text-slate-300">{tier.count} 只</span>
           </div>
-          <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-            <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
-          </div>
+          {isUp ? (
+            <div className="mt-1 h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+              <div className="h-full rounded-full" style={{ width: `${pct}%`, background: color }} />
+            </div>
+          ) : null}
         </div>
       </div>
 
       <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
         {tier.members.map((m) => (
-          <MemberCard key={m.code || m.name} m={m} fields={fields} onOpen={onOpen} />
+          <MemberCard key={m.code || m.name} m={m} fields={fields} onOpen={onOpen} mode={mode} />
         ))}
       </div>
     </Card>
@@ -244,10 +264,11 @@ export default function LimitLadderPage() {
   const navigate = useNavigate()
   const [minLevel, setMinLevel] = useState(0)
   const [board, setBoard] = useState('')
+  const [mode, setMode] = useState('limit_up')
 
   const { data, loading, error, reload } = useApi(
-    () => api.get('/limit-ladder', { min_level: minLevel || undefined, board: board || undefined }),
-    [minLevel, board],
+    () => api.get('/limit-ladder', { min_level: minLevel || undefined, board: board || undefined, mode }),
+    [minLevel, board, mode],
   )
 
   // 静默轮询：页面隐藏时跳过，卸载时清理，避免后台标签页空转
@@ -265,9 +286,9 @@ export default function LimitLadderPage() {
     if (!ladder) return null
     const tiers = ladder.tiers
       .map((t) => ({ ...t, members: t.members.filter((m) => !board || m.board === board) }))
-      .filter((t) => t.level >= minLevel && t.members.length > 0)
+      .filter((t) => (mode === 'limit_up' ? t.level >= minLevel : true) && t.members.length > 0)
     return { summary: ladder.summary, tiers }
-  }, [ladder, minLevel, board])
+  }, [ladder, minLevel, board, mode])
 
   const levelOptions = useMemo(() => {
     const max = Math.max(ladder?.summary?.highest || 1, minLevel)
@@ -309,7 +330,7 @@ export default function LimitLadderPage() {
       title="连板排行"
       subtitle={
         view
-          ? `连板梯队 · 数据日 ${fmtDate(view.summary.trade_date)}${
+          ? `${MODE_TABS.find((x) => x.value === mode)?.label || '连板'} · 数据日 ${fmtDate(view.summary.trade_date)}${
               view.summary.updated_at ? ` · 更新于 ${String(view.summary.updated_at).replace('T', ' ').slice(0, 16)}` : ''
             }`
           : '连板梯队 · 按连板高度分层'
@@ -324,7 +345,21 @@ export default function LimitLadderPage() {
       }
     >
       <div className="space-y-4">
-        {view ? <StatStrip summary={view.summary} highest={highest} /> : null}
+        <Card className="flex flex-wrap items-center justify-between gap-2 p-2">
+          <Tabs
+            tabs={MODE_TABS}
+            value={mode}
+            onChange={(v) => {
+              setMode(v)
+              setMinLevel(0)
+              setBoard('')
+            }}
+          />
+          <span className="text-[11px] text-slate-400">
+            {mode === 'limit_up' ? '按连板高度分层' : mode === 'limit_down' ? '跌停名单' : mode === 'broken' ? '炸板（触板后打开）' : '断板（昨日涨停今日未封）'}
+          </span>
+        </Card>
+        {view ? <StatStrip summary={view.summary} highest={highest} mode={mode} shown={shown} /> : null}
 
         <AsyncBlock
           loading={loading}
@@ -340,27 +375,35 @@ export default function LimitLadderPage() {
               <div className="grid gap-4 lg:grid-cols-3">
                 <Card className="lg:col-span-2">
                   <SectionHeader
-                    title="连板高度统计"
-                    subtitle={`${shown} 只在榜 · 从最高板逐级递减`}
-                    badge={<Badge tone="rose">最高 {highest} 板</Badge>}
+                    title={mode === 'limit_up' ? '连板高度统计' : '筛选结果'}
+                    subtitle={mode === 'limit_up' ? `${shown} 只在榜 · 从最高板逐级递减` : `共 ${shown} 只`}
+                    badge={<Badge tone="rose">{mode === 'limit_up' ? `最高 ${highest} 板` : `${shown} 只`}</Badge>}
                   />
                   <div className="mt-3">
-                    <LevelBar levels={levelRows} maxLevel={highest} maxCount={maxCount} />
+                    {mode === 'limit_up' ? (
+                      <LevelBar levels={levelRows} maxLevel={highest} maxCount={maxCount} />
+                    ) : (
+                      <p className="py-10 text-center text-xs text-slate-400">
+                        当前为「{MODE_TABS.find((x) => x.value === mode)?.label}」名单，按涨跌幅排序；点击个股进入分析
+                      </p>
+                    )}
                   </div>
                 </Card>
 
                 <Card>
                   <SectionHeader title="筛选" subtitle="按最低板数 / 板块缩小范围" />
                   <div className="mt-3 space-y-3">
-                    <div>
-                      <p className="mb-1 text-[11px] text-slate-400">最低板数</p>
-                      <Select
-                        className="w-full"
-                        value={minLevel}
-                        onChange={(v) => setMinLevel(Number(v))}
-                        options={levelOptions}
-                      />
-                    </div>
+                    {mode === 'limit_up' ? (
+                      <div>
+                        <p className="mb-1 text-[11px] text-slate-400">最低板数</p>
+                        <Select
+                          className="w-full"
+                          value={minLevel}
+                          onChange={(v) => setMinLevel(Number(v))}
+                          options={levelOptions}
+                        />
+                      </div>
+                    ) : null}
                     <div>
                       <p className="mb-1 text-[11px] text-slate-400">板块</p>
                       <Tabs tabs={BOARD_TABS} value={board} onChange={setBoard} />
@@ -377,6 +420,7 @@ export default function LimitLadderPage() {
                     maxLevel={highest}
                     maxCount={maxTierCount}
                     fields={fields}
+                    mode={mode}
                     onOpen={(code) => navigate(`/stock-analysis/${code}`)}
                   />
                 ))}
