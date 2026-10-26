@@ -255,10 +255,10 @@ _SPEC_FILTERS = {
     "hot_theme": lambda f: f("pct_chg") >= 3 and f("amount") >= 5e8 and f("turnover_rate") >= 3,
     "low_rebound": lambda f: f("pct_chg") > 0 and f("close") < f("ma20") * 1.03 and f("close") > f("ma5"),
     "trend_quality": lambda f: f("close") > f("ma20") and f("roe") >= 8,
-    "macd_golden": lambda f: f("close") > f("ma5") > f("ma10") and f("momentum_score") >= 60,
+    "macd_golden": lambda f: f("macd_cross") == "golden" or (f("hist") > 0 and f("macd_hist_turn") == "positive"),
     "double_low": lambda f: f("valuation_score") >= 75 and f("pct_chg") > -2,
     "limit_gene": lambda f: (f("pct_chg") >= 7 or f("close") >= f("hh20") * 0.99) and f("turnover_rate") >= 4,
-    "chan_theory": lambda f: f("close") > f("ma20") and f("ma20") > f("ma60") and f("trend_score") >= 60,
+    "chan_theory": lambda f: f("chan_signal") in ("buy1", "buy2", "buy3") and f("chan_trend") != "down",
     "ma_golden": lambda f: f("close") > f("ma5") > f("ma10") > f("ma20") and f("volume") > f("vma20"),
     "box_breakout": lambda f: f("close") >= f("hh20") * 0.99 and f("pct_chg") >= 5,
     "l1l2_resonance": lambda f: f("volume") >= f("vma20") * 1.5 and f("pct_chg") >= 3,
@@ -271,7 +271,7 @@ _SPEC_FILTERS = {
     "shrink_pullback": lambda f: f("close") > f("ma20") and f("volume") < f("vma20") * 0.8 and f("pct_chg") < 2,
     "bluechip_quality": lambda f: f("total_market_cap") >= 5e10 and f("roe") >= 10 and f("valuation_score") >= 60,
     "limit_pullback": lambda f: -3 <= f("pct_chg") <= 3 and f("close") > f("ma5") and f("turnover_rate") >= 3,
-    "wave_theory": lambda f: f("close") > f("ma20") and f("close") >= f("ma60") and f("trend_score") >= 55,
+    "wave_theory": lambda f: f("chan_trend") == "up" and f("chan_signal") in ("buy2", "buy3"),
     "balanced_factor": lambda f: f("trend_score") >= 60 and f("quality_score") >= 55 and f("valuation_score") >= 55,
     "smart_deep_scan": lambda f: True,
 }
@@ -316,9 +316,35 @@ def scan_code(code: str, limit: int = 100) -> dict:
         f"SELECT * FROM {_TABLE} WHERE trade_date = %s ORDER BY score DESC, amount DESC LIMIT 1800",
         (day,),
     )
+    # 真实 MACD / 缠论结构（若技术表已构建）
+    try:
+        tech = {
+            r["ts_code"]: r
+            for r in query(
+                "SELECT ts_code, dif, dea, hist, macd_cross, macd_hist_turn, chan_signal, "
+                "chan_trend, pivot_low, pivot_high, last_bottom, last_top, stroke_count, fractal_count "
+                "FROM app_technical_snapshot "
+                "WHERE trade_date = (SELECT MAX(trade_date) FROM app_technical_snapshot) "
+                "AND ts_code = ANY(%s)",
+                ([r["ts_code"] for r in rows],),
+            )
+        }
+    except Exception:  # noqa: BLE001
+        tech = {}
+    if tech:
+        for r in rows:
+            r.update(tech.get(r["ts_code"]) or {})
     fn = _SPEC_FILTERS.get(code)
     if fn:
-        rows = [r for r in rows if fn(lambda k, r=r: _f(r.get(k)) or 0)]
+        def _field_for(row):
+            def _get(k):
+                if k in ("macd_cross", "macd_hist_turn", "chan_signal", "chan_trend"):
+                    return str(row.get(k) or "")
+                return _f(row.get(k)) or 0
+
+            return _get
+
+        rows = [r for r in rows if fn(_field_for(r))]
     rows.sort(key=lambda r: -_spec_score(r, code))
     rows = rows[:limit]
     scanned = int(scalar("SELECT COUNT(*) FROM daily_quotes WHERE trade_date = %s", (day,)) or 0)
@@ -345,6 +371,20 @@ def scan_code(code: str, limit: int = 100) -> dict:
                     "risk": _f(r.get("risk_score")),
                 },
                 "reasons": _reasons(r),
+                "macd": {
+                    "dif": _f(r.get("dif")),
+                    "dea": _f(r.get("dea")),
+                    "hist": _f(r.get("hist")),
+                    "cross": r.get("macd_cross"),
+                    "hist_turn": r.get("macd_hist_turn"),
+                },
+                "chan": {
+                    "signal": r.get("chan_signal"),
+                    "trend": r.get("chan_trend"),
+                    "pivot_low": _f(r.get("pivot_low")),
+                    "pivot_high": _f(r.get("pivot_high")),
+                    "stroke_count": r.get("stroke_count"),
+                },
                 "rank": i + 1,
             }
         )
@@ -510,4 +550,11 @@ def _reasons(r: dict) -> list[str]:
         out.append("利润高增")
     if hh20 and close >= hh20 * 0.99:
         out.append("接近20日新高")
-    return out[:5]
+    tech = []
+    if r.get("macd_cross") == "golden":
+        tech.append("MACD金叉")
+    if r.get("macd_hist_turn") == "positive":
+        tech.append("MACD柱转正")
+    if r.get("chan_signal") in ("buy1", "buy2", "buy3"):
+        tech.append(f"缠论{r.get('chan_signal').replace('buy', '买点')}")
+    return (tech + out)[:5]

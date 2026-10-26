@@ -432,6 +432,7 @@ function StockDetailView({ symbol }) {
   }, [symbol])
 
   const liveQ = useApi(() => api.get('/market-data/realtime', { codes: symbol }), [symbol])
+  const techQ = useApi(() => api.get(`/stock-analysis/${symbol}/technical`), [symbol])
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -854,6 +855,70 @@ function StockDetailView({ symbol }) {
             />
           ))}
         </div>
+      </Card>
+
+      {/* 真实 MACD / 缠论结构 */}
+      <Card>
+        <SectionHeader
+          title="MACD / 缠论结构"
+          subtitle="EMA12/26/DEA9 真实计算；缠论做了包含合并、顶底分型、笔与最近中枢"
+          badge={
+            techQ.data?.macd?.cross ? (
+              <Badge tone={techQ.data.macd.cross === 'golden' ? 'rose' : techQ.data.macd.cross === 'dead' ? 'emerald' : 'slate'}>
+                {techQ.data.macd.cross === 'golden' ? 'MACD 金叉' : techQ.data.macd.cross === 'dead' ? 'MACD 死叉' : techQ.data.macd.cross === 'above' ? 'DIF 在 DEA 上方' : 'DIF 在 DEA 下方'}
+              </Badge>
+            ) : null
+          }
+        />
+        <div className="mt-3 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {[
+            { label: 'DIF', value: fmtNum(techQ.data?.macd?.dif, 3) },
+            { label: 'DEA', value: fmtNum(techQ.data?.macd?.dea, 3) },
+            { label: 'MACD 柱', value: fmtNum(techQ.data?.macd?.hist, 3), tone: pctTone(techQ.data?.macd?.hist) },
+            {
+              label: '柱线状态',
+              value:
+                techQ.data?.macd?.hist_turn === 'positive'
+                  ? '由负转正'
+                  : techQ.data?.macd?.hist_turn === 'negative'
+                    ? '由正转负'
+                    : '—',
+            },
+          ].map((x) => (
+            <MetricTile key={x.label} label={x.label} value={x.value} tone={x.tone} />
+          ))}
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {[
+            {
+              label: '缠论信号',
+              value: {
+                buy1: '买点1',
+                buy2: '买点2',
+                buy3: '买点3',
+                sell1: '卖点1',
+                sell2: '卖点2',
+                sell3: '卖点3',
+                hold: '持有',
+              }[techQ.data?.chan?.chan_signal] || '—',
+              tone: String(techQ.data?.chan?.chan_signal || '').startsWith('buy') ? 'text-rose-500' : 'text-emerald-500',
+            },
+            { label: '结构趋势', value: techQ.data?.chan?.chan_trend === 'up' ? '向上' : techQ.data?.chan?.chan_trend === 'down' ? '向下' : '—' },
+            {
+              label: '最近中枢',
+              value:
+                techQ.data?.chan?.pivot_low !== null && techQ.data?.chan?.pivot_low !== undefined
+                  ? `${fmtNum(techQ.data.chan.pivot_low, 2)} - ${fmtNum(techQ.data.chan.pivot_high, 2)}`
+                  : '—',
+            },
+            { label: '笔 / 分型', value: `${fmtNum(techQ.data?.chan?.stroke_count, 0)} / ${fmtNum(techQ.data?.chan?.fractal_count, 0)}` },
+          ].map((x) => (
+            <MetricTile key={x.label} label={x.label} value={x.value} tone={x.tone} />
+          ))}
+        </div>
+        <p className="mt-2 text-[10px] text-slate-400">
+          数据日 {techQ.data?.trade_date || '—'} · 取最近 {techQ.data?.bars || 0} 根日线；技术信号只作研究参考。
+        </p>
       </Card>
 
       {/* AI 量价推演 */}
