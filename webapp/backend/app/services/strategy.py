@@ -33,6 +33,7 @@ import uuid
 from decimal import Decimal
 
 from ..db import execute, query, query_one, scalar
+from . import smart_scan
 
 MAX_STORED_HITS = 100  # app_strategy_runs.hits 只存前 100 条（契约硬要求）
 MAX_RETURNED_HITS = 200  # 单次 run 返回给前端的命中上限，payload 目标 < 100KB
@@ -105,6 +106,48 @@ SEEDS: list[dict] = [
         "sort": 6,
     },
 ]
+
+# 原站策略池的常用形态，统一由 smart_scan 的多因子引擎驱动：
+# preset 决定硬过滤条件，min_score 决定入池门槛，避免为每个形态写一份重复 SQL。
+_PRESET_SEEDS = [
+    ("multi_trend", "多头趋势跟踪", "trend", "收盘价站稳 5/10/20 日均线且均线向上发散，顺势选多头强势股。", "trend", 62),
+    ("dragon_head", "龙头策略", "momentum", "板块启动时识别率先涨停、换手活跃的领涨龙头股。", "leader", 58),
+    ("yang_three_yin", "一阳夹三阴", "pattern", "大阳线后连续三根缩量小阴整理，趋势延续的中继形态。", "reversal", 55),
+    ("hot_theme", "热点题材", "sector", "跟踪政策与产业热点，判断题材强度与个股相对强弱。", "leader", 58),
+    ("low_rebound", "低位反弹精选", "reversal", "低位、流动性、换手和回撤硬条件，四维评分仅用于池内排序。", "reversal", 52),
+    ("trend_quality", "趋势质量", "trend", "兼顾趋势确认与基本面质量的中线选股。", "trend", 65),
+    ("macd_golden", "MACD 金叉", "momentum", "DIF 上穿 DEA 金叉且柱线转正，捕捉动能由弱转强的转折点。", "trend", 60),
+    ("double_low", "双低选股", "value", "低估值叠加当日活跃度与形态确认的稳健选股。", "value", 55),
+    ("limit_gene", "涨停基因", "momentum", "近 20 日出现过涨停且回踩不破均线，筛选有涨停基因的活跃股。", "leader", 56),
+    ("chan_theory", "缠论", "pattern", "按分型—笔—线段—中枢结构判断趋势级别与买卖点。", "trend", 60),
+    ("ma_golden", "均线金叉", "trend", "MA5 上穿 MA10/MA20 且量能同步放大，经典趋势信号。", "trend", 58),
+    ("box_breakout", "箱体首板突破", "pattern", "箱体震荡后首板放量突破，换手率高于 5% 且不过分追高。", "breakout", 58),
+    ("l1l2_resonance", "L1-L2量价共振", "volume", "放量 L1 信号后等待二波，以 3 倍均量和长下影线确认 L2 启动。", "breakout", 55),
+    ("volume_breakout", "放量突破", "volume", "成交额明显放量并突破前高，用量价配合确认有效突破。", "breakout", 60),
+    ("growth_quality", "成长质量", "quality", "结合收入利润增长、ROE 与现金流，筛选高质量成长股。", "growth", 60),
+    ("box_range", "箱体震荡", "pattern", "识别箱体上下沿，箱底低吸、箱顶减仓的区间波段战法。", "value", 52),
+    ("capital_heat", "资金热度", "capital", "资金活跃、量价同步但未极端过热的短线候选。", "capital", 58),
+    ("w_bottom", "W底突破", "pattern", "近 60 日两次低点构成 W 底，第二低点企稳后放量站上均线。", "breakout", 56),
+    ("bottom_volume", "底部放量", "reversal", "长期下跌后首次放量阳线，捕捉趋势反转的第一根量能信号。", "reversal", 52),
+    ("shrink_pullback", "缩量回踩", "trend", "上升趋势中缩量回踩 MA10/MA20 支撑的低吸买点。", "trend", 60),
+    ("bluechip_quality", "蓝筹收益质量", "quality", "面向高流动性大盘蓝筹，强调合理估值与稳定成交。", "dividend", 58),
+    ("limit_pullback", "打板涨停回调", "momentum", "近期涨停后缩量回踩 MA5/MA10，左侧低吸博二波反弹。", "trend", 55),
+    ("wave_theory", "波浪理论", "pattern", "按艾略特推动浪与调整浪结构判断当前浪型与目标价。", "trend", 55),
+    ("balanced_factor", "均衡多因子", "multi_factor", "综合估值、资金、动量与稳定性的多维度评价。", "smart", 62),
+    ("smart_deep_scan", "智能深度筛选", "ai", "全市场 5000+ 标的、7 因子打分，按趋势/资金/质量/估值/风险综合排序。", "smart", 65),
+]
+
+for _i, (_code, _name, _family, _desc, _preset, _min_score) in enumerate(_PRESET_SEEDS):
+    SEEDS.append(
+        {
+            "code": _code,
+            "name": _name,
+            "family": _family,
+            "description": _desc,
+            "params": {"preset": _preset, "min_score": _min_score},
+            "sort": 7 + _i,
+        }
+    )
 
 # ------------------------------------------------------------------ 种子写入
 _SEED_LOCK = threading.Lock()
@@ -612,7 +655,9 @@ def _def_row(row: dict | None) -> dict | None:
         "params": params,
         "enabled": bool(row["enabled"]),
         "sort": row.get("sort") or 0,
-        "runnable": row["code"] in _SCANNERS or base in _SCANNERS,
+        "runnable": row["code"] in _SCANNERS
+        or base in _SCANNERS
+        or (isinstance(params, dict) and params.get("preset") in smart_scan.PRESETS),
         "seeded": row["code"] in {s["code"] for s in SEEDS},
     }
 
@@ -762,6 +807,12 @@ def run_strategy(code: str) -> dict:
     if fn is None:
         params = d.get("params") or {}
         fn = _SCANNERS.get(params.get("base_code")) if isinstance(params, dict) else None
+        if fn is None and isinstance(params, dict) and params.get("preset") in smart_scan.PRESETS:
+            fn = lambda p: smart_scan.smart_scan(  # noqa: E731
+                preset=p.get("preset", "smart"),
+                min_score=p.get("min_score", 55),
+                limit=MAX_RETURNED_HITS,
+            )
     if fn is None:
         raise NotImplementedError(code)
 

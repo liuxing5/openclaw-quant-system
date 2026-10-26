@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 
+from ..services import smart_scan as smart
 from ..services import strategy as svc
 
 router = APIRouter(tags=["strategy"])
@@ -51,6 +52,21 @@ def scans(
     data = svc.list_scans(strategy, days)
     data["options"] = svc.scan_summary().get("strategies", [])
     return data
+
+
+@router.get("/strategies/smart-scan")
+def smart_scan(
+    preset: str = Query("smart"),
+    board: str = Query(""),
+    min_score: float = Query(55, ge=0, le=100),
+    limit: int = Query(50, ge=1, le=100),
+):
+    return smart.smart_scan(preset=preset, board=board, min_score=min_score, limit=limit)
+
+
+@router.post("/strategies/smart-scan/refresh")
+def smart_scan_refresh():
+    return {"refreshed": smart.refresh_snapshot()}
 
 
 @router.get("/strategies/{code}")

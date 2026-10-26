@@ -18,6 +18,7 @@ import {
   Pagination,
   SectionHeader,
   StatTile,
+  Tabs,
 } from '../components/ui.jsx'
 import { api, useApi } from '../lib/api.js'
 import { fmtDateTime, fmtNum, fmtPct, pctTone } from '../lib/format.js'
@@ -405,6 +406,159 @@ function StrategyDetail({ code, reloadKey }) {
 
 /* ------------------------------------------------------------------- 页面 */
 
+/* --------------------------------------------------------------- 智能深度筛选 */
+
+const SMART_PRESETS = [
+  { value: 'smart', label: '综合智能' },
+  { value: 'trend', label: '趋势强势' },
+  { value: 'growth', label: '成长质量' },
+  { value: 'value', label: '低估值' },
+  { value: 'capital', label: '资金驱动' },
+  { value: 'breakout', label: '突破新高' },
+  { value: 'reversal', label: '超跌反弹' },
+  { value: 'leader', label: '龙头强势' },
+  { value: 'quality', label: '高ROE' },
+  { value: 'dividend', label: '蓝筹低波' },
+]
+
+const SMART_BOARDS = [
+  { value: '', label: '全部' },
+  { value: 'A主板', label: '主板' },
+  { value: '创业板', label: '创业板' },
+  { value: '科创板', label: '科创板' },
+  { value: '北交所', label: '北交所' },
+]
+
+function FactorBar({ label, value }) {
+  const v = n(value)
+  return (
+    <span className="inline-flex items-center gap-1" title={`${label} ${v ?? '—'}`}>
+      <span className="text-[10px] text-slate-400">{label}</span>
+      <span className="h-1.5 w-10 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+        <span className="block h-full rounded-full bg-brand-500" style={{ width: `${Math.max(0, Math.min(100, v || 0))}%` }} />
+      </span>
+      <span className="w-6 text-right text-[9px] tabular-nums text-slate-400">{v === null ? '—' : Math.round(v)}</span>
+    </span>
+  )
+}
+
+function SmartScanPanel({ onOpen }) {
+  const [preset, setPreset] = useState('smart')
+  const [board, setBoard] = useState('')
+  const [minScore, setMinScore] = useState(60)
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  const run = async () => {
+    setLoading(true)
+    try {
+      const res = await api.get('/strategies/smart-scan', {
+        preset,
+        board: board || undefined,
+        min_score: minScore,
+        limit: 50,
+      })
+      setData(res)
+      if (!res?.hits?.length) toast.info('没有达到门槛的标的', '可下调最低评分或切换预设')
+    } catch (e) {
+      toast.error('智能扫描失败', e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card>
+      <SectionHeader
+        title="智能深度筛选"
+        subtitle="全市场 5,000+ 标的 · 趋势/动量/量能/资金/质量/估值/风险 七因子打分，命中后按综合分排序"
+        badge={data ? <Badge tone="blue">扫描 {fmtNum(data.total_scanned, 0)} 只 / {data.elapsed_ms}ms</Badge> : <Badge tone="amber">AI 多因子</Badge>}
+      />
+      <div className="mt-3 flex flex-wrap items-end gap-3">
+        <label className="block">
+          <span className="mb-1 block text-[11px] text-slate-400">筛选预设</span>
+          <select
+            value={preset}
+            onChange={(e) => setPreset(e.target.value)}
+            className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            {SMART_PRESETS.map((x) => <option key={x.value} value={x.value}>{x.label}</option>)}
+          </select>
+        </label>
+        <div>
+          <span className="mb-1 block text-[11px] text-slate-400">板块</span>
+          <Tabs tabs={SMART_BOARDS} value={board} onChange={setBoard} />
+        </div>
+        <label className="block">
+          <span className="mb-1 block text-[11px] text-slate-400">最低评分</span>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={minScore}
+            onChange={(e) => setMinScore(Number(e.target.value))}
+            className="w-20 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs tabular-nums dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          />
+        </label>
+        <Button size="sm" loading={loading} onClick={run}>开始全市场扫描</Button>
+        <span className="text-[11px] text-slate-400">扫描口径：最新交易日收盘 + 最新财报</span>
+      </div>
+
+      {data?.hits?.length ? (
+        <div className="mt-4 max-h-[520px] overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">
+          <table className="w-full text-left text-xs">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-[11px] text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+              <tr>
+                <th className="px-2 py-2">#</th>
+                <th className="px-2 py-2">股票</th>
+                <th className="px-2 py-2 text-right">现价</th>
+                <th className="px-2 py-2 text-right">今日</th>
+                <th className="px-2 py-2 text-right">综合分</th>
+                <th className="px-2 py-2">因子</th>
+                <th className="px-2 py-2">入选理由</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.hits.map((h) => (
+                <tr
+                  key={h.ts_code}
+                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
+                  onClick={() => onOpen(String(h.ts_code).split('.')[0])}
+                >
+                  <td className="px-2 py-1.5 text-slate-400">{h.rank}</td>
+                  <td className="px-2 py-1.5">
+                    <span className="font-medium text-slate-700 dark:text-slate-200">{h.name}</span>
+                    <span className="ml-1 font-mono text-[10px] text-slate-400">{h.ts_code}</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-slate-700 dark:text-slate-200">{fmtNum(h.price, 2)}</td>
+                  <td className={`px-2 py-1.5 text-right tabular-nums ${pctTone(h.pct_chg)}`}>{fmtPct(h.pct_chg)}</td>
+                  <td className="px-2 py-1.5 text-right">
+                    <span className="rounded-md bg-brand-50 px-1.5 py-0.5 text-xs font-semibold tabular-nums text-brand-600 dark:bg-brand-500/10 dark:text-brand-300">
+                      {fmtNum(h.score, 1)}
+                    </span>
+                  </td>
+                  <td className="px-2 py-1.5">
+                    <div className="flex flex-wrap gap-x-2 gap-y-1">
+                      <FactorBar label="趋" value={h.factors?.trend} />
+                      <FactorBar label="资" value={h.factors?.capital} />
+                      <FactorBar label="质" value={h.factors?.quality} />
+                      <FactorBar label="估" value={h.factors?.valuation} />
+                    </div>
+                  </td>
+                  <td className="px-2 py-1.5 text-[11px] text-slate-500 dark:text-slate-400">{(h.reasons || []).join(' · ') || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+      <p className="mt-2 text-[10px] text-slate-400">
+        评分是本地量化模型的可解释结果，不是收益承诺；点击行进入个股 AI 量价推演。
+      </p>
+    </Card>
+  )
+}
+
 export default function StrategyPage() {
   const { id } = useParams()
   const navigate = useNavigate()
@@ -546,6 +700,8 @@ export default function StrategyPage() {
       }
     >
       <div className="space-y-4">
+        <SmartScanPanel onOpen={(code) => navigate(`/stock-analysis/${code}`)} />
+
         <AsyncBlock
           loading={statsQ.loading && !statsQ.data}
           error={statsQ.error}
