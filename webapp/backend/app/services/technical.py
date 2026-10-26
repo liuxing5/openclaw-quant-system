@@ -142,11 +142,15 @@ def _feature(s: dict) -> tuple[float, float]:
     return max(s["start"], s["end"]), min(s["start"], s["end"])
 
 
-def _segments(strokes: list[dict]) -> list[dict]:
+def _segments(strokes: list[dict], strict: bool = True) -> list[dict]:
     """线段：至少 3 笔，用特征序列分型终结，端点取同向笔的极值。
 
     上涨线段的特征序列是其中的向下笔：连续三根向下笔若中间高点最高，
     线段在特征序列顶分型确认后结束；下跌线段对称。
+
+    ``strict=True`` 时实现「线段破坏的第二种情况」：特征序列分型若出现缺口
+    （f3 与 f2 无重叠），必须等后续反向特征笔跌破 f2 低点 / 升破 f2 高点
+    才确认线段结束；否则继续延伸。
     """
     n = len(strokes)
     out: list[dict] = []
@@ -155,40 +159,49 @@ def _segments(strokes: list[dict]) -> list[dict]:
         d = _direction(strokes[i])
         end_k = None
         end_price = None
+        break_type = "normal"
         for j in range(i + 2, n):
             feats = [s for s in strokes[i + 1 : j + 1] if _direction(s) != d]
             if len(feats) < 3:
                 continue
             f1, f2, f3 = feats[-3:]
-            h1, _ = _feature(f1)
-            h2, _ = _feature(f2)
-            h3, _ = _feature(f3)
-            _, l1 = _feature(f1)
-            _, l2 = _feature(f2)
-            _, l3 = _feature(f3)
-            if d == 1 and h2 > h1 and h2 > h3:
-                cand = [
-                    (s["end"], k)
-                    for k, s in enumerate(strokes)
-                    if i <= k < j and _direction(s) == d
-                ]
-                if cand:
-                    end_price, end_k = max(cand)
-                break
-            if d == -1 and l2 < l1 and l2 < l3:
-                cand = [
-                    (s["end"], k)
-                    for k, s in enumerate(strokes)
-                    if i <= k < j and _direction(s) == d
-                ]
-                if cand:
-                    end_price, end_k = min(cand)
-                break
+            h1, l1 = _feature(f1)
+            h2, l2 = _feature(f2)
+            h3, l3 = _feature(f3)
+            fractal = (d == 1 and h2 > h1 and h2 > h3) or (d == -1 and l2 < l1 and l2 < l3)
+            if not fractal:
+                continue
+            gap = (d == 1 and h3 < l2) or (d == -1 and l3 > h2)
+            if strict and gap:
+                # 缺口后的回抽确认：后续反向特征笔必须破坏 f2 的极值
+                confirmed = False
+                for k in range(j + 1, n):
+                    if _direction(strokes[k]) == d:
+                        continue
+                    hk, lk = _feature(strokes[k])
+                    if d == 1 and lk < l2:
+                        confirmed = True
+                        break
+                    if d == -1 and hk > h2:
+                        confirmed = True
+                        break
+                if not confirmed:
+                    continue
+                break_type = "gap_confirmed"
+            cand = [
+                (s["end"], k)
+                for k, s in enumerate(strokes)
+                if i <= k < j and _direction(s) == d
+            ]
+            if cand:
+                end_price, end_k = max(cand) if d == 1 else min(cand)
+            break
         if end_k is None:
             cand = [(s["end"], k) for k, s in enumerate(strokes) if k >= i and _direction(s) == d]
             if not cand:
                 break
             end_price, end_k = max(cand) if d == 1 else min(cand)
+            break_type = "tail"
         if end_k <= i:
             end_k = i + 1
         out.append(
@@ -198,6 +211,7 @@ def _segments(strokes: list[dict]) -> list[dict]:
                 "end": end_price,
                 "start_idx": i,
                 "end_idx": end_k,
+                "break_type": break_type,
             }
         )
         i = end_k + 1
@@ -232,6 +246,36 @@ def _trend_type(segments: list[dict], pivots: list[dict]) -> tuple[str, str]:
     if pivots:
         return "盘整", "flat"
     return "无结构", "flat"
+
+
+def _recursive(segments: list[dict]) -> dict:
+    """把线段当作高级别笔，再跑一次线段/中枢，得到线段级别递归结构。"""
+    if len(segments) < 3:
+        return {
+            "level2_segment_count": 0,
+            "level2_pivot_count": 0,
+            "level2_pivot_low": None,
+            "level2_pivot_high": None,
+            "level2_trend_type": "无结构",
+            "level2_direction": "flat",
+            "level2_segment_trend": None,
+        }
+    higher = [
+        {"start": s["start"], "end": s["end"], "start_idx": s["start_idx"], "end_idx": s["end_idx"]}
+        for s in segments
+    ]
+    level2 = _segments(higher, strict=True)
+    piv2 = _seg_pivots(level2)
+    ttype, tdir = _trend_type(level2, piv2)
+    return {
+        "level2_segment_count": len(level2),
+        "level2_pivot_count": len(piv2),
+        "level2_pivot_low": piv2[-1]["zd"] if piv2 else None,
+        "level2_pivot_high": piv2[-1]["zg"] if piv2 else None,
+        "level2_trend_type": ttype,
+        "level2_direction": tdir,
+        "level2_segment_trend": level2[-1]["direction"] if level2 else None,
+    }
 
 
 def _points(segments: list[dict], pivots: list[dict], trend: str, macd_info: dict | None) -> tuple[str | None, str | None]:
@@ -283,6 +327,7 @@ def chan(
     segments = _segments(strokes)
     seg_pivots = _seg_pivots(segments)
     trend_type, trend_dir = _trend_type(segments, seg_pivots)
+    lvl2 = _recursive(segments)
     buy_point, sell_point = _points(segments, seg_pivots, trend_type, macd_info)
     pivot = _pivot(strokes)
     last = fractals[-1] if fractals else None
@@ -316,4 +361,5 @@ def chan(
         "trend_direction": trend_dir,
         "buy_point": buy_point,
         "sell_point": sell_point,
+        **lvl2,
     }

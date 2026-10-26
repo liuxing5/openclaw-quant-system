@@ -324,7 +324,9 @@ def scan_code(code: str, limit: int = 100) -> dict:
                 "SELECT ts_code, dif, dea, hist, macd_cross, macd_hist_turn, chan_signal, "
                 "chan_trend, pivot_low, pivot_high, last_bottom, last_top, stroke_count, fractal_count, "
                 "segment_count, segment_trend, pivot_count, seg_pivot_low, seg_pivot_high, "
-                "trend_type, trend_direction, buy_point, sell_point "
+                "trend_type, trend_direction, buy_point, sell_point, "
+                "level2_segment_count, level2_pivot_count, level2_pivot_low, level2_pivot_high, "
+                "level2_trend_type, level2_direction, level2_segment_trend "
                 "FROM app_technical_snapshot "
                 "WHERE trade_date = (SELECT MAX(trade_date) FROM app_technical_snapshot) "
                 "AND ts_code = ANY(%s)",
@@ -343,6 +345,7 @@ def scan_code(code: str, limit: int = 100) -> dict:
                 if k in (
                     "macd_cross", "macd_hist_turn", "chan_signal", "chan_trend",
                     "segment_trend", "trend_type", "trend_direction", "buy_point", "sell_point",
+                    "level2_trend_type", "level2_direction", "level2_segment_trend",
                 ):
                     return str(row.get(k) or "")
                 return _f(row.get(k)) or 0
@@ -395,6 +398,10 @@ def scan_code(code: str, limit: int = 100) -> dict:
                     "trend_type": r.get("trend_type"),
                     "buy_point": r.get("buy_point"),
                     "sell_point": r.get("sell_point"),
+                    "level2_segment_count": r.get("level2_segment_count"),
+                    "level2_pivot_count": r.get("level2_pivot_count"),
+                    "level2_trend_type": r.get("level2_trend_type"),
+                    "level2_direction": r.get("level2_direction"),
                 },
                 "rank": i + 1,
             }

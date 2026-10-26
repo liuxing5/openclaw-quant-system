@@ -48,6 +48,13 @@ CREATE TABLE IF NOT EXISTS app_technical_snapshot (
     trend_direction varchar(16),
     buy_point varchar(8),
     sell_point varchar(8),
+    level2_segment_count int,
+    level2_pivot_count int,
+    level2_pivot_low numeric,
+    level2_pivot_high numeric,
+    level2_trend_type varchar(16),
+    level2_direction varchar(16),
+    level2_segment_trend varchar(16),
     updated_at timestamptz DEFAULT now(),
     PRIMARY KEY (trade_date, ts_code)
 )
@@ -68,7 +75,9 @@ INSERT INTO app_technical_snapshot
     (trade_date, ts_code, dif, dea, hist, macd_cross, macd_hist_turn,
      chan_signal, chan_trend, pivot_low, pivot_high, last_bottom, last_top,
      stroke_count, fractal_count, segment_count, segment_trend, pivot_count,
-     seg_pivot_low, seg_pivot_high, trend_type, trend_direction, buy_point, sell_point)
+     seg_pivot_low, seg_pivot_high, trend_type, trend_direction, buy_point, sell_point,
+     level2_segment_count, level2_pivot_count, level2_pivot_low, level2_pivot_high,
+     level2_trend_type, level2_direction, level2_segment_trend)
 VALUES %s
 ON CONFLICT (trade_date, ts_code) DO UPDATE SET
     dif = EXCLUDED.dif, dea = EXCLUDED.dea, hist = EXCLUDED.hist,
@@ -82,6 +91,13 @@ ON CONFLICT (trade_date, ts_code) DO UPDATE SET
     seg_pivot_high = EXCLUDED.seg_pivot_high, trend_type = EXCLUDED.trend_type,
     trend_direction = EXCLUDED.trend_direction, buy_point = EXCLUDED.buy_point,
     sell_point = EXCLUDED.sell_point,
+    level2_segment_count = EXCLUDED.level2_segment_count,
+    level2_pivot_count = EXCLUDED.level2_pivot_count,
+    level2_pivot_low = EXCLUDED.level2_pivot_low,
+    level2_pivot_high = EXCLUDED.level2_pivot_high,
+    level2_trend_type = EXCLUDED.level2_trend_type,
+    level2_direction = EXCLUDED.level2_direction,
+    level2_segment_trend = EXCLUDED.level2_segment_trend,
     updated_at = now()
 """
 
@@ -110,6 +126,9 @@ def main() -> int:
                 c["segment_count"], c["segment_trend"], c["pivot_count"],
                 c["seg_pivot_low"], c["seg_pivot_high"], c["trend_type"],
                 c["trend_direction"], c["buy_point"], c["sell_point"],
+                c["level2_segment_count"], c["level2_pivot_count"],
+                c["level2_pivot_low"], c["level2_pivot_high"],
+                c["level2_trend_type"], c["level2_direction"], c["level2_segment_trend"],
             )
         )
     print(f"computed {len(values)} rows in {time.time() - t0:.1f}s", flush=True)
@@ -127,6 +146,13 @@ def main() -> int:
                 ("trend_direction", "varchar(16)"),
                 ("buy_point", "varchar(8)"),
                 ("sell_point", "varchar(8)"),
+                ("level2_segment_count", "int"),
+                ("level2_pivot_count", "int"),
+                ("level2_pivot_low", "numeric"),
+                ("level2_pivot_high", "numeric"),
+                ("level2_trend_type", "varchar(16)"),
+                ("level2_direction", "varchar(16)"),
+                ("level2_segment_trend", "varchar(16)"),
             ):
                 cur.execute(f"ALTER TABLE app_technical_snapshot ADD COLUMN IF NOT EXISTS {name} {typ}")
             execute_values(cur, INSERT, values, page_size=500)

@@ -170,10 +170,12 @@ webapp/
 - 25 条新策略每条都有**独立七因子权重 + 独立形态过滤**（`smart_scan._SPEC_WEIGHTS/_SPEC_FILTERS`），
   点击卡片「立即运行」走自己的 `scan_code`，不是共用同一套 preset。
 - **真实 MACD / 缠论**：`services/technical.py` 用 EMA12/26/DEA9 计算 DIF/DEA/HIST/金叉，
-  日线先做包含合并，再识别顶底分型、按 5 根合并 K 线连笔、**用特征序列分型划分线段**、
-  用连续三线段重叠找线段中枢，并按中枢是否重叠/创新高划分上涨/下跌/盘整走势类型；
+  日线先做包含合并，再识别顶底分型、按 5 根合并 K 线连笔、**用特征序列分型划分线段**
+  （含缺口+回抽确认的“线段破坏第二种情况”）、用连续三线段重叠找线段中枢，
+  再按中枢是否重叠/创新高划分上涨/下跌/盘整走势类型；
+  并把线段当作高级别笔再跑一次结构，得到 **level2 线段/中枢/走势类型**。
   `python webapp/scripts/refresh_technical_snapshot.py` 写入 `app_technical_snapshot`
-  （约 30~40s / 5,229 只，含 segment_count、trend_type、buy_point/sell_point）。
+  （约 30~40s / 5,229 只，含 segment_count、trend_type、buy_point/sell_point、level2_*）。
 - MACD 金叉、缠论、波浪三条策略改为读真实技术信号；缠论买点用线段中枢与趋势类型判定，
   不再用均线代理。
 - 连板口径修正：部分交易日交易所 `limit_up_price` 与「前收×板块涨幅」错位，

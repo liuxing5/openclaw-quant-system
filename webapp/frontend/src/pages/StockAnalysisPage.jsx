@@ -912,6 +912,12 @@ function StockDetailView({ symbol }) {
                   : '—',
             },
             { label: '线段 / 笔', value: `${fmtNum(techQ.data?.chan?.segment_count, 0)} / ${fmtNum(techQ.data?.chan?.stroke_count, 0)}` },
+            {
+              label: '高级别（线段递归）',
+              value: techQ.data?.chan?.level2_trend_type
+                ? `${techQ.data.chan.level2_trend_type} · ${fmtNum(techQ.data.chan.level2_segment_count, 0)} 段`
+                : '—',
+            },
           ].map((x) => (
             <MetricTile key={x.label} label={x.label} value={x.value} tone={x.tone} />
           ))}
