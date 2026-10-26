@@ -670,6 +670,13 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     llm_scan = load_scan_stats('llm_multisource', llm_date)
     eight_scan = load_scan_stats('overnight_8step', eight_date)
+    if not eight_candidates:
+        # 报告日以漏斗/LLM 数据日为准，避免八步法单独跑在次日时把 10-27 挂到 10-26 报告上
+        report_day = str(funnel_date or target_date_str)
+        if report_day and str(eight_date or "") > report_day:
+            eight_date = report_day
+            eight_date_str = report_day
+            eight_timestamp = f"{report_day} 15:10:00"
 
     uptrend_daily, uptrend_date = load_main_uptrend_daily(trade_date=trade_date)
     uptrend_backtest = load_main_uptrend_backtest()
@@ -789,7 +796,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
             </div>"""
 
     # ── 八步法步骤 ──
-    eight_steps_html = ""
+    eight_steps_html = '<div class="no-data">本期扫描无候选<br><small>八步法当日未产生满足条件的标的</small></div>'
     if eight_scan:
         stats = eight_scan.get('filter_stats', {})
         total_scanned = eight_scan.get('total_scanned', 0)
