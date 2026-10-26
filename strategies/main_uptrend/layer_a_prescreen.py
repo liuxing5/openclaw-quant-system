@@ -363,7 +363,7 @@ class LayerAPrescreener:
         if recent.empty:
             return set()
 
-        industry_returns = recent.groupby('industry')['pct_chg'].astype(float).mean().sort_values(ascending=False)
+        industry_returns = recent.assign(pct_chg=recent['pct_chg'].astype(float)).groupby('industry')['pct_chg'].mean().sort_values(ascending=False)
         threshold_idx = max(1, int(len(industry_returns) * self.cfg.a_industry_momentum_top_pct))
         top_industries = set(industry_returns.head(threshold_idx).index)
 

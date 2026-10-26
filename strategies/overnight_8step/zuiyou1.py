@@ -2794,10 +2794,23 @@ def main():
     end_d = get_trading_date_for_snapshot()
 
     _log(f"\n🔍 开始扫描稳健池 [hs300+zz500]...")
-    results_stable, rejects_stable, name_map_stable, stable_pool_size, stable_real_count, stable_tw = scan_pool(CONFIG_STABLE, sentiment_score, mood, preloaded=False, snapshot_date=end_d)
+    stable_scan = scan_pool(CONFIG_STABLE, sentiment_score, mood, preloaded=False, snapshot_date=end_d)
+    if stable_scan:
+        results_stable, rejects_stable, name_map_stable, stable_pool_size, stable_real_count, stable_tw = stable_scan
+    else:
+        # 宽度门控等提前返回空结果时 scan_pool 可能不返回元组，不能让整个脚本崩掉
+        results_stable, rejects_stable, name_map_stable = [], {}, {}
+        stable_pool_size = stable_real_count = 0
+        stable_tw = None
 
     _log(f"\n🔍 开始扫描高位池 [zz1000]...")
-    results_upper, rejects_upper, name_map_upper, upper_pool_size, upper_real_count, upper_tw = scan_pool(CONFIG_UPPER, sentiment_score, mood, preloaded=True, snapshot_date=end_d)
+    upper_scan = scan_pool(CONFIG_UPPER, sentiment_score, mood, preloaded=True, snapshot_date=end_d)
+    if upper_scan:
+        results_upper, rejects_upper, name_map_upper, upper_pool_size, upper_real_count, upper_tw = upper_scan
+    else:
+        results_upper, rejects_upper, name_map_upper = [], {}, {}
+        upper_pool_size = upper_real_count = 0
+        upper_tw = None
 
     # 合并名称映射
     all_name_map = {**name_map_stable, **name_map_upper}
