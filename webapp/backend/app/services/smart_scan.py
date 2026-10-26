@@ -258,7 +258,7 @@ _SPEC_FILTERS = {
     "macd_golden": lambda f: f("macd_cross") == "golden" or (f("hist") > 0 and f("macd_hist_turn") == "positive"),
     "double_low": lambda f: f("valuation_score") >= 75 and f("pct_chg") > -2,
     "limit_gene": lambda f: (f("pct_chg") >= 7 or f("close") >= f("hh20") * 0.99) and f("turnover_rate") >= 4,
-    "chan_theory": lambda f: f("chan_signal") in ("buy1", "buy2", "buy3") and f("chan_trend") != "down",
+    "chan_theory": lambda f: f("buy_point") in ("1", "2", "3") and f("trend_direction") != "down",
     "ma_golden": lambda f: f("close") > f("ma5") > f("ma10") > f("ma20") and f("volume") > f("vma20"),
     "box_breakout": lambda f: f("close") >= f("hh20") * 0.99 and f("pct_chg") >= 5,
     "l1l2_resonance": lambda f: f("volume") >= f("vma20") * 1.5 and f("pct_chg") >= 3,
@@ -271,7 +271,7 @@ _SPEC_FILTERS = {
     "shrink_pullback": lambda f: f("close") > f("ma20") and f("volume") < f("vma20") * 0.8 and f("pct_chg") < 2,
     "bluechip_quality": lambda f: f("total_market_cap") >= 5e10 and f("roe") >= 10 and f("valuation_score") >= 60,
     "limit_pullback": lambda f: -3 <= f("pct_chg") <= 3 and f("close") > f("ma5") and f("turnover_rate") >= 3,
-    "wave_theory": lambda f: f("chan_trend") == "up" and f("chan_signal") in ("buy2", "buy3"),
+    "wave_theory": lambda f: f("trend_direction") == "up" and f("segment_trend") == "up",
     "balanced_factor": lambda f: f("trend_score") >= 60 and f("quality_score") >= 55 and f("valuation_score") >= 55,
     "smart_deep_scan": lambda f: True,
 }
@@ -322,7 +322,9 @@ def scan_code(code: str, limit: int = 100) -> dict:
             r["ts_code"]: r
             for r in query(
                 "SELECT ts_code, dif, dea, hist, macd_cross, macd_hist_turn, chan_signal, "
-                "chan_trend, pivot_low, pivot_high, last_bottom, last_top, stroke_count, fractal_count "
+                "chan_trend, pivot_low, pivot_high, last_bottom, last_top, stroke_count, fractal_count, "
+                "segment_count, segment_trend, pivot_count, seg_pivot_low, seg_pivot_high, "
+                "trend_type, trend_direction, buy_point, sell_point "
                 "FROM app_technical_snapshot "
                 "WHERE trade_date = (SELECT MAX(trade_date) FROM app_technical_snapshot) "
                 "AND ts_code = ANY(%s)",
@@ -338,7 +340,10 @@ def scan_code(code: str, limit: int = 100) -> dict:
     if fn:
         def _field_for(row):
             def _get(k):
-                if k in ("macd_cross", "macd_hist_turn", "chan_signal", "chan_trend"):
+                if k in (
+                    "macd_cross", "macd_hist_turn", "chan_signal", "chan_trend",
+                    "segment_trend", "trend_type", "trend_direction", "buy_point", "sell_point",
+                ):
                     return str(row.get(k) or "")
                 return _f(row.get(k)) or 0
 
@@ -384,6 +389,12 @@ def scan_code(code: str, limit: int = 100) -> dict:
                     "pivot_low": _f(r.get("pivot_low")),
                     "pivot_high": _f(r.get("pivot_high")),
                     "stroke_count": r.get("stroke_count"),
+                    "segment_count": r.get("segment_count"),
+                    "segment_trend": r.get("segment_trend"),
+                    "pivot_count": r.get("pivot_count"),
+                    "trend_type": r.get("trend_type"),
+                    "buy_point": r.get("buy_point"),
+                    "sell_point": r.get("sell_point"),
                 },
                 "rank": i + 1,
             }

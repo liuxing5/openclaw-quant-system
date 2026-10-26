@@ -134,6 +134,129 @@ def _strokes(fractals: list[dict], min_gap: int = 4) -> list[dict]:
     ]
 
 
+def _direction(s: dict) -> int:
+    return 1 if s["end"] >= s["start"] else -1
+
+
+def _feature(s: dict) -> tuple[float, float]:
+    return max(s["start"], s["end"]), min(s["start"], s["end"])
+
+
+def _segments(strokes: list[dict]) -> list[dict]:
+    """线段：至少 3 笔，用特征序列分型终结，端点取同向笔的极值。
+
+    上涨线段的特征序列是其中的向下笔：连续三根向下笔若中间高点最高，
+    线段在特征序列顶分型确认后结束；下跌线段对称。
+    """
+    n = len(strokes)
+    out: list[dict] = []
+    i = 0
+    while i < n - 1:
+        d = _direction(strokes[i])
+        end_k = None
+        end_price = None
+        for j in range(i + 2, n):
+            feats = [s for s in strokes[i + 1 : j + 1] if _direction(s) != d]
+            if len(feats) < 3:
+                continue
+            f1, f2, f3 = feats[-3:]
+            h1, _ = _feature(f1)
+            h2, _ = _feature(f2)
+            h3, _ = _feature(f3)
+            _, l1 = _feature(f1)
+            _, l2 = _feature(f2)
+            _, l3 = _feature(f3)
+            if d == 1 and h2 > h1 and h2 > h3:
+                cand = [
+                    (s["end"], k)
+                    for k, s in enumerate(strokes)
+                    if i <= k < j and _direction(s) == d
+                ]
+                if cand:
+                    end_price, end_k = max(cand)
+                break
+            if d == -1 and l2 < l1 and l2 < l3:
+                cand = [
+                    (s["end"], k)
+                    for k, s in enumerate(strokes)
+                    if i <= k < j and _direction(s) == d
+                ]
+                if cand:
+                    end_price, end_k = min(cand)
+                break
+        if end_k is None:
+            cand = [(s["end"], k) for k, s in enumerate(strokes) if k >= i and _direction(s) == d]
+            if not cand:
+                break
+            end_price, end_k = max(cand) if d == 1 else min(cand)
+        if end_k <= i:
+            end_k = i + 1
+        out.append(
+            {
+                "direction": "up" if d == 1 else "down",
+                "start": strokes[i]["start"],
+                "end": end_price,
+                "start_idx": i,
+                "end_idx": end_k,
+            }
+        )
+        i = end_k + 1
+    return out
+
+
+def _seg_pivots(segments: list[dict]) -> list[dict]:
+    out = []
+    for i in range(len(segments) - 2):
+        a, b, c = segments[i], segments[i + 1], segments[i + 2]
+        lows = [min(a["start"], a["end"]), min(b["start"], b["end"]), min(c["start"], c["end"])]
+        highs = [max(a["start"], a["end"]), max(b["start"], b["end"]), max(c["start"], c["end"])]
+        zd, zg = max(lows), min(highs)
+        if zd < zg:
+            out.append({"zd": round(zd, 2), "zg": round(zg, 2), "start_idx": i, "end_idx": i + 2})
+    return out
+
+
+def _trend_type(segments: list[dict], pivots: list[dict]) -> tuple[str, str]:
+    if len(pivots) >= 2:
+        last, prev = pivots[-1], pivots[-2]
+        if last["zd"] > prev["zg"]:
+            return "上涨趋势", "up"
+        if last["zg"] < prev["zd"]:
+            return "下跌趋势", "down"
+    if len(segments) >= 2:
+        last, prev = segments[-1], segments[-2]
+        if last["direction"] == prev["direction"] == "up" and last["end"] > prev["end"]:
+            return "上涨趋势", "up"
+        if last["direction"] == prev["direction"] == "down" and last["end"] < prev["end"]:
+            return "下跌趋势", "down"
+    if pivots:
+        return "盘整", "flat"
+    return "无结构", "flat"
+
+
+def _points(segments: list[dict], pivots: list[dict], trend: str, macd_info: dict | None) -> tuple[str | None, str | None]:
+    if not segments:
+        return None, None
+    last = segments[-1]
+    pivot = pivots[-1] if pivots else None
+    dif = (macd_info or {}).get("dif") or 0
+    dea = (macd_info or {}).get("dea") or 0
+    buy = sell = None
+    if pivot and last["direction"] == "up" and last["end"] > pivot["zg"] and last["start"] <= pivot["zg"]:
+        buy = "3"
+    elif trend == "下跌趋势" and last["direction"] == "down" and dif > dea:
+        buy = "1"
+    elif trend == "上涨趋势" and last["direction"] == "down" and pivot and last["end"] > pivot["zg"]:
+        buy = "2"
+    elif pivot and last["direction"] == "down" and last["end"] < pivot["zd"] and last["start"] >= pivot["zd"]:
+        sell = "3"
+    elif trend == "上涨趋势" and last["direction"] == "up" and dif < dea:
+        sell = "1"
+    elif trend == "下跌趋势" and last["direction"] == "up" and pivot and last["end"] < pivot["zd"]:
+        sell = "2"
+    return buy, sell
+
+
 def _pivot(strokes: list[dict]) -> dict | None:
     """最近三笔重叠区作为中枢；返回 zg/zd 与区间。"""
     if len(strokes) < 3:
@@ -148,36 +271,34 @@ def _pivot(strokes: list[dict]) -> dict | None:
     return None
 
 
-def chan(highs: list[float], lows: list[float], closes: list[float]) -> dict:
+def chan(
+    highs: list[float],
+    lows: list[float],
+    closes: list[float],
+    macd_info: dict | None = None,
+) -> dict:
     bars = _merge_bars(highs, lows)
     fractals = _fractals(bars)
     strokes = _strokes(fractals)
+    segments = _segments(strokes)
+    seg_pivots = _seg_pivots(segments)
+    trend_type, trend_dir = _trend_type(segments, seg_pivots)
+    buy_point, sell_point = _points(segments, seg_pivots, trend_type, macd_info)
     pivot = _pivot(strokes)
-    trend = None
-    if len(strokes) >= 3:
-        up = strokes[-1]["end"] > strokes[-3]["end"] and strokes[-2]["end"] > strokes[-4]["end"] if len(strokes) >= 4 else strokes[-1]["end"] > strokes[-2]["start"]
-        trend = "up" if up else "down"
     last = fractals[-1] if fractals else None
-    signal = "hold"
-    if last and last["type"] == "bottom":
-        signal = "buy2"
-        if pivot and closes and closes[-1] > pivot["zg"]:
-            signal = "buy3"
-        elif len([f for f in fractals if f["type"] == "bottom"]) >= 2:
-            bottoms = [f for f in fractals if f["type"] == "bottom"]
-            if bottoms[-1]["price"] < bottoms[-2]["price"]:
-                signal = "buy1"
-    elif last and last["type"] == "top":
-        signal = "sell2"
-        if pivot and closes and closes[-1] < pivot["zd"]:
-            signal = "sell3"
-        elif len([f for f in fractals if f["type"] == "top"]) >= 2:
-            tops = [f for f in fractals if f["type"] == "top"]
-            if tops[-1]["price"] > tops[-2]["price"]:
-                signal = "sell1"
+
+    if buy_point:
+        signal = f"buy{buy_point}"
+    elif sell_point:
+        signal = f"sell{sell_point}"
+    elif segments and segments[-1]["direction"] == "up":
+        signal = "hold"
+    else:
+        signal = "hold"
+
     return {
         "chan_signal": signal,
-        "chan_trend": trend,
+        "chan_trend": trend_dir,
         "pivot_low": pivot["zd"] if pivot else None,
         "pivot_high": pivot["zg"] if pivot else None,
         "last_bottom": round(last["price"], 2) if last and last["type"] == "bottom" else None,
@@ -185,4 +306,14 @@ def chan(highs: list[float], lows: list[float], closes: list[float]) -> dict:
         "stroke_count": len(strokes),
         "fractal_count": len(fractals),
         "bars_merged": len(bars),
+        # 线段 / 线段中枢 / 走势类型（递归结构）
+        "segment_count": len(segments),
+        "segment_trend": segments[-1]["direction"] if segments else None,
+        "pivot_count": len(seg_pivots),
+        "seg_pivot_low": seg_pivots[-1]["zd"] if seg_pivots else None,
+        "seg_pivot_high": seg_pivots[-1]["zg"] if seg_pivots else None,
+        "trend_type": trend_type,
+        "trend_direction": trend_dir,
+        "buy_point": buy_point,
+        "sell_point": sell_point,
     }

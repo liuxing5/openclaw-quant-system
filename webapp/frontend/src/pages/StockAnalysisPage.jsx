@@ -861,7 +861,7 @@ function StockDetailView({ symbol }) {
       <Card>
         <SectionHeader
           title="MACD / 缠论结构"
-          subtitle="EMA12/26/DEA9 真实计算；缠论做了包含合并、顶底分型、笔与最近中枢"
+          subtitle="EMA12/26/DEA9 真实计算；缠论做了包含合并、分型、笔、线段、线段中枢与走势类型"
           badge={
             techQ.data?.macd?.cross ? (
               <Badge tone={techQ.data.macd.cross === 'golden' ? 'rose' : techQ.data.macd.cross === 'dead' ? 'emerald' : 'slate'}>
@@ -903,15 +903,15 @@ function StockDetailView({ symbol }) {
               }[techQ.data?.chan?.chan_signal] || '—',
               tone: String(techQ.data?.chan?.chan_signal || '').startsWith('buy') ? 'text-rose-500' : 'text-emerald-500',
             },
-            { label: '结构趋势', value: techQ.data?.chan?.chan_trend === 'up' ? '向上' : techQ.data?.chan?.chan_trend === 'down' ? '向下' : '—' },
+            { label: '结构趋势', value: techQ.data?.chan?.trend_type || (techQ.data?.chan?.chan_trend === 'up' ? '上涨' : techQ.data?.chan?.chan_trend === 'down' ? '下跌' : '—') },
             {
-              label: '最近中枢',
+              label: '线段中枢',
               value:
-                techQ.data?.chan?.pivot_low !== null && techQ.data?.chan?.pivot_low !== undefined
-                  ? `${fmtNum(techQ.data.chan.pivot_low, 2)} - ${fmtNum(techQ.data.chan.pivot_high, 2)}`
+                techQ.data?.chan?.seg_pivot_low !== null && techQ.data?.chan?.seg_pivot_low !== undefined
+                  ? `${fmtNum(techQ.data.chan.seg_pivot_low, 2)} - ${fmtNum(techQ.data.chan.seg_pivot_high, 2)}`
                   : '—',
             },
-            { label: '笔 / 分型', value: `${fmtNum(techQ.data?.chan?.stroke_count, 0)} / ${fmtNum(techQ.data?.chan?.fractal_count, 0)}` },
+            { label: '线段 / 笔', value: `${fmtNum(techQ.data?.chan?.segment_count, 0)} / ${fmtNum(techQ.data?.chan?.stroke_count, 0)}` },
           ].map((x) => (
             <MetricTile key={x.label} label={x.label} value={x.value} tone={x.tone} />
           ))}

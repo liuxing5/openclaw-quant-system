@@ -39,6 +39,15 @@ CREATE TABLE IF NOT EXISTS app_technical_snapshot (
     last_top numeric,
     stroke_count int,
     fractal_count int,
+    segment_count int,
+    segment_trend varchar(16),
+    pivot_count int,
+    seg_pivot_low numeric,
+    seg_pivot_high numeric,
+    trend_type varchar(16),
+    trend_direction varchar(16),
+    buy_point varchar(8),
+    sell_point varchar(8),
     updated_at timestamptz DEFAULT now(),
     PRIMARY KEY (trade_date, ts_code)
 )
@@ -58,7 +67,8 @@ INSERT = """
 INSERT INTO app_technical_snapshot
     (trade_date, ts_code, dif, dea, hist, macd_cross, macd_hist_turn,
      chan_signal, chan_trend, pivot_low, pivot_high, last_bottom, last_top,
-     stroke_count, fractal_count)
+     stroke_count, fractal_count, segment_count, segment_trend, pivot_count,
+     seg_pivot_low, seg_pivot_high, trend_type, trend_direction, buy_point, sell_point)
 VALUES %s
 ON CONFLICT (trade_date, ts_code) DO UPDATE SET
     dif = EXCLUDED.dif, dea = EXCLUDED.dea, hist = EXCLUDED.hist,
@@ -67,6 +77,11 @@ ON CONFLICT (trade_date, ts_code) DO UPDATE SET
     pivot_low = EXCLUDED.pivot_low, pivot_high = EXCLUDED.pivot_high,
     last_bottom = EXCLUDED.last_bottom, last_top = EXCLUDED.last_top,
     stroke_count = EXCLUDED.stroke_count, fractal_count = EXCLUDED.fractal_count,
+    segment_count = EXCLUDED.segment_count, segment_trend = EXCLUDED.segment_trend,
+    pivot_count = EXCLUDED.pivot_count, seg_pivot_low = EXCLUDED.seg_pivot_low,
+    seg_pivot_high = EXCLUDED.seg_pivot_high, trend_type = EXCLUDED.trend_type,
+    trend_direction = EXCLUDED.trend_direction, buy_point = EXCLUDED.buy_point,
+    sell_point = EXCLUDED.sell_point,
     updated_at = now()
 """
 
@@ -84,7 +99,7 @@ def main() -> int:
         if len(closes) < 26:
             continue
         m = technical.macd(closes)
-        c = technical.chan(highs, lows, closes)
+        c = technical.chan(highs, lows, closes, m)
         values.append(
             (
                 day,
@@ -92,6 +107,9 @@ def main() -> int:
                 m["dif"], m["dea"], m["hist"], m["cross"], m["hist_turn"],
                 c["chan_signal"], c["chan_trend"], c["pivot_low"], c["pivot_high"],
                 c["last_bottom"], c["last_top"], c["stroke_count"], c["fractal_count"],
+                c["segment_count"], c["segment_trend"], c["pivot_count"],
+                c["seg_pivot_low"], c["seg_pivot_high"], c["trend_type"],
+                c["trend_direction"], c["buy_point"], c["sell_point"],
             )
         )
     print(f"computed {len(values)} rows in {time.time() - t0:.1f}s", flush=True)
@@ -99,6 +117,18 @@ def main() -> int:
         cur = conn.cursor()
         try:
             cur.execute(DDL)
+            for name, typ in (
+                ("segment_count", "int"),
+                ("segment_trend", "varchar(16)"),
+                ("pivot_count", "int"),
+                ("seg_pivot_low", "numeric"),
+                ("seg_pivot_high", "numeric"),
+                ("trend_type", "varchar(16)"),
+                ("trend_direction", "varchar(16)"),
+                ("buy_point", "varchar(8)"),
+                ("sell_point", "varchar(8)"),
+            ):
+                cur.execute(f"ALTER TABLE app_technical_snapshot ADD COLUMN IF NOT EXISTS {name} {typ}")
             execute_values(cur, INSERT, values, page_size=500)
             conn.commit()
         except Exception:
