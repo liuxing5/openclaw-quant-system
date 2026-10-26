@@ -129,6 +129,7 @@ def funnel_data() -> dict:
                 "source_updated": updated,
                 "refreshed": False,
                 "note": None,
+                "status": "no_candidates" if ("八步" in name and not candidates) else None,
                 "steps": steps,
                 "candidates": candidates,
                 "candidate_count": len(candidates),
