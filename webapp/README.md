@@ -1,4 +1,4 @@
-# 量化投研一体化平台（webapp）
+# 彪哥财经之英雄本色（webapp）
 
 本地 PostgreSQL 数据底座驱动的股票投研看板：FastAPI 后端 + React/Vite/Tailwind 前端。
 

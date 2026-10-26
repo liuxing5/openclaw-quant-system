@@ -78,11 +78,11 @@ def health():
 def public_settings():
     saved = get_setting("site", {}) or {}
     return {
-        "site_name": saved.get("site_name", "量化投研一体化平台"),
+        "site_name": saved.get("site_name", "彪哥财经之英雄本色"),
         "slogan": saved.get("slogan", "股票投研 · 数据一体化 · 本地数据驱动"),
         "announcement": saved.get("announcement", ""),
         "online_users": saved.get("online_users", 1),
-        "first_register_bonus_days": saved.get("first_register_bonus_days", 1),
+        "first_register_bonus_days": saved.get("first_register_bonus_days", 3),
         "maintenance": bool(saved.get("maintenance", False)),
         "icp": saved.get("icp", ""),
         "updated_at": _now(),

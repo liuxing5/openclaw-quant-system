@@ -1036,7 +1036,7 @@ def profile(request=None) -> dict:
 #: app_settings 为空时返回的默认骨架（GET 不写库，只给前端一份可用的默认值）。
 DEFAULT_SETTINGS = {
     "general": {
-        "platform_name": "量化投研一体化平台",
+        "platform_name": "彪哥财经之英雄本色",
         "announcement": "",
         "online_users": 1,
         "register_enabled": True,

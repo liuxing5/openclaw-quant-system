@@ -40,7 +40,7 @@ export default function AuthPage({ mode = 'login' }) {
       <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col items-center justify-center px-4 py-10">
         <div className="mb-5 text-center">
           <p className="text-xs font-semibold tracking-[0.3em] text-amber-300">QUANT RESEARCH</p>
-          <h1 className="mt-2 text-3xl font-bold">量化投研 · 数据一体化</h1>
+          <h1 className="mt-2 text-3xl font-bold">彪哥财经之英雄本色</h1>
           <p className="mt-2 text-sm text-slate-400">注册即送 3 天免费试用 · 到期后订阅月/季/年卡</p>
         </div>
 

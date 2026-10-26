@@ -74,11 +74,11 @@ export default function Layout({ children }) {
       >
         <div className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200/60 px-4 dark:border-slate-800/60">
           <span className="grid size-8 shrink-0 place-items-center rounded-lg bg-brand-600 text-sm font-bold text-white">
-            量
+            彪
           </span>
           {!collapsed ? (
             <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-              量化投研平台
+              彪哥财经之英雄本色
             </span>
           ) : null}
         </div>
@@ -144,7 +144,7 @@ export default function Layout({ children }) {
               ☰
             </button>
             <span className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-              量化投研 · 数据一体化
+              彪哥财经 · 数据一体化
             </span>
           </div>
           <div className="flex items-center gap-2">

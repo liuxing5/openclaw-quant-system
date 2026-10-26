@@ -18,7 +18,7 @@ const GROUPS = [
     title: '平台信息',
     subtitle: '落地页与侧边栏展示的基础信息',
     fields: [
-      { key: 'platform_name', label: '平台名称', type: 'text', placeholder: '量化投研平台', hint: '侧边栏与落地页顶部展示的名称' },
+      { key: 'platform_name', label: '平台名称', type: 'text', placeholder: '彪哥财经之英雄本色', hint: '侧边栏与落地页顶部展示的名称' },
       { key: 'announcement', label: '公告', type: 'textarea', placeholder: '例如：今日更新域名 xxx', hint: '落地页公告条内容，留空则不展示' },
       { key: 'logo_path', label: 'Logo 地址', type: 'text', placeholder: 'https://…/logo.png（留空用文字标识）', hint: '站内标识图，缺省时显示文字标识' },
     ],

@@ -128,6 +128,109 @@ function BreadthPanel({ breadth }) {
   )
 }
 
+/* ------------------------------------------------------------------ 量化引擎 */
+
+function FactorLine({ label, value }) {
+  const v = Math.max(0, Math.min(100, Number(value) || 0))
+  return (
+    <div className="flex items-center gap-2">
+      <span className="w-9 shrink-0 text-[10px] text-slate-400">{label}</span>
+      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+        <span className="block h-full rounded-full bg-brand-500" style={{ width: `${v}%` }} />
+      </span>
+      <span className="w-7 text-right text-[10px] tabular-nums text-slate-500">{Math.round(v)}</span>
+    </div>
+  )
+}
+
+function QuantPanel() {
+  const navigate = useNavigate()
+  const scanQ = useApi(() => api.get('/strategies/smart-scan', { preset: 'smart', min_score: 60, limit: 8 }), [])
+  const statsQ = useApi(() => api.get('/strategies/run-stats', { days: 30 }), [])
+  const hits = scanQ.data?.hits || []
+  const stats = statsQ.data || {}
+  const avg = (key) => {
+    const vals = hits.map((h) => h.factors?.[key]).filter((v) => typeof v === 'number')
+    return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 0
+  }
+
+  return (
+    <Card>
+      <SectionHeader
+        title="量化引擎"
+        subtitle="全市场 5,000+ · 趋势/资金/质量/估值七因子打分，命中后按综合分排序"
+        badge={<Badge tone="blue">{scanQ.loading ? '扫描中' : `${hits.length} 只信号`}</Badge>}
+        action={<TextLink to="/strategy">查看全部量化选股 →</TextLink>}
+      />
+      <div className="mt-3 grid gap-4 xl:grid-cols-3">
+        <div className="xl:col-span-2 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
+          <table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 text-[10px] text-slate-500 dark:bg-slate-900 dark:text-slate-400">
+              <tr>
+                <th className="px-2 py-1.5">#</th>
+                <th className="px-2 py-1.5">量化候选</th>
+                <th className="px-2 py-1.5 text-right">综合分</th>
+                <th className="px-2 py-1.5 text-right">今日</th>
+                <th className="px-2 py-1.5">因子/理由</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hits.slice(0, 6).map((h) => (
+                <tr
+                  key={h.ts_code}
+                  className="cursor-pointer border-t border-slate-100 hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/50"
+                  onClick={() => navigate(`/stock-analysis/${String(h.ts_code).split('.')[0]}`)}
+                >
+                  <td className="px-2 py-1.5 text-slate-400">{h.rank}</td>
+                  <td className="px-2 py-1.5">
+                    <span className="font-medium text-slate-700 dark:text-slate-200">{h.name}</span>
+                    <span className="ml-1 font-mono text-[10px] text-slate-400">{h.ts_code}</span>
+                  </td>
+                  <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-brand-500">{fmtNum(h.score, 1)}</td>
+                  <td className={`px-2 py-1.5 text-right tabular-nums ${pctTone(h.pct_chg)}`}>{fmtPct(h.pct_chg)}</td>
+                  <td className="px-2 py-1.5 text-[10px] text-slate-400">{(h.reasons || []).slice(0, 3).join(' · ')}</td>
+                </tr>
+              ))}
+              {!hits.length ? (
+                <tr>
+                  <td colSpan={5} className="px-2 py-6 text-center text-xs text-slate-400">
+                    {scanQ.error ? '量化扫描暂不可用' : '量化引擎计算中…'}
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="space-y-3">
+          <div className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+            <p className="text-[10px] text-slate-400">候选池平均因子</p>
+            <div className="mt-2 space-y-1.5">
+              <FactorLine label="趋势" value={avg('trend')} />
+              <FactorLine label="资金" value={avg('capital')} />
+              <FactorLine label="质量" value={avg('quality')} />
+              <FactorLine label="估值" value={avg('valuation')} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { label: '策略数', value: fmtNum(stats.strategy_count ?? stats.total_strategies, 0), sub: '内置+自定义' },
+              { label: '30日命中', value: fmtNum(stats.total_hits_30d, 0), sub: '累计入选' },
+              { label: '平均耗时', value: stats.avg_elapsed_ms ? `${(stats.avg_elapsed_ms / 1000).toFixed(1)}s` : '—', sub: '全市场' },
+            ].map((x) => (
+              <div key={x.label} className="rounded-lg bg-slate-50 px-2 py-2 text-center dark:bg-slate-800/60">
+                <p className="text-[9px] text-slate-400">{x.label}</p>
+                <p className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">{x.value}</p>
+                <p className="text-[8px] text-slate-400">{x.sub}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 /* ------------------------------------------------------------------ 情绪雷达 */
 
 const SCORE_TONES = {
@@ -552,6 +655,8 @@ export default function DashboardPage() {
               <IndexCard key={it.ts_code} item={it} />
             ))}
           </div>
+
+          <QuantPanel />
 
           {/* 涨跌分布 + 情绪 */}
           <div className="grid gap-4 xl:grid-cols-3">
