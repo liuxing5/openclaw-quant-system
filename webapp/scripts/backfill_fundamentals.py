@@ -21,7 +21,8 @@
     python webapp/scripts/backfill_fundamentals.py --dry-run       # 只抓不写
     python webapp/scripts/backfill_fundamentals.py --prune-stale   # 删除已被新数据覆盖的旧行
 
-中断后重跑会跳过「该报告期已有 > 1000 行」的季度（--force 可强制重抓）。
+中断后重跑会跳过「该报告期已有 > 4000 行」的季度（--force 可强制重抓）；
+财报披露季（如 10 月下旬的三季报）建议加 --force 重抓当期，补上后披露的公司。
 """
 from __future__ import annotations
 
@@ -311,7 +312,7 @@ def main() -> int:
             )
             or 0
         )
-        if existing > 1000 and not args.force:
+        if existing > 4000 and not args.force:
             print(f"skip {day} (existing {existing} rows)", flush=True)
             fetched_days.append(day)
             continue
