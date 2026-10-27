@@ -21,23 +21,28 @@ _BEIJING = timezone(timedelta(hours=8))
 
 
 def _html_source() -> tuple[str, str]:
-    """当日/近两日有本地生成报告时优先读本地；否则回退 GitHub Pages。"""
-    today = datetime.now(_BEIJING).date()
-    files = []
-    for p in _DOCS.glob("funnel-*.html"):
-        m = re.search(r"funnel-(\d{4}-\d{2}-\d{2})\.html$", p.name)
-        if m:
-            try:
-                files.append((datetime.strptime(m.group(1), "%Y-%m-%d").date(), p))
-            except ValueError:
-                pass
-    if files:
-        latest_date, latest = max(files, key=lambda x: x[0])
-        if (today - latest_date).days <= 2:
-            return latest.read_text(encoding="utf-8", errors="replace"), str(latest)
-    req = urllib.request.Request(URL, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return resp.read().decode("utf-8", "replace"), URL
+    """优先读 GitHub Pages 最新报告；网络异常才回退最近一次本地生成文件。"""
+    import time
+    url = f"{URL}?v={int(time.time())}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return resp.read().decode("utf-8", "replace"), URL
+    except Exception:
+        today = datetime.now(_BEIJING).date()
+        files = []
+        for p in _DOCS.glob("funnel-*.html"):
+            m = re.search(r"funnel-(\d{4}-\d{2}-\d{2})\.html$", p.name)
+            if m:
+                try:
+                    files.append((datetime.strptime(m.group(1), "%Y-%m-%d").date(), p))
+                except ValueError:
+                    pass
+        if files:
+            latest_date, latest = max(files, key=lambda x: x[0])
+            if (today - latest_date).days <= 7:
+                return latest.read_text(encoding="utf-8", errors="replace"), str(latest)
+        raise
 
 
 def _text(node) -> str:
