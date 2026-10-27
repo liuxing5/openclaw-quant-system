@@ -511,9 +511,9 @@ function SmartScanPanel({ onOpen }) {
 
       {data?.market_blocked ? (
         <div className="mt-3 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
-          大盘广度 {fmtNum((data.market_breadth || 0) * 100, 1)}%，情绪广度 {fmtNum((data.sentiment_breadth || 0) * 100, 1)}%（20 日均值 {fmtNum((data.sentiment_breadth_ma20 || 0) * 100, 1)}%）；
-          {data.market_breadth < 0.55 ? ' 大盘广度低于 55%，' : ' 情绪广度未较 20 日均值改善 5 个百分点，'}
-          胜率优先策略暂停开仓，避免逆势交易。
+          市场状态：{data.market_state === 'weak' ? '弱势' : data.market_state === 'range' ? '震荡' : '趋势'}；
+          大盘广度 {fmtNum((data.market_breadth || 0) * 100, 1)}%，情绪广度 {fmtNum((data.sentiment_breadth || 0) * 100, 1)}%（20 日均值 {fmtNum((data.sentiment_breadth_ma20 || 0) * 100, 1)}%）。
+          弱势状态下胜率优先策略暂停开仓，避免逆势交易。
         </div>
       ) : null}
 
