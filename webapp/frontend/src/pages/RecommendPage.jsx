@@ -96,11 +96,19 @@ export default function RecommendPage() {
     const vals = strategies.map((s) => s.updated).filter(Boolean)
     return vals.length ? vals.sort().slice(-1)[0] : '—'
   }, [strategies])
+  const latestDate = String(latest).slice(0, 10)
+  const pendingNames = useMemo(
+    () =>
+      strategies
+        .filter((s) => s.updated && String(s.updated).slice(0, 10) < latestDate)
+        .map((s) => s.name.replace(/^[^\w\u4e00-\u9fa5]+/, '')),
+    [strategies, latestDate],
+  )
 
   return (
     <PageShell
       title="荐股"
-      subtitle={`五策略对比选股系统 · 报告 ${data?.report_date || '—'} · 每日 15:10 更新`}
+      subtitle={`五策略对比选股系统 · 数据日 ${latestDate || data?.report_date || '—'} · 盘后 15:10 更新`}
       actions={
         <a href={SOURCE} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
           数据源原文 ↗
@@ -123,6 +131,13 @@ export default function RecommendPage() {
             <Stat label="报告日期" value={data?.report_date ? fmtDate(data.report_date) : '—'} sub="数据源生成日" />
             <Stat label="最新更新" value={latest} sub="各策略最近运行时间" />
           </div>
+
+          {pendingNames.length ? (
+            <div className="rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+              {pendingNames.join(' / ')} 仍为 {data?.report_date || '上一交易日'} 收盘版；
+              七步漏斗/LLM/回调在收盘后 15:10~16:20 生成，当前尚未到盘后更新时间。
+            </div>
+          ) : null}
 
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
             {strategies.map((s, i) => {
