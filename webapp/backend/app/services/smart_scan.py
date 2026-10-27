@@ -495,7 +495,7 @@ def _match_preset(r: dict, preset: str) -> bool:
             and 2e8 <= f("amount") <= 2e9
             and 3 <= f("turnover_rate") <= 8
             and 1.1 <= vr <= 2.2
-            and f("quality_score") >= 40
+            and f("quality_score") >= 45
             and r.get("industry_ok", True)
         )
     return True
@@ -538,7 +538,7 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
                 "GROUP BY industry ORDER BY mom DESC",
                 (day,),
             )
-            top_n = max(1, int(len(inds) * 0.5))
+            top_n = max(1, int(len(inds) * 0.35))
             strong_industries = {r["industry"] for r in inds[:top_n]}
             try:
                 since = day - timedelta(days=7) if isinstance(day, date) else day
@@ -559,7 +559,7 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
         if preset == "winrate" and market_breadth is not None and market_breadth < 0.55:
             rows = []
         rows.sort(key=lambda r: -_preset_score(r, preset))
-        rows = rows[:limit]
+        rows = rows[: min(limit, 5 if preset == "winrate" else limit)]
     else:
         sql = _SQL.format(preset_where=p["where"], board_where=bw)
         rows = query(sql, (min_score, limit))
