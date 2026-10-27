@@ -372,7 +372,8 @@ def _fetch_db(codes: list[str]) -> dict[str, dict]:
         """
         SELECT DISTINCT ON (q.ts_code)
                q.ts_code, q.trade_date, q.open, q.high, q.low, q.close, q.pre_close,
-               q.volume, q.amount, q.pct_chg, q.turnover_rate, q.total_market_cap,
+               q.volume, q.amount, q.pct_chg, q.turnover_rate,
+               q.volume_ratio, q.pe_ratio, q.pb_ratio, q.total_market_cap, q.circulating_market_cap,
                q.limit_up_price, q.limit_down_price,
                i.stock_name, i.market
         FROM daily_quotes q
@@ -397,7 +398,11 @@ def _fetch_db(codes: list[str]) -> dict[str, dict]:
             "amount": float(r["amount"]) if r["amount"] is not None else None,
             "pct_chg": round(float(r["pct_chg"] or 0), 2),
             "turnover_rate": float(r["turnover_rate"]) if r["turnover_rate"] is not None else None,
+            "volume_ratio": float(r["volume_ratio"]) if r["volume_ratio"] is not None else None,
+            "pe_ratio": float(r["pe_ratio"]) if r["pe_ratio"] is not None else None,
+            "pb_ratio": float(r["pb_ratio"]) if r["pb_ratio"] is not None else None,
             "market_cap": float(r["total_market_cap"]) if r["total_market_cap"] is not None else None,
+            "circulating_market_cap": float(r["circulating_market_cap"]) if r["circulating_market_cap"] is not None else None,
             "limit_up_price": float(r["limit_up_price"]) if r["limit_up_price"] is not None else None,
             "limit_down_price": float(r["limit_down_price"]) if r["limit_down_price"] is not None else None,
             "trade_date": str(r["trade_date"]) if r["trade_date"] else None,

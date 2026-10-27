@@ -553,7 +553,10 @@ function StockDetailView({ symbol }) {
 
   // 所有 hook 必须在提前 return 之前调用完
   const last = chartBars[chartBars.length - 1] || bars[bars.length - 1] || {}
-  const latest = profile?.latest || daily.latest || {}
+  const latest = { ...(daily.latest || {}) }
+  for (const [k, v] of Object.entries(profile?.latest || {})) {
+    if (v !== null && v !== undefined) latest[k] = v
+  }
   const name = profile?.name || daily.name || symbol
   const market = profile?.market || daily.market || ''
   const isSt = profile?.is_st ?? daily.is_st
@@ -599,13 +602,36 @@ function StockDetailView({ symbol }) {
     amount: num(live.amount) ?? num(latest.amount) ?? last.amount,
     turnover_rate: num(live.turnover_rate) ?? num(latest.turnover_rate) ?? last.turnover_rate,
     volume_ratio: num(live.volume_ratio) ?? num(pick(latest, ['volume_ratio', 'vol_ratio'])),
-    pe: num(live.pe_ratio) ?? num(pick(latest, ['pe', 'pe_ttm', 'pe_lyr'])),
-    pb: num(live.pb_ratio) ?? num(pick(latest, ['pb'])),
+    pe: num(live.pe_ratio) ?? num(pick(latest, ['pe', 'pe_ratio', 'pe_ttm', 'pe_lyr'])),
+    pb: num(live.pb_ratio) ?? num(pick(latest, ['pb', 'pb_ratio'])),
     total_mv: num(live.market_cap) ?? num(pick(latest, ['total_mv', 'total_market_cap', 'market_cap'])),
-    float_mv: num(live.circulating_market_cap) ?? num(pick(latest, ['float_mv', 'float_market_cap'])),
+    float_mv: num(live.circulating_market_cap) ?? num(pick(latest, ['float_mv', 'float_market_cap', 'circulating_market_cap'])),
     limit_up: num(live.limit_up_price) ?? last.limit_up,
     limit_down: num(live.limit_down_price) ?? last.limit_down,
   }
+
+  const macdData = techQ.data?.macd || {}
+  const histSeries = macdData.hist_series || []
+  const histPrev = histSeries.length >= 2 ? histSeries[histSeries.length - 2] : null
+  const histState =
+    macdData.hist_turn === 'positive'
+      ? '由负转正'
+      : macdData.hist_turn === 'negative'
+        ? '由正转负'
+        : typeof macdData.hist !== 'number'
+          ? '—'
+          : macdData.hist > 0
+            ? histPrev !== null && macdData.hist >= histPrev
+              ? '红柱放大'
+              : '红柱缩短'
+            : macdData.hist < 0
+              ? histPrev !== null && macdData.hist <= histPrev
+                ? '绿柱放大'
+                : '绿柱缩短'
+              : '零轴走平'
+  const chanData = techQ.data?.chan || {}
+  const segLow = chanData.seg_pivot_low ?? chanData.pivot_low
+  const segHigh = chanData.seg_pivot_high ?? chanData.pivot_high
 
   const metrics = [
     { label: '今开', value: fmtNum(quote.open, 2), raw: quote.open, base: preClose },
@@ -878,12 +904,7 @@ function StockDetailView({ symbol }) {
             { label: 'MACD 柱', value: fmtNum(techQ.data?.macd?.hist, 3), tone: pctTone(techQ.data?.macd?.hist) },
             {
               label: '柱线状态',
-              value:
-                techQ.data?.macd?.hist_turn === 'positive'
-                  ? '由负转正'
-                  : techQ.data?.macd?.hist_turn === 'negative'
-                    ? '由正转负'
-                    : '—',
+              value: histState,
             },
           ].map((x) => (
             <MetricTile key={x.label} label={x.label} value={x.value} tone={x.tone} />
@@ -908,16 +929,20 @@ function StockDetailView({ symbol }) {
             {
               label: '线段中枢',
               value:
-                techQ.data?.chan?.seg_pivot_low !== null && techQ.data?.chan?.seg_pivot_low !== undefined
-                  ? `${fmtNum(techQ.data.chan.seg_pivot_low, 2)} - ${fmtNum(techQ.data.chan.seg_pivot_high, 2)}`
-                  : '—',
+                segLow !== null && segLow !== undefined
+                  ? `${fmtNum(segLow, 2)} - ${fmtNum(segHigh, 2)}`
+                  : chanData.trend_type
+                    ? '无结构'
+                    : '—',
             },
             { label: '线段 / 笔', value: `${fmtNum(techQ.data?.chan?.segment_count, 0)} / ${fmtNum(techQ.data?.chan?.stroke_count, 0)}` },
             {
               label: '高级别（线段递归）',
               value: techQ.data?.chan?.level2_trend_type
                 ? `${techQ.data.chan.level2_trend_type} · ${fmtNum(techQ.data.chan.level2_segment_count, 0)} 段`
-                : '—',
+                : chanData.trend_type
+                  ? '无结构'
+                  : '—',
             },
           ].map((x) => (
             <MetricTile key={x.label} label={x.label} value={x.value} tone={x.tone} />
@@ -947,7 +972,8 @@ function StockDetailView({ symbol }) {
           ].map((row) => {
             const x = multiQ.data?.[row.key]
             const c = x?.chan
-            const point = c?.buy_point ? `买点${c.buy_point}` : c?.sell_point ? `卖点${c.sell_point}` : '—'
+            const pointMap = { buy1: '买点1', buy2: '买点2', buy3: '买点3', sell1: '卖点1', sell2: '卖点2', sell3: '卖点3', hold: '持有' }
+            const point = c?.buy_point ? `买点${c.buy_point}` : c?.sell_point ? `卖点${c.sell_point}` : pointMap[c?.chan_signal] || '无买卖点'
             return (
               <div key={row.key} className="rounded-lg border border-slate-200 bg-slate-50/60 p-3 dark:border-slate-700 dark:bg-slate-800/50">
                 <div className="flex items-center justify-between gap-2">

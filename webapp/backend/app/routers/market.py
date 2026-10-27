@@ -97,7 +97,9 @@ def _daily_series(ts_code: str, limit: int):
     return query(
         """
         SELECT trade_date, open, high, low, close, volume, amount, pct_chg,
-               turnover_rate, pre_close, limit_up_price, limit_down_price
+               turnover_rate, volume_ratio, pe_ratio, pb_ratio,
+               total_market_cap, circulating_market_cap,
+               pre_close, limit_up_price, limit_down_price
         FROM daily_quotes WHERE ts_code = %s
         ORDER BY trade_date DESC LIMIT %s
         """,
@@ -142,6 +144,11 @@ def quotes_daily(
                 "amount": _num(r["amount"]),
                 "pct_chg": _num(r["pct_chg"]),
                 "turnover_rate": _num(r["turnover_rate"]),
+                "volume_ratio": _num(r["volume_ratio"]),
+                "pe": _num(r["pe_ratio"]),
+                "pb": _num(r["pb_ratio"]),
+                "total_mv": _num(r["total_market_cap"]),
+                "float_mv": _num(r["circulating_market_cap"]),
                 "pre_close": _num(r["pre_close"]),
                 "limit_up_price": _num(r["limit_up_price"]),
                 "limit_down_price": _num(r["limit_down_price"]),
@@ -162,6 +169,11 @@ def quotes_daily(
             "pct_chg": last.get("pct_chg"),
             "amount": last.get("amount"),
             "turnover_rate": last.get("turnover_rate"),
+            "volume_ratio": last.get("volume_ratio"),
+            "pe": last.get("pe"),
+            "pb": last.get("pb"),
+            "total_mv": last.get("total_mv"),
+            "float_mv": last.get("float_mv"),
             "high": last.get("high"),
             "low": last.get("low"),
             "open": last.get("open"),
