@@ -63,8 +63,8 @@ PRESETS = {
         "label": "胜率优先",
         "where": (
             "l.close > l.ma20 AND l.ma20 > l.ma60 AND l.ma5 > l.ma10 "
-            "AND l.close > l.ma5 * 0.97 AND l.close < l.ma20 * 1.08 "
-            "AND l.pct_chg BETWEEN 0 AND 3 "
+            "AND l.close > l.ma5 * 0.97 AND l.close >= l.ma20 * 1.03 AND l.close < l.ma20 * 1.08 "
+            "AND l.pct_chg BETWEEN 0 AND 2 "
             "AND l.amount BETWEEN 200000000 AND 2000000000 "
             "AND l.turnover_rate BETWEEN 3 AND 8 "
             "AND (l.volume / NULLIF(l.vma20, 0)) BETWEEN 1.1 AND 2.2 "
@@ -490,8 +490,9 @@ def _match_preset(r: dict, preset: str) -> bool:
             close > ma20 > f("ma60")
             and ma5 > f("ma10")
             and close > ma5 * 0.97
+            and close >= ma20 * 1.03
             and close < ma20 * 1.08
-            and 0 <= f("pct_chg") <= 3
+            and 0 <= f("pct_chg") <= 2
             and 2e8 <= f("amount") <= 2e9
             and 3 <= f("turnover_rate") <= 8
             and 1.1 <= vr <= 2.2
