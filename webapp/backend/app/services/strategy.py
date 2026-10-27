@@ -135,6 +135,7 @@ _PRESET_SEEDS = [
     ("wave_theory", "波浪理论", "pattern", "按艾略特推动浪与调整浪结构判断当前浪型与目标价。", "trend", 55),
     ("balanced_factor", "均衡多因子", "multi_factor", "综合估值、资金、动量与稳定性的多维度评价。", "smart", 62),
     ("smart_deep_scan", "智能深度筛选", "ai", "全市场 5000+ 标的、7 因子打分，按趋势/资金/质量/估值/风险综合排序。", "smart", 65),
+    ("winrate_priority", "胜率优先", "multi_factor", "趋势确认 + 温和放量 + 不追高 + 大盘广度过滤，只做胜率优先的低吸窗口。", "winrate", 55),
 ]
 
 for _i, (_code, _name, _family, _desc, _preset, _min_score) in enumerate(_PRESET_SEEDS):

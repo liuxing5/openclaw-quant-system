@@ -409,6 +409,7 @@ function StrategyDetail({ code, reloadKey }) {
 /* --------------------------------------------------------------- 智能深度筛选 */
 
 const SMART_PRESETS = [
+  { value: 'winrate', label: '胜率优先' },
   { value: 'smart', label: '综合智能' },
   { value: 'trend', label: '趋势强势' },
   { value: 'growth', label: '成长质量' },
@@ -443,7 +444,7 @@ function FactorBar({ label, value }) {
 }
 
 function SmartScanPanel({ onOpen }) {
-  const [preset, setPreset] = useState('smart')
+  const [preset, setPreset] = useState('winrate')
   const [board, setBoard] = useState('')
   const [minScore, setMinScore] = useState(60)
   const [data, setData] = useState(null)
@@ -459,7 +460,11 @@ function SmartScanPanel({ onOpen }) {
         limit: 50,
       })
       setData(res)
-      if (!res?.hits?.length) toast.info('没有达到门槛的标的', '可下调最低评分或切换预设')
+      if (res?.market_blocked) {
+        toast.info('大盘广度不足，胜率优先策略暂不开仓', `当前广度 ${fmtNum((res.market_breadth || 0) * 100, 1)}%，低于 55% 阈值`)
+      } else if (!res?.hits?.length) {
+        toast.info('没有达到门槛的标的', '可下调最低评分或切换预设')
+      }
     } catch (e) {
       toast.error('智能扫描失败', e.message)
     } finally {
@@ -503,6 +508,12 @@ function SmartScanPanel({ onOpen }) {
         <Button size="sm" loading={loading} onClick={run}>开始全市场扫描</Button>
         <span className="text-[11px] text-slate-400">扫描口径：最新交易日收盘 + 最新财报</span>
       </div>
+
+      {data?.market_blocked ? (
+        <div className="mt-3 rounded-lg border border-amber-300/60 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
+          大盘广度仅 {fmtNum((data.market_breadth || 0) * 100, 1)}%（低于 55%），胜率优先策略暂停开仓，避免逆势交易。
+        </div>
+      ) : null}
 
       {data?.hits?.length ? (
         <div className="mt-4 max-h-[520px] overflow-auto rounded-lg border border-slate-200 dark:border-slate-800">

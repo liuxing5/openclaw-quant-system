@@ -58,6 +58,18 @@ PRESETS = {
     "leader": {"label": "龙头强势", "where": "l.pct_chg >= 5 AND l.turnover_rate >= 5"},
     "quality": {"label": "高ROE", "where": "COALESCE(f.net_profit / NULLIF(f.equity, 0) * 100, 0) >= 10"},
     "dividend": {"label": "蓝筹低波", "where": "l.total_market_cap >= 20000000000 AND l.pe_ratio > 0 AND l.pe_ratio < 25"},
+    "winrate": {
+        "label": "胜率优先",
+        "where": (
+            "l.close > l.ma20 AND l.ma20 > l.ma60 AND l.ma5 > l.ma10 "
+            "AND l.close > l.ma5 * 0.97 AND l.close < l.ma20 * 1.08 "
+            "AND l.pct_chg BETWEEN 0 AND 3 "
+            "AND l.amount BETWEEN 200000000 AND 2000000000 "
+            "AND l.turnover_rate BETWEEN 3 AND 8 "
+            "AND (l.volume / NULLIF(l.vma20, 0)) BETWEEN 1.1 AND 2.2 "
+            "AND (SELECT breadth_pct FROM breadth) >= 0.55"
+        ),
+    },
 }
 
 _WHERE = {
@@ -98,6 +110,9 @@ agg AS (
            MIN(low) FILTER (WHERE rn <= 20) AS ll20
     FROM h
     GROUP BY ts_code
+),
+breadth AS (
+    SELECT AVG(CASE WHEN close > ma20 THEN 1.0 ELSE 0.0 END) AS breadth_pct FROM agg
 ),
 fund AS (
     SELECT DISTINCT ON (ts_code) ts_code, revenue_yoy, profit_yoy, equity, net_profit, debt_ratio, roe, industry
@@ -433,6 +448,7 @@ def _preset_score(r: dict, preset: str) -> float:
         "leader": (0.20, 0.35, 0.15, 0.25, 0.00, 0.00, 0.05),
         "quality": (0.10, 0.00, 0.00, 0.00, 0.60, 0.20, 0.10),
         "dividend": (0.10, 0.00, 0.00, 0.00, 0.20, 0.40, 0.30),
+        "winrate": (0.35, 0.15, 0.20, 0.05, 0.10, 0.05, 0.10),
     }.get(preset)
     if not weights:
         return f("score")
@@ -464,6 +480,19 @@ def _match_preset(r: dict, preset: str) -> bool:
         return f("roe") >= 10
     if preset == "dividend":
         return f("total_market_cap") >= 2e10 and f("valuation_score") >= 55
+    if preset == "winrate":
+        vma20 = f("vma20")
+        vr = (f("volume") / vma20) if vma20 else 0
+        return (
+            close > ma20 > f("ma60")
+            and ma5 > f("ma10")
+            and close > ma5 * 0.97
+            and close < ma20 * 1.08
+            and 0 <= f("pct_chg") <= 3
+            and 2e8 <= f("amount") <= 2e9
+            and 3 <= f("turnover_rate") <= 8
+            and 1.1 <= vr <= 2.2
+        )
     return True
 
 
@@ -481,7 +510,14 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
     ensure_fresh()
     day = scalar(f"SELECT MAX(trade_date) FROM {_TABLE}")
     rows = []
+    market_breadth = None
     if day:
+        if preset == "winrate":
+            market_breadth = scalar(
+                "SELECT AVG(CASE WHEN close > ma20 THEN 1.0 ELSE 0.0 END) "
+                f"FROM {_TABLE} WHERE trade_date = %s",
+                (day,),
+            )
         # 物化表读取：先按综合分取前 1200，再在 Python 里做 preset 硬过滤
         rows = query(
             f"SELECT * FROM {_TABLE} WHERE trade_date = %s AND score >= %s {bw.replace('l.', '')} "
@@ -489,6 +525,8 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
             (day, min_score),
         )
         rows = [r for r in rows if _match_preset(r, preset)]
+        if preset == "winrate" and market_breadth is not None and market_breadth < 0.55:
+            rows = []
         rows.sort(key=lambda r: -_preset_score(r, preset))
         rows = rows[:limit]
     else:
@@ -532,6 +570,8 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
         "total_passed": len(hits),
         "elapsed_ms": int((time.perf_counter() - t0) * 1000),
         "hits": hits,
+        "market_breadth": round(float(market_breadth), 4) if market_breadth is not None else None,
+        "market_blocked": bool(preset == "winrate" and market_breadth is not None and market_breadth < 0.55),
         "stats": {"preset": preset, "trade_date": str(day) if day else None},
     }
 
