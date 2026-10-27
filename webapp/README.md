@@ -221,6 +221,31 @@ webapp/
 - 注册页显示 3 天免费试用；登录页同样可查看两份协议。
 - 侧边栏与首页欢迎区均使用同一 Logo，不再使用「量」字图标。
 
+## 线上部署（Render）
+
+GitHub Pages 只能托管静态前端，无法运行 FastAPI / PostgreSQL 查询。本仓库提供
+`webapp/Dockerfile` 和根目录 `render.yaml`，用 Render 的免费 Docker Web Service
+同时托管前端与后端：
+
+1. 打开 Render → **New → Blueprint**
+2. 选择 GitHub 仓库 `liuxing5/openclaw-quant-system`
+3. Render 读取根目录 `render.yaml`
+4. 填写两个 Secret：
+   - `DATABASE_URL`：Supabase PostgreSQL 连接串
+   - `MEMBERSHIP_ADMIN_KEY`：管理员开通密钥
+5. 点击 Apply，等待 Docker 构建完成
+
+部署后访问 Render 分配的 `https://quant-research-platform-xxxx.onrender.com`，
+前端、登录、会员、策略扫描、个股分析都由同一个 FastAPI 进程提供。
+
+免费实例空闲约 15 分钟后会休眠，首次打开需要 30~60 秒唤醒；这是 Render 免费层限制。
+
+一键部署入口：
+
+```text
+https://render.com/deploy?repo=https://github.com/liuxing5/openclaw-quant-system
+```
+
 ## 会员制
 
 - 注册 `/register`：邮箱 + 密码，自动获得 **3 天全功能试用**；登录 `/login` 使用 token。

@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: quant-research-platform
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerfilePath: ./webapp/Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: AUTH_SECRET
+        generateValue: true
+      - key: MEMBERSHIP_ADMIN_KEY
+        sync: false
+      - key: WEBAPP_DB_POOL
+        value: "4"
+      - key: TZ
+        value: Asia/Shanghai
