@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import threading
 import time
+from datetime import date, timedelta
 
 from ..cache import ttl_cache
 from ..db import db_session, query, scalar
@@ -452,11 +453,13 @@ def _preset_score(r: dict, preset: str) -> float:
     }.get(preset)
     if not weights:
         return f("score")
-    return round(
+    score = (
         trend * weights[0] + mom * weights[1] + vol * weights[2] + cap * weights[3]
-        + qua * weights[4] + val * weights[5] + risk * weights[6],
-        1,
+        + qua * weights[4] + val * weights[5] + risk * weights[6]
     )
+    if preset == "winrate" and r.get("lhb_buy"):
+        score += 3
+    return round(score, 1)
 
 
 def _match_preset(r: dict, preset: str) -> bool:
@@ -492,6 +495,8 @@ def _match_preset(r: dict, preset: str) -> bool:
             and 2e8 <= f("amount") <= 2e9
             and 3 <= f("turnover_rate") <= 8
             and 1.1 <= vr <= 2.2
+            and f("quality_score") >= 40
+            and r.get("industry_ok", True)
         )
     return True
 
@@ -524,6 +529,32 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
             "ORDER BY score DESC, amount DESC LIMIT 1200",
             (day, min_score),
         )
+        strong_industries = set()
+        lhb_codes = set()
+        if preset == "winrate":
+            inds = query(
+                "SELECT industry, AVG(close / NULLIF(ma20, 0) - 1) AS mom "
+                f"FROM {_TABLE} WHERE trade_date = %s AND industry IS NOT NULL "
+                "GROUP BY industry ORDER BY mom DESC",
+                (day,),
+            )
+            top_n = max(1, int(len(inds) * 0.5))
+            strong_industries = {r["industry"] for r in inds[:top_n]}
+            try:
+                since = day - timedelta(days=7) if isinstance(day, date) else day
+                lhb_codes = {
+                    r["ts_code"]
+                    for r in query(
+                        "SELECT DISTINCT ts_code FROM lhb_detail "
+                        "WHERE trade_date >= %s AND trade_date <= %s AND net_amt > 0",
+                        (since, day),
+                    )
+                }
+            except Exception:  # noqa: BLE001 龙虎榜表可能尚未建好
+                lhb_codes = set()
+        for r in rows:
+            r["industry_ok"] = (not strong_industries) or (r.get("industry") in strong_industries)
+            r["lhb_buy"] = r.get("ts_code") in lhb_codes
         rows = [r for r in rows if _match_preset(r, preset)]
         if preset == "winrate" and market_breadth is not None and market_breadth < 0.55:
             rows = []
@@ -608,6 +639,10 @@ def _reasons(r: dict) -> list[str]:
         out.append("利润高增")
     if hh20 and close >= hh20 * 0.99:
         out.append("接近20日新高")
+    if r.get("industry_ok"):
+        out.append("强势行业")
+    if r.get("lhb_buy"):
+        out.append("龙虎榜净买")
     tech = []
     if r.get("macd_cross") == "golden":
         tech.append("MACD金叉")
