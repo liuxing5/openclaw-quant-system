@@ -517,6 +517,9 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
     day = scalar(f"SELECT MAX(trade_date) FROM {_TABLE}")
     rows = []
     market_breadth = None
+    sentiment_breadth = None
+    sentiment_breadth_ma20 = None
+    regime_improving = None
     if day:
         if preset == "winrate":
             market_breadth = scalar(
@@ -524,6 +527,20 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
                 f"FROM {_TABLE} WHERE trade_date = %s",
                 (day,),
             )
+            try:
+                hist = query(
+                    "SELECT (metrics->'dims'->>'breadth')::float AS b "
+                    "FROM app_sentiment_history WHERE trade_date <= %s "
+                    "ORDER BY trade_date DESC LIMIT 21",
+                    (day,),
+                )
+                vals = [float(r["b"]) / 100.0 for r in hist if r.get("b") is not None]
+                if vals:
+                    sentiment_breadth = vals[0]
+                    sentiment_breadth_ma20 = sum(vals) / len(vals)
+                    regime_improving = sentiment_breadth >= sentiment_breadth_ma20 + 0.05
+            except Exception:  # noqa: BLE001 情绪历史可能尚未回填
+                pass
         # 物化表读取：先按综合分取前 1200，再在 Python 里做 preset 硬过滤
         rows = query(
             f"SELECT * FROM {_TABLE} WHERE trade_date = %s AND score >= %s {bw.replace('l.', '')} "
@@ -557,7 +574,10 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
             r["industry_ok"] = (not strong_industries) or (r.get("industry") in strong_industries)
             r["lhb_buy"] = r.get("ts_code") in lhb_codes
         rows = [r for r in rows if _match_preset(r, preset)]
-        if preset == "winrate" and market_breadth is not None and market_breadth < 0.55:
+        if preset == "winrate" and (
+            (market_breadth is not None and market_breadth < 0.55)
+            or regime_improving is False
+        ):
             rows = []
         rows.sort(key=lambda r: -_preset_score(r, preset))
         rows = rows[: min(limit, 5 if preset == "winrate" else limit)]
@@ -603,7 +623,16 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
         "elapsed_ms": int((time.perf_counter() - t0) * 1000),
         "hits": hits,
         "market_breadth": round(float(market_breadth), 4) if market_breadth is not None else None,
-        "market_blocked": bool(preset == "winrate" and market_breadth is not None and market_breadth < 0.55),
+        "sentiment_breadth": round(float(sentiment_breadth), 4) if sentiment_breadth is not None else None,
+        "sentiment_breadth_ma20": round(float(sentiment_breadth_ma20), 4) if sentiment_breadth_ma20 is not None else None,
+        "regime_improving": regime_improving,
+        "market_blocked": bool(
+            preset == "winrate"
+            and (
+                (market_breadth is not None and market_breadth < 0.55)
+                or regime_improving is False
+            )
+        ),
         "stats": {"preset": preset, "trade_date": str(day) if day else None},
     }
 
