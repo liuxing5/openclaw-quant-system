@@ -119,7 +119,9 @@ function StrategyCard({ item, index, running, toggling, onRun, onToggle, onOpen,
             <span className="font-mono text-[11px] text-slate-400">{s.code}</span>
             <Badge tone={FAMILY_TONES[index % FAMILY_TONES.length]}>{s.family || '策略'}</Badge>
             {s.bestHitRate !== null ? (
-              <Badge tone="amber">胜率 {fmtNum(s.bestHitRate, 1)}%</Badge>
+              <Badge tone="amber">
+                30日命中率 {fmtNum(s.bestHitRate, 1)}%
+              </Badge>
             ) : null}
           </div>
           {s.description ? (

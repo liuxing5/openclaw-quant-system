@@ -724,8 +724,9 @@ def list_strategies() -> list[dict]:
         )
         # 契约键名 best_hit_rate：本库没有逐策略收益回测，胜率不可得，
         # 用「近 30 天有命中的运行占比」作为可复算的替代口径（hit_rate_30d 同值）。
+        # 前端按百分数展示，这里统一输出 0~100，避免 1.0 被误读成 1%。
         rate = r.get("hit_rate")
-        item["best_hit_rate"] = round(float(rate), 4) if rate is not None else None
+        item["best_hit_rate"] = round(float(rate) * 100, 1) if rate is not None else None
         item["hit_rate_30d"] = item["best_hit_rate"]
         item["runs_30d"] = int(r.get("runs_30d") or 0)
         item["hits_30d"] = int(r.get("hits_30d") or 0)
