@@ -635,12 +635,17 @@ def render_classic_section(output_dir: Path) -> str:
     cards = []
     for c in candidates:
         confirmed = bool(c.get("confirmed"))
+        code = str(c.get("code") or "")
+        pure = code.split(".")[0]
+        href = f"https://finance.baidu.com/stock/ab-{pure}"
         tags = " · ".join(html_escape(str(t)) for t in (c.get("tags") or []))
         badge = "原版确认" if confirmed else "待确认"
         cards.append(
-            f'<div class="candidate-card" style="cursor:default">'
-            f'<div class="cand-header"><div><span class="cand-code">{html_escape(str(c.get("code") or ""))}</span>'
-            f'<span class="cand-name">{html_escape(str(c.get("name") or ""))}</span>'
+            f'<div class="candidate-card" style="cursor:pointer" onclick="window.open(\'{href}\',\'_blank\')">'
+            f'<div class="cand-header"><div><a class="cand-code" href="{href}" target="_blank" '
+            f'style="color:inherit;text-decoration:none">{html_escape(code)}</a>'
+            f'<a class="cand-name" href="{href}" target="_blank" style="color:inherit;text-decoration:none">'
+            f'{html_escape(str(c.get("name") or ""))}</a>'
             f'<span class="src-badge">{badge}</span></div>'
             f'<span class="cand-score">{html_escape(str(c.get("score") or "—"))}</span></div>'
             f'<div class="cand-metrics">'
