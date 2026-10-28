@@ -1,0 +1,55 @@
+name: overnight_classic
+
+# 原版八步法：交易日下午 14:30（北京时间）扫描，14:30 后 VWAP 确认。
+# UTC 06:30 = Asia/Shanghai 14:30。
+on:
+  schedule:
+    - cron: '30 6 * * 1-5'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: overnight-classic
+  cancel-in-progress: true
+
+jobs:
+  classic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Shanghai
+      POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+      POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+      POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_POOL_SIZE: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install psycopg2-binary python-dotenv
+
+      - name: Build classic intraday candidates
+        run: |
+          DATE=$(TZ=Asia/Shanghai date +%F)
+          python scripts/build_overnight_classic.py --date "$DATE" --live
+
+      - name: Generate funnel page with classic section
+        run: |
+          python strategies/funnel_strategy/generate_html.py \
+            --output ./strategies/funnel_strategy/docs
+
+      - name: Deploy funnel page
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.GH_PAT }}
+          publish_dir: ./strategies/funnel_strategy/docs
+          destination_dir: funnel
+          keep_files: true

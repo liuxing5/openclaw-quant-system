@@ -111,14 +111,16 @@ def _intraday(code: str, day: str) -> dict | None:
     if not day_bars:
         return None
     t1430 = time(14, 30)
-    pre = [b for b in day_bars if b["dt"].time() <= t1430]
-    after = [b for b in day_bars if b["dt"].time() > t1430]
-    if not pre or not after:
+    prior = [b for b in day_bars if b["dt"].time() < t1430]
+    at_or_after = [b for b in day_bars if b["dt"].time() >= t1430]
+    if not prior or not at_or_after:
         return None
+    pre = [b for b in day_bars if b["dt"].time() <= t1430]
+    after = at_or_after
     volume = sum(b["volume"] for b in day_bars)
     amount = sum(b["amount"] for b in day_bars)
     vwap = amount / volume if volume else 0
-    entry = pre[-1]["close"]
+    entry = at_or_after[0]["close"]
     last = day_bars[-1]["close"]
 
     idx_bars = _bars(_index_symbol(code), scale)
@@ -130,7 +132,7 @@ def _intraday(code: str, day: str) -> dict | None:
         idx_start = next((b["open"] for b in idx_day if b["dt"].time() >= time(9, 31)), idx_day[0]["open"])
         idx_ret = idx_day[-1]["close"] / idx_start - 1 if idx_start else 0
 
-    new_high = max(b["high"] for b in after) > max(b["high"] for b in pre) * 1.0005
+    new_high = max(b["high"] for b in after) > max(b["high"] for b in prior) * 1.0005
     pullback = min(b["low"] for b in after) <= vwap * 1.01 and last >= vwap * 0.995
     above_vwap = entry >= vwap and last >= vwap
     stronger = stock_ret > idx_ret
@@ -149,8 +151,70 @@ def _intraday(code: str, day: str) -> dict | None:
     }
 
 
-def build(day: str) -> dict:
-    rows = _daily_candidates(day)
+def _live_candidates(day: str) -> list[dict]:
+    """14:30 盘中扫描：日线历史算均线/压力，腾讯实时快照算当日涨幅/换手/市值。"""
+    from app.services import live_snapshot
+
+    snap = live_snapshot.snapshot()
+    hist = query(
+        """
+        SELECT ts_code, trade_date, close, high, volume
+        FROM daily_quotes
+        WHERE trade_date < %s::date
+          AND trade_date >= %s::date - INTERVAL '45 days'
+        ORDER BY ts_code, trade_date
+        """,
+        (day, day),
+    )
+    by_code: dict[str, list] = {}
+    for r in hist:
+        by_code.setdefault(r["ts_code"], []).append(r)
+
+    out = []
+    for item in snap.get("items") or []:
+        code = item.get("ts_code")
+        rows = by_code.get(code) or []
+        if not code or len(rows) < 20 or item.get("is_st"):
+            continue
+        pct = item.get("pct_chg")
+        turn = item.get("turnover_rate")
+        cap = item.get("circulating_market_cap") or item.get("market_cap")
+        vr = item.get("volume_ratio")
+        price = item.get("price")
+        if pct is None or turn is None or cap is None or not price:
+            continue
+        if not (3 <= pct <= 5 and 5 <= turn <= 10 and 5e9 <= cap <= 2e10):
+            continue
+        if vr is not None and vr < 1:
+            continue
+        closes = [float(r["close"]) for r in rows[-20:]]
+        closes = closes + [float(price)]
+        if len(closes) < 20:
+            continue
+        ma5 = sum(closes[-5:]) / 5
+        ma10 = sum(closes[-10:]) / 10
+        ma20 = sum(closes[-20:]) / 20
+        hh20 = max(float(r["high"]) for r in rows[-20:])
+        if not (price > ma5 > ma10 > ma20 and price >= hh20 * 0.97):
+            continue
+        out.append(
+            {
+                "ts_code": code,
+                "stock_name": item.get("name") or code,
+                "trade_date": day,
+                "pct_chg": pct,
+                "turnover_rate": turn,
+                "cap_est": cap,
+                "amount": item.get("amount") or 0,
+                "volume_ratio": vr,
+            }
+        )
+    out.sort(key=lambda x: -(x.get("amount") or 0))
+    return out[:60]
+
+
+def build(day: str, live: bool = False) -> dict:
+    rows = _live_candidates(day) if live else _daily_candidates(day)
     candidates = []
     rejected = 0
     confirmed_count = 0
@@ -213,9 +277,10 @@ def build(day: str) -> dict:
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--date", required=True)
+    p.add_argument("--live", action="store_true", help="14:30 盘中实时扫描，不依赖当日日线入库")
     p.add_argument("--output", default=str(ROOT / "strategies/funnel_strategy/docs/overnight_classic.json"))
     args = p.parse_args()
-    data = build(args.date)
+    data = build(args.date, live=args.live)
     out = Path(args.output)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
