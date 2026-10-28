@@ -1,5 +1,5 @@
 """
-五策略对比 HTML 报告生成器
+五策略对比 HTML 报告生成器（含原版八步法区块）
 ===========================
 整合 七步漏斗 / LLM多源 / 八步法 到同一页面，支持暗/亮主题。
 部署目标：https://liuxing5.github.io/openclaw-quant-system/funnel/funnel.html
@@ -1473,7 +1473,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>五策略对比 - {display_date}</title>
+<title>六策略对比 - {display_date}</title>
 <style>
 :root {{
   --bg: #f0f2f5; --card: #fff; --text: #1a1a1a; --text2: #666; --border: #e0e0e0;
@@ -1601,7 +1601,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 <div class="container">
   <div class="header">
     <div>
-      <h1>📊 五策略对比选股系统</h1>
+      <h1>📊 六策略对比选股系统</h1>
       <div class="sub">
         报告日期: {display_date} | 生成: {gen_time}
         <input type="date" class="date-input" id="datePicker" value="{display_date}" min="{min_date}" max="{max_date}" onchange="switchDate(this.value)">
@@ -1668,7 +1668,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
   </div>
 
   <div class="footer">
-    AI Stock Recommendation System | 五策略对比 · 每日15:10自动更新
+    AI Stock Recommendation System | 六策略对比 · 每日15:10自动更新
   </div>
 </div>
 
@@ -1737,7 +1737,7 @@ function switchDate(dateVal) {{
     if classic_section:
         html = html.replace("</body>", classic_section + "</body>")
     output_file.write_text(html, encoding='utf-8')
-    print(f"  ✓ 五策略对比 HTML: {output_file}")
+    print(f"  ✓ 六策略对比 HTML: {output_file}")
 
     if trade_date:
         index_file = output_dir / "index.html"
@@ -1756,7 +1756,7 @@ function switchDate(dateVal) {{
 if __name__ == "__main__":
     import argparse
     import traceback
-    parser = argparse.ArgumentParser(description="生成五策略对比 HTML 报告")
+    parser = argparse.ArgumentParser(description="生成六策略对比 HTML 报告")
     parser.add_argument("--date", "-d", type=str, default=None, help="日期 (YYYY-MM-DD)")
     parser.add_argument("--output", "-o", type=str, default=None, help="输出目录")
     parser.add_argument("--all-dates", action="store_true", help="生成所有历史日期的报告")

@@ -108,7 +108,7 @@ export default function RecommendPage() {
   return (
     <PageShell
       title="荐股"
-      subtitle={`五策略对比选股系统 · 数据日 ${latestDate || data?.report_date || '—'} · 盘后 15:10 更新`}
+      subtitle={`六策略对比选股系统 · 数据日 ${latestDate || data?.report_date || '—'} · 盘后 15:10 更新`}
       actions={
         <a href={SOURCE} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
           数据源原文 ↗
@@ -126,7 +126,7 @@ export default function RecommendPage() {
       >
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <Stat label="策略" value={`${strategies.length} 套`} sub="八步 / 七步 / LLM / 主升浪 / 回调" />
+            <Stat label="策略" value={`${strategies.length} 套`} sub="八步 / 七步 / LLM / 主升浪 / 回调 / 原版八步" />
             <Stat label="候选" value={`${totalCandidates} 只`} sub="当前报告全部策略去重前" />
             <Stat label="报告日期" value={data?.report_date ? fmtDate(data.report_date) : '—'} sub="数据源生成日" />
             <Stat label="最新更新" value={latest} sub="各策略最近运行时间" />
@@ -276,7 +276,7 @@ export default function RecommendPage() {
           ) : null}
 
           <p className="text-[10px] text-slate-400">
-            数据来自「{data?.title || '五策略对比'}」静态报告；量化分为原策略报告口径，点击候选进入本地个股分析，不构成投资建议。
+            数据来自「{data?.title || '六策略对比'}」静态报告；量化分为原策略报告口径，点击候选进入本地个股分析，不构成投资建议。
           </p>
         </div>
       </AsyncBlock>
