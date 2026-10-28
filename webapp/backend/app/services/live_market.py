@@ -548,35 +548,118 @@ def _board_page(board_type: str, ascending: bool, limit: int) -> tuple[list[dict
     return out, int(data.get("total") or 0)
 
 
+_INDUSTRY_ALIASES = {
+    "文字媒体": "数字媒体",
+    "视频媒体": "影视院线",
+    "模拟芯片设计": "半导体",
+    "数字芯片设计": "半导体",
+    "集成电路制造": "半导体",
+    "集成电路封测": "半导体",
+    "半导体设备": "半导体",
+    "分立器件": "半导体",
+    "光学元件": "光学光电子",
+    "LED": "光学光电子",
+    "面板": "光学光电子",
+    "消费电子零部件": "消费电子",
+    "品牌消费电子": "消费电子",
+}
+
+# 东财 90 个行业与本地申万 128 个二级行业不是一一对应，合并行业需要一对多。
+_INDUSTRY_GROUPS = {
+    "IT服务": ["IT服务Ⅱ"],
+    "中药": ["中药Ⅱ"],
+    "保险": ["保险Ⅱ"],
+    "其他电子": ["其他电子Ⅱ"],
+    "军工装备": ["航天装备Ⅱ", "航空装备Ⅱ", "地面兵装Ⅱ", "航海装备Ⅱ", "军工电子Ⅱ"],
+    "其他社会服务": ["专业服务", "体育Ⅱ", "教育", "旅游及景区"],
+    "文化传媒": ["影视院线", "数字媒体", "出版", "广告营销", "游戏Ⅱ"],
+    "旅游及酒店": ["旅游及景区", "酒店餐饮", "旅游零售Ⅱ"],
+    "机场航运": ["航空机场", "航运港口"],
+    "汽车服务及其他": ["汽车服务", "摩托车及其他"],
+    "油气开采及服务": ["油气开采Ⅱ", "油服工程"],
+    "港口航运": ["航运港口"],
+    "煤炭开采加工": ["煤炭开采", "焦炭Ⅱ"],
+    "石油加工贸易": ["炼化及贸易"],
+    "种植业与林业": ["种植业", "林业Ⅱ"],
+    "综合": ["综合Ⅱ"],
+    "美容护理": ["化妆品", "个护用品", "医疗美容"],
+    "证券": ["证券Ⅱ"],
+    "钢铁": ["普钢", "特钢Ⅱ", "冶钢原料"],
+    "银行": ["银行Ⅱ"],
+    "零售": ["一般零售", "专业连锁Ⅱ", "互联网电商", "旅游零售Ⅱ"],
+    "饮料制造": ["饮料乳品", "非白酒", "白酒Ⅱ"],
+    "食品加工制造": ["食品加工"],
+    "汽车整车": ["乘用车", "商用车"],
+    "建筑材料": ["水泥", "玻璃玻纤", "装修建材"],
+    "建筑装饰": ["装修装饰Ⅱ", "专业工程", "基础建设", "房屋建设Ⅱ"],
+    "房地产": ["房地产开发", "房地产服务"],
+    "公路铁路运输": ["铁路公路"],
+}
+
+
+def _industry_rows(name: str, limit: int) -> list[dict]:
+    return query(
+        """
+        SELECT f.ts_code, s.stock_name, f.industry,
+               q.close, q.pct_chg, q.amount, q.turnover_rate
+        FROM (SELECT DISTINCT ON (ts_code) ts_code, industry
+              FROM stock_fundamentals
+              WHERE industry IS NOT NULL
+              ORDER BY ts_code, report_date DESC) f
+        LEFT JOIN stock_basic_info s ON s.ts_code = f.ts_code
+        LEFT JOIN LATERAL (
+            SELECT d.close, d.pct_chg, d.amount, d.turnover_rate
+            FROM daily_quotes d
+            WHERE d.ts_code = f.ts_code
+            ORDER BY d.trade_date DESC LIMIT 1
+        ) q ON TRUE
+        WHERE f.industry ILIKE %s OR %s ILIKE f.industry || '%%'
+        ORDER BY COALESCE(q.amount, 0) DESC
+        LIMIT %s
+        """,
+        (f"%{name}%", f"%{name}%", int(limit)),
+    )
+
+
 def industry_members(name: str, limit: int = 200) -> list[dict]:
-    """按本地财报行业字段取行业成分，并用实时快照覆盖价格。"""
+    """按本地财报行业字段取行业成分，并用实时快照覆盖价格。
+
+    东财行业名（如“文字媒体”“模拟芯片设计”）与本地申万行业名不完全一致，
+    先做别名映射，再做字符重合度匹配，避免详情页成分股为空。
+    """
     if not name:
         return []
-    clean = str(name).replace("Ⅱ", "").replace("Ⅲ", "").replace("Ⅰ", "")
+    clean = str(name).replace("Ⅱ", "").replace("Ⅲ", "").replace("Ⅰ", "").strip()
+    aliases = _INDUSTRY_GROUPS.get(clean)
+    if not aliases:
+        single = _INDUSTRY_ALIASES.get(clean, clean)
+        aliases = [single]
     try:
-        rows = query(
-            """
-            SELECT f.ts_code, s.stock_name, f.industry,
-                   q.close, q.pct_chg, q.amount, q.turnover_rate
-            FROM (SELECT DISTINCT ON (ts_code) ts_code, industry
-                  FROM stock_fundamentals
-                  WHERE industry IS NOT NULL
-                  ORDER BY ts_code, report_date DESC) f
-            LEFT JOIN stock_basic_info s ON s.ts_code = f.ts_code
-            LEFT JOIN LATERAL (
-                SELECT d.close, d.pct_chg, d.amount, d.turnover_rate
-                FROM daily_quotes d
-                WHERE d.ts_code = f.ts_code
-                ORDER BY d.trade_date DESC LIMIT 1
-            ) q ON TRUE
-            WHERE f.industry ILIKE %s OR %s ILIKE f.industry || '%%'
-            ORDER BY COALESCE(q.amount, 0) DESC
-            LIMIT %s
-            """,
-            (f"%{clean}%", f"%{clean}%", int(limit)),
-        )
+        rows = []
+        seen = set()
+        for target in aliases:
+            for row in _industry_rows(target, limit):
+                if row["ts_code"] not in seen:
+                    seen.add(row["ts_code"])
+                    rows.append(row)
+        if not rows:
+            candidates = [
+                r["industry"]
+                for r in query("SELECT DISTINCT industry FROM stock_fundamentals WHERE industry IS NOT NULL")
+            ]
+            target_chars = set(clean)
+            ranked = sorted(
+                (
+                    (len(target_chars & set(str(c).replace("Ⅱ", "").replace("Ⅲ", "").replace("Ⅰ", ""))), c)
+                    for c in candidates
+                ),
+                reverse=True,
+            )
+            if ranked and ranked[0][0] >= 2:
+                rows = _industry_rows(ranked[0][1], limit)
     except Exception:  # noqa: BLE001
         return []
+    rows = rows[:limit]
     snap = {it["ts_code"]: it for it in _items()}
     out = []
     for r in rows:

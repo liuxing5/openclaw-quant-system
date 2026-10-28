@@ -10,7 +10,7 @@
  * 因此成分股优先用该接口，失败时降级到板块详情里自带的 members，两者都没有才报错。
  */
 import React, { useMemo, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import Chart, { ACCENT, DOWN, TIP, UP } from '../components/Chart.jsx'
 import {
   AsyncBlock,
@@ -615,7 +615,7 @@ function ListView({ list, topUp, topDown, page, setPage, sort, setSort, onPick }
 
 /* ---------------------------------------------------------------- 详情模式 */
 
-function DetailView({ code, detail, membersApi, onBack, onPick }) {
+function DetailView({ code, name, detail, membersApi, onBack, onPick }) {
   const info = useMemo(() => normalizeDetail(detail.data), [detail.data])
   const sector = info?.sector
   const snapshotMembers = info ? info.members : []
@@ -742,7 +742,9 @@ function DetailView({ code, detail, membersApi, onBack, onPick }) {
 export default function IndustryAnalysisPage() {
   const navigate = useNavigate()
   const params = useParams()
+  const [searchParams] = useSearchParams()
   const code = routeCode(params.code)
+  const routeName = searchParams.get('name') || ''
 
   const [page, setPage] = useState(1)
   const [sort, setSort] = useState('pct_chg_desc')
@@ -772,12 +774,14 @@ export default function IndustryAnalysisPage() {
   )
 
   // 详情模式：code 进 deps，URL 变化即重新拉取
-  const detail = useApi(() => api.get(`/boards/${KIND}/${encodeURIComponent(code)}`, { days: 20 }), [code], {
-    enabled: !!code,
-  })
+  const detail = useApi(
+    () => api.get(`/boards/${KIND}/${encodeURIComponent(code)}`, { days: 20, name: routeName || undefined }),
+    [code, routeName],
+    { enabled: !!code },
+  )
   const membersApi = useApi(
-    () => api.get(`/boards/${KIND}/${encodeURIComponent(code)}/members`, { days: 20 }),
-    [code],
+    () => api.get(`/boards/${KIND}/${encodeURIComponent(code)}/members`, { days: 20, name: routeName || undefined }),
+    [code, routeName],
     { enabled: !!code },
   )
 
@@ -797,10 +801,23 @@ export default function IndustryAnalysisPage() {
     return () => clearInterval(id)
   }, [code, list.reload, topUp.reload, topDown.reload, detail.reload, membersApi.reload])
 
-  const pick = (target) => navigate(`${BASE}/${encodeURIComponent(target)}`)
+  const nameMap = useMemo(() => {
+    const out = {}
+    for (const data of [list.data, topUp.data, topDown.data]) {
+      for (const item of data?.items || []) {
+        if (item?.code && item?.name) out[item.code] = item.name
+      }
+    }
+    return out
+  }, [list.data, topUp.data, topDown.data])
+
+  const pick = (target) => {
+    const name = nameMap[target] || (target === code ? routeName : '')
+    navigate(`${BASE}/${encodeURIComponent(target)}${name ? `?name=${encodeURIComponent(name)}` : ''}`)
+  }
   const back = () => navigate(BASE)
 
-  if (code) return <DetailView code={code} detail={detail} membersApi={membersApi} onBack={back} onPick={pick} />
+  if (code) return <DetailView code={code} name={routeName} detail={detail} membersApi={membersApi} onBack={back} onPick={pick} />
 
   return (
     <ListView

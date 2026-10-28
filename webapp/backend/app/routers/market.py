@@ -419,7 +419,12 @@ def _boards(kind: str, sort: str, limit: int, offset: int) -> dict:
 
 
 @router.get("/boards/{kind}/{code}")
-def board_detail(kind: str, code: str, limit: int = Query(50, ge=1, le=500)):
+def board_detail(
+    kind: str,
+    code: str,
+    limit: int = Query(50, ge=1, le=500),
+    name: str | None = Query(None, description="行业名，用于东财 BK 代码在本地无缓存时兜底"),
+):
     if kind not in ("concept", "industry"):
         return {"detail": "未知板块类型"}
     table = "concept_board_quotes" if kind == "concept" else "industry_board_quotes"
@@ -432,6 +437,34 @@ def board_detail(kind: str, code: str, limit: int = Query(50, ge=1, le=500)):
         live = live_market.board_detail(kind, code)
         if live:
             return live
+        # 东财 BK 行业代码在本地 90 个申万行业缓存里可能不存在：
+        # 用榜单带来的行业名做本地成分兜底，至少能进入详情页看成分。
+        if kind == "industry" and name:
+            members = live_market.industry_members(name, limit=limit)
+            pct = None
+            if members:
+                vals = [m.get("pct_chg") for m in members if m.get("pct_chg") is not None]
+                pct = round(sum(vals) / len(vals), 2) if vals else None
+            return {
+                "kind": kind,
+                "code": code,
+                "snapshot": {
+                    "code": code,
+                    "industry_code": code,
+                    "industry_name": name,
+                    "name": name,
+                    "trade_date": str(live_market.today()),
+                    "pct_chg": pct,
+                    "stock_count": len(members),
+                    "lead_stock_name": members[0].get("name") if members else None,
+                },
+                "history": [],
+                "member_count": len(members),
+                "members": members,
+                "members_available": bool(members),
+                "live": False,
+                "source": "local-industry-fallback",
+            }
         return {"detail": "板块不存在"}
     snap = dict(row[0])
     snap["trade_date"] = str(snap["trade_date"])
@@ -487,10 +520,41 @@ def board_detail(kind: str, code: str, limit: int = Query(50, ge=1, le=500)):
             for m in lm
         ]
 
+    history = []
+    if kind == "industry" and member_rows:
+        try:
+            codes = [m["ts_code"] for m in member_rows if m.get("ts_code")]
+            hist = query(
+                """
+                SELECT trade_date,
+                       AVG(pct_chg) AS pct_chg,
+                       SUM(amount) AS amount,
+                       SUM(COALESCE(main_force_net, 0)) AS net_inflow
+                FROM daily_quotes
+                WHERE ts_code = ANY(%s)
+                  AND trade_date >= %s::date - INTERVAL '30 days'
+                GROUP BY trade_date
+                ORDER BY trade_date
+                """,
+                (codes, snap["trade_date"]),
+            )
+            history = [
+                {
+                    "trade_date": str(r["trade_date"]),
+                    "pct_chg": _num(r["pct_chg"]),
+                    "amount": _num(r["amount"]),
+                    "net_inflow": _num(r["net_inflow"]),
+                }
+                for r in hist
+            ]
+        except Exception:  # noqa: BLE001
+            history = []
+
     return {
         "kind": kind,
         "code": code,
         "snapshot": snap,
+        "history": history,
         "member_count": len(member_rows),
         "members": member_rows,
         "members_available": bool(member_rows),
@@ -600,6 +664,7 @@ def board_members(
     days: int = Query(30, ge=1, le=365, description="回看板块行情天数，用于取板块名/领涨股"),
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    name: str | None = Query(None, description="行业名，BK 代码无本地缓存时兜底"),
 ):
     """板块成分股（分页）。
 
@@ -702,10 +767,10 @@ def board_members(
                 "WHERE industry_code = %s ORDER BY trade_date DESC LIMIT 1",
                 (code,),
             )
-            name = name_row[0]["industry_name"] if name_row else None
+            fallback_name = name or (name_row[0]["industry_name"] if name_row else None)
         except Exception:  # noqa: BLE001
-            name = None
-        lm = live_market.industry_members(name) if name else []
+            fallback_name = name
+        lm = live_market.industry_members(fallback_name) if fallback_name else []
         if lm:
             start = (page - 1) * size
             page_items = lm[start : start + size]
