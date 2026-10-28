@@ -83,6 +83,13 @@ function normRow(r) {
     if (x === null) return null
     return Math.abs(x) < 1e6 ? x * 1e8 : x
   }
+  const stockCount = num(r.stock_count) ?? num(r.member_count)
+  const upCount = num(r.up_count)
+  const downCount = num(r.down_count)
+  const explicitFlat = num(r.flat_count)
+  const flatCount =
+    explicitFlat ??
+    (stockCount !== null && upCount !== null && downCount !== null ? stockCount - upCount - downCount : null)
   return {
     code,
     name: r.name || r.sector_name || r.industry_name || r.concept_name || '',
@@ -91,9 +98,10 @@ function normRow(r) {
     net_inflow: money(r.net_inflow),
     amount: money(r.amount),
     turnover_rate: num(r.turnover_rate),
-    up_count: num(r.up_count),
-    down_count: num(r.down_count),
-    stock_count: num(r.stock_count) ?? num(r.member_count),
+    up_count: upCount,
+    down_count: downCount,
+    flat_count: flatCount,
+    stock_count: stockCount,
     leader: String(r.leader_name || r.lead_stock_name || '').trim(),
     leader_pct: num(r.leader_pct_chg),
     rank: r.rank,
@@ -550,7 +558,8 @@ function ListView({ list, topUp, topDown, page, setPage, sort, setSort, onPick }
 
   const counts = (r) => {
     if (r.up_count !== null || r.down_count !== null) {
-      return `${r.up_count ?? '—'}涨 ${r.down_count ?? '—'}跌`
+      const flat = r.flat_count ? ` ${r.flat_count}平` : ''
+      return `${r.up_count ?? '—'}涨 ${r.down_count ?? '—'}跌${flat}`
     }
     if (r.stock_count !== null) return `${fmtNum(r.stock_count, 0)} 只成分`
     if (r.leader) return `领涨 ${r.leader}`
@@ -650,7 +659,7 @@ function DetailView({ code, name, detail, membersApi, onBack, onPick }) {
     tiles.push({ label: '领涨股', value: leaderName || '—', sub: leaderPct !== null ? fmtPct(leaderPct) : null })
   }
 
-  const showBreadth = sector && (sector.up_count !== null || sector.down_count !== null)
+  const showBreadth = sector && (sector.up_count !== null || sector.down_count !== null || sector.flat_count !== null)
 
   return (
     <PageShell
@@ -702,6 +711,12 @@ function DetailView({ code, name, detail, membersApi, onBack, onPick }) {
                         <b className="text-rose-600 dark:text-rose-400">{sector.up_count ?? '—'} 涨</b>
                         <span className="mx-1">/</span>
                         <b className="text-emerald-600 dark:text-emerald-400">{sector.down_count ?? '—'} 跌</b>
+                        {sector.flat_count ? (
+                          <>
+                            <span className="mx-1">/</span>
+                            <b className="text-slate-500 dark:text-slate-400">{sector.flat_count} 平</b>
+                          </>
+                        ) : null}
                       </span>
                     </div>
                     <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">

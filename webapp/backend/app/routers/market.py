@@ -440,8 +440,11 @@ def board_detail(
         # 东财 BK 行业代码在本地 90 个申万行业缓存里可能不存在：
         # 用榜单带来的行业名做本地成分兜底，至少能进入详情页看成分。
         if kind == "industry" and name:
-            members = live_market.industry_members(name, limit=limit)
+            members = live_market.industry_members(name, limit=500)
             pct = None
+            up = sum(1 for m in members if (m.get("pct_chg") or 0) > 0)
+            down = sum(1 for m in members if (m.get("pct_chg") or 0) < 0)
+            flat = len(members) - up - down
             if members:
                 vals = [m.get("pct_chg") for m in members if m.get("pct_chg") is not None]
                 pct = round(sum(vals) / len(vals), 2) if vals else None
@@ -456,11 +459,14 @@ def board_detail(
                     "trade_date": str(live_market.today()),
                     "pct_chg": pct,
                     "stock_count": len(members),
+                    "up_count": up,
+                    "down_count": down,
+                    "flat_count": flat,
                     "lead_stock_name": members[0].get("name") if members else None,
                 },
                 "history": [],
                 "member_count": len(members),
-                "members": members,
+                "members": members[:limit],
                 "members_available": bool(members),
                 "live": False,
                 "source": "local-industry-fallback",
@@ -521,34 +527,51 @@ def board_detail(
         ]
 
     history = []
-    if kind == "industry" and member_rows:
+    if kind == "industry":
+        # 涨跌家数必须以实际成分股为准，不能用板块快照里过期的 up/down。
         try:
-            codes = [m["ts_code"] for m in member_rows if m.get("ts_code")]
-            hist = query(
-                """
-                SELECT trade_date,
-                       AVG(pct_chg) AS pct_chg,
-                       SUM(amount) AS amount,
-                       SUM(COALESCE(main_force_net, 0)) AS net_inflow
-                FROM daily_quotes
-                WHERE ts_code = ANY(%s)
-                  AND trade_date >= %s::date - INTERVAL '30 days'
-                GROUP BY trade_date
-                ORDER BY trade_date
-                """,
-                (codes, snap["trade_date"]),
-            )
-            history = [
-                {
-                    "trade_date": str(r["trade_date"]),
-                    "pct_chg": _num(r["pct_chg"]),
-                    "amount": _num(r["amount"]),
-                    "net_inflow": _num(r["net_inflow"]),
-                }
-                for r in hist
-            ]
+            breadth_members = live_market.industry_members(
+                snap.get("industry_name") or snap.get("name") or name,
+                limit=500,
+            ) or member_rows
         except Exception:  # noqa: BLE001
-            history = []
+            breadth_members = member_rows
+        if breadth_members:
+            up = sum(1 for m in breadth_members if (m.get("pct_chg") or 0) > 0)
+            down = sum(1 for m in breadth_members if (m.get("pct_chg") or 0) < 0)
+            flat = len(breadth_members) - up - down
+            snap["up_count"] = up
+            snap["down_count"] = down
+            snap["flat_count"] = flat
+            snap["stock_count"] = len(breadth_members)
+        if member_rows:
+            try:
+                codes = [m["ts_code"] for m in member_rows if m.get("ts_code")]
+                hist = query(
+                    """
+                    SELECT trade_date,
+                           AVG(pct_chg) AS pct_chg,
+                           SUM(amount) AS amount,
+                           SUM(COALESCE(main_force_net, 0)) AS net_inflow
+                    FROM daily_quotes
+                    WHERE ts_code = ANY(%s)
+                      AND trade_date >= %s::date - INTERVAL '30 days'
+                    GROUP BY trade_date
+                    ORDER BY trade_date
+                    """,
+                    (codes, snap["trade_date"]),
+                )
+                history = [
+                    {
+                        "trade_date": str(r["trade_date"]),
+                        "pct_chg": _num(r["pct_chg"]),
+                        "amount": _num(r["amount"]),
+                        "net_inflow": _num(r["net_inflow"]),
+                    }
+                    for r in hist
+                ]
+            except Exception:  # noqa: BLE001
+                history = []
 
     return {
         "kind": kind,
