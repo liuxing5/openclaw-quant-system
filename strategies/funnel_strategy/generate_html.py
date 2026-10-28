@@ -612,6 +612,59 @@ def load_main_uptrend_daily(trade_date=None):
         return [], None
 
 
+def render_classic_section(output_dir: Path) -> str:
+    """把 overnight_classic.json 渲染成页面底部的原版八步法区块。"""
+    path = Path(output_dir) / "overnight_classic.json"
+    if not path.exists():
+        return ""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+    candidates = data.get("candidates") or []
+    steps = data.get("steps") or []
+    if not candidates and not steps:
+        return ""
+    step_html = "".join(
+        f'<div class="step-row"><span class="step-name">{html_escape(str(s.get("name") or ""))}</span>'
+        f'<span class="step-pass">{html_escape(str(s.get("pass") if s.get("pass") is not None else "—"))}</span>'
+        + (f'<span class="elim">{html_escape(str(s.get("eliminated")))}</span>' if s.get("eliminated") not in (None, "") else "")
+        + f'<span class="rule-inline">{html_escape(str(s.get("rule") or ""))}</span></div>'
+        for s in steps
+    )
+    cards = []
+    for c in candidates:
+        confirmed = bool(c.get("confirmed"))
+        tags = " · ".join(html_escape(str(t)) for t in (c.get("tags") or []))
+        badge = "原版确认" if confirmed else "待确认"
+        cards.append(
+            f'<div class="candidate-card" style="cursor:default">'
+            f'<div class="cand-header"><div><span class="cand-code">{html_escape(str(c.get("code") or ""))}</span>'
+            f'<span class="cand-name">{html_escape(str(c.get("name") or ""))}</span>'
+            f'<span class="src-badge">{badge}</span></div>'
+            f'<span class="cand-score">{html_escape(str(c.get("score") or "—"))}</span></div>'
+            f'<div class="cand-metrics">'
+            f'<div class="metric"><span class="mv">{html_escape(str(c.get("entry") or "—"))}</span><span class="ml">14:30价</span></div>'
+            f'<div class="metric"><span class="mv">{html_escape(str(c.get("vwap") or "—"))}</span><span class="ml">VWAP</span></div>'
+            f'<div class="metric stop"><span class="mv">{html_escape(str(c.get("stop") or "—"))}</span><span class="ml">防守</span></div>'
+            f'<div class="metric target"><span class="mv">{html_escape(str(c.get("target") or "—"))}</span><span class="ml">目标</span></div>'
+            f'</div><div class="cand-tags">{tags}</div></div>'
+        )
+    if not cards:
+        cards = ['<div class="no-data">本期无符合原版条件的标的</div>']
+    note = html_escape(str(data.get("note") or ""))
+    return (
+        f'<div class="container" style="padding-top:0">'
+        f'<div class="section" style="margin-top:16px">'
+        f'<h2>🧭 八步隔夜法·原版<span class="section-subtitle">{html_escape(str(data.get("date") or ""))} 15:00:00</span></h2>'
+        f'<div class="steps-area">{step_html}</div>'
+        f'<h3 style="font-size:.9rem;margin:14px 0 8px;">候选标的 ({len(candidates)}只，确认{data.get("confirmed_count", 0)}只)</h3>'
+        f'<div class="cards-grid">{"".join(cards)}</div>'
+        f'<div style="font-size:.66rem;color:var(--text-secondary);margin-top:8px;">{note}</div>'
+        f'</div></div>'
+    )
+
+
 def generate_unified_html(output_dir=None, trade_date=None):
     if output_dir is None:
         output_dir = Path(__file__).parent / "docs"
@@ -1680,6 +1733,9 @@ function switchDate(dateVal) {{
         output_file = output_dir / f"funnel-{trade_date}.html"
     else:
         output_file = output_dir / "funnel.html"
+    classic_section = render_classic_section(output_dir)
+    if classic_section:
+        html = html.replace("</body>", classic_section + "</body>")
     output_file.write_text(html, encoding='utf-8')
     print(f"  ✓ 五策略对比 HTML: {output_file}")
 

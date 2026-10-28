@@ -273,6 +273,23 @@ jobs:
         destination_dir: 8step
         keep_files: true
 
+    - name: Build overnight classic section
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
+      env:
+        POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+        POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+        POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        POSTGRES_POOL_SIZE: 5
+      run: |
+        if [ "$(TZ=Asia/Shanghai date +%H%M)" -lt 1510 ]; then
+          echo "盘中不生成原版八步（等待收盘后）"; exit 0
+        fi
+        DATE=$(TZ=Asia/Shanghai date +%F)
+        python scripts/build_overnight_classic.py --date "$DATE" || echo "⚠️ classic section skipped"
+
     - name: Generate unified HTML report (funnel page)
       if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
       continue-on-error: true

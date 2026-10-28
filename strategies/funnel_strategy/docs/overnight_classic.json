@@ -1,0 +1,118 @@
+{
+  "title": "八步隔夜法·原版",
+  "date": "2026-10-26",
+  "updated": "2026-10-28 10:52:50",
+  "steps": [
+    {
+      "name": "涨幅筛选 3%~5%",
+      "pass": 3,
+      "eliminated": "",
+      "rule": "14:30 后涨幅 3%~5%，不追高"
+    },
+    {
+      "name": "量比 ≥1",
+      "pass": 3,
+      "eliminated": "",
+      "rule": "当日量能不低于 20 日均量"
+    },
+    {
+      "name": "换手率 5%~10%",
+      "pass": 3,
+      "eliminated": "",
+      "rule": "兼顾流动性与不过热"
+    },
+    {
+      "name": "流通市值 50~200亿",
+      "pass": 3,
+      "eliminated": "",
+      "rule": "中盘弹性区间"
+    },
+    {
+      "name": "量能台阶放大",
+      "pass": 3,
+      "eliminated": "",
+      "rule": "成交量持续放大"
+    },
+    {
+      "name": "均线多头 + 无压力",
+      "pass": 3,
+      "eliminated": "",
+      "rule": "收盘 > MA5 > MA10 > MA20，接近 20 日高"
+    },
+    {
+      "name": "VWAP + 强于大盘",
+      "pass": 3,
+      "eliminated": 0,
+      "rule": "股价在日内 VWAP 上方，且强于上证/深证"
+    },
+    {
+      "name": "14:30 新高 + 回踩不破",
+      "pass": 0,
+      "eliminated": 3,
+      "rule": "14:30 后创新高，回踩 VWAP 不有效跌破"
+    }
+  ],
+  "candidates": [
+    {
+      "code": "688772.SH",
+      "name": "珠海冠宇",
+      "score": 94.2,
+      "entry": 15.42,
+      "stop": 15.371,
+      "target": 15.883,
+      "quant_score": 94.2,
+      "tags": [
+        "强于大盘",
+        "回踩不破",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 15.371,
+      "pct_chg": 4.42,
+      "confirmed": false,
+      "path": "待确认"
+    },
+    {
+      "code": "601595.SH",
+      "name": "上海电影",
+      "score": 86.3,
+      "entry": 29.15,
+      "stop": 28.374,
+      "target": 30.024,
+      "quant_score": 86.3,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 28.374,
+      "pct_chg": 3.63,
+      "confirmed": false,
+      "path": "待确认"
+    },
+    {
+      "code": "688543.SH",
+      "name": "国科军工",
+      "score": 82.2,
+      "entry": 51.08,
+      "stop": 49.477,
+      "target": 52.612,
+      "quant_score": 82.2,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "14:30新高",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 49.477,
+      "pct_chg": 3.22,
+      "confirmed": false,
+      "path": "待确认"
+    }
+  ],
+  "candidate_count": 3,
+  "confirmed_count": 0,
+  "note": "原版规则：14:30 后确认，次日 10:00 前必须卖出；未确认标的仅展示，不自动推荐；1 分钟用于当日，历史不足时用 5 分钟。"
+}
