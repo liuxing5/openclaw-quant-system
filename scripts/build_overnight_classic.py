@@ -9,13 +9,34 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import urllib.request
 from datetime import datetime, time, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "webapp" / "backend"))
+
+
+def _ensure_database_url() -> None:
+    """GitHub Actions 只提供 POSTGRES_*，webapp/db.py 需要 DATABASE_URL。"""
+    if os.getenv("DATABASE_URL") or os.getenv("WEBAPP_DATABASE_URL"):
+        return
+    host = os.getenv("POSTGRES_HOST")
+    if not host:
+        return
+    user = quote(os.getenv("POSTGRES_USER", ""), safe="")
+    password = quote(os.getenv("POSTGRES_PASSWORD", ""), safe="")
+    port = os.getenv("POSTGRES_PORT", "5432")
+    db = os.getenv("POSTGRES_DB", "postgres")
+    url = f"postgresql://{user}:{password}@{host}:{port}/{db}?sslmode=require"
+    os.environ["DATABASE_URL"] = url
+    os.environ["WEBAPP_DATABASE_URL"] = url
+
+
+_ensure_database_url()
 
 from app.db import query  # noqa: E402
 

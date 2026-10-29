@@ -1,7 +1,7 @@
 {
   "title": "八步隔夜法·原版",
-  "date": "2026-10-26",
-  "updated": "2026-10-28 12:25:03",
+  "date": "2026-10-28",
+  "updated": "2026-10-29 12:30:10",
   "steps": [
     {
       "name": "涨幅筛选 3%~5%",
@@ -54,60 +54,61 @@
   ],
   "candidates": [
     {
-      "code": "688772.SH",
-      "name": "珠海冠宇",
-      "score": 94.2,
-      "entry": 15.42,
-      "stop": 15.371,
-      "target": 15.883,
-      "quant_score": 94.2,
+      "code": "603901.SH",
+      "name": "永创智能",
+      "score": 88.3,
+      "entry": 10.82,
+      "stop": 10.777,
+      "target": 11.145,
+      "quant_score": 88.3,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "回踩不破",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 10.777,
+      "pct_chg": 3.83,
+      "confirmed": false,
+      "path": "待确认"
+    },
+    {
+      "code": "300815.SZ",
+      "name": "玉禾田",
+      "score": 89.2,
+      "entry": 16.66,
+      "stop": 16.72,
+      "target": 17.16,
+      "quant_score": 89.2,
       "tags": [
         "强于大盘",
         "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 15.371,
-      "pct_chg": 4.42,
+      "vwap": 16.72,
+      "pct_chg": 3.92,
       "confirmed": false,
       "path": "待确认"
     },
     {
-      "code": "601595.SH",
-      "name": "上海电影",
-      "score": 86.3,
-      "entry": 29.15,
-      "stop": 28.374,
-      "target": 30.024,
-      "quant_score": 86.3,
+      "code": "600963.SH",
+      "name": "岳阳林纸",
+      "score": 84.5,
+      "entry": 3.94,
+      "stop": 3.873,
+      "target": 4.058,
+      "quant_score": 84.5,
       "tags": [
         "VWAP上方",
         "强于大盘",
+        "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 28.374,
-      "pct_chg": 3.63,
-      "confirmed": false,
-      "path": "待确认"
-    },
-    {
-      "code": "688543.SH",
-      "name": "国科军工",
-      "score": 82.2,
-      "entry": 51.08,
-      "stop": 49.477,
-      "target": 52.612,
-      "quant_score": 82.2,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
-        "14:30新高",
-        "待确认"
-      ],
-      "source": "腾讯1m",
-      "vwap": 49.477,
-      "pct_chg": 3.22,
+      "vwap": 3.873,
+      "pct_chg": 3.45,
       "confirmed": false,
       "path": "待确认"
     }
