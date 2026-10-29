@@ -4,7 +4,8 @@ name: overnight_classic
 # UTC 06:30 = Asia/Shanghai 14:30。
 on:
   schedule:
-    - cron: '30 6 * * 1-5'
+    # UTC 06:30 = 北京时间 14:30；每 5 分钟补跑一次，避免 GitHub 定时队列延迟
+    - cron: '*/5 6 * * 1-5'
   workflow_dispatch:
 
 permissions:
@@ -37,16 +38,26 @@ jobs:
         run: pip install pandas numpy psycopg2-binary python-dotenv jinja2
 
       - name: Build classic intraday candidates
+        id: build
         run: |
+          NOW=$(TZ=Asia/Shanghai date +%H%M)
+          if [ "$NOW" -lt 1430 ] || [ "$NOW" -gt 1505 ]; then
+            echo "跳过：当前 $NOW，不在 14:30~15:05 时间窗"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "run=true" >> "$GITHUB_OUTPUT"
           DATE=$(TZ=Asia/Shanghai date +%F)
           python scripts/build_overnight_classic.py --date "$DATE" --live
 
       - name: Generate funnel page with classic section
+        if: steps.build.outputs.run == 'true'
         run: |
           python strategies/funnel_strategy/generate_html.py \
             --output ./strategies/funnel_strategy/docs
 
       - name: Deploy funnel page
+        if: steps.build.outputs.run == 'true'
         uses: peaceiris/actions-gh-pages@v3
         with:
           personal_token: ${{ secrets.GH_PAT }}
