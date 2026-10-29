@@ -119,26 +119,6 @@ jobs:
           set -o pipefail
           python -m strategies.funnel_strategy.forward_stats 2>&1 | tee /tmp/forward_stats.log
 
-      - name: Build overnight classic section
-        if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}
-        continue-on-error: true
-        env:
-          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
-          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
-          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
-          POSTGRES_POOL_SIZE: 5
-        run: |
-          DATE="${{ inputs.date }}"
-          if [ -z "$DATE" ]; then
-            if [ "$(TZ=Asia/Shanghai date +%H%M)" -lt 1510 ]; then
-              echo "盘中不生成原版八步（等待收盘后）"; exit 0
-            fi
-            DATE=$(TZ=Asia/Shanghai date +%F)
-          fi
-          python scripts/build_overnight_classic.py --date "$DATE" || echo "⚠️ classic section skipped"
-
       - name: Generate HTML report
         if: ${{ steps.check_trading.outputs.is_trading == 'true' || inputs.date != '' }}
         run: |
