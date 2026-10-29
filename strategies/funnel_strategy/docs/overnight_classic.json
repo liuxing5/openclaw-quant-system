@@ -1,66 +1,66 @@
 {
   "title": "八步隔夜法·原版",
-  "date": "2026-10-28",
-  "updated": "2026-10-29 12:30:10",
+  "date": "2026-10-29",
+  "updated": "2026-10-29 14:46:46",
   "steps": [
     {
       "name": "涨幅筛选 3%~5%",
-      "pass": 3,
+      "pass": 1,
       "eliminated": "",
       "rule": "14:30 后涨幅 3%~5%，不追高"
     },
     {
       "name": "量比 ≥1",
-      "pass": 3,
+      "pass": 1,
       "eliminated": "",
       "rule": "当日量能不低于 20 日均量"
     },
     {
       "name": "换手率 5%~10%",
-      "pass": 3,
+      "pass": 1,
       "eliminated": "",
       "rule": "兼顾流动性与不过热"
     },
     {
       "name": "流通市值 50~200亿",
-      "pass": 3,
+      "pass": 1,
       "eliminated": "",
       "rule": "中盘弹性区间"
     },
     {
       "name": "量能台阶放大",
-      "pass": 3,
+      "pass": 1,
       "eliminated": "",
       "rule": "成交量持续放大"
     },
     {
       "name": "均线多头 + 无压力",
-      "pass": 3,
+      "pass": 1,
       "eliminated": "",
       "rule": "收盘 > MA5 > MA10 > MA20，接近 20 日高"
     },
     {
       "name": "VWAP + 强于大盘",
-      "pass": 3,
+      "pass": 1,
       "eliminated": 0,
       "rule": "股价在日内 VWAP 上方，且强于上证/深证"
     },
     {
       "name": "14:30 新高 + 回踩不破",
       "pass": 0,
-      "eliminated": 3,
+      "eliminated": 1,
       "rule": "14:30 后创新高，回踩 VWAP 不有效跌破"
     }
   ],
   "candidates": [
     {
-      "code": "603901.SH",
-      "name": "永创智能",
-      "score": 88.3,
-      "entry": 10.82,
-      "stop": 10.777,
-      "target": 11.145,
-      "quant_score": 88.3,
+      "code": "688360.SH",
+      "name": "德马科技",
+      "score": 85.2,
+      "entry": 22.96,
+      "stop": 22.568,
+      "target": 23.649,
+      "quant_score": 85.2,
       "tags": [
         "VWAP上方",
         "强于大盘",
@@ -68,52 +68,13 @@
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 10.777,
-      "pct_chg": 3.83,
-      "confirmed": false,
-      "path": "待确认"
-    },
-    {
-      "code": "300815.SZ",
-      "name": "玉禾田",
-      "score": 89.2,
-      "entry": 16.66,
-      "stop": 16.72,
-      "target": 17.16,
-      "quant_score": 89.2,
-      "tags": [
-        "强于大盘",
-        "回踩不破",
-        "待确认"
-      ],
-      "source": "腾讯1m",
-      "vwap": 16.72,
-      "pct_chg": 3.92,
-      "confirmed": false,
-      "path": "待确认"
-    },
-    {
-      "code": "600963.SH",
-      "name": "岳阳林纸",
-      "score": 84.5,
-      "entry": 3.94,
-      "stop": 3.873,
-      "target": 4.058,
-      "quant_score": 84.5,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
-        "回踩不破",
-        "待确认"
-      ],
-      "source": "腾讯1m",
-      "vwap": 3.873,
-      "pct_chg": 3.45,
+      "vwap": 22.568,
+      "pct_chg": 3.52,
       "confirmed": false,
       "path": "待确认"
     }
   ],
-  "candidate_count": 3,
+  "candidate_count": 1,
   "confirmed_count": 0,
   "note": "原版规则：14:30 后确认，次日 10:00 前必须卖出；未确认标的仅展示，不自动推荐；1 分钟用于当日，历史不足时用 5 分钟。"
 }
