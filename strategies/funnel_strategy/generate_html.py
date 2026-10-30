@@ -661,7 +661,7 @@ def render_classic_section(output_dir: Path) -> str:
     return (
         f'<div class="container" style="padding-top:0">'
         f'<div class="section" style="margin-top:16px">'
-        f'<h2>🧭 八步隔夜法·原版<span class="section-subtitle">{html_escape(str(data.get("date") or ""))} 15:00:00</span></h2>'
+        f'<h2>🧭 {html_escape(str(data.get("title") or "八步隔夜法·原版"))}<span class="section-subtitle">{html_escape(str(data.get("date") or ""))} 15:00:00</span></h2>'
         f'<div class="steps-area">{step_html}</div>'
         f'<h3 style="font-size:.9rem;margin:14px 0 8px;">候选标的 ({len(candidates)}只，确认{data.get("confirmed_count", 0)}只)</h3>'
         f'<div class="cards-grid">{"".join(cards)}</div>'

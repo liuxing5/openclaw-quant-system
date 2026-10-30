@@ -84,37 +84,43 @@ def _index_symbol(code: str) -> str:
 def _daily_candidates(day: str) -> list[dict]:
     return query(
         """
-        WITH feat AS (
-            SELECT q.ts_code, q.trade_date, q.open, q.high, q.low, q.close,
-                   q.volume, q.amount, q.pct_chg, q.turnover_rate, q.pre_close,
-                   CASE WHEN q.turnover_rate > 0
-                        THEN q.amount / (q.turnover_rate / 100.0)
-                        ELSE COALESCE(q.circulating_market_cap, q.total_market_cap)
-                   END AS cap_est,
-                   AVG(q.close) OVER w5 AS ma5,
-                   AVG(q.close) OVER w10 AS ma10,
-                   AVG(q.close) OVER w20 AS ma20,
-                   AVG(q.volume) OVER w20v AS vma20,
-                   MAX(q.high) OVER w20h AS hh20
+        WITH base AS (
+            SELECT q.ts_code, q.trade_date, q.close, q.volume, q.pct_chg,
+                   q.turnover_rate, q.amount,
+                   COALESCE(q.circulating_market_cap, q.total_market_cap) AS cap_base,
+                   CASE
+                       WHEN q.turnover_rate IS NOT NULL THEN q.turnover_rate
+                       WHEN COALESCE(q.circulating_market_cap, q.total_market_cap) > 0
+                       THEN q.amount / COALESCE(q.circulating_market_cap, q.total_market_cap) * 100.0
+                   END AS turn_est,
+                   AVG(q.volume) OVER (
+                       PARTITION BY q.ts_code ORDER BY q.trade_date
+                       ROWS BETWEEN 5 PRECEDING AND 1 PRECEDING
+                   ) AS vma5,
+                   EXISTS (
+                       SELECT 1 FROM daily_quotes z
+                       WHERE z.ts_code = q.ts_code
+                         AND z.trade_date BETWEEN q.trade_date - INTERVAL '30 days'
+                                              AND q.trade_date - INTERVAL '1 day'
+                         AND z.pct_chg >= 9.5
+                   ) AS had_limit_up
             FROM daily_quotes q
             WHERE q.trade_date BETWEEN %s::date - INTERVAL '60 days' AND %s::date
-            WINDOW w5 AS (PARTITION BY q.ts_code ORDER BY q.trade_date ROWS 4 PRECEDING),
-                   w10 AS (PARTITION BY q.ts_code ORDER BY q.trade_date ROWS 9 PRECEDING),
-                   w20 AS (PARTITION BY q.ts_code ORDER BY q.trade_date ROWS 19 PRECEDING),
-                   w20v AS (PARTITION BY q.ts_code ORDER BY q.trade_date ROWS 19 PRECEDING),
-                   w20h AS (PARTITION BY q.ts_code ORDER BY q.trade_date ROWS 19 PRECEDING)
         )
-        SELECT f.*, b.stock_name
-        FROM feat f
-        LEFT JOIN stock_basic_info b ON b.ts_code = f.ts_code
-        WHERE f.trade_date = %s::date
-          AND f.pct_chg BETWEEN 3 AND 5
-          AND f.turnover_rate BETWEEN 5 AND 10
-          AND f.cap_est BETWEEN 5e9 AND 2e10
-          AND f.close > f.ma5 AND f.ma5 > f.ma10 AND f.ma10 > f.ma20
-          AND f.volume >= f.vma20
-          AND f.close >= f.hh20 * 0.97
-        ORDER BY f.amount DESC
+        SELECT b.*, COALESCE(b.cap_base,
+                   CASE WHEN b.turn_est > 0 THEN b.amount / (b.turn_est / 100.0) END) AS cap_est,
+               s.stock_name
+        FROM base b
+        LEFT JOIN stock_basic_info s ON s.ts_code = b.ts_code
+        WHERE b.trade_date = %s::date
+          AND (b.ts_code LIKE '60%%' OR b.ts_code LIKE '00%%')
+          AND COALESCE(s.is_st, false) = false
+          AND b.pct_chg BETWEEN 3 AND 5
+          AND b.turn_est BETWEEN 5 AND 10
+          AND b.cap_base BETWEEN 5e9 AND 2e10
+          AND b.volume > b.vma5
+          AND b.had_limit_up
+        ORDER BY b.amount DESC
         """,
         (day, day, day),
     )
@@ -165,7 +171,7 @@ def _intraday(code: str, day: str) -> dict | None:
         "pullback": pullback,
         "above_vwap": above_vwap,
         "stronger": stronger,
-        "confirmed": bool(new_high and pullback and above_vwap and stronger),
+        "confirmed": bool(pullback and above_vwap and stronger),
         "scale": f"{scale}m",
         "stock_ret": round(stock_ret * 100, 2),
         "index_ret": round(idx_ret * 100, 2),
@@ -179,7 +185,7 @@ def _live_candidates(day: str) -> list[dict]:
     snap = live_snapshot.snapshot()
     hist = query(
         """
-        SELECT ts_code, trade_date, close, high, volume
+        SELECT ts_code, trade_date, close, pct_chg, volume
         FROM daily_quotes
         WHERE trade_date < %s::date
           AND trade_date >= %s::date - INTERVAL '45 days'
@@ -195,7 +201,9 @@ def _live_candidates(day: str) -> list[dict]:
     for item in snap.get("items") or []:
         code = item.get("ts_code")
         rows = by_code.get(code) or []
-        if not code or len(rows) < 20 or item.get("is_st"):
+        if not code or len(rows) < 5 or item.get("is_st"):
+            continue
+        if not (code.startswith("60") or code.startswith("00")):
             continue
         pct = item.get("pct_chg")
         turn = item.get("turnover_rate")
@@ -206,17 +214,9 @@ def _live_candidates(day: str) -> list[dict]:
             continue
         if not (3 <= pct <= 5 and 5 <= turn <= 10 and 5e9 <= cap <= 2e10):
             continue
-        if vr is not None and vr < 1:
+        if vr is not None and vr <= 1:
             continue
-        closes = [float(r["close"]) for r in rows[-20:]]
-        closes = closes + [float(price)]
-        if len(closes) < 20:
-            continue
-        ma5 = sum(closes[-5:]) / 5
-        ma10 = sum(closes[-10:]) / 10
-        ma20 = sum(closes[-20:]) / 20
-        hh20 = max(float(r["high"]) for r in rows[-20:])
-        if not (price > ma5 > ma10 > ma20 and price >= hh20 * 0.97):
+        if not any(float(r.get("pct_chg") or 0) >= 9.5 for r in rows[-20:]):
             continue
         out.append(
             {
@@ -274,24 +274,24 @@ def build(day: str, live: bool = False) -> dict:
             }
         )
     steps = [
-        {"name": "涨幅筛选 3%~5%", "pass": len(rows), "eliminated": "", "rule": "14:30 后涨幅 3%~5%，不追高"},
-        {"name": "量比 ≥1", "pass": len(rows), "eliminated": "", "rule": "当日量能不低于 20 日均量"},
+        {"name": "14:30-14:50 尾盘窗口", "pass": len(rows), "eliminated": "", "rule": "只做尾盘，不碰 14:55 突击拉高"},
+        {"name": "主板 + 涨幅 3%~5%", "pass": len(rows), "eliminated": "", "rule": "仅 60/00 主板，排除 300/688/ST"},
+        {"name": "近 20 日涨停基因", "pass": len(rows), "eliminated": "", "rule": "近 20 个交易日至少一次涨停"},
+        {"name": "量比 > 1", "pass": len(rows), "eliminated": "", "rule": "当日量能高于近 5 日均量"},
         {"name": "换手率 5%~10%", "pass": len(rows), "eliminated": "", "rule": "兼顾流动性与不过热"},
         {"name": "流通市值 50~200亿", "pass": len(rows), "eliminated": "", "rule": "中盘弹性区间"},
-        {"name": "量能台阶放大", "pass": len(rows), "eliminated": "", "rule": "成交量持续放大"},
-        {"name": "均线多头 + 无压力", "pass": len(rows), "eliminated": "", "rule": "收盘 > MA5 > MA10 > MA20，接近 20 日高"},
-        {"name": "VWAP + 强于大盘", "pass": len(rows), "eliminated": rejected, "rule": "股价在日内 VWAP 上方，且强于上证/深证"},
-        {"name": "14:30 新高 + 回踩不破", "pass": confirmed_count, "eliminated": len(rows) - confirmed_count, "rule": "14:30 后创新高，回踩 VWAP 不有效跌破"},
+        {"name": "VWAP + 强于大盘", "pass": len(rows), "eliminated": rejected, "rule": "全天在 VWAP 上方，且强于上证/深证"},
+        {"name": "回踩 VWAP 不破", "pass": confirmed_count, "eliminated": len(rows) - confirmed_count, "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"},
     ]
     return {
-        "title": "八步隔夜法·原版",
+        "title": "最严格杨永兴版",
         "date": day,
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "steps": steps,
         "candidates": candidates,
         "candidate_count": len(candidates),
         "confirmed_count": confirmed_count,
-        "note": "原版规则：14:30 后确认，次日 10:00 前必须卖出；未确认标的仅展示，不自动推荐；1 分钟用于当日，历史不足时用 5 分钟。",
+        "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。",
     }
 
 

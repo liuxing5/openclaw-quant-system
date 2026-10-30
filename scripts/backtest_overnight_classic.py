@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""原版八步隔夜法：半年逐日回测 + 次日 9:30-10:30 10 分钟 K 线。
+"""最严格杨永兴版：半年逐日回测 + 次日 9:30-9:40 10 分钟 K 线。
 
-- 信号日：日线原版八步过滤 + 5 分钟聚合出的 VWAP / 14:30 新高 / 回踩 / 相对强弱
-- 次日：9:30-10:30 的 5 分钟 K 线聚合为 10 分钟 K 线
-- 成功：次日 9:30-10:30 最高价相对信号日 14:30 入场价涨幅 >= 阈值
+- 信号日：日线原版八步过滤 + 5 分钟聚合出的 VWAP / 回踩 / 相对强弱
+- 次日：9:30-9:40 的 5 分钟 K 线聚合为 10 分钟 K 线
+- 成功：次日 9:30-9:40 最高价相对信号日 14:30 入场价涨幅 >= 阈值
 - 回填：classic_backtest_trades / classic_backtest_daily / classic_backtest_10m
 
 用法：
@@ -15,6 +15,7 @@ import argparse
 import json
 import math
 import os
+import pickle
 import sys
 import time
 from datetime import date, datetime, timedelta
@@ -22,6 +23,8 @@ from pathlib import Path
 from urllib.parse import quote
 
 import baostock as bs
+import psycopg2
+from psycopg2.extras import execute_values
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "webapp" / "backend"))
@@ -40,6 +43,7 @@ from app.db import execute, query  # noqa: E402
 
 THRESHOLDS = (0.01, 0.015, 0.02, 0.025, 0.03)
 COST = 0.0025
+_CACHE = None
 
 
 def _f(v):
@@ -58,6 +62,16 @@ def _index_code(ts_code: str) -> str:
 
 
 def _fetch(code: str, start: str, end: str) -> list[dict]:
+    global _CACHE
+    if _CACHE is None:
+        p = ROOT / "reports/yang_strict_bars.pkl"
+        try:
+            _CACHE = pickle.loads(p.read_bytes()) if p.exists() else {}
+        except Exception:  # noqa: BLE001
+            _CACHE = {}
+    key = (code, start, end)
+    if key in _CACHE:
+        return _CACHE[key]
     rs = bs.query_history_k_data_plus(
         code,
         "date,time,open,high,low,close,volume,amount",
@@ -124,34 +138,36 @@ def _daily_candidates(start: str, end: str) -> list[dict]:
                        WHEN q.turnover_rate IS NOT NULL THEN q.turnover_rate
                        WHEN COALESCE(q.circulating_market_cap, q.total_market_cap) > 0
                        THEN q.amount / COALESCE(q.circulating_market_cap, q.total_market_cap) * 100.0
-                   END AS turn_est
+                   END AS turn_est,
+                   AVG(q.volume) OVER (
+                       PARTITION BY q.ts_code ORDER BY q.trade_date
+                       ROWS BETWEEN 5 PRECEDING AND 1 PRECEDING
+                   ) AS vma5,
+                   EXISTS (
+                       SELECT 1 FROM daily_quotes z
+                       WHERE z.ts_code = q.ts_code
+                         AND z.trade_date BETWEEN q.trade_date - INTERVAL '30 days'
+                                              AND q.trade_date - INTERVAL '1 day'
+                         AND z.pct_chg >= 9.5
+                   ) AS had_limit_up
             FROM daily_quotes q
             WHERE q.trade_date BETWEEN %s::date - INTERVAL '70 days' AND %s::date
         ), feat AS (
-            SELECT b.ts_code, b.trade_date, b.close, b.high, b.volume, b.pct_chg, b.turnover_rate, b.amount, b.turn_est,
-                   COALESCE(b.cap_base, CASE WHEN b.turn_est > 0 THEN b.amount / (b.turn_est / 100.0) END) AS cap_est,
-                   AVG(b.close) OVER w5 AS ma5,
-                   AVG(b.close) OVER w10 AS ma10,
-                   AVG(b.close) OVER w20 AS ma20,
-                   AVG(b.volume) OVER w20v AS vma20,
-                   MAX(b.high) OVER w20h AS hh20
+            SELECT b.*,
+                   COALESCE(b.cap_base, CASE WHEN b.turn_est > 0 THEN b.amount / (b.turn_est / 100.0) END) AS cap_est
             FROM base b
-            WINDOW w5 AS (PARTITION BY b.ts_code ORDER BY b.trade_date ROWS 4 PRECEDING),
-                   w10 AS (PARTITION BY b.ts_code ORDER BY b.trade_date ROWS 9 PRECEDING),
-                   w20 AS (PARTITION BY b.ts_code ORDER BY b.trade_date ROWS 19 PRECEDING),
-                   w20v AS (PARTITION BY b.ts_code ORDER BY b.trade_date ROWS 19 PRECEDING),
-                   w20h AS (PARTITION BY b.ts_code ORDER BY b.trade_date ROWS 19 PRECEDING)
         )
         SELECT f.*, b.stock_name
         FROM feat f
         LEFT JOIN stock_basic_info b ON b.ts_code = f.ts_code
         WHERE f.trade_date BETWEEN %s::date AND %s::date
+          AND (f.ts_code LIKE '60%%' OR f.ts_code LIKE '00%%')
+          AND COALESCE(b.is_st, false) = false
           AND f.pct_chg BETWEEN 3 AND 5
           AND f.turn_est BETWEEN 5 AND 10
           AND f.cap_est BETWEEN 5e9 AND 2e10
-          AND f.close > f.ma5 AND f.ma5 > f.ma10 AND f.ma10 > f.ma20
-          AND f.volume >= f.vma20
-          AND f.close >= f.hh20 * 0.97
+          AND f.volume > f.vma5
+          AND f.had_limit_up
         ORDER BY f.trade_date, f.ts_code
         """,
         (start, end, start, end),
@@ -190,7 +206,7 @@ def _intraday(bars: list[dict], index_bars: list[dict]) -> dict | None:
         "pullback": pullback,
         "above_vwap": above,
         "stronger": stronger,
-        "confirmed": bool(new_high and pullback and above and stronger),
+        "confirmed": bool(pullback and above and stronger),
         "stock_ret": stock_ret,
         "index_ret": idx_ret,
     }
@@ -296,22 +312,73 @@ def _insert_10m(sig_date: str, code: str, bars: list[dict]):
         )
 
 
+def _bulk_save(rows: list[dict], daily: list[dict], start: str, end: str):
+    cols = [
+        "signal_date", "ts_code", "stock_name", "daily_pct", "turnover_rate", "cap_est",
+        "entry_price", "vwap", "new_high", "pullback", "above_vwap", "stronger", "confirmed",
+        "next_trade_date", "max_return", "close_1030", "ret_1030", "net_ret_1030",
+        "hit_1", "hit_15", "hit_2", "hit_25", "hit_3",
+        "ret_1", "ret_15", "ret_2", "ret_25", "ret_3",
+        "net_ret_1", "net_ret_15", "net_ret_2", "net_ret_25", "net_ret_3",
+    ]
+    conn = psycopg2.connect(os.environ["DATABASE_URL"])
+    cur = conn.cursor()
+    cur.execute("DELETE FROM classic_backtest_10m WHERE signal_date BETWEEN %s AND %s", (start, end))
+    cur.execute("DELETE FROM classic_backtest_trades WHERE signal_date BETWEEN %s AND %s", (start, end))
+    cur.execute("DELETE FROM classic_backtest_daily WHERE trade_date BETWEEN %s AND %s", (start, end))
+    update = ",".join(f"{c}=EXCLUDED.{c}" for c in cols[2:])
+    execute_values(
+        cur,
+        "INSERT INTO classic_backtest_trades (" + ",".join(cols) + ") VALUES %s "
+        "ON CONFLICT (signal_date, ts_code) DO UPDATE SET " + update,
+        [tuple(r.get(c) for c in cols) for r in rows],
+        page_size=500,
+    )
+    bars = []
+    for r in rows:
+        for b in r.get("bars_10m") or []:
+            bars.append(
+                (r["signal_date"], r["ts_code"], b["bar_time"], b["open"], b["high"],
+                 b["low"], b["close"], b["volume"], b["amount"])
+            )
+    execute_values(
+        cur,
+        "INSERT INTO classic_backtest_10m "
+        "(signal_date,ts_code,bar_time,open,high,low,close,volume,amount) VALUES %s "
+        "ON CONFLICT (signal_date,ts_code,bar_time) DO UPDATE SET "
+        "open=EXCLUDED.open,high=EXCLUDED.high,low=EXCLUDED.low,close=EXCLUDED.close,"
+        "volume=EXCLUDED.volume,amount=EXCLUDED.amount",
+        bars,
+        page_size=1000,
+    )
+    execute_values(
+        cur,
+        "INSERT INTO classic_backtest_daily (trade_date,daily_candidates,confirmed,next_trade_date) VALUES %s "
+        "ON CONFLICT (trade_date) DO UPDATE SET daily_candidates=EXCLUDED.daily_candidates,"
+        "confirmed=EXCLUDED.confirmed,next_trade_date=EXCLUDED.next_trade_date,updated_at=now()",
+        [(d["trade_date"], d["daily_candidates"], d["confirmed"], d["next_trade_date"]) for d in daily],
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
 def _report(rows: list[dict], daily: list[dict], start: str, end: str, out_dir: Path):
     confirmed = [r for r in rows if r["confirmed"] and r["max_return"] is not None]
     out_dir.mkdir(parents=True, exist_ok=True)
     lines = []
-    lines.append("# 八步隔夜法·原版 半年逐日回测报告")
+    lines.append("# 最严格杨永兴版 半年逐日回测报告")
     lines.append("")
     lines.append(f"- 回测区间：{start} ~ {end}")
     lines.append(f"- 交易日数：{len(daily)}")
     lines.append(f"- 日线候选：{len(rows)} 条；确认信号：{len(confirmed)} 条")
-    lines.append(f"- 成功定义：次日 09:30-10:30 最高价相对信号日 14:30 入场价涨幅达到阈值")
+    lines.append(f"- 成功定义：次日 09:30-09:40 最高价相对信号日 14:30 入场价涨幅达到阈值")
     lines.append(f"- 成本：单边合计 {COST*100:.2f}%（佣金+印花税+滑点假设）")
-    lines.append("- 10 分钟 K 线：由 baostock 5 分钟线聚合（09:40、09:50…10:30）")
+    lines.append("- 10 分钟 K 线：由 baostock 5 分钟线聚合（09:40 第一根覆盖 09:30~09:40）")
     lines.append("")
     lines.append("## 总体成功概率")
     lines.append("")
-    lines.append("| 阈值 | 命中数 | 成功概率 | 目标止盈策略均值 | 目标止盈总收益 | 10:30收盘均值 | 10:30收盘总收益 |")
+    lines.append("| 阈值 | 命中数 | 成功概率 | 目标止盈策略均值 | 目标止盈总收益 | 9:40收盘均值 | 9:40收盘总收益 |")
     lines.append("|---:|---:|---:|---:|---:|---:|---:|")
     for t in THRESHOLDS:
         key = str(t).replace(".", "_")
@@ -334,7 +401,7 @@ def _report(rows: list[dict], daily: list[dict], start: str, end: str, out_dir: 
     lines.append("")
     lines.append("## 按股票汇总（确认信号）")
     lines.append("")
-    lines.append("| 代码 | 名称 | 次数 | >1% | >1.5% | >2% | >2.5% | >3% | 10:30均值 | 10:30总收益 |")
+    lines.append("| 代码 | 名称 | 次数 | >1% | >1.5% | >2% | >2.5% | >3% | 9:40均值 | 9:40总收益 |")
     lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
     by_code = {}
     for r in confirmed:
@@ -363,16 +430,16 @@ def _report(rows: list[dict], daily: list[dict], start: str, end: str, out_dir: 
     lines.append("## 说明")
     lines.append("")
     lines.append("- 只有 `confirmed=True` 的标的进入成功概率统计；未确认标的保留在 `classic_backtest_trades` 供审计。")
-    lines.append("- 成功概率按“次日 09:30-10:30 最高价是否达到阈值”计算，不等同于实际成交概率。")
-    lines.append("- 目标止盈策略：达到阈值按阈值价卖出，否则按 10:30 收盘卖出；已扣除成本。")
+    lines.append("- 成功概率按“次日 09:30-09:40 最高价是否达到阈值”计算，不等同于实际成交概率。")
+    lines.append("- 目标止盈策略：达到阈值按阈值价卖出，否则按 9:40 收盘卖出；已扣除成本。")
     lines.append("- 历史 1 分钟数据不可得，使用 5 分钟线聚合的 10 分钟线；日内 VWAP 用 5 分钟成交额/成交量计算。")
     md = "\n".join(lines)
-    (out_dir / "overnight_classic_backtest.md").write_text(md, encoding="utf-8")
-    (out_dir / "overnight_classic_backtest.json").write_text(
+    (out_dir / "yang_strict_backtest.md").write_text(md, encoding="utf-8")
+    (out_dir / "yang_strict_backtest.json").write_text(
         json.dumps({"rows": rows, "daily": daily}, ensure_ascii=False, indent=2, default=str),
         encoding="utf-8",
     )
-    with (out_dir / "overnight_classic_backtest_10m.csv").open("w", encoding="utf-8-sig", newline="") as f:
+    with (out_dir / "yang_strict_backtest_10m.csv").open("w", encoding="utf-8-sig", newline="") as f:
         f.write("signal_date,ts_code,bar_time,open,high,low,close,volume,amount\n")
         for r in rows:
             for b in r.get("bars_10m") or []:
@@ -466,9 +533,10 @@ def main():
                 )
             ten = _ten_min([b for b in nxt_bars if "0930" <= b["time"] <= "1030"])
             rec["bars_10m"] = ten
-            if ten and rec["entry_price"]:
-                high = max(b["high"] for b in ten)
-                close = ten[-1]["close"]
+            first = next((b for b in ten if b["bar_time"] == "09:40:00"), None)
+            if first and rec["entry_price"]:
+                high = first["high"]
+                close = first["close"]
                 max_ret = high / rec["entry_price"] - 1
                 close_ret = close / rec["entry_price"] - 1
                 rec["max_return"] = round(max_ret, 6)
@@ -480,8 +548,6 @@ def main():
                     rec["hit_" + key] = hit
                     rec["ret_" + key] = round(t, 6) if hit else round(close_ret, 6)
                     rec["net_ret_" + key] = round(rec["ret_" + key] - COST, 6)
-                _insert_10m(d, c["ts_code"], ten)
-            _upsert_trade(rec)
             rows.append(rec)
             if rec["confirmed"] and rec["max_return"] is not None:
                 confirmed_n += 1
@@ -495,8 +561,8 @@ def main():
                 "next_trade_date": next_day.get(d),
             }
         )
-        _upsert_daily(daily_rows[-1])
     bs.logout()
+    _bulk_save(rows, daily_rows, start, end)
 
     confirmed, md = _report(rows, daily_rows, start, end, Path(args.output))
     print(f"confirmed {len(confirmed)} / candidates {len(rows)}", flush=True)
