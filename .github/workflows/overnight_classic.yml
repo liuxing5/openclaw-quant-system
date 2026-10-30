@@ -41,7 +41,7 @@ jobs:
         id: build
         run: |
           NOW=$(TZ=Asia/Shanghai date +%H%M)
-          if [ "$NOW" -lt 1430 ] || [ "$NOW" -gt 1505 ]; then
+          if [ "${{ github.event_name }}" != "workflow_dispatch" ] && { [ "$NOW" -lt 1430 ] || [ "$NOW" -gt 1505 ]; }; then
             echo "跳过：当前 $NOW，不在 14:30~15:05 时间窗"
             echo "run=false" >> "$GITHUB_OUTPUT"
             exit 0
