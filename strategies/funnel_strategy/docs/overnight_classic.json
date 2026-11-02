@@ -1,54 +1,54 @@
 {
   "title": "最严格杨永兴版",
   "date": "2026-11-02",
-  "updated": "2026-11-02 06:56:06",
+  "updated": "2026-11-02 07:21:45",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
-      "pass": 5,
+      "pass": 6,
       "eliminated": "",
       "rule": "只做尾盘，不碰 14:55 突击拉高"
     },
     {
       "name": "主板 + 涨幅 3%~5%",
-      "pass": 5,
+      "pass": 6,
       "eliminated": "",
       "rule": "仅 60/00 主板，排除 300/688/ST"
     },
     {
       "name": "近 20 日涨停基因",
-      "pass": 5,
+      "pass": 6,
       "eliminated": "",
       "rule": "近 20 个交易日至少一次涨停"
     },
     {
       "name": "量比 > 1",
-      "pass": 5,
+      "pass": 6,
       "eliminated": "",
       "rule": "当日量能高于近 5 日均量"
     },
     {
       "name": "换手率 5%~10%",
-      "pass": 5,
+      "pass": 6,
       "eliminated": "",
       "rule": "兼顾流动性与不过热"
     },
     {
       "name": "流通市值 50~200亿",
-      "pass": 5,
+      "pass": 6,
       "eliminated": "",
       "rule": "中盘弹性区间"
     },
     {
       "name": "VWAP + 强于大盘",
-      "pass": 5,
+      "pass": 6,
       "eliminated": 0,
       "rule": "全天在 VWAP 上方，且强于上证/深证"
     },
     {
       "name": "回踩 VWAP 不破",
       "pass": 4,
-      "eliminated": 1,
+      "eliminated": 2,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
@@ -56,11 +56,11 @@
     {
       "code": "600258.SH",
       "name": "首旅酒店",
-      "score": 95.9,
+      "score": 91.8,
       "entry": 12.96,
       "stop": 12.914,
       "target": 13.349,
-      "quant_score": 95.9,
+      "quant_score": 91.8,
       "tags": [
         "VWAP上方",
         "强于大盘",
@@ -68,56 +68,56 @@
       ],
       "source": "腾讯1m",
       "vwap": 12.914,
-      "pct_chg": 4.59,
+      "pct_chg": 4.18,
       "confirmed": true,
       "path": "原版确认"
     },
     {
       "code": "605179.SH",
       "name": "一鸣食品",
-      "score": 89.8,
+      "score": 95.2,
       "entry": 23.22,
-      "stop": 22.309,
+      "stop": 22.327,
       "target": 23.917,
-      "quant_score": 89.8,
+      "quant_score": 95.2,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 22.309,
-      "pct_chg": 3.98,
+      "vwap": 22.327,
+      "pct_chg": 4.52,
       "confirmed": false,
       "path": "待确认"
     },
     {
       "code": "601579.SH",
       "name": "会稽山",
-      "score": 81.6,
+      "score": 83.9,
       "entry": 22.48,
-      "stop": 22.28,
+      "stop": 22.289,
       "target": 23.154,
-      "quant_score": 81.6,
+      "quant_score": 83.9,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 22.28,
-      "pct_chg": 3.16,
+      "vwap": 22.289,
+      "pct_chg": 3.39,
       "confirmed": true,
       "path": "原版确认"
     },
     {
       "code": "002579.SZ",
       "name": "中京电子",
-      "score": 82.6,
+      "score": 83.4,
       "entry": 12.09,
       "stop": 12.022,
       "target": 12.453,
-      "quant_score": 82.6,
+      "quant_score": 83.4,
       "tags": [
         "VWAP上方",
         "强于大盘",
@@ -125,31 +125,51 @@
       ],
       "source": "腾讯1m",
       "vwap": 12.022,
-      "pct_chg": 3.26,
+      "pct_chg": 3.34,
       "confirmed": true,
       "path": "原版确认"
     },
     {
       "code": "601566.SH",
       "name": "九牧王",
-      "score": 88.0,
+      "score": 99.0,
       "entry": 10.23,
-      "stop": 10.105,
+      "stop": 10.12,
       "target": 10.537,
-      "quant_score": 88.0,
+      "quant_score": 99.0,
       "tags": [
         "VWAP上方",
         "强于大盘",
+        "14:30新高",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 10.105,
-      "pct_chg": 3.8,
+      "vwap": 10.12,
+      "pct_chg": 4.9,
       "confirmed": true,
       "path": "原版确认"
+    },
+    {
+      "code": "603690.SH",
+      "name": "至纯科技",
+      "score": 90.3,
+      "entry": 17.89,
+      "stop": 17.501,
+      "target": 18.427,
+      "quant_score": 90.3,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 17.501,
+      "pct_chg": 4.03,
+      "confirmed": false,
+      "path": "待确认"
     }
   ],
-  "candidate_count": 5,
+  "candidate_count": 6,
   "confirmed_count": 4,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
