@@ -502,6 +502,65 @@ def _columns(table: str) -> set[str]:
 
 @ttl_cache(120)
 def board_top(day: date | None = None, board_type: str = "concept", limit: int = 5) -> dict:
+    # 总台的板块热度优先用东财实时榜；本地 industry_board_quotes 只有 90 个
+    # 老快照（且可能停在几天前），会把“行业热度”显示成过期数据。
+    try:
+        from . import live_market
+
+        if live_market.available():
+            live = live_market.boards_page(board_type, "pct_chg_desc", 200, 0)
+            items = live.get("items") or []
+            if items:
+                rows = sorted(
+                    [
+                        {
+                            "code": r.get("code"),
+                            "name": r.get("name"),
+                            "pct_chg": _f(r.get("pct_chg"), 0),
+                            "stock_count": r.get("stock_count") or 0,
+                            "lead_stock": (r.get("lead_stock_name") or "").strip(),
+                            "net_inflow": _f(r.get("net_inflow")),
+                            "up_count": r.get("up_count"),
+                            "down_count": r.get("down_count"),
+                            "amount": _f(r.get("amount")),
+                        }
+                        for r in items
+                    ],
+                    key=lambda x: x["pct_chg"],
+                    reverse=True,
+                )
+                gainers = [{**r, "rank": i + 1} for i, r in enumerate(rows[:limit])]
+                try:
+                    low = live_market.boards_page(board_type, "pct_chg_asc", limit, 0).get("items") or []
+                except Exception:  # noqa: BLE001
+                    low = []
+                low_rows = sorted(
+                    [
+                        {
+                            "code": r.get("code"),
+                            "name": r.get("name"),
+                            "pct_chg": _f(r.get("pct_chg"), 0),
+                            "stock_count": r.get("stock_count") or 0,
+                            "lead_stock": (r.get("lead_stock_name") or "").strip(),
+                            "net_inflow": _f(r.get("net_inflow")),
+                            "up_count": r.get("up_count"),
+                            "down_count": r.get("down_count"),
+                            "amount": _f(r.get("amount")),
+                        }
+                        for r in low[:limit]
+                    ],
+                    key=lambda x: x["pct_chg"],
+                )
+                losers = [{**r, "rank": (live.get("total") or len(rows)) - i} for i, r in enumerate(low_rows)]
+                return {
+                    "gainers": gainers,
+                    "losers": losers,
+                    "trade_date": live.get("trade_date"),
+                    "total": live.get("total") or len(rows),
+                }
+    except Exception:  # noqa: BLE001
+        pass
+
     table = "concept_board_quotes" if board_type == "concept" else "industry_board_quotes"
     name_col = "concept_name" if board_type == "concept" else "industry_name"
     code_col = "concept_code" if board_type == "concept" else "industry_code"
