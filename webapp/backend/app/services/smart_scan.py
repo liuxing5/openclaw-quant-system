@@ -160,6 +160,7 @@ scored AS (
     JOIN stock_basic_info s ON s.ts_code = l.ts_code
     LEFT JOIN fund f ON f.ts_code = l.ts_code
     WHERE COALESCE(s.is_active, TRUE) AND l.close > 0
+      AND COALESCE(s.is_st, FALSE) = FALSE
       AND ({preset_where}) {board_where}
 ),
 ranked AS (
