@@ -96,7 +96,7 @@ function BreadthPanel({ breadth }) {
   ]
 
   return (
-    <Card>
+    <Card className="h-full">
       <SectionHeader
         title="涨跌分布"
         subtitle={`${breadth.trade_date} · 全市场 ${fmtNum(breadth.total, 0)} 只（不含停牌）`}
@@ -155,7 +155,7 @@ function QuantPanel() {
   }
 
   return (
-    <Card>
+    <Card className="h-full">
       <SectionHeader
         title="量化引擎"
         subtitle="全市场 5,000+ · 趋势/资金/质量/估值七因子打分，命中后按综合分排序"
@@ -163,8 +163,8 @@ function QuantPanel() {
         action={<TextLink to="/strategy">查看全部量化选股 →</TextLink>}
       />
       <div className="mt-3 grid gap-4 xl:grid-cols-3">
-        <div className="xl:col-span-2 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800">
-          <table className="w-full text-left text-xs">
+        <div className="xl:col-span-2 overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+          <table className="w-full min-w-[640px] text-left text-xs">
             <thead className="bg-slate-50 text-[10px] text-slate-500 dark:bg-slate-900 dark:text-slate-400">
               <tr>
                 <th className="px-2 py-1.5">#</th>
@@ -378,7 +378,7 @@ function RankPanel({ rankings }) {
   const col = cols[tab]
 
   return (
-    <Card>
+    <Card className="h-full">
       <SectionHeader
         title="个股榜单"
         subtitle="SQL 内排序取前 8，点击进入个股分析"
@@ -434,7 +434,7 @@ function BoardPanel({ title, subtitle, data, kind }) {
   const gainers = data.gainers || []
   const losers = data.losers || []
   return (
-    <Card>
+    <Card className="h-full">
       <SectionHeader
         title={title}
         subtitle={`${subtitle} · 共 ${data.total} 个（${fmtDate(data.trade_date)}）`}
@@ -515,7 +515,7 @@ function AmountPanel({ series }) {
   }, [series])
 
   return (
-    <Card>
+    <Card className="h-full">
       <SectionHeader title="两市成交额" subtitle={`近 ${(series || []).length} 个交易日`} />
       <Chart option={option} height={230} className="mt-2" />
     </Card>

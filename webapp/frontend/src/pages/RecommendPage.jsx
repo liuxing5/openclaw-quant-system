@@ -72,10 +72,23 @@ export default function RecommendPage() {
   const { data, loading, error, reload } = useApi(() => api.get('/recommend/funnel'), [])
   const strategies = data?.strategies || []
   const [active, setActive] = useState(0)
+  const [picked, setPicked] = useState(false)
 
   useEffect(() => {
-    if (active >= strategies.length && strategies.length) setActive(0)
-  }, [active, strategies.length])
+    if (!strategies.length) return
+    if (active >= strategies.length) {
+      setActive(0)
+      return
+    }
+    // 首次进入默认落在有候选的策略上，避免一进来就是空漏斗。
+    if (!picked && !(strategies[active]?.candidates || []).length) {
+      let best = 0
+      strategies.forEach((s, i) => {
+        if ((s.candidates || []).length > (strategies[best]?.candidates || []).length) best = i
+      })
+      if (best !== active) setActive(best)
+    }
+  }, [active, picked, strategies])
 
   const current = strategies[active]
   const pathGroups = useMemo(() => {
@@ -139,14 +152,17 @@ export default function RecommendPage() {
             </div>
           ) : null}
 
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
             {strategies.map((s, i) => {
               const on = i === active
               return (
                 <button
                   type="button"
                   key={s.id}
-                  onClick={() => setActive(i)}
+                  onClick={() => {
+                    setPicked(true)
+                    setActive(i)
+                  }}
                   className={`rounded-xl border p-3 text-left transition ${
                     on
                       ? 'border-brand-500 bg-brand-50/70 shadow-sm dark:border-brand-500/70 dark:bg-brand-500/10'
@@ -169,14 +185,19 @@ export default function RecommendPage() {
           </div>
 
           {current ? (
-            <div className="grid gap-4 xl:grid-cols-3">
-              <Card className="xl:col-span-1">
+            <div className="grid items-start gap-4 xl:grid-cols-3">
+              <Card className="self-start xl:col-span-1">
                 <SectionHeader
                   title="漏斗路径"
                   subtitle={`${current.name.replace(/^[^\w\u4e00-\u9fa5]+/, '')} · ${current.updated || ''}`}
                   badge={<Badge tone="blue">{current.steps.length} 层</Badge>}
                 />
                 <div className="mt-3 space-y-2">
+                  {current.steps.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-400 dark:border-slate-700">
+                      本期没有返回漏斗步骤，切换上方有候选的策略查看。
+                    </div>
+                  ) : null}
                   {current.steps.map((step, i) => {
                     const pass = Number(String(step.pass || '').replace(/[^\d.]/g, ''))
                     const elim = Number(String(step.eliminated || '').replace(/[^\d.]/g, ''))
