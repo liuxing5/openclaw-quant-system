@@ -161,6 +161,7 @@ scored AS (
     LEFT JOIN fund f ON f.ts_code = l.ts_code
     WHERE COALESCE(s.is_active, TRUE) AND l.close > 0
       AND COALESCE(s.is_st, FALSE) = FALSE
+      AND COALESCE(s.stock_name, '') NOT LIKE '%%ST%%'
       AND ({preset_where}) {board_where}
 ),
 ranked AS (
