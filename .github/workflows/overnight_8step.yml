@@ -1,5 +1,8 @@
 name: overnight_8step
 
+permissions:
+  contents: write
+
 on:
   push:
     branches: [master]
@@ -247,6 +250,36 @@ jobs:
         RUN_TIME: ${{ github.run_started_at }}
         ACTION: error
       run: python3 .github/scripts/send_telegram.py
+
+    - name: Build strict Yang Yongxing classic at same scan
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
+      env:
+        POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+        POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+        POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        POSTGRES_POOL_SIZE: 5
+      run: |
+        NOW=$(TZ=Asia/Shanghai date +%H%M)
+        if [ "$NOW" -lt 1430 ]; then
+          echo "盘中初筛阶段不生成原版：当前 $NOW"; exit 0
+        fi
+        DATE=$(TZ=Asia/Shanghai date +%F)
+        python scripts/build_overnight_classic.py --date "$DATE" --live
+
+    - name: Persist classic JSON with the 8step scan
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add strategies/funnel_strategy/docs/overnight_classic.json
+        git diff --cached --quiet && exit 0
+        git commit -m "data: update classic scan $(TZ=Asia/Shanghai date +%F) [skip ci]"
+        git pull --rebase --autostash
+        git push
 
     - name: Generate report (8step only)
       if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
