@@ -331,7 +331,9 @@ def scan_code(code: str, limit: int = 100) -> dict:
             "error": "智能评分表尚未构建，请先运行 refresh_smart_snapshot.py",
         }
     rows = query(
-        f"SELECT * FROM {_TABLE} WHERE trade_date = %s ORDER BY score DESC, amount DESC LIMIT 1800",
+        f"SELECT * FROM {_TABLE} WHERE trade_date = %s "
+        "AND COALESCE(stock_name, '') NOT LIKE '%%ST%%' "
+        "ORDER BY score DESC, amount DESC LIMIT 1800",
         (day,),
     )
     # 真实 MACD / 缠论结构（若技术表已构建）
@@ -571,8 +573,9 @@ def smart_scan(preset: str = "smart", board: str = "", min_score: float = 55, li
                 market_state = "weak"
         # 物化表读取：先按综合分取前 1200，再在 Python 里做 preset 硬过滤
         rows = query(
-            f"SELECT * FROM {_TABLE} WHERE trade_date = %s AND score >= %s {bw.replace('l.', '')} "
-            "ORDER BY score DESC, amount DESC LIMIT 1200",
+            f"SELECT * FROM {_TABLE} WHERE trade_date = %s AND score >= %s "
+            "AND COALESCE(stock_name, '') NOT LIKE '%%ST%%' "
+            f"{bw.replace('l.', '')} ORDER BY score DESC, amount DESC LIMIT 1200",
             (day, min_score),
         )
         strong_industries = set()

@@ -697,8 +697,10 @@ export default function DashboardPage() {
 function SourcesPanelBridge() {
   const { data, loading, error, reload } = useApi(() => api.get('/system/data-sources'), [])
   return (
-    <AsyncBlock loading={loading} error={error} onRetry={reload} loadingLabel="数据源状态加载中">
-      {data ? <SourcesPanel sources={data} /> : null}
-    </AsyncBlock>
+    <div className="h-full">
+      <AsyncBlock loading={loading} error={error} onRetry={reload} loadingLabel="数据源状态加载中">
+        {data ? <SourcesPanel sources={data} /> : null}
+      </AsyncBlock>
+    </div>
   )
 }
