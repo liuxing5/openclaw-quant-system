@@ -1,54 +1,54 @@
 {
   "title": "最严格杨永兴版",
   "date": "2026-11-03",
-  "updated": "2026-11-03 06:41:23",
+  "updated": "2026-11-03 07:16:41",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
-      "pass": 5,
+      "pass": 4,
       "eliminated": "",
       "rule": "只做尾盘，不碰 14:55 突击拉高"
     },
     {
       "name": "主板 + 涨幅 3%~5%",
-      "pass": 5,
+      "pass": 4,
       "eliminated": "",
       "rule": "仅 60/00 主板，排除 300/688/ST"
     },
     {
       "name": "近 20 日涨停基因",
-      "pass": 5,
+      "pass": 4,
       "eliminated": "",
       "rule": "近 20 个交易日至少一次涨停"
     },
     {
       "name": "量比 > 1",
-      "pass": 5,
+      "pass": 4,
       "eliminated": "",
       "rule": "当日量能高于近 5 日均量"
     },
     {
       "name": "换手率 5%~10%",
-      "pass": 5,
+      "pass": 4,
       "eliminated": "",
       "rule": "兼顾流动性与不过热"
     },
     {
       "name": "流通市值 50~200亿",
-      "pass": 5,
+      "pass": 4,
       "eliminated": "",
       "rule": "中盘弹性区间"
     },
     {
       "name": "VWAP + 强于大盘",
-      "pass": 5,
+      "pass": 4,
       "eliminated": 0,
       "rule": "全天在 VWAP 上方，且强于上证/深证"
     },
     {
       "name": "回踩 VWAP 不破",
       "pass": 2,
-      "eliminated": 3,
+      "eliminated": 2,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
@@ -56,100 +56,81 @@
     {
       "code": "002531.SZ",
       "name": "天顺风能",
-      "score": 90.8,
+      "score": 99.2,
       "entry": 7.39,
-      "stop": 7.344,
+      "stop": 7.351,
       "target": 7.612,
-      "quant_score": 90.8,
+      "quant_score": 99.2,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 7.344,
-      "pct_chg": 4.08,
+      "vwap": 7.351,
+      "pct_chg": 4.92,
       "confirmed": true,
       "path": "原版确认"
     },
     {
       "code": "600593.SH",
       "name": "大连圣亚",
-      "score": 82.5,
+      "score": 89.9,
       "entry": 41.51,
-      "stop": 41.242,
+      "stop": 41.309,
       "target": 42.755,
-      "quant_score": 82.5,
+      "quant_score": 89.9,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 41.242,
-      "pct_chg": 3.25,
+      "vwap": 41.309,
+      "pct_chg": 3.99,
       "confirmed": true,
       "path": "原版确认"
     },
     {
-      "code": "002612.SZ",
-      "name": "朗姿股份",
-      "score": 90.1,
-      "entry": 18.18,
-      "stop": 17.943,
-      "target": 18.725,
-      "quant_score": 90.1,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
-        "待确认"
-      ],
-      "source": "腾讯1m",
-      "vwap": 17.943,
-      "pct_chg": 4.01,
-      "confirmed": false,
-      "path": "待确认"
-    },
-    {
       "code": "002490.SZ",
       "name": "山东墨龙",
-      "score": 89.7,
+      "score": 95.8,
       "entry": 6.83,
-      "stop": 6.704,
+      "stop": 6.715,
       "target": 7.035,
-      "quant_score": 89.7,
+      "quant_score": 95.8,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 6.704,
-      "pct_chg": 3.97,
+      "vwap": 6.715,
+      "pct_chg": 4.58,
       "confirmed": false,
       "path": "待确认"
     },
     {
       "code": "600960.SH",
       "name": "渤海汽车",
-      "score": 81.7,
+      "score": 84.1,
       "entry": 4.23,
-      "stop": 4.18,
+      "stop": 4.186,
       "target": 4.357,
-      "quant_score": 81.7,
+      "quant_score": 84.1,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 4.18,
-      "pct_chg": 3.17,
+      "vwap": 4.186,
+      "pct_chg": 3.41,
       "confirmed": false,
       "path": "待确认"
     }
   ],
-  "candidate_count": 5,
+  "candidate_count": 4,
   "confirmed_count": 2,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
