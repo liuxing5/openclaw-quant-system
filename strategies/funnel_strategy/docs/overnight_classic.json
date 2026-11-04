@@ -1,7 +1,7 @@
 {
   "title": "最严格杨永兴版",
   "date": "2026-11-04",
-  "updated": "2026-11-04 06:42:28",
+  "updated": "2026-11-04 07:17:33",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
@@ -47,67 +47,47 @@
     },
     {
       "name": "回踩 VWAP 不破",
-      "pass": 0,
-      "eliminated": 5,
+      "pass": 1,
+      "eliminated": 4,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
   "candidates": [
     {
-      "code": "603989.SH",
-      "name": "艾华集团",
-      "score": 92.0,
-      "entry": 23.0,
-      "stop": 22.232,
-      "target": 23.69,
-      "quant_score": 92.0,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
-        "14:30新高",
-        "待确认"
-      ],
-      "source": "腾讯1m",
-      "vwap": 22.232,
-      "pct_chg": 4.2,
-      "confirmed": false,
-      "path": "待确认"
-    },
-    {
       "code": "002174.SZ",
       "name": "游族网络",
-      "score": 87.3,
+      "score": 85.4,
       "entry": 11.15,
-      "stop": 10.891,
+      "stop": 10.903,
       "target": 11.485,
-      "quant_score": 87.3,
+      "quant_score": 85.4,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 10.891,
-      "pct_chg": 3.73,
+      "vwap": 10.903,
+      "pct_chg": 3.54,
       "confirmed": false,
       "path": "待确认"
     },
     {
       "code": "603341.SH",
       "name": "龙旗科技",
-      "score": 93.9,
+      "score": 95.0,
       "entry": 37.42,
-      "stop": 36.602,
+      "stop": 36.652,
       "target": 38.543,
-      "quant_score": 93.9,
+      "quant_score": 95.0,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 36.602,
-      "pct_chg": 4.39,
+      "vwap": 36.652,
+      "pct_chg": 4.5,
       "confirmed": false,
       "path": "待确认"
     },
@@ -132,25 +112,43 @@
     {
       "code": "002640.SZ",
       "name": "跨境通",
-      "score": 85.0,
+      "score": 91.4,
       "entry": 3.17,
-      "stop": 3.154,
+      "stop": 3.175,
       "target": 3.265,
-      "quant_score": 85.0,
+      "quant_score": 91.4,
       "tags": [
-        "VWAP上方",
         "14:30新高",
         "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 3.154,
-      "pct_chg": 3.5,
+      "vwap": 3.175,
+      "pct_chg": 4.14,
       "confirmed": false,
       "path": "待确认"
+    },
+    {
+      "code": "600698.SH",
+      "name": "湖南天雁",
+      "score": 84.1,
+      "entry": 6.88,
+      "stop": 6.849,
+      "target": 7.086,
+      "quant_score": 84.1,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "回踩不破"
+      ],
+      "source": "腾讯1m",
+      "vwap": 6.849,
+      "pct_chg": 3.41,
+      "confirmed": true,
+      "path": "原版确认"
     }
   ],
   "candidate_count": 5,
-  "confirmed_count": 0,
+  "confirmed_count": 1,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
