@@ -1,136 +1,156 @@
 {
   "title": "最严格杨永兴版",
-  "date": "2026-11-03",
-  "updated": "2026-11-03 07:16:41",
+  "date": "2026-11-04",
+  "updated": "2026-11-04 06:42:28",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
-      "pass": 4,
+      "pass": 5,
       "eliminated": "",
       "rule": "只做尾盘，不碰 14:55 突击拉高"
     },
     {
       "name": "主板 + 涨幅 3%~5%",
-      "pass": 4,
+      "pass": 5,
       "eliminated": "",
       "rule": "仅 60/00 主板，排除 300/688/ST"
     },
     {
       "name": "近 20 日涨停基因",
-      "pass": 4,
+      "pass": 5,
       "eliminated": "",
       "rule": "近 20 个交易日至少一次涨停"
     },
     {
       "name": "量比 > 1",
-      "pass": 4,
+      "pass": 5,
       "eliminated": "",
       "rule": "当日量能高于近 5 日均量"
     },
     {
       "name": "换手率 5%~10%",
-      "pass": 4,
+      "pass": 5,
       "eliminated": "",
       "rule": "兼顾流动性与不过热"
     },
     {
       "name": "流通市值 50~200亿",
-      "pass": 4,
+      "pass": 5,
       "eliminated": "",
       "rule": "中盘弹性区间"
     },
     {
       "name": "VWAP + 强于大盘",
-      "pass": 4,
+      "pass": 5,
       "eliminated": 0,
       "rule": "全天在 VWAP 上方，且强于上证/深证"
     },
     {
       "name": "回踩 VWAP 不破",
-      "pass": 2,
-      "eliminated": 2,
+      "pass": 0,
+      "eliminated": 5,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
   "candidates": [
     {
-      "code": "002531.SZ",
-      "name": "天顺风能",
-      "score": 99.2,
-      "entry": 7.39,
-      "stop": 7.351,
-      "target": 7.612,
-      "quant_score": 99.2,
+      "code": "603989.SH",
+      "name": "艾华集团",
+      "score": 92.0,
+      "entry": 23.0,
+      "stop": 22.232,
+      "target": 23.69,
+      "quant_score": 92.0,
       "tags": [
         "VWAP上方",
         "强于大盘",
-        "回踩不破"
-      ],
-      "source": "腾讯1m",
-      "vwap": 7.351,
-      "pct_chg": 4.92,
-      "confirmed": true,
-      "path": "原版确认"
-    },
-    {
-      "code": "600593.SH",
-      "name": "大连圣亚",
-      "score": 89.9,
-      "entry": 41.51,
-      "stop": 41.309,
-      "target": 42.755,
-      "quant_score": 89.9,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
-        "回踩不破"
-      ],
-      "source": "腾讯1m",
-      "vwap": 41.309,
-      "pct_chg": 3.99,
-      "confirmed": true,
-      "path": "原版确认"
-    },
-    {
-      "code": "002490.SZ",
-      "name": "山东墨龙",
-      "score": 95.8,
-      "entry": 6.83,
-      "stop": 6.715,
-      "target": 7.035,
-      "quant_score": 95.8,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
+        "14:30新高",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 6.715,
-      "pct_chg": 4.58,
+      "vwap": 22.232,
+      "pct_chg": 4.2,
       "confirmed": false,
       "path": "待确认"
     },
     {
-      "code": "600960.SH",
-      "name": "渤海汽车",
-      "score": 84.1,
-      "entry": 4.23,
-      "stop": 4.186,
-      "target": 4.357,
-      "quant_score": 84.1,
+      "code": "002174.SZ",
+      "name": "游族网络",
+      "score": 87.3,
+      "entry": 11.15,
+      "stop": 10.891,
+      "target": 11.485,
+      "quant_score": 87.3,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 4.186,
-      "pct_chg": 3.41,
+      "vwap": 10.891,
+      "pct_chg": 3.73,
+      "confirmed": false,
+      "path": "待确认"
+    },
+    {
+      "code": "603341.SH",
+      "name": "龙旗科技",
+      "score": 93.9,
+      "entry": 37.42,
+      "stop": 36.602,
+      "target": 38.543,
+      "quant_score": 93.9,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 36.602,
+      "pct_chg": 4.39,
+      "confirmed": false,
+      "path": "待确认"
+    },
+    {
+      "code": "002307.SZ",
+      "name": "北新路桥",
+      "score": 84.2,
+      "entry": 3.32,
+      "stop": 3.329,
+      "target": 3.42,
+      "quant_score": 84.2,
+      "tags": [
+        "回踩不破",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 3.329,
+      "pct_chg": 3.42,
+      "confirmed": false,
+      "path": "待确认"
+    },
+    {
+      "code": "002640.SZ",
+      "name": "跨境通",
+      "score": 85.0,
+      "entry": 3.17,
+      "stop": 3.154,
+      "target": 3.265,
+      "quant_score": 85.0,
+      "tags": [
+        "VWAP上方",
+        "14:30新高",
+        "回踩不破",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 3.154,
+      "pct_chg": 3.5,
       "confirmed": false,
       "path": "待确认"
     }
   ],
-  "candidate_count": 4,
-  "confirmed_count": 2,
+  "candidate_count": 5,
+  "confirmed_count": 0,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
