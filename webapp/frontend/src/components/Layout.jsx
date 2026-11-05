@@ -97,6 +97,7 @@ export default function Layout({ children }) {
                   <li key={item.to}>
                     <NavLink
                       to={item.to}
+                      end={item.to === '/index' || item.to === '/market-env'}
                       title={item.label}
                       reloadDocument={item.to === '/recommend'}
                       onClick={() => {

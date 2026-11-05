@@ -48,19 +48,19 @@ const rowOf = (r) => ({
   tsCode: pick(r, ['ts_code', 'stock_code', 'symbol', 'code']),
   name: pick(r, ['stock_name', 'name']),
   reason: pick(r, ['listing_reason', 'reason', 'reason_text']),
-  buy: num(pick(r, ['buy_amount', 'amount_buy', 'total_buy'])),
-  sell: num(pick(r, ['sell_amount', 'amount_sell', 'total_sell'])),
-  net: num(pick(r, ['net_amount', 'net_buy_amount', 'net_buy', 'net_inflow'])),
+  buy: num(pick(r, ['buy_amount', 'amount_buy', 'total_buy', 'buy_amt'])),
+  sell: num(pick(r, ['sell_amount', 'amount_sell', 'total_sell', 'sell_amt'])),
+  net: num(pick(r, ['net_amount', 'net_buy_amount', 'net_buy', 'net_inflow', 'net_amt'])),
   pct: num(pick(r, ['change_pct', 'pct_chg'])),
   isInst: isInstRow(r),
 })
 
 const seatOf = (s) => ({
-  name: pick(s, ['seat_name', 'name', 'branch_name', 'seat']) || '未知席位',
-  buy: num(pick(s, ['buy_amount', 'total_buy'])),
-  sell: num(pick(s, ['sell_amount', 'total_sell'])),
-  net: num(pick(s, ['net_amount', 'net_buy_amount', 'net'])),
-  count: num(pick(s, ['stock_count', 'count', 'times', 'appear_times'])),
+  name: pick(s, ['seat_name', 'name', 'branch_name', 'seat', 'stock_name']) || '未知席位',
+  buy: num(pick(s, ['buy_amount', 'total_buy', 'buy_amt'])),
+  sell: num(pick(s, ['sell_amount', 'total_sell', 'sell_amt'])),
+  net: num(pick(s, ['net_amount', 'net_buy_amount', 'net', 'net_amt'])),
+  count: num(pick(s, ['stock_count', 'count', 'times', 'appear_times', 'records'])),
 })
 
 /* ------------------------------------------------------------ 明细列表 */
@@ -188,7 +188,7 @@ function SeatPanel({ seats }) {
           <thead>
             <tr className="text-left text-[11px] text-slate-400">
               <th className="pb-1.5 font-medium">#</th>
-              <th className="pb-1.5 font-medium">营业部 / 席位</th>
+              <th className="pb-1.5 font-medium">个股 / 席位</th>
               <th className="pb-1.5 text-right font-medium">买入额</th>
               <th className="pb-1.5 text-right font-medium">卖出额</th>
               <th className="pb-1.5 text-right font-medium">净额</th>
@@ -290,12 +290,12 @@ export default function DragonTigerPage() {
         <Card>
           <SectionHeader
             title="榜单数据"
-            subtitle="明细支持关键词与日期筛选；席位排行按近 20 个交易日聚合"
+            subtitle="明细支持关键词与日期筛选；席位排行按近 20 个交易日、以个股聚合展示"
             action={
               <Tabs
                 tabs={[
                   { value: 'detail', label: '榜单明细' },
-                  { value: 'seat', label: '席位排行' },
+                  { value: 'seat', label: '席位排行（个股）' },
                 ]}
                 value={tab}
                 onChange={setTab}

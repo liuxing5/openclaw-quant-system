@@ -902,6 +902,45 @@ def _columns(table: str) -> set[str]:
 def sector_fund_flow(sector_type: str = "industry", limit: int = 50) -> dict:
     """最新交易日板块净流入排行；缺失列一律返回 None，保持结构完整。"""
     kind = "concept" if str(sector_type).lower().startswith("conc") else "industry"
+    # 东财实时板块榜有完整正负净流入；本地快照只有旧日期，容易把“净流出”
+    # 截成 0 条（默认只取净流入前 50）。
+    try:
+        from . import live_market
+
+        if True:
+            all_items = []
+            offset = 0
+            while True:
+                page = live_market.boards_page(kind, "net_inflow", 200, offset)
+                batch = page.get("items") or []
+                all_items.extend(batch)
+                offset += len(batch)
+                if not batch or offset >= int(page.get("total") or 0):
+                    break
+            if all_items:
+                items = [
+                    {
+                        "code": r.get("code"),
+                        "name": r.get("name"),
+                        "pct_chg": _f(r.get("pct_chg")),
+                        "net_inflow": round((_f(r.get("net_inflow")) or 0) / 1e8, 2),
+                        "amount": _f(r.get("amount")),
+                        "up_count": r.get("up_count"),
+                        "down_count": r.get("down_count"),
+                        "lead_stock_name": r.get("lead_stock_name"),
+                    }
+                    for r in all_items
+                ]
+                return {
+                    "items": items,
+                    "total": len(items),
+                    "trade_date": page.get("trade_date"),
+                    "sector_type": kind,
+                    "meta": {"unit": "亿元", "degraded": False, "live": True},
+                }
+    except Exception:  # noqa: BLE001
+        pass
+
     table = "concept_board_quotes" if kind == "concept" else "industry_board_quotes"
     code_col = "concept_code" if kind == "concept" else "industry_code"
     name_col = "concept_name" if kind == "concept" else "industry_name"
@@ -936,7 +975,7 @@ def sector_fund_flow(sector_type: str = "industry", limit: int = 50) -> dict:
         ORDER BY net_inflow DESC NULLS LAST, pct_chg DESC NULLS LAST
         LIMIT %s
         """,
-        (latest, limit),
+        (latest, max(int(limit), 1000)),
     )
     items = [
         {
@@ -1527,23 +1566,26 @@ def dragon_tiger(
     if trade_date:
         try:
             datetime.strptime(str(trade_date)[:10], "%Y-%m-%d")
-            where.append("trade_date = %s::date")
+            where.append("l.trade_date = %s::date")
             params.append(str(trade_date)[:10])
         except ValueError:
             pass  # 日期格式不合法时忽略该条件，并在 meta 标注
     kw = (keyword or "").strip()
     if kw:
-        where.append("(stock_name ILIKE %s ESCAPE '\\' OR reason ILIKE %s ESCAPE '\\')")
+        where.append("(l.stock_name ILIKE %s ESCAPE '\\' OR l.reason ILIKE %s ESCAPE '\\')")
         escaped = _like(kw)
         params.extend([f"%{escaped}%", f"%{escaped}%"])
     cond = (" WHERE " + " AND ".join(where)) if where else ""
 
-    total = scalar(f"SELECT COUNT(*) FROM lhb_detail{cond}", tuple(params)) or 0
+    total = scalar(f"SELECT COUNT(*) FROM lhb_detail l{cond}", tuple(params)) or 0
     rows = _rows(
         f"""
-        SELECT trade_date, ts_code, stock_name, reason, buy_amt, sell_amt, net_amt, is_inst
-        FROM lhb_detail{cond}
-        ORDER BY trade_date DESC NULLS LAST, net_amt DESC NULLS LAST
+        SELECT l.trade_date, l.ts_code, l.stock_name, l.reason, l.buy_amt, l.sell_amt, l.net_amt,
+               l.is_inst, q.pct_chg
+        FROM lhb_detail l
+        LEFT JOIN daily_quotes q ON q.ts_code = l.ts_code AND q.trade_date = l.trade_date
+        {cond}
+        ORDER BY l.trade_date DESC NULLS LAST, l.net_amt DESC NULLS LAST
         LIMIT %s OFFSET %s
         """,
         tuple(params) + (size, offset),
@@ -1557,6 +1599,7 @@ def dragon_tiger(
             "buy_amt": _f(r["buy_amt"]),
             "sell_amt": _f(r["sell_amt"]),
             "net_amt": _f(r["net_amt"]),
+            "pct_chg": _f(r.get("pct_chg")),
             "is_inst": bool(r["is_inst"]),
         }
         for r in rows

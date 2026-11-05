@@ -8,6 +8,7 @@
     * 开发：cd webapp/frontend && npm run dev  →  http://127.0.0.1:5173/dashboard
     * 生产：npm run build 后，本服务直接托管 dist  →  http://127.0.0.1:8000/dashboard
 """
+import math
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -40,10 +41,27 @@ from .warmup import start_warmup, stop_warmup
 # webapp/frontend/dist（app/main.py -> app -> backend -> webapp）
 DIST_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
+def _finite_json(value):
+    """把 pandas/numpy 产生的 NaN/Infinity 转成 null，避免接口 500。"""
+    if isinstance(value, float):
+        return value if math.isfinite(value) else None
+    if isinstance(value, dict):
+        return {k: _finite_json(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_finite_json(v) for v in value]
+    return value
+
+
+class SafeJSONResponse(JSONResponse):
+    def render(self, content) -> bytes:
+        return super().render(_finite_json(content))
+
+
 app = FastAPI(
     title="量化投研平台",
     description="本地 PostgreSQL 数据底座驱动的股票投研看板",
     version="1.0.0",
+    default_response_class=SafeJSONResponse,
 )
 
 app.add_middleware(

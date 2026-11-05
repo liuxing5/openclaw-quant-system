@@ -115,9 +115,18 @@ export default function NewsFlashPage() {
 
   const items = useMemo(() => {
     const rows = flash.data?.items || []
-    return [...rows].sort((a, b) =>
-      String(b.published_at || b.createdAt || '').localeCompare(String(a.published_at || a.createdAt || '')),
-    )
+    return [...rows]
+      .map((it) => {
+        const published = it.pub_time || it.published_at || it.created_at || it.createdAt || null
+        const title = it.title || it.summary || ''
+        return {
+          ...it,
+          published_at: published,
+          content: it.summary && it.summary !== title ? it.summary : it.content,
+          url: it.url || `https://www.baidu.com/s?wd=${encodeURIComponent(title)}`,
+        }
+      })
+      .sort((a, b) => String(b.published_at || '').localeCompare(String(a.published_at || '')))
   }, [flash.data])
 
   const updated = flash.data?.updated_at || flash.data?.as_of || items[0]?.published_at || null
@@ -180,9 +189,16 @@ export default function NewsFlashPage() {
                           {i === 0 ? <Badge tone="rose">最新</Badge> : null}
                           {it.star ? <Badge tone="amber">★ 重点</Badge> : null}
                         </div>
-                        <p className="mt-1 text-sm font-medium leading-6 text-slate-800 dark:text-slate-100">
-                          {it.title}
-                        </p>
+                        <a
+                          href={it.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-1 inline-flex items-start gap-1 text-sm font-medium leading-6 text-slate-800 hover:text-brand-600 dark:text-slate-100 dark:hover:text-brand-300"
+                          title={it.url ? '打开原始来源' : '搜索原文'}
+                        >
+                          <span>{it.title || it.content || '快讯'}</span>
+                          <span className="mt-0.5 text-[10px] text-brand-500">↗</span>
+                        </a>
                         {it.content && it.content !== it.title ? (
                           <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">{it.content}</p>
                         ) : null}

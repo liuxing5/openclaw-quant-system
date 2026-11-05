@@ -559,6 +559,80 @@ def _holding_codes() -> set[str]:
         return set()
 
 
+def _enrich_quote_fields(rows: list[dict]) -> None:
+    """实时快照偶发缺量比/换手/振幅时，优先用实时快照，再用最近日线补齐。"""
+    snap = {}
+    try:
+        snap = {x["ts_code"]: x for x in (live_snapshot.get_snapshot().get("items") or [])}
+    except Exception:  # noqa: BLE001
+        snap = {}
+    for r in rows:
+        live = snap.get(r.get("ts_code")) or {}
+        if r.get("volume_ratio") is None and live.get("volume_ratio") is not None:
+            r["volume_ratio"] = round(float(live["volume_ratio"]), 2)
+        if r.get("turnover_rate") is None and live.get("turnover_rate") is not None:
+            r["turnover_rate"] = round(float(live["turnover_rate"]), 2)
+        if r.get("amplitude") is None:
+            high, low, pre = _f(live.get("high")), _f(live.get("low")), _f(live.get("pre_close"))
+            if high and low and pre:
+                r["amplitude"] = round((high - low) / pre * 100, 2)
+
+    need = [
+        r for r in rows
+        if r.get("volume_ratio") is None or r.get("turnover_rate") is None or r.get("amplitude") is None
+    ]
+    codes = sorted({r.get("ts_code") for r in need if r.get("ts_code")})
+    if not codes:
+        return
+    try:
+        vals = query(
+            """
+            SELECT DISTINCT ON (ts_code) ts_code, trade_date, high, low, pre_close,
+                   turnover_rate, volume
+            FROM daily_quotes
+            WHERE ts_code = ANY(%s)
+            ORDER BY ts_code, trade_date DESC
+            """,
+            (codes,),
+        )
+        avg = {
+            r["ts_code"]: _f(r["avg_vol"])
+            for r in query(
+                """
+                SELECT ts_code, AVG(volume) AS avg_vol
+                FROM (
+                    SELECT ts_code, trade_date, volume,
+                           ROW_NUMBER() OVER (PARTITION BY ts_code ORDER BY trade_date DESC) AS rn
+                    FROM daily_quotes
+                    WHERE ts_code = ANY(%s)
+                ) x
+                WHERE rn <= 20
+                GROUP BY ts_code
+                """,
+                (codes,),
+            )
+        }
+    except Exception:  # noqa: BLE001
+        return
+    by_code = {r["ts_code"]: r for r in vals}
+    for r in need:
+        d = by_code.get(r.get("ts_code"))
+        if not d:
+            continue
+        tr = _f(d.get("turnover_rate"))
+        vol = _f(d.get("volume"))
+        av = avg.get(r.get("ts_code"))
+        high, low, pre = _f(d.get("high")), _f(d.get("low")), _f(d.get("pre_close"))
+        if r.get("turnover_rate") is None and tr is not None:
+            r["turnover_rate"] = round(tr, 2)
+        if r.get("volume_ratio") is None and vol and av:
+            cand = vol / av
+            if 0.1 <= cand <= 50:
+                r["volume_ratio"] = round(cand, 2)
+        if r.get("amplitude") is None and high and low and pre:
+            r["amplitude"] = round((high - low) / pre * 100, 2)
+
+
 def events(
     day: dt.date | None = None,
     scope: str = "all_market",
@@ -582,6 +656,7 @@ def events(
     live = _build_live_pool(scope) if explicit_day is None else None
     pool = live or event_pool(day, scope)
     rows = list(pool["items"])
+    _enrich_quote_fields(rows)
 
     sig = (signal or "").strip()
     if sig and sig not in ("all", "全部"):

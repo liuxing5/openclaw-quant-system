@@ -253,8 +253,15 @@ WITH base AS (
          COALESCE(f.total_market_cap, d.total_market_cap) AS market_cap
   FROM daily_quotes d
   LEFT JOIN stock_basic_info s ON s.ts_code = d.ts_code
-  LEFT JOIN stock_fundamentals f ON f.ts_code = d.ts_code
+  LEFT JOIN LATERAL (
+    SELECT total_market_cap
+    FROM stock_fundamentals f
+    WHERE f.ts_code = d.ts_code
+    ORDER BY report_date DESC
+    LIMIT 1
+  ) f ON TRUE
   WHERE d.trade_date = (SELECT MAX(trade_date) FROM daily_quotes)
+  {board_clause}
 ), topn AS (
   SELECT ts_code, stock_name, pct_chg, market_cap,
          ROW_NUMBER() OVER (ORDER BY market_cap DESC NULLS LAST) AS rank_no
@@ -283,7 +290,22 @@ def index_components(ts_code: str, page: int, size: int, top: int) -> dict:
     """
     day = mkt.latest_trade_date()
     offset = (page - 1) * size
-    rows = query(_COMPONENTS_SQL, (top, offset, size))
+    board_clause = ""
+    # 本地无官方成分表；至少按指数对应板块收窄，避免所有指数都返回同一批
+    # 全市场市值最大的股票。
+    if ts_code == "000001.SH":
+        board_clause = "AND d.ts_code LIKE '60%%'"
+    elif ts_code == "399001.SZ":
+        board_clause = "AND (d.ts_code LIKE '00%%' OR d.ts_code LIKE '30%%')"
+    elif ts_code == "399006.SZ":
+        board_clause = "AND (d.ts_code LIKE '300%%' OR d.ts_code LIKE '301%%')"
+    elif ts_code == "000688.SH":
+        board_clause = "AND (d.ts_code LIKE '688%%' OR d.ts_code LIKE '689%%')"
+    elif ts_code == "000300.SH" and top == 100:
+        top = 300
+    elif ts_code == "000905.SH" and top == 100:
+        top = 500
+    rows = query(_COMPONENTS_SQL.format(board_clause=board_clause), (top, offset, size))
     if rows:
         universe = int(rows[0]["universe"])
         total = universe

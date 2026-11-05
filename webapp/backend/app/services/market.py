@@ -507,7 +507,7 @@ def board_top(day: date | None = None, board_type: str = "concept", limit: int =
     try:
         from . import live_market
 
-        if live_market.available():
+        if True:
             live = live_market.boards_page(board_type, "pct_chg_desc", 200, 0)
             items = live.get("items") or []
             if items:
