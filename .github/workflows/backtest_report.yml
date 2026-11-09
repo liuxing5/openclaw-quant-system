@@ -65,7 +65,7 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./deploy
           publish_branch: gh-pages
-          force_orphan: true
+          keep_files: true
           commit_message: "chore: 自动更新回测报告"
 
       - name: Show published URL
