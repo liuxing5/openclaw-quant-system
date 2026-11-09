@@ -14,6 +14,7 @@ from datetime import datetime
 from fastapi import APIRouter, Query
 
 from ..db import query
+from ..services import global_market
 from ..services.realtime import is_trading, market_status, norm_code, snapshot_rows
 
 router = APIRouter(tags=["realtime"])
@@ -142,6 +143,17 @@ def _snapshot_payload(codes: str | None, fields: tuple[str, ...]) -> dict:
         "count": len(items),
         "items": items,
     }
+
+
+@router.get("/market-data/global/quotes")
+def global_quotes(symbols: str = Query(..., description="逗号分隔，如 AAPL,0700.HK,7203.T")):
+    codes = [s.strip() for s in symbols.replace("，", ",").split(",") if s.strip()]
+    return {"items": global_market.quotes(codes[:50]), "requested": codes[:50]}
+
+
+@router.get("/market-data/global/history")
+def global_history(symbol: str = Query(...), days: int = Query(250, ge=20, le=500)):
+    return global_market.history(symbol, days)
 
 
 @router.get("/market-data/realtime")

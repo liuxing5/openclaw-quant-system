@@ -1,0 +1,13 @@
+﻿name: box_oscillation
+display_name: 箱体震荡
+category: framework
+market_regimes: [sideways]
+description: 价格位于 20 日箱体下部。
+instructions: |
+  箱体策略：价格距 20 日低点不超过 5%，且未跌破低点。
+rules:
+  - field: price
+    op: "near"
+    field2: low20
+    value: 0.05
+signal: buy

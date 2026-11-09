@@ -1,0 +1,15 @@
+﻿name: event_driven
+display_name: 事件驱动
+category: framework
+market_regimes: [sector_hot, volatile]
+description: 新闻/研报/公告出现正向催化。
+instructions: |
+  事件策略：信息面出现正面事件或强推荐，且没有高风险否决。
+rules:
+  - field: news_score
+    op: ">="
+    value: 55
+  - field: risk_veto
+    op: "=="
+    value: false
+signal: buy

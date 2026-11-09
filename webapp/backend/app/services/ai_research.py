@@ -16,7 +16,7 @@ import math
 from datetime import date, datetime, timedelta
 
 from ..db import query
-from . import realtime, stock_analysis
+from . import realtime, stock_analysis, strategy_skills
 
 BUY_WORDS = ("买入", "增持", "推荐", "看多", "强烈推荐", "目标价", "上调评级", "中标", "订单", "预增")
 SELL_WORDS = ("卖出", "减持", "看空", "下调评级", "预亏", "亏损", "立案", "处罚", "解禁", "诉讼", "退市", "风险提示")
@@ -232,7 +232,27 @@ def research(code: str) -> dict | None:
     tech = _technical(daily, live, proj)
     intel = _intel(recs, announcements)
     risk = _risk(daily, basic, fund, live, announcements, proj)
-    skills = _skills(daily, basic, fund, proj, intel, risk)
+    yaml_ctx = {
+        "price": _f(proj.get("price")),
+        "ma5": _f((proj.get("levels") or {}).get("ma5")),
+        "ma10": _f((proj.get("levels") or {}).get("ma10")),
+        "ma20": _f((proj.get("levels") or {}).get("ma20")),
+        "ma60": _f((proj.get("levels") or {}).get("ma60")),
+        "high20": _f((proj.get("levels") or {}).get("high20")),
+        "low20": _f((proj.get("levels") or {}).get("low20")),
+        "pct_chg": _f(live.get("pct_chg")) or (_f(daily[-1].get("pct_chg")) if daily else None),
+        "volume_ratio": _f(proj.get("volume_ratio"), 1),
+        "news_score": _f(intel.get("score"), 50),
+        "risk_veto": bool(risk.get("veto")),
+        "debt_ratio": _f(fund.get("debt_ratio")),
+        "profit_yoy": _f(fund.get("profit_yoy")),
+        "roe": _f(fund.get("roe")),
+        "pe_ratio": _f(fund.get("pe_ratio")),
+        "pb_ratio": _f(fund.get("pb_ratio")),
+    }
+    skills = strategy_skills.evaluate_all(yaml_ctx)
+    if not skills:
+        skills = _skills(daily, basic, fund, proj, intel, risk)
     skill_avg = sum(_signal_score(s["signal"]) for s in skills) / max(1, len(skills))
     weighted = (
         _signal_score(tech["signal"]) * tech["confidence"] * 0.40

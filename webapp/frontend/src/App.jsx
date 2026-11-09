@@ -13,6 +13,7 @@ const WatchlistPage = lazy(() => import('./pages/WatchlistPage.jsx'))
 const StrategyPage = lazy(() => import('./pages/StrategyPage.jsx'))
 const RecommendPage = lazy(() => import('./pages/RecommendPage.jsx'))
 const StockAnalysisPage = lazy(() => import('./pages/StockAnalysisPage.jsx'))
+const AiSkillsPage = lazy(() => import('./pages/AiSkillsPage.jsx'))
 const OilGoldPage = lazy(() => import('./pages/OilGoldPage.jsx'))
 const LimitLadderPage = lazy(() => import('./pages/LimitLadderPage.jsx'))
 const DragonTigerPage = lazy(() => import('./pages/DragonTigerPage.jsx'))
@@ -28,6 +29,7 @@ const NewsFlashPage = lazy(() => import('./pages/NewsFlashPage.jsx'))
 const HotSearchPage = lazy(() => import('./pages/HotSearchPage.jsx'))
 const FundFlowPage = lazy(() => import('./pages/FundFlowPage.jsx'))
 const GlobalIndexPage = lazy(() => import('./pages/GlobalIndexPage.jsx'))
+const GlobalMarketPage = lazy(() => import('./pages/GlobalMarketPage.jsx'))
 const MergerPage = lazy(() => import('./pages/MergerPage.jsx'))
 const ProfilePage = lazy(() => import('./pages/ProfilePage.jsx'))
 const HoldingsPage = lazy(() => import('./pages/HoldingsPage.jsx'))
@@ -117,6 +119,7 @@ export default function App() {
           <Route path="/strategy/:id" element={<StrategyPage />} />
           <Route path="/stock-analysis" element={<StockAnalysisPage />} />
           <Route path="/stock-analysis/:symbol" element={<StockAnalysisPage />} />
+          <Route path="/ai/skills" element={<AiSkillsPage />} />
           <Route path="/oil-gold" element={<OilGoldPage />} />
           <Route path="/limit-ladder" element={<LimitLadderPage />} />
           <Route path="/dragon-tiger" element={<DragonTigerPage />} />
@@ -134,6 +137,7 @@ export default function App() {
           <Route path="/info/hot-search" element={<HotSearchPage />} />
           <Route path="/info/fund-flow" element={<FundFlowPage />} />
           <Route path="/global-index" element={<GlobalIndexPage />} />
+          <Route path="/global-market" element={<GlobalMarketPage />} />
           <Route path="/merger-restructuring" element={<MergerPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route path="/holdings" element={<HoldingsPage />} />

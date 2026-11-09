@@ -1,0 +1,15 @@
+﻿name: hot_theme
+display_name: 热点题材
+category: framework
+market_regimes: [sector_hot]
+description: 题材/行业热度与个股相对强度。
+instructions: |
+  题材策略：信息面正向，且个股涨幅在 2%~7% 之间，避免高位追涨。
+rules:
+  - field: news_score
+    op: ">="
+    value: 55
+  - field: pct_chg
+    op: "between"
+    value: [2, 7]
+signal: buy

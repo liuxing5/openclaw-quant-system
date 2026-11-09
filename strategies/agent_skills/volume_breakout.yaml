@@ -1,0 +1,15 @@
+﻿name: volume_breakout
+display_name: 放量突破
+category: trend
+market_regimes: [trending_up]
+description: 价格接近/突破 20 日高，量比放大。
+instructions: |
+  突破策略：收盘接近 20 日高点，且当日量比≥1.5。突破必须有量能确认。
+rules:
+  - field: price
+    op: ">="
+    field2: high20
+  - field: volume_ratio
+    op: ">="
+    value: 1.5
+signal: buy

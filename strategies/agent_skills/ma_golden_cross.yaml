@@ -1,0 +1,14 @@
+﻿name: ma_golden_cross
+display_name: 均线金叉
+category: trend
+description: 短期均线强于中期均线。
+instructions: |
+  金叉策略：MA5>MA10，且价格在 MA20 上方。
+rules:
+  - field: ma5
+    op: ">"
+    field2: ma10
+  - field: price
+    op: ">"
+    field2: ma20
+signal: buy

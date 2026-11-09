@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from ..db import query
 from ..services import ai_research
 from ..services import minute
+from ..services import strategy_skills
 from ..services import stock_analysis as svc
 from ..services import technical
 
@@ -18,6 +19,19 @@ def multi_level(code: str):
     if not data.get("daily") and not data.get("m30"):
         raise HTTPException(status_code=404, detail="该标的分钟/日线数据不足")
     return data
+
+
+@router.get("/ai/skills")
+def list_ai_skills():
+    return {"items": strategy_skills.load_skills()}
+
+
+@router.get("/ai/skills/{name}")
+def get_ai_skill(name: str):
+    for skill in strategy_skills.load_skills():
+        if skill["name"] == name:
+            return skill
+    raise HTTPException(status_code=404, detail="策略技能不存在")
 
 
 @router.get("/stock-analysis/{code}/research")

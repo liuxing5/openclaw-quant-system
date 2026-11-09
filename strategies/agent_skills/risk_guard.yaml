@@ -1,0 +1,14 @@
+﻿name: risk_guard
+display_name: 风险规避
+category: framework
+description: 无 ST、无重大风险标记。
+instructions: |
+  风控策略：没有高风险标记、不是 ST、资产负债率不超过 70%。
+rules:
+  - field: risk_veto
+    op: "=="
+    value: false
+  - field: debt_ratio
+    op: "<="
+    value: 70
+signal: hold

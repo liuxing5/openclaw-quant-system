@@ -14,6 +14,7 @@ export const NAV = [
       { label: '概念板块', to: '/concept-analysis' },
       { label: '行业板块', to: '/industry-analysis' },
       { label: '外围指数', to: '/global-index' },
+      { label: '全球行情', to: '/global-market' },
       { label: '油和金', to: '/oil-gold' },
     ],
   },
@@ -21,6 +22,7 @@ export const NAV = [
     group: '投研',
     items: [
       { label: '个股分析', to: '/stock-analysis' },
+      { label: 'AI策略技能', to: '/ai/skills' },
       { label: '选股', to: '/strategy' },
       { label: '游资龙虎榜', to: '/dragon-tiger' },
       { label: '资金流向', to: '/info/fund-flow' },

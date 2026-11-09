@@ -1,0 +1,19 @@
+﻿name: bull_trend
+display_name: 多头趋势
+category: trend
+market_regimes: [trending_up]
+description: MA5>MA10>MA20，价格站上 MA20，趋势延续。
+instructions: |
+  趋势策略：均线多头排列且价格在 MA20 上方。适合趋势行情，不追高，
+  优先等待回踩 MA5/MA10 不破。
+rules:
+  - field: ma5
+    op: ">"
+    field2: ma10
+  - field: ma10
+    op: ">"
+    field2: ma20
+  - field: price
+    op: ">"
+    field2: ma20
+signal: buy

@@ -1,0 +1,18 @@
+﻿name: bottom_volume
+display_name: 底部放量
+category: reversal
+market_regimes: [trending_down]
+description: 长期弱势后放量反弹。
+instructions: |
+  反转策略：价格仍在 MA60 下方，但当日涨幅>3% 且量比≥2，视为底部放量。
+rules:
+  - field: price
+    op: "<"
+    field2: ma60
+  - field: pct_chg
+    op: ">"
+    value: 3
+  - field: volume_ratio
+    op: ">="
+    value: 2
+signal: buy

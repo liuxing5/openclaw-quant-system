@@ -1,0 +1,15 @@
+﻿name: growth_quality
+display_name: 成长质量
+category: framework
+market_regimes: [trending_up]
+description: 利润增速和 ROE 同时较高。
+instructions: |
+  基本面策略：利润同比>20%，ROE>10%。需结合估值和现金流。
+rules:
+  - field: profit_yoy
+    op: ">"
+    value: 20
+  - field: roe
+    op: ">"
+    value: 10
+signal: buy

@@ -1,0 +1,16 @@
+﻿name: shrink_pullback
+display_name: 缩量回踩
+category: trend
+market_regimes: [trending_down, sideways]
+description: 价格回踩 MA20 附近且缩量。
+instructions: |
+  回踩策略：价格距 MA20 不超过 3%，成交量低于近期均量。
+rules:
+  - field: price
+    op: "near"
+    field2: ma20
+    value: 0.03
+  - field: volume_ratio
+    op: "<"
+    value: 1
+signal: buy
