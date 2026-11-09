@@ -17,6 +17,7 @@ RUN pip install --upgrade pip && pip install -r /app/webapp/backend/requirements
 
 COPY core /app/core
 COPY webapp/backend /app/webapp/backend
+COPY strategies/agent_skills /app/strategies/agent_skills
 COPY --from=frontend /app/webapp/frontend/dist /app/webapp/frontend/dist
 
 ENV PORT=8000
