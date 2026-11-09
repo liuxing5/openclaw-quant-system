@@ -1,0 +1,104 @@
+name: data_refresh
+
+# A 股数据更新：每个交易日 17:00（北京时间）刷新基础信息、指数、
+# 板块、财报、智能评分和 technical snapshot。
+on:
+  schedule:
+    - cron: '0 9 * * 1-5'   # UTC 09:00 = Asia/Shanghai 17:00
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TZ: Asia/Shanghai
+      POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+      POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+      POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_POOL_SIZE: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install data dependencies
+        run: |
+          pip install akshare pandas psycopg2-binary python-dotenv loguru baostock pyyaml tqdm
+
+      - name: Bridge DATABASE_URL for webapp scripts
+        run: |
+          python - <<'PY'
+          import os
+          import urllib.parse
+          from pathlib import Path
+          user = urllib.parse.quote(os.environ.get('POSTGRES_USER', ''), safe='')
+          pwd = urllib.parse.quote(os.environ.get('POSTGRES_PASSWORD', ''), safe='')
+          url = (
+              f"postgresql://{user}:{pwd}@{os.environ.get('POSTGRES_HOST')}:"
+              f"{os.environ.get('POSTGRES_PORT', '5432')}/{os.environ.get('POSTGRES_DB', 'postgres')}"
+              "?sslmode=require"
+          )
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
+              f.write(f'DATABASE_URL={url}\n')
+              f.write(f'WEBAPP_DATABASE_URL={url}\n')
+          PY
+
+      - name: Refresh stock basic info
+        continue-on-error: true
+        run: python strategies/llm_multisource/sync_stock_info.py
+
+      - name: Refresh index quotes
+        continue-on-error: true
+        run: python webapp/scripts/sync_index_quotes.py
+
+      - name: Refresh concept and industry boards
+        continue-on-error: true
+        run: python webapp/scripts/sync_boards.py
+
+      - name: Refresh fundamentals (latest 4 quarters)
+        continue-on-error: true
+        run: python webapp/scripts/backfill_fundamentals.py --quarters 4
+
+      - name: Refresh smart scoring snapshot
+        continue-on-error: true
+        run: python webapp/scripts/refresh_smart_snapshot.py
+
+      - name: Refresh technical snapshot
+        continue-on-error: true
+        run: python webapp/scripts/refresh_technical_snapshot.py
+
+      - name: Data freshness report
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import os, psycopg2
+          conn = psycopg2.connect(os.environ['DATABASE_URL'])
+          cur = conn.cursor()
+          for table, col in [
+              ('stock_basic_info', 'updated_at'),
+              ('index_quotes', 'trade_date'),
+              ('concept_board_quotes', 'trade_date'),
+              ('industry_board_quotes', 'trade_date'),
+              ('stock_fundamentals', 'fetched_at'),
+              ('app_smart_snapshot', 'trade_date'),
+              ('app_technical_snapshot', 'trade_date'),
+          ]:
+              try:
+                  cur.execute(f'SELECT MAX({col}) FROM {table}')
+                  print(f'{table:28s} {cur.fetchone()[0]}')
+              except Exception as exc:
+                  print(f'{table:28s} ERROR {exc}')
+          cur.close(); conn.close()
+          PY

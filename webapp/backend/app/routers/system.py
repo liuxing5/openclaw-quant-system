@@ -215,7 +215,7 @@ PROVIDER_KINDS = [
 
 _LOCAL_DATASETS = [
     ("daily_quotes", "全市场日线", "daily_quotes", "trade_date"),
-    ("stock_basic_info", "股票基础信息", "stock_basic_info", "list_date"),
+    ("stock_basic_info", "股票基础信息", "stock_basic_info", "updated_at"),
     ("index_quotes", "主要指数日线", "index_quotes", "trade_date"),
     ("concept_board_quotes", "概念板块快照", "concept_board_quotes", "trade_date"),
     ("industry_board_quotes", "行业板块快照", "industry_board_quotes", "trade_date"),
