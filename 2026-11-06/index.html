@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 股票推荐 - 2026-11-06</title>
+    <style>
+        :root {
+            --bg: #f5f5f5;
+            --card-bg: #ffffff;
+            --text: #1a1a1a;
+            --text-secondary: #666666;
+            --border: #e0e0e0;
+            --metric-bg: #f5f5f5;
+            --entry-bg: #fafafa;
+            --header-border: #4CAF50;
+            --score-color: #4CAF50;
+            --link-color: #4CAF50;
+            --tag-bg: #e3f2fd;
+            --tag-text: #1976D2;
+            --logic-bg: #fff3e0;
+            --logic-text: #F57C00;
+            --badge-llm-bg: #2196F3;
+            --badge-8step-bg: #9C27B0;
+            --table-header-bg: #f5f5f5;
+            --hover-shadow: rgba(0,0,0,0.15);
+            --selected-border: #9e9e9e;
+            --selected-bg: #f5f5f5;
+            --btn-bg: #4CAF50;
+            --btn-text: #ffffff;
+        }
+        [data-theme="dark"] {
+            --bg: #0d1117;
+            --card-bg: #161b22;
+            --text: #c9d1d9;
+            --text-secondary: #8b949e;
+            --border: #30363d;
+            --metric-bg: #21262d;
+            --entry-bg: #1c2128;
+            --header-border: #238636;
+            --score-color: #3fb950;
+            --link-color: #58a6ff;
+            --tag-bg: #1f6feb33;
+            --tag-text: #58a6ff;
+            --logic-bg: #d2992233;
+            --logic-text: #e3b341;
+            --badge-llm-bg: #58a6ff;
+            --badge-8step-bg: #a371f7;
+            --table-header-bg: #21262d;
+            --hover-shadow: rgba(0,0,0,0.5);
+            --selected-border: #757575;
+            --selected-bg: #2d2d2d;
+            --btn-bg: #238636;
+            --btn-text: #ffffff;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 16px; transition: background 0.3s, color 0.3s; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .header-row { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 10px; }
+        h1 { color: var(--text); margin-bottom: 0; font-size: 1.5rem; }
+        .subtitle { color: var(--text-secondary); margin-bottom: 20px; font-size: 0.9rem; }
+        .theme-toggle { background: var(--btn-bg); color: var(--btn-text); border: none; padding: 8px 16px; border-radius: 20px; cursor: pointer; font-size: 14px; display: flex; align-items: center; gap: 6px; transition: opacity 0.2s; }
+        .theme-toggle:hover { opacity: 0.85; }
+        .card { background: var(--card-bg); border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); border: 1px solid var(--border); transition: background 0.3s, border-color 0.3s; }
+        .card h2 { color: var(--text); margin-bottom: 14px; border-bottom: 2px solid var(--header-border); padding-bottom: 8px; font-size: 1.1rem; }
+        .stock-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+        .stock-card { border: 1px solid var(--border); border-radius: 8px; padding: 14px; transition: transform 0.2s, box-shadow 0.2s; background: var(--card-bg); display: flex; flex-direction: column; height: 100%; }
+        .stock-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px var(--hover-shadow); }
+        .stock-card.selected { border-color: var(--selected-border); background: var(--selected-bg); }
+        .stock-card .sources { margin-top: auto; }
+        .stock-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px; }
+        .stock-code { font-size: 16px; font-weight: bold; color: var(--text); }
+        .stock-name { color: var(--text-secondary); margin-left: 6px; font-size: 0.9rem; }
+        .score { font-size: 22px; font-weight: bold; color: var(--score-color); }
+        .score-label { font-size: 11px; color: var(--text-secondary); }
+        .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 10px 0; }
+        .metric { text-align: center; padding: 6px; background: var(--metric-bg); border-radius: 4px; }
+        .metric-value { font-size: 15px; font-weight: bold; color: var(--text); }
+        .metric-label { font-size: 10px; color: var(--text-secondary); }
+        .entry-info { margin: 10px 0; padding: 10px; background: var(--entry-bg); border-radius: 4px; }
+        .entry-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 0.9rem; }
+        .entry-label { color: var(--text-secondary); }
+        .entry-value { font-weight: bold; color: var(--text); }
+        .sources { margin-top: 10px; }
+        .source-tag { display: inline-block; padding: 3px 7px; background: var(--tag-bg); color: var(--tag-text); border-radius: 4px; margin: 2px; font-size: 11px; }
+        .logic-tag { display: inline-block; padding: 3px 7px; background: var(--logic-bg); color: var(--logic-text); border-radius: 4px; margin: 2px; font-size: 11px; }
+        .badge { display: inline-block; padding: 2px 7px; border-radius: 12px; font-size: 11px; font-weight: bold; }
+        .badge-buy { background: #4CAF50; color: white; }
+        .badge-watch { background: #FF9800; color: white; }
+        .badge-strong { background: #2196F3; color: white; }
+        .badge-llm { background: var(--badge-llm-bg); color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+        .badge-8step { background: var(--badge-8step-bg); color: white; font-size: 10px; padding: 2px 6px; border-radius: 10px; margin-left: 4px; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--border); color: var(--text); }
+        th { background: var(--table-header-bg); font-weight: 600; }
+        .footer { text-align: center; color: var(--text-secondary); margin-top: 30px; padding: 16px; font-size: 0.85rem; }
+        .history-link { display: inline-block; margin: 6px 3px; padding: 6px 12px; background: var(--btn-bg); color: var(--btn-text); text-decoration: none; border-radius: 4px; font-size: 0.85rem; }
+        .history-link:hover { opacity: 0.85; }
+        .history-nav { background: var(--card-bg); border-radius: 12px; padding: 14px 18px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; border: 1px solid var(--border); }
+        .history-nav label { font-weight: 600; color: var(--text); white-space: nowrap; font-size: 0.9rem; }
+        .history-nav select { padding: 7px 14px; border: 2px solid var(--header-border); border-radius: 6px; font-size: 14px; color: var(--text); background: var(--card-bg); cursor: pointer; outline: none; }
+        .history-nav select:hover { border-color: var(--score-color); }
+        .history-nav select:focus { border-color: var(--badge-llm-bg); box-shadow: 0 0 0 3px rgba(33,150,243,0.2); }
+        .page-btn { padding: 6px 12px; border: 1px solid var(--border); background: var(--card-bg); color: var(--text); border-radius: 4px; cursor: pointer; font-size: 13px; }
+        .page-btn:hover { border-color: var(--score-color); }
+        .page-btn.active { background: var(--score-color); color: #fff; border-color: var(--score-color); }
+        .article-page { display: none; }
+        .article-page.active { display: table-row; }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            body { padding: 10px; }
+            h1 { font-size: 1.2rem; }
+            .stock-grid { grid-template-columns: 1fr; }
+            .stock-header { flex-direction: column; align-items: flex-start; }
+            .metrics { grid-template-columns: repeat(3, 1fr); }
+            .history-nav { flex-direction: column; align-items: stretch; }
+            .history-nav select { width: 100%; }
+            table { font-size: 0.8rem; }
+            th, td { padding: 8px 6px; }
+            .card { padding: 14px; }
+            .header-row { flex-direction: column; align-items: flex-start; }
+        }
+        @media (max-width: 480px) {
+            .stock-grid { grid-template-columns: 1fr; }
+            .metric-value { font-size: 13px; }
+            .score { font-size: 18px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header-row">
+            <div>
+                <h1>🤖 AI 股票推荐系统</h1>
+                <p class="subtitle">
+                    
+                    🌙 盘后复盘 | 报告日期: 2026-11-06 | 生成时间: 2026-11-09 11:54:54
+                    
+                </p>
+            </div>
+            <button class="theme-toggle" onclick="toggleTheme()" id="themeBtn">
+                <span id="themeIcon">🌙</span> <span id="themeText">深色</span>
+            </button>
+        </div>
+
+        <div class="history-nav">
+            <label>📅 历史报告:</label>
+            <select onchange="if(this.value) window.location.href=this.value;">
+                <option value="">选择日期跳转</option>
+                
+                <option value="2026-11-06/index.html" selected>2026-11-06</option>
+                
+                <option value="2026-11-05/index.html" >2026-11-05</option>
+                
+                <option value="2026-11-04/index.html" >2026-11-04</option>
+                
+                <option value="2026-11-03/index.html" >2026-11-03</option>
+                
+                <option value="2026-11-02/index.html" >2026-11-02</option>
+                
+                <option value="2026-10-30/index.html" >2026-10-30</option>
+                
+                <option value="2026-10-29/index.html" >2026-10-29</option>
+                
+                <option value="2026-10-28/index.html" >2026-10-28</option>
+                
+                <option value="2026-10-27/index.html" >2026-10-27</option>
+                
+                <option value="2026-10-26/index.html" >2026-10-26</option>
+                
+            </select>
+        </div>
+        
+        
+        <div class="card">
+            <h2>
+                 LLM 多源策略候选 (15 只)
+                <span style="font-size:13px;color:#888;margin-left:8px;">2026-11-06</span>
+            </h2>
+            <div class="stock-grid">
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">603986.SH</span>
+                            <span class="stock-name">兆易创新</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">46.5</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">101</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">237.100 - 241.880</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">232.310</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">251.460 / 263.440</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">4%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">688825.SH</span>
+                            <span class="stock-name">长鑫科技</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">43.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">90</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">39.800 - 41.020</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">38.390</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">43.640 / 46.470</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">4%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">300502.SZ</span>
+                            <span class="stock-name">新易盛</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">43.6</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">89</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">169.520 - 174.680</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">163.490</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">185.870 / 197.910</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">4%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">600519.SH</span>
+                            <span class="stock-name">贵州茅台</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">41.9</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">83</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">1438.470 - 1467.530</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">1409.410</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">1525.650 / 1598.300</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">4%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">300750.SZ</span>
+                            <span class="stock-name">宁德时代</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">41.0</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">80</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">250.410 - 258.030</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">241.510</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">274.560 / 292.350</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">4%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">300182.SZ</span>
+                            <span class="stock-name">捷成股份</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">40.6</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">100</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">5.840 - 6.020</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">5.630</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">6.400 / 6.820</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">东财-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">001246.SZ</span>
+                            <span class="stock-name">力勤资源</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">40.5</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">99</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">29.740 - 30.340</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">29.140</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">31.540 / 33.040</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">东财-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">300274.SZ</span>
+                            <span class="stock-name">阳光电源</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">39.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">76</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">80.740 - 83.200</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">77.870</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">88.530 / 94.270</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">601899.SH</span>
+                            <span class="stock-name">紫金矿业</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">39.5</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">75</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">28.000 - 28.560</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">27.430</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">29.690 / 31.110</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">000513.SZ</span>
+                            <span class="stock-name">丽珠集团</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">38.9</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">96</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">31.040 - 31.660</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">30.410</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">32.920 / 34.490</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">强势股</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 2 个 | 提及: 2 次
+                        </div>
+                        
+                        <span class="source-tag">THS-强势股 (1)</span>
+                        
+                        <span class="source-tag">THS-强势股 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">688012.SH</span>
+                            <span class="stock-name">中微公司</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">38.3</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">71</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">250.190 - 257.810</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">241.300</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">274.320 / 292.100</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">300394.SZ</span>
+                            <span class="stock-name">天孚通信</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">38.3</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">71</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">120.170 - 123.830</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">115.900</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">131.760 / 140.300</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">300308.SZ</span>
+                            <span class="stock-name">中际旭创</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">37.8</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">69</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">441.280 - 454.720</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">425.600</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">483.840 / 515.200</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">002384.SZ</span>
+                            <span class="stock-name">东山精密</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">36.7</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">66</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">79.390 - 80.990</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">77.780</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">84.200 / 88.210</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">盈利预测</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-盈利预测 (1)</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card ">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">600018.SH</span>
+                            <span class="stock-name">上港集团</span>
+                            <span class="badge-llm">🤖 LLM</span>
+                            
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">35.0</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">88</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">50.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">5.620 - 5.740</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">5.510</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">5.960 / 6.250</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">强势股</span>
+                        
+                        <div style="margin-top: 8px; font-size: 12px; color: #666;">
+                            来源: 1 个 | 提及: 1 次
+                        </div>
+                        
+                        <span class="source-tag">THS-强势股 (1)</span>
+                        
+                    </div>
+                </div>
+                
+            </div>
+        </div>
+        
+        
+        
+        <div class="card">
+            <h2>🔮 八步法候选 (2 只)<span style="font-size:13px;color:#888;margin-left:8px;">2026-11-06</span></h2>
+            
+            <div class="stock-grid">
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">000525.SZ</span>
+                            <span class="stock-name">红太阳</span>
+                            <span class="badge-8step">🔮 八步法</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">85.1</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">86</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">1.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">4.970 - 5.070</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">4.890</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">5.270 / 5.370</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">8%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">高位博弈</span>
+                        
+                        <span class="logic-tag">黄金放量</span>
+                        
+                        <span class="logic-tag">量能递增</span>
+                        
+                        <span class="logic-tag">首板突破</span>
+                        
+                        <span class="logic-tag">情绪高潮↓↓</span>
+                        
+                        <span class="logic-tag">濒临涨停</span>
+                        
+                        <span class="logic-tag">LLM候选+2</span>
+                        
+                        <span class="logic-tag">🤖LLM</span>
+                        
+                        <span class="logic-tag">振幅偏大</span>
+                        
+                        <span class="logic-tag">买盘强劲</span>
+                        
+                        <span class="logic-tag">大单净流入(降权)</span>
+                        
+                        <span class="logic-tag">盈利质量高</span>
+                        
+                        <span class="logic-tag">加成封顶(30→15)</span>
+                        
+                        <span class="logic-tag">pool:upper</span>
+                        
+                    </div>
+                </div>
+                
+                <div class="stock-card selected">
+                    <div class="stock-header">
+                        <div>
+                            <span class="stock-code">000525.SZ</span>
+                            <span class="stock-name">红太阳</span>
+                            <span class="badge-8step">🔮 八步法</span>
+                            <span class="badge badge-strong">✓ 选中</span>
+                        </div>
+                        <div style="text-align: right;">
+                            <div class="score">84.6</div>
+                            <div class="score-label">综合分</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metrics">
+                        <div class="metric">
+                            <div class="metric-value">0</div>
+                            <div class="metric-label">LLM 加成</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">91</div>
+                            <div class="metric-label">量化分</div>
+                        </div>
+                        <div class="metric">
+                            <div class="metric-value">1.00</div>
+                            <div class="metric-label">共识度</div>
+                        </div>
+                    </div>
+                    
+                    <div class="entry-info">
+                        <div class="entry-row">
+                            <span class="entry-label">入场区间</span>
+                            <span class="entry-value">4.970 - 5.070</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">止损</span>
+                            <span class="entry-value" style="color: #f44336;">4.890</span>
+                        </div>
+                        <div class="entry-row">
+                            <span class="entry-label">目标</span>
+                            <span class="entry-value" style="color: #4CAF50;">5.270 / 5.370</span>
+                        </div>
+                        
+                        <div class="entry-row">
+                            <span class="entry-label">建议仓位</span>
+                            <span class="entry-value">8%</span>
+                        </div>
+                        
+                    </div>
+                    
+                    <div class="sources">
+                        
+                        <span class="logic-tag">高位博弈</span>
+                        
+                        <span class="logic-tag">光头大阳</span>
+                        
+                        <span class="logic-tag">黄金放量</span>
+                        
+                        <span class="logic-tag">量能递增</span>
+                        
+                        <span class="logic-tag">首板突破</span>
+                        
+                        <span class="logic-tag">情绪高潮↓↓</span>
+                        
+                        <span class="logic-tag">濒临涨停</span>
+                        
+                        <span class="logic-tag">LLM候选+2</span>
+                        
+                        <span class="logic-tag">🤖LLM</span>
+                        
+                        <span class="logic-tag">振幅偏大</span>
+                        
+                        <span class="logic-tag">买盘强劲</span>
+                        
+                        <span class="logic-tag">大单净流入(降权)</span>
+                        
+                        <span class="logic-tag">盈利质量高</span>
+                        
+                        <span class="logic-tag">加成封顶(30→15)</span>
+                        
+                        <span class="logic-tag">pool:upper</span>
+                        
+                    </div>
+                </div>
+                
+            </div>
+            
+        </div>
+        
+        
+        <div class="card">
+            <h2>📡 数据源统计</h2>
+            <table>
+                <tr><th>数据源</th><th>信号数</th><th>数据等级</th><th>最新时间</th></tr>
+                
+                <tr>
+                    <td>Tencent-行情补充</td>
+                    <td>211</td>
+                    <td>⭐ 核心</td>
+                    <td>2026-11-09 03:36:23.985866+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td>EM-概念板块</td>
+                    <td>62</td>
+                    <td>⭐⭐ 重要</td>
+                    <td>2026-11-06 15:06:47.185355+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td>AKShare-热点概念</td>
+                    <td>50</td>
+                    <td>⭐⭐ 重要</td>
+                    <td>2026-11-06 03:36:25.686482+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td>THS-强势股</td>
+                    <td>45</td>
+                    <td>⭐ 核心</td>
+                    <td>2026-11-05 00:33:13.191981+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td>东财-盈利预测</td>
+                    <td>32</td>
+                    <td>⭐ 核心</td>
+                    <td>2026-11-06 07:41:07.094640+00:00</td>
+                </tr>
+                
+                <tr>
+                    <td>THS-盈利预测</td>
+                    <td>13</td>
+                    <td>⭐ 核心</td>
+                    <td>2026-11-05 00:33:21.224582+00:00</td>
+                </tr>
+                
+            </table>
+        </div>
+        
+        <div class="card">
+            <h2>📰 最新资讯</h2>
+            <table>
+                <tr><th>标题</th><th>来源</th><th>时间</th><th>链接</th></tr>
+                
+                <tr class="article-row" data-page="1">
+                    <td><a href="http://www.cninfo.com.cn/new/disclosure/detail?stockCode=000001&announcementId=1225574840&orgId=gssz0000001&announcementTime=2026-09-22" target="_blank" style="color: var(--link-color); text-decoration: none;">关于2026年金融债券（第一期）发行完毕的公告</a></td>
+                    <td>巨潮-公告</td>
+                    <td>2026-09-22 00:00:00</td>
+                    <td><a href="http://www.cninfo.com.cn/new/disclosure/detail?stockCode=000001&announcementId=1225574840&orgId=gssz0000001&announcementTime=2026-09-22" target="_blank" style="color: var(--link-color);">🔗</a></td>
+                </tr>
+                
+                <tr class="article-row" data-page="1">
+                    <td><a href="http://www.cninfo.com.cn/new/disclosure/detail?stockCode=000001&announcementId=1225490393&orgId=gssz0000001&announcementTime=2026-08-22" target="_blank" style="color: var(--link-color); text-decoration: none;">关于职工董事任职资格核准的公告</a></td>
+                    <td>巨潮-公告</td>
+                    <td>2026-08-22 00:00:00</td>
+                    <td><a href="http://www.cninfo.com.cn/new/disclosure/detail?stockCode=000001&announcementId=1225490393&orgId=gssz0000001&announcementTime=2026-08-22" target="_blank" style="color: var(--link-color);">🔗</a></td>
+                </tr>
+                
+                <tr class="article-row" data-page="1">
+                    <td><a href="http://www.cninfo.com.cn/new/disclosure/detail?stockCode=000001&announcementId=1225463626&orgId=gssz0000001&announcementTime=2026-08-08" target="_blank" style="color: var(--link-color); text-decoration: none;">关于召开2026年半年度业绩说明会的公告</a></td>
+                    <td>巨潮-公告</td>
+                    <td>2026-08-08 00:00:00</td>
+                    <td><a href="http://www.cninfo.com.cn/new/disclosure/detail?stockCode=000001&announcementId=1225463626&orgId=gssz0000001&announcementTime=2026-08-08" target="_blank" style="color: var(--link-color);">🔗</a></td>
+                </tr>
+                
+            </table>
+            
+        </div>
+        
+        <div class="footer">
+            <p>AI Stock Recommendation System | LLM多源 + 八步法 | 每日 15:30 自动更新</p>
+            <p>历史报告:
+                
+                <a href="2026-11-06/index.html" class="history-link">2026-11-06</a>
+                
+                <a href="2026-11-05/index.html" class="history-link">2026-11-05</a>
+                
+                <a href="2026-11-04/index.html" class="history-link">2026-11-04</a>
+                
+                <a href="2026-11-03/index.html" class="history-link">2026-11-03</a>
+                
+                <a href="2026-11-02/index.html" class="history-link">2026-11-02</a>
+                
+                <a href="2026-10-30/index.html" class="history-link">2026-10-30</a>
+                
+                <a href="2026-10-29/index.html" class="history-link">2026-10-29</a>
+                
+                <a href="2026-10-28/index.html" class="history-link">2026-10-28</a>
+                
+                <a href="2026-10-27/index.html" class="history-link">2026-10-27</a>
+                
+                <a href="2026-10-26/index.html" class="history-link">2026-10-26</a>
+                
+            </p>
+        </div>
+    </div>
+    <script>
+        (function() {
+            const saved = localStorage.getItem('theme');
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const isDark = saved === 'dark' || (!saved && prefersDark);
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                document.getElementById('themeIcon').textContent = '☀️';
+                document.getElementById('themeText').textContent = '浅色';
+            }
+        })();
+        function toggleTheme() {
+            const html = document.documentElement;
+            const icon = document.getElementById('themeIcon');
+            const text = document.getElementById('themeText');
+            if (html.getAttribute('data-theme') === 'dark') {
+                html.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+                icon.textContent = '🌙';
+                text.textContent = '深色';
+            } else {
+                html.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+                icon.textContent = '☀️';
+                text.textContent = '浅色';
+            }
+        }
+        function showPage(pageNum) {
+            document.querySelectorAll('.article-row').forEach(function(row) {
+                var p = parseInt(row.getAttribute('data-page'));
+                row.style.display = (p === pageNum) ? '' : 'none';
+            });
+            document.querySelectorAll('.page-btn').forEach(function(btn) {
+                var bp = parseInt(btn.getAttribute('data-page'));
+                btn.classList.toggle('active', bp === pageNum);
+            });
+        }
+        (function() { showPage(1); })();
+    </script>
+</body>
+</html>
