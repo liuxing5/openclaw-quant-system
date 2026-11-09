@@ -15,6 +15,7 @@ import { CandlestickChart } from 'echarts/charts'
 import * as echarts from 'echarts/core'
 import Chart, { ACCENT, DOWN, DOWN_SOFT, Sparkline, TIP, UP, UP_SOFT } from '../components/Chart.jsx'
 import { AsyncBlock, Badge, Button, Card, PageShell, SectionHeader, Tabs, TextLink } from '../components/ui.jsx'
+import AgentResearchCard from '../components/AgentResearchCard.jsx'
 import { api, useApi } from '../lib/api.js'
 import { boardOf, fmtAmount, fmtDate, fmtNum, fmtPct, marketTag, pctTone } from '../lib/format.js'
 import { toast } from '../lib/toast.jsx'
@@ -760,6 +761,8 @@ function StockDetailView({ symbol }) {
           </form>
         ) : null}
       </Card>
+
+      <AgentResearchCard symbol={symbol} />
 
       <div className="grid gap-4 xl:grid-cols-3">
         {/* K 线 */}
