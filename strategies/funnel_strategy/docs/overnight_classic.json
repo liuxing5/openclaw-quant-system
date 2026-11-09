@@ -1,98 +1,153 @@
 {
   "title": "最严格杨永兴版",
-  "date": "2026-11-06",
-  "updated": "2026-11-06 07:15:09",
+  "date": "2026-11-09",
+  "updated": "2026-11-09 06:41:40",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
-      "pass": 2,
+      "pass": 5,
       "eliminated": "",
       "rule": "只做尾盘，不碰 14:55 突击拉高"
     },
     {
       "name": "主板 + 涨幅 3%~5%",
-      "pass": 2,
+      "pass": 5,
       "eliminated": "",
       "rule": "仅 60/00 主板，排除 300/688/ST"
     },
     {
       "name": "近 20 日涨停基因",
-      "pass": 2,
+      "pass": 5,
       "eliminated": "",
       "rule": "近 20 个交易日至少一次涨停"
     },
     {
       "name": "量比 > 1",
-      "pass": 2,
+      "pass": 5,
       "eliminated": "",
       "rule": "当日量能高于近 5 日均量"
     },
     {
       "name": "换手率 5%~10%",
-      "pass": 2,
+      "pass": 5,
       "eliminated": "",
       "rule": "兼顾流动性与不过热"
     },
     {
       "name": "流通市值 50~200亿",
-      "pass": 2,
+      "pass": 5,
       "eliminated": "",
       "rule": "中盘弹性区间"
     },
     {
       "name": "VWAP + 强于大盘",
-      "pass": 2,
+      "pass": 5,
       "eliminated": 0,
       "rule": "全天在 VWAP 上方，且强于上证/深证"
     },
     {
       "name": "回踩 VWAP 不破",
-      "pass": 2,
-      "eliminated": 0,
+      "pass": 3,
+      "eliminated": 2,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
   "candidates": [
     {
-      "code": "603955.SH",
-      "name": "大千生态",
-      "score": 90.2,
-      "entry": 31.54,
-      "stop": 31.143,
-      "target": 32.486,
-      "quant_score": 90.2,
+      "code": "002827.SZ",
+      "name": "高争民爆",
+      "score": 98.2,
+      "entry": 64.02,
+      "stop": 63.127,
+      "target": 65.941,
+      "quant_score": 98.2,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 31.143,
-      "pct_chg": 4.02,
+      "vwap": 63.127,
+      "pct_chg": 4.82,
       "confirmed": true,
       "path": "原版确认"
     },
     {
-      "code": "000722.SZ",
-      "name": "湖南发展",
-      "score": 86.9,
-      "entry": 12.23,
-      "stop": 12.163,
-      "target": 12.597,
-      "quant_score": 86.9,
+      "code": "000603.SZ",
+      "name": "盛达资源",
+      "score": 93.7,
+      "entry": 27.75,
+      "stop": 27.502,
+      "target": 28.582,
+      "quant_score": 93.7,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 12.163,
-      "pct_chg": 3.69,
+      "vwap": 27.502,
+      "pct_chg": 4.37,
       "confirmed": true,
       "path": "原版确认"
+    },
+    {
+      "code": "000700.SZ",
+      "name": "模塑科技",
+      "score": 94.3,
+      "entry": 15.55,
+      "stop": 15.528,
+      "target": 16.017,
+      "quant_score": 94.3,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "回踩不破"
+      ],
+      "source": "腾讯1m",
+      "vwap": 15.528,
+      "pct_chg": 4.43,
+      "confirmed": true,
+      "path": "原版确认"
+    },
+    {
+      "code": "001270.SZ",
+      "name": "铖昌科技",
+      "score": 90.7,
+      "entry": 88.57,
+      "stop": 90.604,
+      "target": 91.227,
+      "quant_score": 90.7,
+      "tags": [
+        "强于大盘",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 90.604,
+      "pct_chg": 4.07,
+      "confirmed": false,
+      "path": "待确认"
+    },
+    {
+      "code": "000595.SZ",
+      "name": "新能股份",
+      "score": 89.0,
+      "entry": 5.6,
+      "stop": 5.728,
+      "target": 5.768,
+      "quant_score": 89.0,
+      "tags": [
+        "强于大盘",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 5.728,
+      "pct_chg": 3.9,
+      "confirmed": false,
+      "path": "待确认"
     }
   ],
-  "candidate_count": 2,
-  "confirmed_count": 2,
+  "candidate_count": 5,
+  "confirmed_count": 3,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
