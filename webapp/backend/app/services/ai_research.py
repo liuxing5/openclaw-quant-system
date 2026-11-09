@@ -158,7 +158,7 @@ def _intel(recs, announcements):
 
 def _risk(daily, basic, fund, live, announcements, proj):
     flags = []
-    if basic.get("is_st"):
+    if basic.get("is_st") or live.get("is_st"):
         flags.append({"severity": "high", "category": "ST", "description": "ST/*ST 风险标的"})
     profit = _f(fund.get("net_profit"))
     if profit is not None and profit < 0:

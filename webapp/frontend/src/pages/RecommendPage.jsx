@@ -16,8 +16,9 @@ function Stat({ label, value, sub }) {
   )
 }
 
-function CandidateCard({ c, onOpen }) {
+function CandidateCard({ c, onOpen, ai }) {
   const code = String(c.code || '').split('.')[0]
+  const aiLabel = ai ? (ai.decision?.type === 'buy' ? 'AI偏多' : ai.decision?.type === 'sell' ? 'AI偏空' : 'AI观望') : ''
   return (
     <button
       type="button"
@@ -34,10 +35,29 @@ function CandidateCard({ c, onOpen }) {
           </div>
           <p className="mt-0.5 font-mono text-[10px] text-slate-400">{c.code}</p>
         </div>
-        <span className="rounded-lg bg-brand-50 px-2 py-1 text-sm font-bold tabular-nums text-brand-600 dark:bg-brand-500/10 dark:text-brand-300">
-          {c.score || '—'}
-        </span>
+        <div className="flex flex-col items-end gap-1">
+          <span className="rounded-lg bg-brand-50 px-2 py-1 text-sm font-bold tabular-nums text-brand-600 dark:bg-brand-500/10 dark:text-brand-300">
+            {c.score || '—'}
+          </span>
+          {ai ? (
+            <span className={`rounded px-1.5 py-0.5 text-[9px] ${
+              ai.decision?.type === 'buy'
+                ? 'bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300'
+                : ai.decision?.type === 'sell'
+                  ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-300'
+                  : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400'
+            }`}>
+              {aiLabel} {ai.decision?.score}
+            </span>
+          ) : null}
+        </div>
       </div>
+
+      {ai?.risk_flags?.length ? (
+        <p className="mt-1.5 truncate text-[9px] text-amber-500" title={ai.risk_flags.map((f) => f.description).join('；')}>
+          ⚠ {ai.risk_flags[0].description}
+        </p>
+      ) : null}
 
       <div className="mt-2 grid grid-cols-3 gap-1.5">
         {[
@@ -91,6 +111,20 @@ export default function RecommendPage() {
   }, [active, picked, strategies])
 
   const current = strategies[active]
+  const currentCodes = useMemo(
+    () => (current?.candidates || []).map((c) => c.code).filter(Boolean),
+    [current],
+  )
+  const aiQ = useApi(
+    () => api.get('/recommend/ai-review', { codes: currentCodes.join(',') }),
+    [currentCodes.join(',')],
+    { enabled: currentCodes.length > 0 },
+  )
+  const aiMap = useMemo(() => {
+    const out = {}
+    for (const item of aiQ.data?.items || []) out[item.code] = item
+    return out
+  }, [aiQ.data])
   const pathGroups = useMemo(() => {
     const groups = []
     const index = new Map()
@@ -248,7 +282,7 @@ export default function RecommendPage() {
                         ) : null}
                         <div className="grid gap-2 sm:grid-cols-2 2xl:grid-cols-3">
                           {group.items.map((c) => (
-                            <CandidateCard key={`${c.code}-${c.score}`} c={c} onOpen={(code) => navigate(`/stock-analysis/${code}`)} />
+                            <CandidateCard key={`${c.code}-${c.score}`} c={c} ai={aiMap[c.code]} onOpen={(code) => navigate(`/stock-analysis/${code}`)} />
                           ))}
                         </div>
                       </div>
