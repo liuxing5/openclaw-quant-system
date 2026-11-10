@@ -154,7 +154,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 六策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-11-09 | 生成: 2026-11-10 12:00:13
+        报告日期: 2026-11-09 | 生成: 2026-11-10 12:04:22
         <input type="date" class="date-input" id="datePicker" value="2026-11-09" min="2026-01-05" max="2026-11-09" onchange="switchDate(this.value)">
       </div>
     </div>
@@ -174,8 +174,56 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
   <div class="four-col">
     <!-- ========== 八步法 ========== -->
     <div class="section">
-      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-11-09 15:10:00</span></h2>
-      <div class="steps-area"><div class="empty-state"><div class="empty-icon" aria-hidden="true">🌙</div><div class="empty-title">本期扫描无候选</div><div class="empty-desc">八步法当日未产生满足条件的标的</div><div class="empty-meta">空仓也是策略结果 · 已正常扫描</div></div><div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">📈 历史候选前向收益（重算口径）<br>样本 2026-01-05 ~ 2026-11-09 · 候选 916 只 · T+1 open entry (no gap-up veto), qfq-adjusted prices, net of 0.25% round-trip cost; benchmark = equal-weight all-market (T+1 open amount>=1e8, raw amount)<div style="font-size:.64rem;color:var(--text-secondary);margin-top:2px;">生成于 2026-11-10（北京时间） · 数据截止 2026-11-09</div></div>
+      <h2>🔮 八步隔夜法<span class="section-subtitle">2026-11-09 14:41:06</span></h2>
+      <div class="steps-area"><div class="step-note" style="color:var(--text-secondary);">🌙 本期扫描无候选；八步法链路照常展示，所有层级计数为 0。</div>
+            <div class="step-row" title="稳健3%~5%，高位6%~9.7%，剔除涨停/跌停">
+              <span class="step-name">涨幅筛选</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">稳健3%~5%，高位6%~9.7%，剔除涨停/跌停</span>
+            </div>
+            <div class="step-row" title="稳健0.5~50亿，高位0.3~30亿，保证流动性">
+              <span class="step-name">成交额过滤</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">稳健0.5~50亿，高位0.3~30亿，保证流动性</span>
+            </div>
+            <div class="step-row" title="5%~10%，活跃度适中">
+              <span class="step-name">换手率过滤</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">5%~10%，活跃度适中</span>
+            </div>
+            <div class="step-row" title="稳健50~500亿，高位30~200亿">
+              <span class="step-name">市值过滤</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">稳健50~500亿，高位30~200亿</span>
+            </div>
+            <div class="step-row" title="量比≥1，放量确认">
+              <span class="step-name">量比过滤</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">量比≥1，放量确认</span>
+            </div>
+            <div class="step-row" title="MA多头排列 + 无上方压力位">
+              <span class="step-name">均线+压力</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">MA多头排列 + 无上方压力位</span>
+            </div>
+            <div class="step-row" title="乖离率≤5%，避免追高">
+              <span class="step-name">乖离率过滤</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">乖离率≤5%，避免追高</span>
+            </div>
+            <div class="step-row" title="综合评分≥阈值(85+)，量化+情绪加权">
+              <span class="step-name">综合评分</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">综合评分≥阈值(85+)，量化+情绪加权</span>
+            </div><div class="step-note"> 情绪高潮(92分)</div><div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">📈 历史候选前向收益（重算口径）<br>样本 2026-01-05 ~ 2026-11-09 · 候选 916 只 · T+1 open entry (no gap-up veto), qfq-adjusted prices, net of 0.25% round-trip cost; benchmark = equal-weight all-market (T+1 open amount>=1e8, raw amount)<div style="font-size:.64rem;color:var(--text-secondary);margin-top:2px;">生成于 2026-11-10（北京时间） · 数据截止 2026-11-09</div></div>
     <div style="overflow-x:auto;margin:8px 0;">
     <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">前向收益统计</div>
     <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
@@ -238,7 +286,63 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <!-- ========== 七步漏斗 ========== -->
     <div class="section">
       <h2>🎯 七步漏斗选股<span class="section-subtitle">2026-11-09 15:11:09</span></h2>
-      <div class="steps-area"><div class="empty-state"><div class="empty-icon" aria-hidden="true">🛡️</div><div class="empty-title">L0 大盘风控未通过</div><div class="empty-desc">上涨家数不足或市场广度低于 20EMA</div><div class="empty-meta">当日不荐股 · 策略已正常执行</div></div><div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">📈 历史候选前向收益（重算口径）<br>样本 2026-01-05 ~ 2026-11-05 · 候选 397 只 · T+1 open entry (no gap-up veto), qfq-adjusted prices, net of 0.25% round-trip cost; benchmark = equal-weight all-market (T+1 open amount>=1e8, raw amount)<div style="font-size:.64rem;color:var(--text-secondary);margin-top:2px;">生成于 2026-11-10（北京时间） · 数据截止 2026-11-09</div></div>
+      <div class="steps-area"><div class="step-note" style="color:var(--stop-color);">⚠️ L0 大盘风控未通过：上涨家数不足或市场广度低于 20EMA，当日不荐股。以下各层参数仍完整展示，方便复盘筛选机制。</div>
+            <div class="step-row" title="A股全市场日成交额&gt;1亿">
+              <span class="step-icon">📊</span>
+              <span class="step-name">全市场</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">A股全市场日成交额&gt;1亿</span>
+            </div>
+            <div class="step-row" title="⚠️未通过/限仓 · 上涨占比≥30% 且 广度&gt;20EMA → 满仓；否则限仓≤50%（绝对家数阈值已退出判定，2026-10-13审查）">
+              <span class="step-icon">🌤️</span>
+              <span class="step-name">L0 大盘风控</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">⚠️未通过/限仓 · 上涨占比≥30% 且 广度&gt;20EMA → 满仓；否则限仓≤50%（绝对家数阈值已退出判定，2026-10-13审查）</span>
+            </div>
+            <div class="step-row" title="剔除ST/退市/次新股(上市&lt;60天)；流动比率&gt;1.2；负债率&lt;65%；营收同比≥-10%（连续负增≤0次）">
+              <span class="step-icon">⚡</span>
+              <span class="step-name">L1 硬性防雷</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">剔除ST/退市/次新股(上市&lt;60天)；流动比率&gt;1.2；负债率&lt;65%；营收同比≥-10%（连续负增≤0次）</span>
+            </div>
+            <div class="step-row" title="20日均成交额&gt;1亿；流通市值50亿~500亿；换手率3~15%（⚠绝对阈值待分位数化）">
+              <span class="step-icon">💧</span>
+              <span class="step-name">L2 流动性</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">20日均成交额&gt;1亿；流通市值50亿~500亿；换手率3~15%（⚠绝对阈值待分位数化）</span>
+            </div>
+            <div class="step-row" title="周线CLOSE&gt;20MA；EMA12&gt;26&gt;50多头排列；股价&gt;EMA12（剔除：RSI&gt;75 超买）">
+              <span class="step-icon">📈</span>
+              <span class="step-name">L3 趋势结构</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">周线CLOSE&gt;20MA；EMA12&gt;26&gt;50多头排列；股价&gt;EMA12（剔除：RSI&gt;75 超买）</span>
+            </div>
+            <div class="step-row" title="通过条件：量比1.5~3 + 买入信号（回踩反弹/需求吸收/强势接力，三者皆无时以 trend_continuation EMA12&gt;26 多头+阳线+量比达标兜底）；剔除条件：RSI&gt;75（L3层）、近5日涨幅&gt;15%、天量上轨（乖离率/EMA12距离两项冗余条件已停用）">
+              <span class="step-icon">🚀</span>
+              <span class="step-name">L4 动能信号</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">通过条件：量比1.5~3 + 买入信号（回踩反弹/需求吸收/强势接力，三者皆无时以 trend_continuation EMA12&gt;26 多头+阳线+量比达标兜底）；剔除条件：RSI&gt;75（L3层）、近5日涨幅&gt;15%、天量上轨（乖离率/EMA12距离两项冗余条件已停用）</span>
+            </div>
+            <div class="step-row" title="综合评分≥70；涨幅2~6%；贴MA5；人气榜≤100 + LLM联动加分">
+              <span class="step-icon">🔥</span>
+              <span class="step-name">L5 人气精选</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">综合评分≥70；涨幅2~6%；贴MA5；人气榜≤100 + LLM联动加分</span>
+            </div>
+            <div class="step-row" title="14:30后买入；止损=入场价-1ATR（上限8%）；目标=入场价+2ATR；盈亏比≥2:1">
+              <span class="step-icon">🎯</span>
+              <span class="step-name">L6 刚性风控</span>
+              <span class="step-pass">0</span>
+              
+              <span class="rule-inline">14:30后买入；止损=入场价-1ATR（上限8%）；目标=入场价+2ATR；盈亏比≥2:1</span>
+            </div><div style="font-size:.7rem;color:var(--text-secondary);margin-top:10px;">📈 历史候选前向收益（重算口径）<br>样本 2026-01-05 ~ 2026-11-05 · 候选 397 只 · T+1 open entry (no gap-up veto), qfq-adjusted prices, net of 0.25% round-trip cost; benchmark = equal-weight all-market (T+1 open amount>=1e8, raw amount)<div style="font-size:.64rem;color:var(--text-secondary);margin-top:2px;">生成于 2026-11-10（北京时间） · 数据截止 2026-11-09</div></div>
     <div style="overflow-x:auto;margin:8px 0;">
     <div style="font-size:.7rem;color:var(--text-secondary);margin-bottom:4px;">前向收益统计</div>
     <table style="width:100%;font-size:.68rem;border-collapse:collapse;white-space:nowrap;">
@@ -480,15 +584,15 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
     <!-- ========== 主升浪 ========== -->
     <div class="section">
-      <h2>📈 主升浪检测<span class="section-subtitle">2026-11-10 09:52:44</span></h2>
+      <h2>📈 主升浪检测<span class="section-subtitle">2026-11-10 09:47:28</span></h2>
       <div class="steps-area">
         <div class="step-row">
           <span class="step-name">运行时间</span>
-          <span class="step-pass">2026-11-10 09:52:44</span>
+          <span class="step-pass">2026-11-10 09:47:28</span>
         </div>
         <div class="step-row">
           <span class="step-name">A 层预筛池</span>
-          <span class="step-pass">2107 只</span>
+          <span class="step-pass">4676 只</span>
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">A1 业绩加速</span>
@@ -504,7 +608,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row">
           <span class="step-name">B 层启动信号</span>
-          <span class="step-pass">0 只</span>
+          <span class="step-pass">50 只</span>
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">B1 量能突破</span>
@@ -524,7 +628,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row">
           <span class="step-name">C 层持续性</span>
-          <span class="step-pass">0 只</span>
+          <span class="step-pass">5 只</span>
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">C1 分时形态</span>
@@ -548,7 +652,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row">
           <span class="step-name">D 层通过</span>
-          <span class="step-pass">0 只</span>
+          <span class="step-pass">10 只</span>
         </div>
         <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
           <span class="step-name" style="font-size:.6rem;">D1 ST/退市</span>
@@ -568,7 +672,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
         </div>
         <div class="step-row">
           <span class="step-name">最终候选</span>
-          <span class="step-pass">0 只</span>
+          <span class="step-pass">10 只</span>
         </div></div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">今日候选 (10只)</h3>
       <div style="font-size:.66rem;color:#f0883e;margin:4px 0 6px;">⚠ 主升浪候选日期 <strong>2026-11-09</strong> · 滞后 <strong>1</strong> 天（非当日数据，回看窗口 7 天）</div>
@@ -780,7 +884,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     </div>
         </div></div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">回测 Top 5 (10459笔)</h3>
-      
+      <div style="font-size:.66rem;color:#f0883e;margin:4px 0 6px;">⚠ 回调买入候选日期 <strong>2026-11-09</strong> · 滞后 <strong>1</strong> 天（非当日数据，回看窗口 7 天）</div>
       <div class="cards-grid">
             <div class="candidate-card" onclick="window.open('https://finance.baidu.com/stock/ab-300251','_blank')" style="cursor:pointer">
               <div class="cand-header">
