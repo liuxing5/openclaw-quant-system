@@ -756,14 +756,14 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     llm_scan = load_scan_stats('llm_multisource', llm_date)
     eight_scan = load_scan_stats('overnight_8step', eight_date)
-    if eight_scan and eight_candidates:
-        # 14:30/盘中跟踪行也会写 daily_candidates；若当日正式扫描通过数为 0，
-        # 这些行不是候选，不能在上方显示“无候选”时下方又挂出旧票。
-        try:
-            if int(eight_scan.get('total_passed') or 0) == 0:
-                eight_candidates = []
-        except (TypeError, ValueError):
-            pass
+    if eight_candidates:
+        # 过滤零候选审计行；盘中 selected=True 的候选即使被 15:10 宽度门控拦截，
+        # 也要展示为“门控观察”，不能直接清空导致用户看到“选出来了但没显示”。
+        eight_candidates = [c for c in eight_candidates if not str(c.get('ts_code', '')).endswith('.AUDIT')]
+        selected = [c for c in eight_candidates if c.get('selected')]
+        if selected:
+            eight_candidates = selected
+    eight_gated = bool((eight_scan or {}).get('filter_stats', {}).get('门控前通过'))
     if not eight_candidates:
         # 报告日以漏斗/LLM 数据日为准，避免八步法单独跑在次日时把 10-27 挂到 10-26 报告上
         report_day = str(funnel_date or target_date_str)
@@ -1424,6 +1424,10 @@ def generate_unified_html(output_dir=None, trade_date=None):
     eight_cards = ""
     stable_cards = ""
     upper_cards = ""
+    eight_gate_badge = (
+        '<span class="badge-8step" style="background:#fff3e0;color:#e65100;">门控观察·不执行</span>'
+        if eight_gated else ''
+    )
     if eight_candidates:
         # 去重：同一 ts_code 可能同时出现在稳健和高位路径，保留评分更高的
         seen_codes = {}
@@ -1458,11 +1462,11 @@ def generate_unified_html(output_dir=None, trade_date=None):
                         pool = 'stable' if 'stable' in t else 'upper'
                         break
             if 'stable' in pool.lower():
-                stable_cards += render_candidate_card(c)
+                stable_cards += render_candidate_card(c, badge_text=eight_gate_badge)
             elif 'upper' in pool.lower():
-                upper_cards += render_candidate_card(c)
+                upper_cards += render_candidate_card(c, badge_text=eight_gate_badge)
             else:
-                eight_cards += render_candidate_card(c)
+                eight_cards += render_candidate_card(c, badge_text=eight_gate_badge)
         if stable_cards:
             eight_cards += f'<div class="path-group"><div class="cards-grid">{stable_cards}</div></div>'
         if upper_cards:
@@ -1541,11 +1545,12 @@ def generate_unified_html(output_dir=None, trade_date=None):
     eight_count = len(eight_candidates)
 
     # 八步法 h3 标题行：候选标的 + 稳健路径 合并到一行
-    eight_h3 = f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({eight_count}只)</h3>'
+    eight_label = "门控观察" if eight_gated else "候选标的"
+    eight_h3 = f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{eight_label} ({eight_count}只)</h3>'
     if not eight_count:
         eight_h3 = ''
     if stable_cards:
-        eight_h3 = f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 ({eight_count}只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>'
+        eight_h3 = f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">{eight_label} ({eight_count}只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>'
 
     gen_time = datetime.now(BEIJING_TZ).strftime('%Y-%m-%d %H:%M:%S')
 
