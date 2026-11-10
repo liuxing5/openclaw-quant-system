@@ -582,7 +582,8 @@ def _persist_scan_stats(snapshot_date, reject_stats: dict, total_scanned: int, t
                 total_passed  = EXCLUDED.total_passed,
                 filter_stats  = EXCLUDED.filter_stats,
                 sentiment_score = EXCLUDED.sentiment_score,
-                mood          = EXCLUDED.mood;
+                mood          = EXCLUDED.mood,
+                created_at    = NOW();
         """, (
             snapshot_date, 'overnight_8step', total_scanned, total_passed,
             json.dumps(reject_stats, ensure_ascii=False),
