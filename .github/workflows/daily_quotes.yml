@@ -1,0 +1,58 @@
+name: daily_quotes
+
+# 收盘后先更新 daily_quotes，保证 15:15 八步法 / 16:20 漏斗能读到当日行情。
+# 15:05 之后 quotes.py 才允许全市场采集，避免用盘中半根 K 线覆盖。
+on:
+  schedule:
+    - cron: '5 7 * * 1-5'   # UTC 07:05 = Asia/Shanghai 15:05
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daily-quotes
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Shanghai
+      POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+      POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+      POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      POSTGRES_POOL_SIZE: 5
+      TUSHARE_TOKEN: ${{ secrets.TUSHARE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install quote dependencies
+        run: |
+          pip install akshare pandas psycopg2-binary python-dotenv loguru baostock requests tushare
+
+      - name: Refresh daily quotes
+        run: python core/market_data/quotes.py
+
+      - name: Verify latest date
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import os, psycopg2
+          conn = psycopg2.connect(
+              host=os.environ['POSTGRES_HOST'], port=os.environ['POSTGRES_PORT'],
+              user=os.environ['POSTGRES_USER'], password=os.environ['POSTGRES_PASSWORD'],
+              dbname=os.environ['POSTGRES_DB'], connect_timeout=30,
+          )
+          cur = conn.cursor()
+          cur.execute("SELECT MAX(trade_date), COUNT(*) FROM daily_quotes WHERE trade_date = (SELECT MAX(trade_date) FROM daily_quotes)")
+          print("daily_quotes latest:", cur.fetchone())
+          cur.close(); conn.close()
+          PY

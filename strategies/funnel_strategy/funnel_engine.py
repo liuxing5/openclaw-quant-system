@@ -315,6 +315,13 @@ class FunnelEngine:
 
         if not l4_result:
             print("\n❌ Layer 4 无标的出现买入信号")
+            # 即使 L4=0 也要落库，否则页面会停留在上一个交易日（2026-11-10 修复）。
+            self._save_to_db(
+                trade_date=trade_date,
+                market_env=market_env,
+                candidates=[],
+                elapsed_seconds=time.perf_counter() - t_total_start,
+            )
             return {
                 'timestamp': timestamp, 'trade_date': str(trade_date),
                 'market_env': market_env, 'stats': self._stats,

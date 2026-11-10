@@ -693,6 +693,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     # 无显式日期时，以行情表最新交易日为报告日；不能再把“今天”当报告日，
     # 否则凌晨/盘中生成会出现：funnel 是 11-09，八步法却读了 11-10 的 0 统计。
+    # 记录调用方是否显式指定日期：未指定时 trade_date 只用于取数，
+    # 输出仍应写根页面 funnel.html，并同步一份日期页。
+    explicit_date = trade_date is not None
     if trade_date is None:
         try:
             row = query_one("SELECT MAX(trade_date) AS d FROM daily_quotes;")
@@ -1840,6 +1843,12 @@ function switchDate(dateVal) {{
         html = html.replace("</body>", classic_section + "</body>")
     output_file.write_text(html, encoding='utf-8')
     print(f"  ✓ 六策略对比 HTML: {output_file}")
+
+    # 自动取最新交易日时，同步生成根页面，避免 GitHub Pages 仍展示上一日。
+    if trade_date and not explicit_date:
+        root_file = output_dir / "funnel.html"
+        root_file.write_text(html, encoding='utf-8')
+        print(f"  同步根页面: {root_file}")
 
     if trade_date:
         index_file = output_dir / "index.html"

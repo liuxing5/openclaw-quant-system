@@ -55,6 +55,10 @@ jobs:
               f.write(f'WEBAPP_DATABASE_URL={url}\n')
           PY
 
+      - name: Refresh daily quotes
+        continue-on-error: true
+        run: python core/market_data/quotes.py
+
       - name: Refresh stock basic info
         continue-on-error: true
         run: python strategies/llm_multisource/sync_stock_info.py
