@@ -842,6 +842,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
     l4 = int(f.get('layer4_pass') or 0)
     l5 = int(f.get('layer5_pass') or 0)
     l6 = int(f.get('layer6_pass') or 0)
+    l0_pos = float(f.get('layer0_max_position') or 1.0)
+    l0_label = "✅满仓" if l0_pos >= 1 else ("⚠️半仓" if l0_pos > 0 else "⚠️未通过")
     funnel_notice = ""
     if total == 0:
         if l0 == 0:
@@ -858,7 +860,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
     steps_data = [
         ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
         ("L0 大盘风控", "🌤️", l0, 0,
-         ("✅满仓" if l0 else "⚠️未通过/限仓") + " · " + LAYER_RULES['L0'],
+         l0_label + " · " + LAYER_RULES['L0'],
          "#fff3e0"),
         ("L1 硬性防雷", "⚡", l1, max(0, total - l1),
          LAYER_RULES['L1'], "#fce4ec"),
@@ -947,6 +949,12 @@ def generate_unified_html(output_dir=None, trade_date=None):
             </div>"""
     if mood_text:
         eight_steps_html += f'<div class="step-note"> {mood_text}</div>'
+    if stats.get('门控前通过'):
+        eight_steps_html += (
+            '<div class="step-note" style="color:var(--stop-color);">'
+            f'⚠️ 市场宽度门控触发：原始通过 {stats.get("门控前通过")} 只，'
+            '按风控今日不执行；上方为只读诊断链路。</div>'
+        )
 
     # ── LLM多源步骤 ──
     llm_steps_html = ""

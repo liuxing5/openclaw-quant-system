@@ -2361,14 +2361,17 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
     _log(f"\n扫描池: [{pool_name}]  模式: {mode}  时间权重: {time_weight:.2f}")
     _log("")
 
-    # 市场宽度门控（2026-10-14 收益改造）：宽度崩塌日不出隔夜信号
+    # 市场宽度门控（2026-10-14 收益改造）：宽度崩塌日不出隔夜信号。
+    # 2026-11-10：不再提前 return；继续跑完整链路做只读诊断，最后丢弃候选，
+    # 这样页面能显示每一层真实筛选数，而不是所有层都为 0。
+    gated_by_breadth = False
     if MIN_MARKET_BREADTH > 0:
         _b_date = snapshot_date if snapshot_date else beijing_now().strftime("%Y-%m-%d")
         _b20 = _market_breadth(_b_date)
         if _b20 is not None and _b20 < MIN_MARKET_BREADTH:
             _log(f"⛔ [宽度门控] {_b_date} b20={_b20:.3f} < {MIN_MARKET_BREADTH}，"
-                 f"今日不开隔夜仓（返回空信号）")
-            return []
+                 f"今日不出隔夜仓；继续做全链路只读诊断")
+            gated_by_breadth = True
 
     stock_pool = get_stock_pool(cfg["POOL"])
     _log(f"股票池: [{cfg['POOL']}] 共 {len(stock_pool)} 只")
@@ -2491,6 +2494,12 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
 
     print(f"\n━━ 过滤统计，[{pool_name}]，共{total_scanned}只 ━━")
     _print_funnel(reject_stats, total_scanned, results, cfg)
+
+    if gated_by_breadth:
+        _log(f"⛔ [宽度门控] {pool_name} 诊断完成：原始通过 {passed_count} 只，按风控丢弃候选")
+        # 只用于页面复盘：告诉用户不是没有 3~5% 标的，而是被市场宽度门控拦截。
+        reject_stats["门控前通过"] = passed_count
+        return [], reject_stats, name_map, len(stock_pool), len(real_map), time_weight
 
     return results, reject_stats, name_map, len(stock_pool), len(real_map), time_weight
 

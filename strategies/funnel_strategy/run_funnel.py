@@ -77,6 +77,8 @@ def main():
                         help="交易日期 (YYYY-MM-DD)，默认最新交易日")
     parser.add_argument("--output", "-o", type=str, default="./results",
                         help="输出目录")
+    parser.add_argument("--force", action="store_true",
+                        help="盘中强制运行（仅调试/回填，不建议实盘）")
     parser.add_argument("--disable", nargs="+", type=int, default=[], action="append",
                         help="禁用的层级 (0-6)，可重复指定")
     parser.add_argument("--funnel", action="store_true", default=True,

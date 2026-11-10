@@ -187,7 +187,9 @@ class FunnelEngine:
                 partial_cap=cfg.layer0_partial_cap,
                 verbose=cfg.verbose,
             )
-            self._stats['layer0_pass'] = 1 if market_env['passed'] else 0
+            # 半仓也是可交易状态：L0 计数用 can_trade，避免页面显示 0 只
+            # 但实际又给出候选（2026-11-10 修复）。
+            self._stats['layer0_pass'] = 1 if market_env['can_trade'] else 0
             self._stats['layer0_max_position'] = market_env['max_position_pct']
             print(f"  ⏱️  Layer 0 耗时: {time.perf_counter() - t0:.1f}s")
 
