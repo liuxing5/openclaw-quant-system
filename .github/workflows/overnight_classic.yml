@@ -50,6 +50,7 @@ jobs:
       - name: Generate funnel page with classic section
         if: steps.build.outputs.run == 'true'
         run: |
+          python -m strategies.funnel_strategy.forward_stats || echo "⚠️ forward stats failed, keeping previous JSON"
           python strategies/funnel_strategy/generate_html.py \
             --output ./strategies/funnel_strategy/docs
 

@@ -317,7 +317,9 @@ jobs:
         POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
         POSTGRES_POOL_SIZE: 5
       run: |
-        pip install jinja2 psycopg2-binary python-dotenv
+        pip install jinja2 psycopg2-binary python-dotenv numpy pandas
+        # 重新计算前向收益，避免把仓库里 10 月的旧 JSON 发布到 Pages
+        python -m strategies.funnel_strategy.forward_stats || echo "⚠️ forward stats failed, keeping previous JSON"
         # 先删掉仓库里可能已过期的 funnel.html：生成失败时宁可不发布，
         # 也不能把陈旧页面重新推上去覆盖 Pages 上的新版本
         rm -f strategies/funnel_strategy/docs/funnel.html

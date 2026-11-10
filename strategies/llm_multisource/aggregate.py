@@ -81,21 +81,42 @@ def calc_price_levels(close, ts_code):
 
 
 def aggregate_today():
+    now_beijing = datetime.now(BEIJING_TZ)
     today = get_beijing_date()
-    
+    # GitHub 定时任务可能被延迟到次日凌晨；以 daily_quotes 最新交易日为目标，
+    # 避免因为“今天还没收盘”整批跳过，也避免把旧候选冒充今日数据。
+    env_date = (os.getenv('TRADE_DATE') or '').strip()
+    if env_date:
+        try:
+            today = date.fromisoformat(env_date)
+        except ValueError:
+            logger.warning(f"TRADE_DATE={env_date} 非法，忽略")
+    else:
+        try:
+            _conn = get_db_fresh()
+            _cur = _conn.cursor()
+            _cur.execute("SELECT MAX(trade_date) FROM daily_quotes;")
+            _latest = _cur.fetchone()[0]
+            _cur.close()
+            _conn.close()
+            if _latest:
+                today = _latest
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(f"读取 daily_quotes 最新交易日失败，回退今天: {exc}")
+
+    if today > now_beijing.date():
+        logger.warning(f"{today} 晚于当前日期，跳过")
+        return
     if not is_trading_day(today):
         logger.warning(f"{today} 非交易日，跳过候选生成")
         return
-
-    now_beijing = datetime.now(BEIJING_TZ)
     hour_min = now_beijing.hour * 100 + now_beijing.minute
-    if hour_min < 1510:
-        logger.warning(f"当前时间 {now_beijing.strftime('%H:%M')} 早于 15:10，LLM策略应在收盘后运行")
-        logger.warning(f"如确需运行，请设置环境变量 RUN_MODE=afternoon 并在 15:10 后执行")
+    if today == now_beijing.date() and hour_min < 1510:
+        logger.warning(f"当前时间 {now_beijing.strftime('%H:%M')} 早于 15:10，且目标日就是今天；跳过")
         return
-    
+
     cutoff = today - timedelta(days=2)
-    logger.info(f"=== 开始聚合，today={today}, cutoff={cutoff}, RUN_MODE={RUN_MODE} ===")
+    logger.info(f"=== 开始聚合，target={today}, now={now_beijing:%Y-%m-%d %H:%M}, cutoff={cutoff}, RUN_MODE={RUN_MODE} ===")
 
     conn = None
     try:

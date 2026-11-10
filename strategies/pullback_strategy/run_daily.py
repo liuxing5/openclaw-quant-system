@@ -14,7 +14,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, date as date_cls, timezone, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -85,21 +85,26 @@ def run(date: str | None = None):
     # 且今天是交易日时 daily_quotes 必须已就绪到今日。
     if date is None:
         now = datetime.now(BEIJING_TZ)
-        cutoff = now.replace(hour=EARLIEST_RUN_TIME[0], minute=EARLIEST_RUN_TIME[1],
-                             second=0, microsecond=0)
-        if now < cutoff:
-            print(f"❌ 拒绝运行: 北京时间 {now:%H:%M} 早于 {EARLIEST_RUN_TIME[0]:02d}:"
-                  f"{EARLIEST_RUN_TIME[1]:02d}，盘中 K 线未定型会污染信号，"
-                  f"请盘后重跑或用 --date 显式指定历史日期回填")
-            return 1
         latest = latest_trade_date()
         try:
-            today_is_trading = is_trading_day(now.date())
+            latest_d = date_cls.fromisoformat(latest)
+        except ValueError:
+            print(f"❌ 拒绝运行: daily_quotes 最新日期非法 {latest!r}")
+            return 1
+        # 只有「最新数据就是今天」时才需要等 15:10；定时任务延迟到次日凌晨时，
+        # 应继续处理最近一个交易日，而不是整批拒绝。
+        cutoff = now.replace(hour=EARLIEST_RUN_TIME[0], minute=EARLIEST_RUN_TIME[1],
+                             second=0, microsecond=0)
+        if latest_d == now.date() and now < cutoff:
+            print(f"❌ 拒绝运行: 北京时间 {now:%H:%M} 早于 {EARLIEST_RUN_TIME[0]:02d}:"
+                  f"{EARLIEST_RUN_TIME[1]:02d}，今日 K 线未定型；请盘后重跑")
+            return 1
+        try:
+            is_latest_trading = is_trading_day(latest_d)
         except Exception:
-            today_is_trading = now.weekday() < 5    # 日历查询失败时退化为仅周末判定
-        if today_is_trading and latest != now.date().isoformat():
-            print(f"❌ 拒绝运行: 今日 {now.date()} 为交易日，但 daily_quotes 最新"
-                  f"数据为 {latest}，行情未就绪（请等待数据同步完成后重跑）")
+            is_latest_trading = latest_d.weekday() < 5
+        if not is_latest_trading:
+            print(f"❌ 拒绝运行: daily_quotes 最新日期 {latest} 不是交易日")
             return 1
     scan_date = date or latest_trade_date()
     # EMA50 + 20日动能需要预热期：往前多取 120 个自然日
