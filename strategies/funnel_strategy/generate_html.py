@@ -833,44 +833,53 @@ def generate_unified_html(output_dir=None, trade_date=None):
     }
 
     funnel_steps_html = ""
-    if funnel:
-        total = funnel['total_stocks']
-        if total == 0:
-            # 判断是数据未就绪还是大盘风控未通过
-            l0 = funnel.get('layer0_pass', 0)
-            if l0 == 0:
-                funnel_steps_html = empty_state(
-                    "🛡️", "L0 大盘风控未通过", "上涨家数不足或市场广度低于 20EMA", "当日不荐股 · 策略已正常执行"
-                )
-            else:
-                funnel_steps_html = empty_state(
-                    "⏳", "漏斗策略运行时行情数据未就绪", "各层统计为空", "daily_quotes 收盘后才写入，数据就绪后自动重跑"
-                )
+    f = funnel or {}
+    total = int(f.get('total_stocks') or 0)
+    l0 = int(f.get('layer0_pass') or 0)
+    l1 = int(f.get('layer1_pass') or 0)
+    l2 = int(f.get('layer2_pass') or 0)
+    l3 = int(f.get('layer3_pass') or 0)
+    l4 = int(f.get('layer4_pass') or 0)
+    l5 = int(f.get('layer5_pass') or 0)
+    l6 = int(f.get('layer6_pass') or 0)
+    funnel_notice = ""
+    if total == 0:
+        if l0 == 0:
+            funnel_notice = (
+                '<div class="step-note" style="color:var(--stop-color);">'
+                '⚠️ L0 大盘风控未通过：上涨家数不足或市场广度低于 20EMA，当日不荐股。'
+                '以下各层参数仍完整展示，方便复盘筛选机制。</div>'
+            )
         else:
-            steps_data = [
-                ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
-                ("L0 大盘风控", "🌤️", funnel['layer0_pass'], 0,
-                 ("✅满仓" if funnel['layer0_pass'] else "⚠️限仓") + " · " + LAYER_RULES['L0'],
-                 "#fff3e0"),
-                ("L1 硬性防雷", "⚡", funnel['layer1_pass'], total - funnel['layer1_pass'],
-                 LAYER_RULES['L1'], "#fce4ec"),
-                ("L2 流动性", "💧", funnel['layer2_pass'], funnel['layer1_pass'] - funnel['layer2_pass'],
-                 LAYER_RULES['L2'], "#f3e5f5"),
-                ("L3 趋势结构", "📈", funnel['layer3_pass'], funnel['layer2_pass'] - funnel['layer3_pass'],
-                 LAYER_RULES['L3'], "#e8eaf6"),
-                ("L4 动能信号", "🚀", funnel['layer4_pass'], funnel['layer3_pass'] - funnel['layer4_pass'],
-                 LAYER_RULES['L4'], "#e0f2f1"),
-                ("L5 人气精选", "🔥", funnel['layer5_pass'], funnel['layer4_pass'] - funnel['layer5_pass'],
-                 LAYER_RULES['L5'], "#fff8e1"),
-                ("L6 刚性风控", "🎯", funnel['layer6_pass'], funnel['layer5_pass'] - funnel['layer6_pass'],
-                 LAYER_RULES['L6'], "#e8f5e9"),
-            ]
-            for name, icon, cnt, elim, rule, color in steps_data:
-                elim_html = f'<span class="elim">{elim}</span>' if elim else ''
-                rule_html = (f'<span class="rule-inline">{html_escape(rule)}</span>'
-                             if rule else '')
-                title_attr = f' title="{html_escape(rule)}"' if rule else ''
-                funnel_steps_html += f"""
+            funnel_notice = (
+                '<div class="step-note" style="color:var(--text-secondary);">'
+                '⏳ 当日行情尚未就绪，各层计数为 0；参数与筛选顺序如下。</div>'
+            )
+    steps_data = [
+        ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
+        ("L0 大盘风控", "🌤️", l0, 0,
+         ("✅满仓" if l0 else "⚠️未通过/限仓") + " · " + LAYER_RULES['L0'],
+         "#fff3e0"),
+        ("L1 硬性防雷", "⚡", l1, max(0, total - l1),
+         LAYER_RULES['L1'], "#fce4ec"),
+        ("L2 流动性", "💧", l2, max(0, l1 - l2),
+         LAYER_RULES['L2'], "#f3e5f5"),
+        ("L3 趋势结构", "📈", l3, max(0, l2 - l3),
+         LAYER_RULES['L3'], "#e8eaf6"),
+        ("L4 动能信号", "🚀", l4, max(0, l3 - l4),
+         LAYER_RULES['L4'], "#e0f2f1"),
+        ("L5 人气精选", "🔥", l5, max(0, l4 - l5),
+         LAYER_RULES['L5'], "#fff8e1"),
+        ("L6 刚性风控", "🎯", l6, max(0, l5 - l6),
+         LAYER_RULES['L6'], "#e8f5e9"),
+    ]
+    funnel_steps_html = funnel_notice
+    for name, icon, cnt, elim, rule, color in steps_data:
+        elim_html = f'<span class="elim">{elim}</span>' if elim else ''
+        rule_html = (f'<span class="rule-inline">{html_escape(rule)}</span>'
+                     if rule else '')
+        title_attr = f' title="{html_escape(rule)}"' if rule else ''
+        funnel_steps_html += f"""
             <div class="step-row"{title_attr}>
               <span class="step-icon">{icon}</span>
               <span class="step-name">{name}</span>
@@ -879,63 +888,65 @@ def generate_unified_html(output_dir=None, trade_date=None):
               {rule_html}
             </div>"""
 
-    # ── 八步法步骤 ──
-    eight_steps_html = empty_state(
-        "🌙", "本期扫描无候选", "八步法当日未产生满足条件的标的", "空仓也是策略结果 · 已正常扫描"
-    )
-    if eight_scan:
-        stats = eight_scan.get('filter_stats', {})
-        total_scanned = eight_scan.get('total_scanned', 0)
-        total_passed = eight_scan.get('total_passed', 0)
-        reject_map = {
-            "涨幅不符": 0, "成交额": 0, "换手率": 0, "市值": 0,
-            "量比": 0, "均线": 0, "压力": 0, "乖离严重": 0, "得分不足": 0,
-        }
-        for k, v in stats.items():
-            if isinstance(v, int):
-                reject_map[k] = reject_map.get(k, 0) + v
+    # 八步法步骤：即使第一层就是 0，也把完整链路和参数展示出来
+    stats = eight_scan.get('filter_stats', {}) if eight_scan else {}
+    total_scanned = int((eight_scan or {}).get('total_scanned') or 0)
+    total_passed = int((eight_scan or {}).get('total_passed') or 0)
+    reject_map = {
+        "涨幅不符": 0, "成交额": 0, "换手率": 0, "市值": 0,
+        "量比": 0, "均线": 0, "压力": 0, "乖离严重": 0, "得分不足": 0,
+    }
+    for k, v in stats.items():
+        if isinstance(v, int):
+            reject_map[k] = reject_map.get(k, 0) + v
 
-        sentiment = eight_scan.get('sentiment_score')
-        mood = eight_scan.get('mood', '')
-        mood_text = f"情绪{mood}({sentiment}分)" if sentiment else ""
+    sentiment = eight_scan.get('sentiment_score') if eight_scan else None
+    mood = eight_scan.get('mood', '') if eight_scan else ''
+    mood_text = f"情绪{mood}({sentiment}分)" if sentiment else ""
+    eight_steps_html = ""
+    if not total_scanned:
+        eight_steps_html += (
+            '<div class="step-note" style="color:var(--text-secondary);">'
+            '🌙 本期扫描无候选；八步法链路照常展示，所有层级计数为 0。</div>'
+        )
 
-        step_rules = {
-            "涨幅筛选": "稳健3%~5%，高位6%~9.7%，剔除涨停/跌停",
-            "成交额过滤": "稳健0.5~50亿，高位0.3~30亿，保证流动性",
-            "换手率过滤": "5%~10%，活跃度适中",
-            "市值过滤": "稳健50~500亿，高位30~200亿",
-            "量比过滤": "量比≥1，放量确认",
-            "均线+压力": "MA多头排列 + 无上方压力位",
-            "乖离率过滤": "乖离率≤5%，避免追高",
-            "综合评分": "综合评分≥阈值(85+)，量化+情绪加权",
-        }
-        step_keys = [
-            ("涨幅筛选", ["涨幅不符"]),
-            ("成交额过滤", ["成交额"]),
-            ("换手率过滤", ["换手率"]),
-            ("市值过滤", ["市值"]),
-            ("量比过滤", ["量比"]),
-            ("均线+压力", ["均线", "压力"]),
-            ("乖离率过滤", ["乖离严重"]),
-            ("综合评分", ["得分不足"]),
-        ]
-        remaining = total_scanned
-        for sname, keys in step_keys:
-            elim = sum(reject_map.get(k, 0) for k in keys)
-            remaining = max(0, remaining - elim)
-            elim_html = f'<span class="elim">{elim}</span>' if elim else ''
-            rule = step_rules.get(sname, '')
-            rule_html = f'<span class="rule-inline">{rule}</span>' if rule else ''
-            title_attr = f' title="{rule}"' if rule else ''
-            eight_steps_html += f"""
+    step_rules = {
+        "涨幅筛选": "稳健3%~5%，高位6%~9.7%，剔除涨停/跌停",
+        "成交额过滤": "稳健0.5~50亿，高位0.3~30亿，保证流动性",
+        "换手率过滤": "5%~10%，活跃度适中",
+        "市值过滤": "稳健50~500亿，高位30~200亿",
+        "量比过滤": "量比≥1，放量确认",
+        "均线+压力": "MA多头排列 + 无上方压力位",
+        "乖离率过滤": "乖离率≤5%，避免追高",
+        "综合评分": "综合评分≥阈值(85+)，量化+情绪加权",
+    }
+    step_keys = [
+        ("涨幅筛选", ["涨幅不符"]),
+        ("成交额过滤", ["成交额"]),
+        ("换手率过滤", ["换手率"]),
+        ("市值过滤", ["市值"]),
+        ("量比过滤", ["量比"]),
+        ("均线+压力", ["均线", "压力"]),
+        ("乖离率过滤", ["乖离严重"]),
+        ("综合评分", ["得分不足"]),
+    ]
+    remaining = total_scanned
+    for sname, keys in step_keys:
+        elim = sum(reject_map.get(k, 0) for k in keys)
+        remaining = max(0, remaining - elim)
+        elim_html = f'<span class="elim">{elim}</span>' if elim else ''
+        rule = step_rules.get(sname, '')
+        rule_html = f'<span class="rule-inline">{rule}</span>' if rule else ''
+        title_attr = f' title="{rule}"' if rule else ''
+        eight_steps_html += f"""
             <div class="step-row"{title_attr}>
               <span class="step-name">{sname}</span>
               <span class="step-pass">{remaining}</span>
               {elim_html}
               {rule_html}
             </div>"""
-        if mood_text:
-            eight_steps_html += f'<div class="step-note"> {mood_text}</div>'
+    if mood_text:
+        eight_steps_html += f'<div class="step-note"> {mood_text}</div>'
 
     # ── LLM多源步骤 ──
     llm_steps_html = ""
@@ -1195,15 +1206,19 @@ def generate_unified_html(output_dir=None, trade_date=None):
     ]
     pb_stats = pb_scan.get('filter_stats', {}) if pb_scan else {}
     pb_parts = []
-    if pb_stats:
-        pb_parts.append(f"""
+    if not pb_stats:
+        pb_parts.append(
+            '<div class="step-note" style="color:var(--text-secondary);">'
+            '🪝 本期无当日候选；四步筛选链路照常展示，计数为 0。</div>'
+        )
+    pb_parts.append(f"""
         <div class="step-row">
           <span class="step-name">扫描日期</span>
-          <span class="rule-inline">{pb_scan.get('snapshot_date', '—')}</span>
+          <span class="rule-inline">{pb_scan.get('snapshot_date', '—') if pb_scan else '—'}</span>
         </div>""")
-        for _name, _rule in pb_step_defs:
-            _cnt = pb_stats.get(_name, '—')
-            pb_parts.append(f"""
+    for _name, _rule in pb_step_defs:
+        _cnt = pb_stats.get(_name, 0)
+        pb_parts.append(f"""
         <div class="step-row" title="{_rule}">
           <span class="step-name">{_name}</span>
           <span class="step-pass">{_cnt}</span>
@@ -1283,12 +1298,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
               <div class="cand-tags">{_tags_str}</div>
             </div>"""
 
-    if pb_parts or pb_backtest_html:
-        pullback_steps_html = "".join(pb_parts) + pb_backtest_html
-    else:
-        pullback_steps_html = empty_state(
-        "🪝", "暂无回调策略数据", "运行回调买入法后自动展示四步漏斗", "等待下一次扫描"
-    )
+    pullback_steps_html = "".join(pb_parts) + pb_backtest_html
 
     # ── 候选卡片渲染 ──
     def render_candidate_card(c, badge_class='', badge_text=''):
