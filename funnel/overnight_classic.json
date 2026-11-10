@@ -1,7 +1,7 @@
 {
   "title": "最严格杨永兴版",
   "date": "2026-11-10",
-  "updated": "2026-11-10 06:42:21",
+  "updated": "2026-11-10 15:19:45",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
@@ -47,57 +47,38 @@
     },
     {
       "name": "回踩 VWAP 不破",
-      "pass": 7,
-      "eliminated": 7,
+      "pass": 8,
+      "eliminated": 6,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
   "candidates": [
     {
-      "code": "000700.SZ",
-      "name": "模塑科技",
-      "score": 82.9,
-      "entry": 15.97,
-      "stop": 16.092,
-      "target": 16.449,
-      "quant_score": 82.9,
-      "tags": [
-        "强于大盘",
-        "待确认"
-      ],
-      "source": "腾讯1m",
-      "vwap": 16.092,
-      "pct_chg": 3.29,
-      "confirmed": false,
-      "path": "待确认"
-    },
-    {
       "code": "603662.SH",
       "name": "柯力传感",
-      "score": 92.9,
+      "score": 88.0,
       "entry": 57.49,
-      "stop": 57.48,
+      "stop": 57.46,
       "target": 59.215,
-      "quant_score": 92.9,
+      "quant_score": 88.0,
       "tags": [
         "强于大盘",
-        "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 57.48,
-      "pct_chg": 4.29,
+      "vwap": 57.46,
+      "pct_chg": 3.8,
       "confirmed": false,
       "path": "待确认"
     },
     {
       "code": "600986.SH",
       "name": "浙文互联",
-      "score": 80.6,
+      "score": 83.2,
       "entry": 7.75,
-      "stop": 7.674,
+      "stop": 7.683,
       "target": 7.982,
-      "quant_score": 80.6,
+      "quant_score": 83.2,
       "tags": [
         "VWAP上方",
         "强于大盘",
@@ -105,140 +86,102 @@
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 7.674,
-      "pct_chg": 3.06,
-      "confirmed": true,
-      "path": "原版确认"
-    },
-    {
-      "code": "002792.SZ",
-      "name": "通宇通讯",
-      "score": 96.7,
-      "entry": 28.78,
-      "stop": 28.608,
-      "target": 29.643,
-      "quant_score": 96.7,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
-        "回踩不破"
-      ],
-      "source": "腾讯1m",
-      "vwap": 28.608,
-      "pct_chg": 4.67,
+      "vwap": 7.683,
+      "pct_chg": 3.32,
       "confirmed": true,
       "path": "原版确认"
     },
     {
       "code": "603773.SH",
       "name": "沃格光电",
-      "score": 85.9,
+      "score": 86.6,
       "entry": 58.5,
-      "stop": 58.57,
+      "stop": 58.541,
       "target": 60.255,
-      "quant_score": 85.9,
+      "quant_score": 86.6,
       "tags": [
         "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 58.57,
-      "pct_chg": 3.59,
+      "vwap": 58.541,
+      "pct_chg": 3.66,
       "confirmed": false,
       "path": "待确认"
     },
     {
       "code": "601929.SH",
       "name": "吉视传媒",
-      "score": 95.8,
+      "score": 100.0,
       "entry": 2.52,
-      "stop": 2.498,
+      "stop": 2.499,
       "target": 2.596,
-      "quant_score": 95.8,
+      "quant_score": 100.0,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 2.498,
-      "pct_chg": 4.58,
+      "vwap": 2.499,
+      "pct_chg": 5.0,
       "confirmed": true,
       "path": "原版确认"
     },
     {
       "code": "000026.SZ",
       "name": "飞亚达",
-      "score": 92.1,
+      "score": 92.6,
       "entry": 20.98,
-      "stop": 21.082,
+      "stop": 21.08,
       "target": 21.609,
-      "quant_score": 92.1,
+      "quant_score": 92.6,
       "tags": [
         "强于大盘",
         "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 21.082,
-      "pct_chg": 4.21,
-      "confirmed": false,
-      "path": "待确认"
-    },
-    {
-      "code": "600278.SH",
-      "name": "东方创业",
-      "score": 99.8,
-      "entry": 8.15,
-      "stop": 8.094,
-      "target": 8.395,
-      "quant_score": 99.8,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
-        "回踩不破"
-      ],
-      "source": "腾讯1m",
-      "vwap": 8.094,
-      "pct_chg": 4.98,
-      "confirmed": true,
-      "path": "原版确认"
-    },
-    {
-      "code": "600501.SH",
-      "name": "航天晨光",
-      "score": 93.8,
-      "entry": 17.88,
-      "stop": 17.48,
-      "target": 18.416,
-      "quant_score": 93.8,
-      "tags": [
-        "VWAP上方",
-        "强于大盘",
-        "待确认"
-      ],
-      "source": "腾讯1m",
-      "vwap": 17.48,
-      "pct_chg": 4.38,
+      "vwap": 21.08,
+      "pct_chg": 4.26,
       "confirmed": false,
       "path": "待确认"
     },
     {
       "code": "603990.SH",
       "name": "麦迪科技",
-      "score": 85.9,
+      "score": 82.9,
       "entry": 23.64,
-      "stop": 23.461,
+      "stop": 23.471,
       "target": 24.349,
-      "quant_score": 85.9,
+      "quant_score": 82.9,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 23.461,
-      "pct_chg": 3.59,
+      "vwap": 23.471,
+      "pct_chg": 3.29,
+      "confirmed": true,
+      "path": "原版确认"
+    },
+    {
+      "code": "000681.SZ",
+      "name": "视觉中国",
+      "score": 90.4,
+      "entry": 16.76,
+      "stop": 16.646,
+      "target": 17.263,
+      "quant_score": 90.4,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "回踩不破"
+      ],
+      "source": "腾讯1m",
+      "vwap": 16.646,
+      "pct_chg": 4.04,
       "confirmed": true,
       "path": "原版确认"
     },
@@ -247,14 +190,15 @@
       "name": "苏州科达",
       "score": 97.5,
       "entry": 9.73,
-      "stop": 9.75,
+      "stop": 9.746,
       "target": 10.022,
       "quant_score": 97.5,
       "tags": [
+        "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 9.75,
+      "vwap": 9.746,
       "pct_chg": 4.75,
       "confirmed": false,
       "path": "待确认"
@@ -262,19 +206,19 @@
     {
       "code": "002881.SZ",
       "name": "美格智能",
-      "score": 94.7,
+      "score": 91.8,
       "entry": 44.44,
-      "stop": 43.803,
+      "stop": 43.829,
       "target": 45.773,
-      "quant_score": 94.7,
+      "quant_score": 91.8,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 43.803,
-      "pct_chg": 4.47,
+      "vwap": 43.829,
+      "pct_chg": 4.18,
       "confirmed": true,
       "path": "原版确认"
     },
@@ -283,7 +227,7 @@
       "name": "龙溪股份",
       "score": 89.3,
       "entry": 16.4,
-      "stop": 16.271,
+      "stop": 16.29,
       "target": 16.892,
       "quant_score": 89.3,
       "tags": [
@@ -292,32 +236,90 @@
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 16.271,
+      "vwap": 16.29,
       "pct_chg": 3.93,
       "confirmed": true,
       "path": "原版确认"
     },
     {
-      "code": "002886.SZ",
-      "name": "沃特股份",
-      "score": 90.1,
-      "entry": 20.24,
-      "stop": 20.279,
-      "target": 20.847,
-      "quant_score": 90.1,
+      "code": "003033.SZ",
+      "name": "征和工业",
+      "score": 99.5,
+      "entry": 80.85,
+      "stop": 81.33,
+      "target": 83.275,
+      "quant_score": 99.5,
       "tags": [
         "强于大盘",
         "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 20.279,
-      "pct_chg": 4.01,
+      "vwap": 81.33,
+      "pct_chg": 4.95,
       "confirmed": false,
       "path": "待确认"
+    },
+    {
+      "code": "002886.SZ",
+      "name": "沃特股份",
+      "score": 92.2,
+      "entry": 20.24,
+      "stop": 20.276,
+      "target": 20.847,
+      "quant_score": 92.2,
+      "tags": [
+        "强于大盘",
+        "回踩不破",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 20.276,
+      "pct_chg": 4.22,
+      "confirmed": false,
+      "path": "待确认"
+    },
+    {
+      "code": "603767.SH",
+      "name": "中马传动",
+      "score": 83.0,
+      "entry": 16.41,
+      "stop": 16.359,
+      "target": 16.902,
+      "quant_score": 83.0,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "14:30新高",
+        "回踩不破"
+      ],
+      "source": "腾讯1m",
+      "vwap": 16.359,
+      "pct_chg": 3.3,
+      "confirmed": true,
+      "path": "原版确认"
+    },
+    {
+      "code": "600088.SH",
+      "name": "中视传媒",
+      "score": 94.9,
+      "entry": 13.7,
+      "stop": 13.585,
+      "target": 14.111,
+      "quant_score": 94.9,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "回踩不破"
+      ],
+      "source": "腾讯1m",
+      "vwap": 13.585,
+      "pct_chg": 4.49,
+      "confirmed": true,
+      "path": "原版确认"
     }
   ],
   "candidate_count": 14,
-  "confirmed_count": 7,
+  "confirmed_count": 8,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
