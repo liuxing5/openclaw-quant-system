@@ -691,6 +691,17 @@ def generate_unified_html(output_dir=None, trade_date=None):
         output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # 无显式日期时，以行情表最新交易日为报告日；不能再把“今天”当报告日，
+    # 否则凌晨/盘中生成会出现：funnel 是 11-09，八步法却读了 11-10 的 0 统计。
+    if trade_date is None:
+        try:
+            row = query_one("SELECT MAX(trade_date) AS d FROM daily_quotes;")
+            trade_date = str(row["d"]) if row and row.get("d") else str(get_beijing_date())
+            print(f"  报告日取 daily_quotes 最新交易日: {trade_date}")
+        except Exception as exc:  # noqa: BLE001
+            trade_date = str(get_beijing_date())
+            print(f"  ⚠ 读取最新交易日失败，回退 {trade_date}: {exc}")
+
     # ── 加载五策略数据 ──
     funnel = load_funnel_data(trade_date)
     funnel_date = str(funnel['trade_date']) if funnel else None
