@@ -93,6 +93,20 @@ def _fnum(v, default=0.0):
     return default if f != f else f
 
 
+def empty_state(icon: str, title: str, desc: str = "", meta: str = "") -> str:
+    """统一的空结果卡片：没选到股票也要有完整、可读的界面。"""
+    meta_html = f'<div class="empty-meta">{meta}</div>' if meta else ""
+    desc_html = f'<div class="empty-desc">{desc}</div>' if desc else ""
+    return (
+        '<div class="empty-state">'
+        f'<div class="empty-icon" aria-hidden="true">{icon}</div>'
+        f'<div class="empty-title">{title}</div>'
+        f'{desc_html}{meta_html}'
+        '</div>'
+    )
+
+
+
 def build_layer_rules(cfg=None):
     """L0~L6 漏斗文案 —— 全部由 FunnelConfig 动态生成，阈值改了文案跟着改。
 
@@ -656,7 +670,7 @@ def render_classic_section(output_dir: Path) -> str:
             f'</div><div class="cand-tags">{tags}</div></div>'
         )
     if not cards:
-        cards = ['<div class="no-data">本期无符合原版条件的标的</div>']
+        cards = [empty_state("🔍", "本期暂无符合原版条件的标的", "严格条件未触发，不强行凑数", "原版策略已正常执行")]
     note = html_escape(str(data.get("note") or ""))
     return (
         f'<div class="container" style="padding-top:0">'
@@ -728,6 +742,14 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     llm_scan = load_scan_stats('llm_multisource', llm_date)
     eight_scan = load_scan_stats('overnight_8step', eight_date)
+    if eight_scan and eight_candidates:
+        # 14:30/盘中跟踪行也会写 daily_candidates；若当日正式扫描通过数为 0，
+        # 这些行不是候选，不能在上方显示“无候选”时下方又挂出旧票。
+        try:
+            if int(eight_scan.get('total_passed') or 0) == 0:
+                eight_candidates = []
+        except (TypeError, ValueError):
+            pass
     if not eight_candidates:
         # 报告日以漏斗/LLM 数据日为准，避免八步法单独跑在次日时把 10-27 挂到 10-26 报告上
         report_day = str(funnel_date or target_date_str)
@@ -817,9 +839,13 @@ def generate_unified_html(output_dir=None, trade_date=None):
             # 判断是数据未就绪还是大盘风控未通过
             l0 = funnel.get('layer0_pass', 0)
             if l0 == 0:
-                funnel_steps_html = '<div class="no-data">L0 大盘风控未通过<br><small>（上涨家数不足或市场广度低于20EMA，当日不荐股）</small></div>'
+                funnel_steps_html = empty_state(
+                    "🛡️", "L0 大盘风控未通过", "上涨家数不足或市场广度低于 20EMA", "当日不荐股 · 策略已正常执行"
+                )
             else:
-                funnel_steps_html = '<div class="no-data">漏斗策略运行时行情数据未就绪，各层统计为空<br><small>（daily_quotes 在收盘后才写入，漏斗策略需在数据就绪后运行）</small></div>'
+                funnel_steps_html = empty_state(
+                    "⏳", "漏斗策略运行时行情数据未就绪", "各层统计为空", "daily_quotes 收盘后才写入，数据就绪后自动重跑"
+                )
         else:
             steps_data = [
                 ("全市场", "📊", total, 0, "A股全市场日成交额>1亿", "#e3f2fd"),
@@ -854,7 +880,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
             </div>"""
 
     # ── 八步法步骤 ──
-    eight_steps_html = '<div class="no-data">本期扫描无候选<br><small>八步法当日未产生满足条件的标的</small></div>'
+    eight_steps_html = empty_state(
+        "🌙", "本期扫描无候选", "八步法当日未产生满足条件的标的", "空仓也是策略结果 · 已正常扫描"
+    )
     if eight_scan:
         stats = eight_scan.get('filter_stats', {})
         total_scanned = eight_scan.get('total_scanned', 0)
@@ -1153,7 +1181,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
     elif run_stats_parts:
         uptrend_steps_html = "".join(run_stats_parts)
     else:
-        uptrend_steps_html = '<div class="no-data">暂无数据<br><small>运行主升浪检测后自动展示</small></div>'
+        uptrend_steps_html = empty_state(
+        "📈", "暂无主升浪数据", "运行主升浪检测后自动展示分层结果", "等待下一次扫描"
+    )
 
     # ── 回调买入法（pullback_buy）步骤与回测展示 ──
     pb_step_defs = [
@@ -1256,7 +1286,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if pb_parts or pb_backtest_html:
         pullback_steps_html = "".join(pb_parts) + pb_backtest_html
     else:
-        pullback_steps_html = '<div class="no-data">暂无数据<br><small>运行回调买入法后自动展示</small></div>'
+        pullback_steps_html = empty_state(
+        "🪝", "暂无回调策略数据", "运行回调买入法后自动展示四步漏斗", "等待下一次扫描"
+    )
 
     # ── 候选卡片渲染 ──
     def render_candidate_card(c, badge_class='', badge_text=''):
@@ -1338,9 +1370,14 @@ def generate_unified_html(output_dir=None, trade_date=None):
         l5_pass = funnel.get('layer5_pass', 0) if funnel else 0
         l6_pass = funnel.get('layer6_pass', 0) if funnel else 0
         if l5_pass > 0 and l6_pass == 0:
-            funnel_cards = f'<div class="no-data">L5通过{l5_pass}只，L6风控全部未通过<br><small>（盈亏比≥2:1、止损≤8%等刚性条件）</small></div>'
+            funnel_cards = empty_state(
+                "🛡️", f"L5 通过 {l5_pass} 只，L6 风控全部未通过",
+                "盈亏比 ≥2:1、止损 ≤8% 等刚性条件未满足", "不为了出票而放宽风控"
+            )
         else:
-            funnel_cards = '<div class="no-data">今日无推荐</div>'
+            funnel_cards = empty_state(
+                "🔍", "今日无推荐", "漏斗已正常执行，但没有同时满足全部条件的标的", "空仓也是结果"
+            )
 
     llm_cards = ""
     if llm_candidates:
@@ -1348,7 +1385,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
             card = render_candidate_card(c)
             llm_cards += card
     if not llm_cards:
-        llm_cards = '<div class="no-data">今日无推荐</div>'
+        llm_cards = empty_state(
+            "🤖", "本期无 LLM 候选", "多源信号已聚合，但没有达到入选阈值", "等待下一批新闻/研报信号"
+        )
 
     eight_cards = ""
     stable_cards = ""
@@ -1397,7 +1436,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
         if upper_cards:
             eight_cards += f'<div class="path-group"><div class="path-label path-upper" style="margin-bottom:8px;">高位路径</div><div class="cards-grid">{upper_cards}</div></div>'
     if not eight_cards:
-        eight_cards = '<div class="no-data">今日无推荐</div>'
+        eight_cards = empty_state(
+            "🌙", "今日无隔夜候选", "八步法已扫描，但当日没有满足条件的标的", "空仓也是策略结果"
+        )
 
     uptrend_cards = ""
     if uptrend_daily:
@@ -1407,7 +1448,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if not uptrend_cards and uptrend_backtest:
         uptrend_cards = top10_html
     if not uptrend_cards:
-        uptrend_cards = '<div class="no-data">无今日候选<br><small>运行每日检测后有实时数据</small></div>'
+        uptrend_cards = empty_state(
+            "📈", "无今日候选", "主升浪检测已运行，但今天没有标的通过全部层级", "等待下一次扫描"
+        )
 
     pullback_cards = ""
     if pb_candidates:
@@ -1417,7 +1460,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if not pullback_cards and pb_top10_html:
         pullback_cards = pb_top10_html
     if not pullback_cards:
-        pullback_cards = '<div class="no-data">无当日候选<br><small>运行回调买入法后有实时数据</small></div>'
+        pullback_cards = empty_state(
+            "🪝", "无当日候选", "回调策略已扫描，但没有满足四步条件的标的", "空仓也是结果"
+        )
 
     pullback_count = len(pb_candidates) if pb_candidates else 0
 
@@ -1465,6 +1510,8 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     # 八步法 h3 标题行：候选标的 + 稳健路径 合并到一行
     eight_h3 = f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">候选标的 ({eight_count}只)</h3>'
+    if not eight_count:
+        eight_h3 = ''
     if stable_cards:
         eight_h3 = f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);display:flex;align-items:center;gap:8px;flex-wrap:wrap;">候选标的 ({eight_count}只)<span class="path-label path-stable" style="margin:0;font-size:.78rem;">稳健路径</span></h3>'
 
@@ -1523,7 +1570,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .section-subtitle {{ font-size:.78rem; color:var(--text2); margin-left:8px; font-weight:normal; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 
 /* Four column layout */
-.four-col {{ display:grid; grid-template-columns:repeat(5,1fr); gap:12px; align-items:stretch; }}
+.four-col {{ display:grid; grid-template-columns:repeat(5,1fr); gap:12px; align-items:start; }}
 .four-col .section {{ margin-bottom:0; display:flex; flex-direction:column; min-width:0; overflow:hidden; padding:0; }}
 .four-col .section > h2 {{ padding:16px 20px 0; margin:0; border-bottom:none; font-size:1.05rem; height:64px; display:flex; align-items:center; flex-wrap:wrap; }}
 .four-col .steps-area {{ height:364px; overflow:hidden; padding:0 20px; flex-shrink:0; }}
@@ -1591,7 +1638,28 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 .tab-btn.active {{ background:var(--tab-active); color:var(--tab-active-text); }}
 
 /* No data */
-.no-data {{ text-align:center; padding:30px; color:var(--text2); font-size:.88rem; }}
+/* Empty result — 没选到股票也要像一个完整产品 */
+.empty-state {{
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  min-height:180px; padding:24px 18px; text-align:center;
+  border:1px dashed var(--border); border-radius:12px;
+  background:radial-gradient(circle at 50% 0%, var(--metric-bg) 0%, transparent 70%), var(--card);
+}}
+.empty-icon {{
+  width:48px; height:48px; display:grid; place-items:center;
+  border-radius:50%; font-size:1.35rem; line-height:1;
+  background:var(--metric-bg); border:1px solid var(--border);
+  box-shadow:0 4px 14px rgba(15,23,42,.06);
+}}
+.empty-title {{ margin-top:10px; font-size:.92rem; font-weight:600; color:var(--text); }}
+.empty-desc {{ margin-top:4px; max-width:270px; font-size:.76rem; line-height:1.55; color:var(--text2); }}
+.empty-meta {{
+  margin-top:10px; display:inline-flex; align-items:center; gap:4px;
+  padding:4px 9px; border-radius:999px; border:1px solid var(--border);
+  background:var(--metric-bg); color:var(--text2); font-size:.66rem;
+}}
+.cards-grid > .empty-state {{ grid-column:1 / -1; }}
+
 
 /* Footer */
 .footer {{ text-align:center; padding:20px; color:var(--text2); font-size:.75rem; }}
@@ -1632,16 +1700,16 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <div class="steps-area">{eight_steps_html}{eight_fwd_html}</div>
       {eight_h3}
       {eight_stale_html}
-      <div class="cards-grid">{eight_cards}</div>
+      {f'<div class="cards-grid">{eight_cards}</div>' if eight_count else ''}
     </div>
 
     <!-- ========== 七步漏斗 ========== -->
     <div class="section">
       <h2>🎯 七步漏斗选股<span class="section-subtitle">{funnel_timestamp or funnel_date or '—'}</span></h2>
       <div class="steps-area">{funnel_steps_html}{funnel_fwd_html}</div>
-      <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 ({funnel_count}只)</h3>
+      {f'<h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">最终推荐 ({funnel_count}只)</h3>' if funnel_count else ''}
       {funnel_stale_html}
-      <div class="cards-grid">{funnel_cards}</div>
+      {f'<div class="cards-grid">{funnel_cards}</div>' if funnel_count else ''}
     </div>
 
     <!-- ========== LLM多源 ========== -->
