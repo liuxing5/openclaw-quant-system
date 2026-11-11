@@ -7,8 +7,15 @@ from datetime import date
 from fastapi import APIRouter, HTTPException, Query
 
 from ..services import anomaly as svc
+from ..services import fund_dashboard
 
 router = APIRouter(tags=["anomaly"])
+
+
+@router.get("/anomaly/dashboard")
+def anomaly_dashboard():
+    """实时资金看板：大盘/板块/个股/广度。"""
+    return fund_dashboard.dashboard()
 
 
 @router.get("/anomaly/events")

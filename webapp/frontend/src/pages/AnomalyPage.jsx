@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AsyncBlock, Badge, Button, Card, EmptyState, PageShell, Pagination, SectionHeader, Tabs } from '../components/ui.jsx'
+import FundDashboard from '../components/FundDashboard.jsx'
 import { api, useApi } from '../lib/api.js'
 import { baseCode, fmtNum, fmtPct, fmtTime, pctTone } from '../lib/format.js'
 import { toast } from '../lib/toast.jsx'
@@ -134,6 +135,15 @@ export default function AnomalyPage() {
     [page, signal, board, direction, session, onlyHoldings],
   )
 
+  const dashQ = useApi(() => api.get('/anomaly/dashboard'), [])
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (!document.hidden) dashQ.reload()
+    }, 15_000)
+    return () => clearInterval(id)
+  }, [dashQ.reload])
+
   useEffect(() => {
     const id = setInterval(() => {
       if (!document.hidden) reload()
@@ -172,11 +182,11 @@ export default function AnomalyPage() {
 
   return (
     <PageShell
-      title="实时异动"
+      title="实时资金与异动"
       subtitle={
         live
-          ? `全市场实时快照 · ${fmtTime(data?.as_of || data?.meta?.as_of)} 更新 · 共 ${data?.total ?? 0} 条 · 30 秒刷新`
-          : `最近交易日快照 · 共 ${data?.total ?? 0} 条 · 30 秒刷新`
+          ? `全市场资金看板 · ${fmtTime(data?.as_of || data?.meta?.as_of)} 更新 · 15 秒刷新`
+          : `资金看板 · 最近交易日快照 · ${fmtTime(data?.as_of || data?.meta?.as_of)}`
       }
       actions={
         <div className="flex items-center gap-2 text-[11px] text-slate-400">
@@ -189,6 +199,14 @@ export default function AnomalyPage() {
         </div>
       }
     >
+      {dashQ.data ? (
+        <FundDashboard data={dashQ.data} onOpenStock={(code) => navigate(`/stock-analysis/${baseCode(code)}`)} />
+      ) : (
+        <Card>
+          <AsyncBlock loading={dashQ.loading} error={dashQ.error} onRetry={dashQ.reload} loadingLabel="资金看板加载中" />
+        </Card>
+      )}
+
       <Card className="space-y-3">
         <div className="flex flex-wrap items-center gap-3">
           <Tabs tabs={BOARD_TABS} value={board} onChange={(v) => { setBoard(v); setPage(1) }} />
