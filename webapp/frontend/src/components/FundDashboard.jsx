@@ -32,11 +32,12 @@ function FlowRows({ rows, side, onPick }) {
             <div className="flex items-center justify-between gap-2">
               <span className="flex min-w-0 items-center gap-1.5">
                 <span className="w-4 shrink-0 text-[10px] tabular-nums text-slate-400">{i + 1}</span>
-                <span className="truncate text-xs font-medium text-slate-700 group-hover:text-brand-600 dark:text-slate-200">{r.name}</span>
+                <span className="truncate text-xs font-medium text-slate-700 group-hover:text-brand-600 dark:text-slate-200" title={r.leader ? `领涨：${r.leader}` : r.name}>{r.name}</span>
                 <span className={`shrink-0 text-[10px] tabular-nums ${pctTone(num(r.pct_chg))}`}>{fmtPct(num(r.pct_chg))}</span>
               </span>
               <span className={`shrink-0 text-xs font-semibold tabular-nums ${side === 'in' ? 'text-rose-500' : 'text-emerald-500'}`}>
                 {sign(num(r.main_net))}{fmtCompact(num(r.main_net))}
+                {r.main_ratio != null ? <span className="ml-1 text-[9px] font-normal text-slate-400">{r.main_ratio}%</span> : null}
               </span>
             </div>
             <div className="mt-0.5 h-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800">
