@@ -8,12 +8,12 @@
       "name": "14:30-14:50 尾盘窗口",
       "pass": 9,
 =======
-  "updated": "2026-11-11 06:58:48",
+  "updated": "2026-11-11 06:59:30",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
       "pass": 8,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "eliminated": "",
       "rule": "只做尾盘，不碰 14:55 突击拉高"
     },
@@ -23,7 +23,7 @@
       "pass": 9,
 =======
       "pass": 8,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "eliminated": "",
       "rule": "仅 60/00 主板，排除 300/688/ST"
     },
@@ -33,7 +33,7 @@
       "pass": 9,
 =======
       "pass": 8,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "eliminated": "",
       "rule": "近 20 个交易日至少一次涨停"
     },
@@ -43,7 +43,7 @@
       "pass": 9,
 =======
       "pass": 8,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "eliminated": "",
       "rule": "当日量能高于近 5 日均量"
     },
@@ -53,7 +53,7 @@
       "pass": 9,
 =======
       "pass": 8,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "eliminated": "",
       "rule": "兼顾流动性与不过热"
     },
@@ -63,7 +63,7 @@
       "pass": 9,
 =======
       "pass": 8,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "eliminated": "",
       "rule": "中盘弹性区间"
     },
@@ -73,7 +73,7 @@
       "pass": 9,
 =======
       "pass": 8,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "eliminated": 0,
       "rule": "全天在 VWAP 上方，且强于上证/深证"
     },
@@ -84,7 +84,7 @@
       "eliminated": 5,
 =======
       "eliminated": 4,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
@@ -104,7 +104,7 @@
       "stop": 59.412,
       "target": 62.871,
       "quant_score": 97.2,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "tags": [
         "VWAP上方",
         "强于大盘",
@@ -117,7 +117,7 @@
 =======
       "vwap": 59.412,
       "pct_chg": 4.72,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "confirmed": false,
       "path": "待确认"
     },
@@ -193,7 +193,7 @@
       "stop": 59.175,
       "target": 61.656,
       "quant_score": 82.9,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "tags": [
         "VWAP上方",
         "强于大盘",
@@ -206,7 +206,7 @@
 =======
       "vwap": 59.175,
       "pct_chg": 3.29,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "confirmed": true,
       "path": "原版确认"
     },
@@ -284,7 +284,7 @@
       "stop": 44.043,
       "target": 45.299,
       "quant_score": 88.1,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "tags": [
         "强于大盘",
         "回踩不破",
@@ -297,7 +297,7 @@
 =======
       "vwap": 44.043,
       "pct_chg": 3.81,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "confirmed": false,
       "path": "待确认"
     },
@@ -353,7 +353,7 @@
       "source": "腾讯1m",
       "vwap": 4.831,
       "pct_chg": 3.81,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "confirmed": true,
       "path": "原版确认"
     },
@@ -372,7 +372,7 @@
       "stop": 40.787,
       "target": 42.23,
       "quant_score": 92.7,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "tags": [
         "VWAP上方",
         "回踩不破",
@@ -385,7 +385,7 @@
 =======
       "vwap": 40.787,
       "pct_chg": 4.27,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
       "confirmed": false,
       "path": "待确认"
     }
@@ -394,7 +394,7 @@
   "candidate_count": 9,
 =======
   "candidate_count": 8,
->>>>>>> 84f5a168 (data: update classic scan 2026-11-11 [skip ci])
+>>>>>>> 5cc5ef2a (data: update classic scan 2026-11-11 [skip ci])
   "confirmed_count": 4,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
