@@ -2459,6 +2459,24 @@ def scan_pool(cfg: dict, sentiment_score: int, mood: str, preloaded: bool = Fals
                 or cfg["upper_pct_lo"] <= pct <= cfg["upper_pct_hi"]
             ):
                 continue
+            # 先用腾讯实时快照做硬过滤，避免对全池 1800 只逐只请求 baostock 历史。
+            # 条件与 analyze_ultimate 内部一致，只是提前执行。
+            _amt = real_info.get("amount") or 0
+            if _amt < cfg["min_amount"] or _amt > cfg["max_amount"]:
+                reject_stats["成交额"] += 1
+                continue
+            _turn = real_info.get("turn")
+            if _turn is not None and not (cfg["turn_min"] <= _turn <= cfg["turn_max"]):
+                reject_stats["换手率"] += 1
+                continue
+            _cap = real_info.get("circ_mcap") or real_info.get("mktcap") or 0
+            if _cap > 0 and not (cfg["min_mktcap"] <= _cap <= cfg["max_mktcap"]):
+                reject_stats["市值"] += 1
+                continue
+            _vr = real_info.get("volume_ratio")
+            if _vr is not None and _vr < cfg["vol_ratio_min"]:
+                reject_stats["量比"] += 1
+                continue
 
         k_rs = bs.query_history_k_data_plus(
             code, FIELDS_HIST,

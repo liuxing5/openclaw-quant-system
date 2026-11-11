@@ -11,6 +11,8 @@ import argparse
 import json
 import os
 import sys
+import time as _time
+import urllib.error
 import urllib.request
 from datetime import datetime, time, timedelta
 from pathlib import Path
@@ -41,19 +43,44 @@ _ensure_database_url()
 from app.db import query  # noqa: E402
 
 
+_BAR_CACHE: dict[tuple[str, int, int], list[dict]] = {}
+
+
 def _bars(symbol: str, scale: int = 1, datalen: int = 1023) -> list[dict]:
+    """新浪 K 线；GitHub runner 偶发 SSL handshake 超时，必须可重试且不拖垮整批。"""
+    key = (symbol, scale, datalen)
+    if key in _BAR_CACHE:
+        return _BAR_CACHE[key]
     url = (
         "https://quotes.sina.cn/cn/api/jsonp_v2.php/"
         f"var%20_{symbol}=/CN_MarketDataService.getKLineData?"
         f"symbol={symbol}&scale={scale}&ma=no&datalen={datalen}"
     )
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-    with urllib.request.urlopen(req, timeout=25) as resp:
-        text = resp.read().decode("utf-8", "replace")
+    text = None
+    last_error = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                text = resp.read().decode("utf-8", "replace")
+            break
+        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+            last_error = exc
+            if attempt < 2:
+                _time.sleep(0.8 * (attempt + 1))
+    if text is None:
+        print(f"  ⚠ 新浪K线不可用 {symbol} {scale}m: {type(last_error).__name__} {last_error}")
+        _BAR_CACHE[key] = []
+        return []
     i = text.find("=(")
     if i < 0:
+        _BAR_CACHE[key] = []
         return []
-    arr = json.loads(text[i + 2 : text.rfind(")")])
+    try:
+        arr = json.loads(text[i + 2 : text.rfind(")")])
+    except (json.JSONDecodeError, TypeError):
+        _BAR_CACHE[key] = []
+        return []
     out = []
     for b in arr or []:
         try:
@@ -70,6 +97,7 @@ def _bars(symbol: str, scale: int = 1, datalen: int = 1023) -> list[dict]:
             )
         except (KeyError, TypeError, ValueError):
             continue
+    _BAR_CACHE[key] = out
     return out
 
 
@@ -240,7 +268,11 @@ def build(day: str, live: bool = False) -> dict:
     rejected = 0
     confirmed_count = 0
     for r in rows:
-        x = _intraday(r["ts_code"], day)
+        try:
+            x = _intraday(r["ts_code"], day)
+        except Exception as exc:  # noqa: BLE001 单只网络/解析失败不拖垮整批
+            print(f"  ⚠ 盘中数据失败 {r.get('ts_code')}: {type(exc).__name__} {exc}")
+            x = None
         if not x:
             rejected += 1
             continue

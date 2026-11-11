@@ -729,9 +729,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
     if need_retry and is_today:
         # 仅当天日期重试（等待并行 workflow 写入）
         import time as _time
-        for _retry in range(8):
-            _time.sleep(15)
-            print(f"   overnight_8step 数据未就绪 (当前={eight_date}, 期望>={target_date_str})，15s后重试 ({_retry+1}/8)...")
+        for _retry in range(2):
+            _time.sleep(5)
+            print(f"   overnight_8step 数据未就绪 (当前={eight_date}, 期望>={target_date_str})，5s后重试 ({_retry+1}/2)...")
             eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
             eight_date_str_for_check = str(eight_date) if eight_date else None
             if eight_candidates and eight_date_str_for_check and eight_date_str_for_check >= target_date_str:
