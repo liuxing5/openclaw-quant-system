@@ -22,6 +22,8 @@ const SECTIONS = [
   {
     title: '交易与管理',
     items: [
+      ['客户信息', '/workbench/students', '注册客户、套餐、到期时间与最近登录'],
+      ['订单与收款', '/workbench/payments', '微信 / 支付宝人工收款与会员开通'],
       ['持仓提醒', '/holdings/alerts', '价格条件提醒与触发记录'],
       ['模拟委托', '/simulation/orders', '全部委托与撤单'],
       ['股票学院', '/academy', '基础课程与书单'],

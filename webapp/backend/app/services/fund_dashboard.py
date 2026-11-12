@@ -138,6 +138,7 @@ def _db_boards() -> dict:
                     "leader": r.get("lead_stock_name"),
                 }
                 for r in rows
+                if not any(x in str(r.get("name") or "") for x in _SKIP_BOARD)
             ]
         except Exception:  # noqa: BLE001
             out[key] = []
