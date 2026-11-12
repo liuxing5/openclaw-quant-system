@@ -56,9 +56,10 @@ def workbench_monitor():
 def workbench_students(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
+    keyword: str = Query("", max_length=64, description="邮箱或昵称模糊搜索"),
 ):
-    """学员列表：本系统无此业务，返回结构完整的本地演示数据（meta.seed）。"""
-    return svc.jsonify(svc.students(page, size))
+    """真实注册客户列表（app_users）。"""
+    return svc.jsonify(svc.students(page, size, keyword))
 
 
 @router.get("/workbench/payments")
@@ -66,8 +67,19 @@ def workbench_payments(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
 ):
-    """订单列表：本系统无此业务，返回结构完整的本地演示数据（meta.seed）。"""
+    """真实人工收款订单（微信/支付宝）。"""
     return svc.jsonify(svc.payments(page, size))
+
+
+@router.post("/workbench/payments")
+def workbench_payment_create(payload: dict):
+    """管理员登记微信/支付宝收款并开通会员。"""
+    try:
+        return svc.jsonify(svc.record_payment(payload or {}))
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
 
 
 @router.get("/workbench/feedbacks")

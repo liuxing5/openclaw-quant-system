@@ -58,9 +58,10 @@ function MetaBadges({ meta }) {
 
 export default function WorkbenchStudentsPage() {
   const [page, setPage] = useState(1)
+  const [keyword, setKeyword] = useState('')
   const { data, loading, error, reload } = useApi(
-    () => api.get('/workbench/students', { page, size: PAGE_SIZE }),
-    [page],
+    () => api.get('/workbench/students', { page, size: PAGE_SIZE, keyword: keyword || undefined }),
+    [page, keyword],
   )
 
   const items = arr(data?.items)
@@ -73,6 +74,12 @@ export default function WorkbenchStudentsPage() {
       subtitle="学员名单、套餐与到期时间 · 邮箱由后端脱敏返回"
       actions={
         <div className="flex items-center gap-2">
+          <input
+            value={keyword}
+            onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
+            placeholder="搜索邮箱 / 昵称"
+            className="w-40 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs dark:border-slate-700 dark:bg-slate-800"
+          />
           <MetaBadges meta={data?.meta} />
           <Button variant="secondary" size="sm" onClick={reload} loading={loading}>
             刷新

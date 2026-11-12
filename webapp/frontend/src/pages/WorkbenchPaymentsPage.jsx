@@ -9,6 +9,11 @@ import React, { useState } from 'react'
 import { AsyncBlock, Badge, Button, Card, PageShell, Pagination, SectionHeader, StatTile } from '../components/ui.jsx'
 import { api, useApi } from '../lib/api.js'
 import { fmtAmount, fmtDateTime } from '../lib/format.js'
+import { toast } from '../lib/toast.jsx'
+
+const PLAN_PRICE = { month: 98, quarter: 268, year: 688 }
+const PLAN_LABEL = { month: '月卡 30 天', quarter: '季卡 90 天', year: '年卡 365 天' }
+const CHANNEL_LABEL = { wechat: '微信', alipay: '支付宝' }
 
 const PAGE_SIZE = 20
 const arr = (v) => (Array.isArray(v) ? v : [])
@@ -63,6 +68,83 @@ function MetaBadges({ meta }) {
   if (meta.source) badges.push(<Badge key="src" tone="slate">来源 {String(meta.source)}</Badge>)
   if (!badges.length) return null
   return <span className="inline-flex flex-wrap items-center gap-1.5">{badges}</span>
+}
+
+function RecordPayment({ onDone }) {
+  const [email, setEmail] = useState('')
+  const [plan, setPlan] = useState('month')
+  const [amount, setAmount] = useState(PLAN_PRICE.month)
+  const [channel, setChannel] = useState('wechat')
+  const [adminKey, setAdminKey] = useState('')
+  const [note, setNote] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    setLoading(true)
+    try {
+      const r = await api.post('/workbench/payments', {
+        email, plan, amount: Number(amount), channel, admin_key: adminKey, note,
+      })
+      toast.success('收款已登记', `${r.order_no} · ${CHANNEL_LABEL[channel]} ${fmtAmount(r.amount)}`)
+      setEmail(''); setNote('')
+      await onDone?.()
+    } catch (err) {
+      toast.error('登记失败', err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Card>
+      <SectionHeader
+        title="登记人工收款"
+        subtitle="客户通过微信 / 支付宝转账后，在此登记并立即开通或续费会员"
+        badge={<Badge tone="amber">管理员操作</Badge>}
+      />
+      <form onSubmit={submit} className="mt-3 grid gap-2 md:grid-cols-6">
+        <input
+          type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+          placeholder="客户注册邮箱"
+          className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs md:col-span-2 dark:border-slate-700 dark:bg-slate-800"
+        />
+        <select
+          value={plan}
+          onChange={(e) => { setPlan(e.target.value); setAmount(PLAN_PRICE[e.target.value]) }}
+          className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-800"
+        >
+          {Object.entries(PLAN_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+        </select>
+        <input
+          type="number" min="1" step="0.01" required value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs tabular-nums dark:border-slate-700 dark:bg-slate-800"
+        />
+        <select
+          value={channel} onChange={(e) => setChannel(e.target.value)}
+          className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-800"
+        >
+          <option value="wechat">微信</option>
+          <option value="alipay">支付宝</option>
+        </select>
+        <input
+          type="password" required value={adminKey} onChange={(e) => setAdminKey(e.target.value)}
+          placeholder="管理员密钥"
+          className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs dark:border-slate-700 dark:bg-slate-800"
+        />
+        <input
+          value={note} onChange={(e) => setNote(e.target.value)}
+          placeholder="备注（可选，如转账尾号）"
+          className="rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-xs md:col-span-3 dark:border-slate-700 dark:bg-slate-800"
+        />
+        <Button type="submit" size="sm" loading={loading} className="md:col-span-1">确认收款并开通</Button>
+      </form>
+      <p className="mt-2 text-[10px] text-slate-400">
+        这是人工收款登记，不是微信/支付宝官方支付接口回调；订单会记录渠道、金额、客户邮箱和操作时间。
+      </p>
+    </Card>
+  )
 }
 
 export default function WorkbenchPaymentsPage() {
@@ -130,6 +212,8 @@ export default function WorkbenchPaymentsPage() {
               tone="text-rose-600 dark:text-rose-400"
             />
           </div>
+
+          <RecordPayment onDone={reload} />
 
           <Card>
             <SectionHeader

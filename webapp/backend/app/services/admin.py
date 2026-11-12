@@ -22,7 +22,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from ..cache import cache_stats, ttl_cache
-from ..db import pool_stats
+from ..db import execute, pool_stats, query, query_one
 from ..routers.system import _safe_query, get_setting, set_setting
 
 # ---------- 通用工具 ----------
@@ -812,40 +812,177 @@ def _page(items: list, page: int, size: int, extra: dict | None = None) -> dict:
     return out
 
 
-def students(page: int, size: int) -> dict:
-    """学员列表（本地演示数据，结构与真实接口一致）。"""
-    items = [
-        {
-            "id": sid,
-            "name": name,
-            "email_masked": mask_email(f"{local}@{domain}"),
-            "plan": plan,
+def _membership_status(plan: str, trial_start, plan_expiry):
+    now = datetime.now(timezone.utc)
+    if plan == "lifetime":
+        return "active"
+    if plan_expiry:
+        try:
+            if plan_expiry > now:
+                return "active"
+        except TypeError:
+            pass
+    if plan == "trial" and trial_start:
+        try:
+            if trial_start + timedelta(days=3) > now:
+                return "trial"
+        except TypeError:
+            pass
+    return "expired"
+
+
+def students(page: int, size: int, keyword: str = "") -> dict:
+    """真实注册客户（app_users），管理员按邮箱/昵称搜索。"""
+    page, size, offset = _clamp(page, size, max_size=100)
+    where, params = "WHERE 1=1", ()
+    kw = (keyword or "").strip()
+    if kw:
+        where += " AND (email ILIKE %s OR COALESCE(nickname,'') ILIKE %s)"
+        params = (f"%{kw}%", f"%{kw}%")
+    total = 0
+    rows = []
+    try:
+        total_row = query_one(f"SELECT COUNT(*)::int AS c FROM app_users {where}", params)
+        total = int((total_row or {}).get("c") or 0)
+        rows = query(
+            f"""SELECT id, email, nickname, plan, trial_start, plan_expiry,
+                       created_at, last_login_at, is_admin
+                FROM app_users {where}
+                ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+            (*params, size, offset),
+        )
+        summary_row = query_one(
+            """SELECT COUNT(*)::int AS total,
+                      COUNT(*) FILTER (
+                        WHERE plan = 'lifetime' OR (plan_expiry IS NOT NULL AND plan_expiry > now())
+                      )::int AS active,
+                      COUNT(*) FILTER (
+                        WHERE plan <> 'lifetime'
+                          AND COALESCE(plan_expiry, trial_start + interval '3 days') <= now()
+                      )::int AS expired,
+                      COUNT(*) FILTER (WHERE created_at >= date_trunc('month', now()))::int AS new_month
+               FROM app_users"""
+        ) or {}
+    except Exception:  # noqa: BLE001
+        summary_row = {}
+    items = []
+    for r in rows:
+        status = _membership_status(r.get("plan") or "trial", r.get("trial_start"), r.get("plan_expiry"))
+        email = r.get("email") or ""
+        items.append({
+            "id": str(r.get("id")),
+            "name": r.get("nickname") or email.split("@")[0],
+            "email": email,
+            "email_masked": mask_email(email),
+            "plan": r.get("plan") or "trial",
             "status": status,
-            "registered_at": f"{reg}T09:00:00",
-            "expires_at": f"{exp}T23:59:59",
-            "last_login_at": f"{last}+08:00",
-        }
-        for sid, name, local, domain, plan, status, reg, exp, last in _STUDENTS
-    ]
-    return _page(items, page, size, {"meta": {"seed": True, "note": "本地演示数据"}})
+            "registered_at": _iso(r.get("created_at")),
+            "expires_at": _iso(r.get("plan_expiry")),
+            "last_login_at": _iso(r.get("last_login_at")),
+            "is_admin": bool(r.get("is_admin")),
+        })
+    return _page(items, page, size, {
+        "summary": {
+            "total": summary_row.get("total", total),
+            "active": summary_row.get("active", 0),
+            "expired": summary_row.get("expired", 0),
+            "new_this_month": summary_row.get("new_month", 0),
+        },
+        "meta": {"source": "app_users", "seed": False},
+    })
+
+
+_PAYMENT_PLAN_PRICE = {"month": 98, "quarter": 268, "year": 688}
+_PAYMENT_CHANNELS = {"wechat": "微信", "alipay": "支付宝"}
+
+
+def _ensure_payments_table() -> None:
+    execute(
+        """CREATE TABLE IF NOT EXISTS app_payments (
+            id uuid PRIMARY KEY,
+            order_no text NOT NULL UNIQUE,
+            user_id uuid,
+            email text,
+            plan text NOT NULL,
+            amount numeric(10,2) NOT NULL,
+            channel text NOT NULL,
+            status text NOT NULL DEFAULT 'paid',
+            note text,
+            created_by text,
+            created_at timestamptz NOT NULL DEFAULT now(),
+            paid_at timestamptz
+        )"""
+    )
 
 
 def payments(page: int, size: int) -> dict:
-    """订单列表（本地演示数据，结构与真实接口一致）。"""
-    items = [
-        {
-            "order_no": order_no,
-            "user": user,
-            "plan": plan,
-            "amount": amount,
-            "method": method,
-            "status": status,
-            "created_at": f"{created}+08:00",
-            "paid_at": f"{created}+08:00" if status == "paid" else None,
-        }
-        for order_no, user, plan, amount, method, status, created in _PAYMENTS
-    ]
-    return _page(items, page, size, {"meta": {"seed": True, "note": "本地演示数据"}})
+    """真实人工收款订单（微信/支付宝），不再是种子数据。"""
+    page, size, offset = _clamp(page, size, max_size=100)
+    _ensure_payments_table()
+    rows = query(
+        """SELECT order_no, email, plan, amount, channel, status, note,
+                  created_at, paid_at FROM app_payments
+           ORDER BY created_at DESC LIMIT %s OFFSET %s""",
+        (size, offset),
+    )
+    total_row = query_one("SELECT COUNT(*)::int AS c FROM app_payments") or {}
+    summary = query_one(
+        """SELECT COUNT(*)::int AS count, COALESCE(SUM(amount),0) AS amount,
+                  COUNT(*) FILTER (WHERE status='paid')::int AS success
+           FROM app_payments"""
+    ) or {}
+    items = [{
+        "order_no": r.get("order_no"),
+        "user": mask_email(r.get("email") or ""),
+        "email_masked": mask_email(r.get("email") or ""),
+        "plan": r.get("plan"),
+        "amount": _iso(r.get("amount")),
+        "method": r.get("channel"),
+        "channel_label": _PAYMENT_CHANNELS.get(r.get("channel"), r.get("channel")),
+        "status": r.get("status"),
+        "note": r.get("note"),
+        "created_at": _iso(r.get("created_at")),
+        "paid_at": _iso(r.get("paid_at")),
+    } for r in rows]
+    return _page(items, page, size, {
+        "summary": {
+            "count": summary.get("count", 0),
+            "amount": _iso(summary.get("amount")),
+            "success": summary.get("success", 0),
+        },
+        "meta": {"source": "app_payments", "seed": False},
+    })
+
+
+def record_payment(payload: dict) -> dict:
+    """管理员登记一笔微信/支付宝人工收款，并开通/续费会员。"""
+    from . import auth
+
+    payload = payload or {}
+    email = (payload.get("email") or "").strip().lower()
+    plan = payload.get("plan") or "month"
+    channel = payload.get("channel") or "wechat"
+    admin_key = str(payload.get("admin_key") or "")
+    if not email:
+        raise ValueError("email 必填")
+    if plan not in _PAYMENT_PLAN_PRICE:
+        raise ValueError("plan 必须是 month / quarter / year")
+    if channel not in _PAYMENT_CHANNELS:
+        raise ValueError("channel 必须是 wechat / alipay")
+    amount = payload.get("amount")
+    amount = Decimal(str(amount)) if amount not in (None, "") else Decimal(_PAYMENT_PLAN_PRICE[plan])
+    user = auth.activate(email, plan, admin_key)
+    _ensure_payments_table()
+    order_no = f"PB{datetime.now().strftime('%Y%m%d%H%M%S')}{uuid.uuid4().hex[:4].upper()}"
+    execute(
+        """INSERT INTO app_payments
+           (id, order_no, email, plan, amount, channel, status, note, created_by, paid_at)
+           VALUES (%s,%s,%s,%s,%s,%s,'paid',%s,'admin',now())""",
+        (str(uuid.uuid4()), order_no, email, plan, amount, channel, payload.get("note") or ""),
+    )
+    return {"order_no": order_no, "user": user, "amount": float(amount),
+            "channel": channel, "channel_label": _PAYMENT_CHANNELS[channel]}
+
 
 
 # ---------- 工作台：反馈处理（真实读写 app_feedbacks） ----------
@@ -911,7 +1048,7 @@ def feedback_update(feedback_id: str, payload: dict) -> dict:
     为什么带 replied_at：状态一变就需要「谁在什么时候处理的」，否则工作台
     没法区分「已回复」和「一直没人管」。
     """
-    from ..db import execute, query_one
+    from ..db import execute, query, query_one
 
     payload = payload or {}
     status = payload.get("status")

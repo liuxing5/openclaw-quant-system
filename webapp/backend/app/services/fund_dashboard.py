@@ -117,10 +117,16 @@ def _breadth() -> dict:
 
 def _db_boards() -> dict:
     out = {}
+    meta = {
+        "concept": ("concept_code", "concept_name"),
+        "industry": ("industry_code", "industry_name"),
+    }
     for key, table in (("concept", "concept_board_quotes"), ("industry", "industry_board_quotes")):
+        code_col, name_col = meta[key]
         try:
             rows = query(
-                f"""SELECT code, name, pct_chg, net_inflow, lead_stock_name
+                f"""SELECT {code_col} AS code, {name_col} AS name, pct_chg,
+                           net_inflow * 1e8 AS main_net, lead_stock_name
                     FROM {table} WHERE trade_date=(SELECT MAX(trade_date) FROM {table})
                     ORDER BY net_inflow DESC NULLS LAST LIMIT 30"""
             )
@@ -128,7 +134,7 @@ def _db_boards() -> dict:
                 {
                     "code": r.get("code"), "name": r.get("name"),
                     "pct_chg": _f(r.get("pct_chg"), None),
-                    "main_net": _f(r.get("net_inflow")),
+                    "main_net": _f(r.get("main_net")),
                     "leader": r.get("lead_stock_name"),
                 }
                 for r in rows
@@ -136,6 +142,33 @@ def _db_boards() -> dict:
         except Exception:  # noqa: BLE001
             out[key] = []
     return out
+
+
+def _db_stocks() -> dict:
+    """实时个股资金不可用时的最近交易日兜底（TOP 10 流入/流出）。"""
+    def fetch(direction: str):
+        try:
+            sign = ">" if direction == "in" else "<"
+            rows = query(
+                f"""SELECT d.ts_code, d.pct_chg, d.amount, d.main_force_net,
+                          d.large_order_net, s.stock_name
+                   FROM daily_quotes d
+                   LEFT JOIN stock_basic_info s ON s.ts_code=d.ts_code
+                   WHERE d.trade_date=(SELECT MAX(trade_date) FROM daily_quotes)
+                     AND d.main_force_net IS NOT NULL AND d.main_force_net {sign} 0
+                   ORDER BY d.main_force_net {'DESC' if direction == 'in' else 'ASC'} LIMIT 10"""
+            )
+            return [{
+                "ts_code": r["ts_code"], "name": r.get("stock_name") or r["ts_code"],
+                "pct_chg": _f(r.get("pct_chg"), None),
+                "net_amount": _f(r.get("main_force_net")),
+                "super_net": _f(r.get("large_order_net")),
+                "net_ratio": None,
+            } for r in rows]
+        except Exception:  # noqa: BLE001
+            return []
+    return {"inflow": fetch("in"), "outflow": fetch("out")}
+
 
 
 def _db_breadth() -> dict:
@@ -200,6 +233,22 @@ def dashboard() -> dict:
         "medium_net": latest.get("medium", 0.0),
         "small_net": latest.get("small", 0.0),
     }
+    if not series:
+        # 东财分钟资金流 502 时，用最近交易日全市场主力/大单净额兜底
+        try:
+            r = query(
+                """SELECT SUM(main_force_net) AS main_net,
+                          SUM(large_order_net) AS large_net
+                   FROM daily_quotes
+                   WHERE trade_date=(SELECT MAX(trade_date) FROM daily_quotes)"""
+            )[0]
+            summary["main_net"] = _f(r.get("main_net"))
+            summary["large_net"] = _f(r.get("large_net"))
+            summary["super_net"] = summary["large_net"]
+            notes.append("分钟资金流不可用，主力/大单使用最近交易日全市场汇总")
+        except Exception:  # noqa: BLE001
+            pass
+
 
     if not concept_in and not industry_in:
         db_boards = _db_boards()
@@ -218,8 +267,14 @@ def dashboard() -> dict:
     inflow = [x for x in (stocks.get("inflow") or []) if (x.get("net_amount") or 0) > 0][:10]
     outflow = [x for x in (stocks.get("outflow") or []) if (x.get("net_amount") or 0) < 0][:10]
     if not inflow and not outflow:
-        live = False
-        notes.append("个股主力资金源不可用，个股资金榜为空")
+        db_stocks = _db_stocks()
+        inflow = [x for x in (db_stocks.get("inflow") or []) if (x.get("net_amount") or 0) > 0][:10]
+        outflow = [x for x in (db_stocks.get("outflow") or []) if (x.get("net_amount") or 0) < 0][:10]
+        if inflow or outflow:
+            notes.append("个股实时资金不可用，已回退最近交易日主力净额榜")
+        else:
+            live = False
+            notes.append("个股主力资金源不可用，个股资金榜为空")
 
     return {
         "as_of": now.isoformat(timespec="seconds"),
