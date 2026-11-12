@@ -162,7 +162,7 @@ def _db_stocks() -> dict:
                 "ts_code": r["ts_code"], "name": r.get("stock_name") or r["ts_code"],
                 "pct_chg": _f(r.get("pct_chg"), None),
                 "net_amount": _f(r.get("main_force_net")),
-                "super_net": _f(r.get("large_order_net")),
+                "super_net": None,
                 "net_ratio": None,
             } for r in rows]
         except Exception:  # noqa: BLE001
@@ -243,9 +243,10 @@ def dashboard() -> dict:
                    WHERE trade_date=(SELECT MAX(trade_date) FROM daily_quotes)"""
             )[0]
             summary["main_net"] = _f(r.get("main_net"))
-            summary["large_net"] = _f(r.get("large_net"))
-            summary["super_net"] = summary["large_net"]
-            notes.append("分钟资金流不可用，主力/大单使用最近交易日全市场汇总")
+            # daily_quotes.large_order_net 是占比（%），不是金额，不能用它冒充超大单金额
+            summary["large_net"] = 0.0
+            summary["super_net"] = 0.0
+            notes.append("分钟资金流不可用，主力使用最近交易日全市场汇总；大单/超大单金额暂缺")
         except Exception:  # noqa: BLE001
             pass
 

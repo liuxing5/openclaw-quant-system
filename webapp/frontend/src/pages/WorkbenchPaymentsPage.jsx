@@ -256,7 +256,7 @@ export default function WorkbenchPaymentsPage() {
                           {fmtAmount(amount)}
                         </td>
                         <td className="py-2 text-slate-500 dark:text-slate-400">
-                          {pick(o, ['channel', 'pay_method', 'payment_method', 'method'], '—')}
+                          {pick(o, ['channel_label', 'channel', 'pay_method', 'payment_method', 'method'], '—')}
                         </td>
                         <td className="py-2">
                           <Badge tone={STATUS_TONE[status] || 'slate'}>

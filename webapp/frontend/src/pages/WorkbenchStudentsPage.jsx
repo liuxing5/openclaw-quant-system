@@ -71,7 +71,7 @@ export default function WorkbenchStudentsPage() {
   return (
     <PageShell
       title="学员管理"
-      subtitle="学员名单、套餐与到期时间 · 邮箱由后端脱敏返回"
+      subtitle="真实注册客户 · 套餐、到期时间与最近登录 · 管理员可见完整邮箱"
       actions={
         <div className="flex items-center gap-2">
           <input
