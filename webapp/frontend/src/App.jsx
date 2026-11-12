@@ -14,6 +14,7 @@ const StrategyPage = lazy(() => import('./pages/StrategyPage.jsx'))
 const RecommendPage = lazy(() => import('./pages/RecommendPage.jsx'))
 const StockAnalysisPage = lazy(() => import('./pages/StockAnalysisPage.jsx'))
 const AiSkillsPage = lazy(() => import('./pages/AiSkillsPage.jsx'))
+const MorePage = lazy(() => import('./pages/MorePage.jsx'))
 const OilGoldPage = lazy(() => import('./pages/OilGoldPage.jsx'))
 const LimitLadderPage = lazy(() => import('./pages/LimitLadderPage.jsx'))
 const DragonTigerPage = lazy(() => import('./pages/DragonTigerPage.jsx'))
@@ -120,6 +121,7 @@ export default function App() {
           <Route path="/stock-analysis" element={<StockAnalysisPage />} />
           <Route path="/stock-analysis/:symbol" element={<StockAnalysisPage />} />
           <Route path="/ai/skills" element={<AiSkillsPage />} />
+          <Route path="/more" element={<MorePage />} />
           <Route path="/oil-gold" element={<OilGoldPage />} />
           <Route path="/limit-ladder" element={<LimitLadderPage />} />
           <Route path="/dragon-tiger" element={<DragonTigerPage />} />
