@@ -128,7 +128,7 @@ def _db_boards() -> dict:
                 f"""SELECT {code_col} AS code, {name_col} AS name, pct_chg,
                            net_inflow * 1e8 AS main_net, lead_stock_name
                     FROM {table} WHERE trade_date=(SELECT MAX(trade_date) FROM {table})
-                    ORDER BY net_inflow DESC NULLS LAST LIMIT 30"""
+                    ORDER BY net_inflow DESC NULLS LAST LIMIT 200"""
             )
             out[key] = [
                 {
@@ -254,10 +254,10 @@ def dashboard() -> dict:
 
     if not concept_in and not industry_in:
         db_boards = _db_boards()
-        concept_in = sorted(db_boards.get("concept") or [], key=lambda x: -(x.get("main_net") or 0))[:10]
-        concept_out = sorted(db_boards.get("concept") or [], key=lambda x: (x.get("main_net") or 0))[:10]
-        industry_in = sorted(db_boards.get("industry") or [], key=lambda x: -(x.get("main_net") or 0))[:10]
-        industry_out = sorted(db_boards.get("industry") or [], key=lambda x: (x.get("main_net") or 0))[:10]
+        concept_in = sorted([x for x in (db_boards.get("concept") or []) if (x.get("main_net") or 0) > 0], key=lambda x: -(x.get("main_net") or 0))[:10]
+        concept_out = sorted([x for x in (db_boards.get("concept") or []) if (x.get("main_net") or 0) < 0], key=lambda x: (x.get("main_net") or 0))[:10]
+        industry_in = sorted([x for x in (db_boards.get("industry") or []) if (x.get("main_net") or 0) > 0], key=lambda x: -(x.get("main_net") or 0))[:10]
+        industry_out = sorted([x for x in (db_boards.get("industry") or []) if (x.get("main_net") or 0) < 0], key=lambda x: (x.get("main_net") or 0))[:10]
         live = False
         notes.append("板块资金实时源不可用，已回退最近交易日快照")
 
