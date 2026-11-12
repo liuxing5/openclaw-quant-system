@@ -1,7 +1,7 @@
 {
   "source": "funnel_strategy",
   "generated_at": "2026-11-12",
-  "generated_at_time": "2026-11-12 14:45:19",
+  "generated_at_time": "2026-11-12 15:18:06",
   "timezone_note": "generated_at/generated_at_time 为北京时间(UTC+8)；data_as_of = daily_quotes 最新交易日（数据实际截止日）",
   "data_as_of": "2026-11-11",
   "quote_coverage": {
@@ -20,24 +20,24 @@
   "morning_reuse_note": "",
   "sample_range": [
     "2026-01-05",
-    "2026-11-10"
+    "2026-11-11"
   ],
-  "total_candidates": 400,
-  "unique_signals": 400,
+  "total_candidates": 402,
+  "unique_signals": 402,
   "signals_out_of_matrix": 0,
   "dropped_by_reason": {
     "10": {
-      "out_of_range": 9,
+      "out_of_range": 11,
       "no_entry": 1,
       "no_exit": 2
     },
     "20": {
-      "out_of_range": 27,
+      "out_of_range": 29,
       "no_entry": 0,
       "no_exit": 6
     },
     "60": {
-      "out_of_range": 124,
+      "out_of_range": 126,
       "no_entry": 0,
       "no_exit": 7
     }
