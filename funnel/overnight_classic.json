@@ -1,7 +1,7 @@
 {
   "title": "最严格杨永兴版",
   "date": "2026-11-13",
-  "updated": "2026-11-13 06:40:11",
+  "updated": "2026-11-13 07:17:29",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
@@ -56,38 +56,38 @@
     {
       "code": "600829.SH",
       "name": "人民同泰",
-      "score": 82.7,
+      "score": 90.9,
       "entry": 10.1,
-      "stop": 10.004,
+      "stop": 10.023,
       "target": 10.403,
-      "quant_score": 82.7,
+      "quant_score": 90.9,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 10.004,
-      "pct_chg": 3.27,
+      "vwap": 10.023,
+      "pct_chg": 4.09,
       "confirmed": true,
       "path": "原版确认"
     },
     {
       "code": "600088.SH",
       "name": "中视传媒",
-      "score": 83.1,
+      "score": 87.6,
       "entry": 13.74,
-      "stop": 13.712,
+      "stop": 13.715,
       "target": 14.152,
-      "quant_score": 83.1,
+      "quant_score": 87.6,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 13.712,
-      "pct_chg": 3.31,
+      "vwap": 13.715,
+      "pct_chg": 3.76,
       "confirmed": true,
       "path": "原版确认"
     }
