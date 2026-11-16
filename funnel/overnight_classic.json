@@ -1,7 +1,7 @@
 {
   "title": "最严格杨永兴版",
   "date": "2026-11-16",
-  "updated": "2026-11-16 07:14:46",
+  "updated": "2026-11-16 06:40:28",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
@@ -54,40 +54,40 @@
   ],
   "candidates": [
     {
-      "code": "002324.SZ",
-      "name": "普利特",
-      "score": 82.2,
-      "entry": 9.24,
-      "stop": 9.306,
-      "target": 9.517,
-      "quant_score": 82.2,
+      "code": "603103.SH",
+      "name": "横店影视",
+      "score": 89.4,
+      "entry": 20.15,
+      "stop": 20.164,
+      "target": 20.755,
+      "quant_score": 89.4,
       "tags": [
         "强于大盘",
         "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 9.306,
-      "pct_chg": 3.22,
+      "vwap": 20.164,
+      "pct_chg": 3.94,
       "confirmed": false,
       "path": "待确认"
     },
     {
-      "code": "603906.SH",
-      "name": "龙蟠科技",
-      "score": 80.7,
-      "entry": 14.46,
-      "stop": 14.472,
-      "target": 14.894,
-      "quant_score": 80.7,
+      "code": "600829.SH",
+      "name": "人民同泰",
+      "score": 98.1,
+      "entry": 10.59,
+      "stop": 10.601,
+      "target": 10.908,
+      "quant_score": 98.1,
       "tags": [
         "强于大盘",
         "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 14.472,
-      "pct_chg": 3.07,
+      "vwap": 10.601,
+      "pct_chg": 4.81,
       "confirmed": false,
       "path": "待确认"
     }
