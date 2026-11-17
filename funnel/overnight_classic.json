@@ -1,7 +1,7 @@
 {
   "title": "最严格杨永兴版",
-  "date": "2026-11-16",
-  "updated": "2026-11-16 07:14:46",
+  "date": "2026-11-17",
+  "updated": "2026-11-17 06:40:06",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
@@ -47,52 +47,51 @@
     },
     {
       "name": "回踩 VWAP 不破",
-      "pass": 0,
-      "eliminated": 2,
+      "pass": 1,
+      "eliminated": 1,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
   "candidates": [
     {
-      "code": "002324.SZ",
-      "name": "普利特",
-      "score": 82.2,
-      "entry": 9.24,
-      "stop": 9.306,
-      "target": 9.517,
-      "quant_score": 82.2,
+      "code": "002042.SZ",
+      "name": "华孚时尚",
+      "score": 81.9,
+      "entry": 3.56,
+      "stop": 3.595,
+      "target": 3.667,
+      "quant_score": 81.9,
       "tags": [
         "强于大盘",
-        "回踩不破",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 9.306,
-      "pct_chg": 3.22,
+      "vwap": 3.595,
+      "pct_chg": 3.19,
       "confirmed": false,
       "path": "待确认"
     },
     {
-      "code": "603906.SH",
-      "name": "龙蟠科技",
-      "score": 80.7,
-      "entry": 14.46,
-      "stop": 14.472,
-      "target": 14.894,
-      "quant_score": 80.7,
+      "code": "001314.SZ",
+      "name": "亿道信息",
+      "score": 84.6,
+      "entry": 41.73,
+      "stop": 41.476,
+      "target": 42.982,
+      "quant_score": 84.6,
       "tags": [
+        "VWAP上方",
         "强于大盘",
-        "回踩不破",
-        "待确认"
+        "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 14.472,
-      "pct_chg": 3.07,
-      "confirmed": false,
-      "path": "待确认"
+      "vwap": 41.476,
+      "pct_chg": 3.46,
+      "confirmed": true,
+      "path": "原版确认"
     }
   ],
   "candidate_count": 2,
-  "confirmed_count": 0,
+  "confirmed_count": 1,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
