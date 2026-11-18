@@ -1,116 +1,97 @@
 {
   "title": "最严格杨永兴版",
-  "date": "2026-11-17",
-  "updated": "2026-11-17 07:14:45",
+  "date": "2026-11-18",
+  "updated": "2026-11-18 06:39:59",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "只做尾盘，不碰 14:55 突击拉高"
     },
     {
       "name": "主板 + 涨幅 3%~5%",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "仅 60/00 主板，排除 300/688/ST"
     },
     {
       "name": "近 20 日涨停基因",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "近 20 个交易日至少一次涨停"
     },
     {
       "name": "量比 > 1",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "当日量能高于近 5 日均量"
     },
     {
       "name": "换手率 5%~10%",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "兼顾流动性与不过热"
     },
     {
       "name": "流通市值 50~200亿",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "中盘弹性区间"
     },
     {
       "name": "VWAP + 强于大盘",
-      "pass": 3,
+      "pass": 2,
       "eliminated": 0,
       "rule": "全天在 VWAP 上方，且强于上证/深证"
     },
     {
       "name": "回踩 VWAP 不破",
       "pass": 1,
-      "eliminated": 2,
+      "eliminated": 1,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
   "candidates": [
     {
-      "code": "002042.SZ",
-      "name": "华孚时尚",
-      "score": 93.5,
-      "entry": 3.56,
-      "stop": 3.594,
-      "target": 3.667,
-      "quant_score": 93.5,
-      "tags": [
-        "强于大盘",
-        "回踩不破",
-        "待确认"
-      ],
-      "source": "腾讯1m",
-      "vwap": 3.594,
-      "pct_chg": 4.35,
-      "confirmed": false,
-      "path": "待确认"
-    },
-    {
-      "code": "001314.SZ",
-      "name": "亿道信息",
-      "score": 89.3,
-      "entry": 41.73,
-      "stop": 41.509,
-      "target": 42.982,
-      "quant_score": 89.3,
+      "code": "000595.SZ",
+      "name": "新能股份",
+      "score": 82.9,
+      "entry": 5.62,
+      "stop": 5.581,
+      "target": 5.789,
+      "quant_score": 82.9,
       "tags": [
         "VWAP上方",
         "强于大盘",
         "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 41.509,
-      "pct_chg": 3.93,
+      "vwap": 5.581,
+      "pct_chg": 3.29,
       "confirmed": true,
       "path": "原版确认"
     },
     {
-      "code": "002971.SZ",
-      "name": "和远气体",
-      "score": 80.2,
-      "entry": 33.71,
-      "stop": 34.027,
-      "target": 34.721,
-      "quant_score": 80.2,
+      "code": "600881.SH",
+      "name": "亚泰集团",
+      "score": 84.7,
+      "entry": 1.79,
+      "stop": 1.812,
+      "target": 1.844,
+      "quant_score": 84.7,
       "tags": [
         "强于大盘",
         "待确认"
       ],
       "source": "腾讯1m",
-      "vwap": 34.027,
-      "pct_chg": 3.02,
+      "vwap": 1.812,
+      "pct_chg": 3.47,
       "confirmed": false,
       "path": "待确认"
     }
   ],
-  "candidate_count": 3,
+  "candidate_count": 2,
   "confirmed_count": 1,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }

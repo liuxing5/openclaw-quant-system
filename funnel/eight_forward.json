@@ -1,7 +1,7 @@
 {
   "source": "overnight_8step",
   "generated_at": "2026-11-18",
-  "generated_at_time": "2026-11-18 11:51:38",
+  "generated_at_time": "2026-11-18 14:42:09",
   "timezone_note": "generated_at/generated_at_time 为北京时间(UTC+8)；data_as_of = daily_quotes 最新交易日（数据实际截止日）",
   "data_as_of": "2026-11-17",
   "quote_coverage": {
@@ -18,16 +18,16 @@
   "excluded_morning_reuse": 0,
   "run_mode_breakdown": {
     "afternoon": 544,
-    "intraday": 406
+    "intraday": 407
   },
   "morning_reuse_note": "aggregate.py morning 模式在无合格候选时会把昨日 afternoon 选中候选改日期复制为今日信号（logic_tags 含 morning_reuse/盘前复用），读库时已剔除，否则会虚增样本量 n；excluded_morning_reuse 为被剔除行数",
   "sample_range": [
     "2026-01-05",
-    "2026-11-17"
+    "2026-11-18"
   ],
-  "total_candidates": 950,
-  "unique_signals": 717,
-  "signals_out_of_matrix": 30,
+  "total_candidates": 951,
+  "unique_signals": 718,
+  "signals_out_of_matrix": 31,
   "dropped_by_reason": {
     "10": {
       "out_of_range": 38,
