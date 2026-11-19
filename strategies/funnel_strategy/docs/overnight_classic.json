@@ -1,7 +1,7 @@
 {
   "title": "最严格杨永兴版",
   "date": "2026-11-19",
-  "updated": "2026-11-19 06:40:31",
+  "updated": "2026-11-19 07:15:22",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
@@ -47,32 +47,33 @@
     },
     {
       "name": "回踩 VWAP 不破",
-      "pass": 0,
-      "eliminated": 1,
+      "pass": 1,
+      "eliminated": 0,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
   "candidates": [
     {
-      "code": "605577.SH",
-      "name": "龙版传媒",
-      "score": 90.9,
-      "entry": 14.76,
-      "stop": 15.043,
-      "target": 15.203,
-      "quant_score": 90.9,
+      "code": "600770.SH",
+      "name": "综艺股份",
+      "score": 89.8,
+      "entry": 5.41,
+      "stop": 5.365,
+      "target": 5.572,
+      "quant_score": 89.8,
       "tags": [
+        "VWAP上方",
         "强于大盘",
-        "待确认"
+        "回踩不破"
       ],
       "source": "腾讯1m",
-      "vwap": 15.043,
-      "pct_chg": 4.09,
-      "confirmed": false,
-      "path": "待确认"
+      "vwap": 5.365,
+      "pct_chg": 3.98,
+      "confirmed": true,
+      "path": "原版确认"
     }
   ],
   "candidate_count": 1,
-  "confirmed_count": 0,
+  "confirmed_count": 1,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。"
 }
