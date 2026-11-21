@@ -81,6 +81,7 @@ def test_select():
         return len(v2.select(f, regime))
 
     check("趋势破坏(ma20<ma60) -> 0", blocked(ma20=8.9, ma60=9.0) == 0)
+    check("跌破MA20 -> 0", blocked(price=9.0) == 0)
     check("动量不足 -> 0", blocked(ret20=0.01) == 0)
     check("回踩过浅(-1%) -> 0", blocked(pct=-1.0) == 0)
     check("回踩过深(-8%) -> 0", blocked(pct=-8.0) == 0)

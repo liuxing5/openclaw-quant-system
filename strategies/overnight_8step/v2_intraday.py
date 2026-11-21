@@ -104,8 +104,10 @@ def select(feat: pd.DataFrame, regime: Dict[str, Any], cfg: Dict[str, Any] = CON
     f = feat.copy()
     today = pd.Timestamp(regime["date"])
     f["list_date"] = pd.to_datetime(f.get("list_date"), errors="coerce")
+    f["above_ma20"] = (f["price"] > f["ma20"]).astype(float)
 
-    step2 = (f["ma20"] > f["ma60"]) & (f["ret20"] > cfg["ret20_min"])
+    step2 = ((f["above_ma20"] > 0) & (f["ma20"] > f["ma60"])
+             & (f["ret20"] > cfg["ret20_min"]))
     step3 = f["pct"].between(cfg["pullback_lo"], cfg["pullback_hi"])
     step4 = f["close_pos"] < cfg["close_pos_max"]
     step5 = (f["amount"] >= cfg["min_amount"]) & f["circ_mcap"].between(cfg["mktcap_lo"], cfg["mktcap_hi"])
