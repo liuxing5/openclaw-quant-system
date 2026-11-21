@@ -3,7 +3,9 @@ name: overnight_v2
 # 14:30 扫描（北京时间 14:30 = UTC 06:30）
 on:
   schedule:
-    - cron: '30 6 * * 1-5'
+    # GitHub cron 有 0~15 分钟延迟；双触发 + 当日幂等，尽量卡在 14:30 前完成扫描
+    - cron: '29 6 * * 1-5'
+    - cron: '31 6 * * 1-5'
   workflow_dispatch:
 
 jobs:
@@ -42,7 +44,12 @@ jobs:
           POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
           POSTGRES_POOL_SIZE: 5
         run: |
-          python strategies/overnight_8step/v2_intraday.py --date "${{ steps.check.outputs.date }}"
+          DATE="${{ steps.check.outputs.date }}"
+          if [ -f docs/overnight_v2/latest.json ] && grep -q "\"trade_date\": \"$DATE\"" docs/overnight_v2/latest.json; then
+            echo "already scanned $DATE, skip"
+            exit 0
+          fi
+          python strategies/overnight_8step/v2_intraday.py --date "$DATE"
           python scripts/build_overnight_v2_page.py
 
       - name: Persist v2 snapshot
