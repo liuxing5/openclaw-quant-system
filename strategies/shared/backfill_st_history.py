@@ -35,7 +35,10 @@ import time
 import socket
 from datetime import date, datetime, timedelta, timezone
 
-import baostock as bs
+try:
+    import baostock as bs
+except ImportError:  # 单测/纯函数环境不需要 baostock（如 test_shared_base 的 _st_intervals_from_flags）
+    bs = None
 
 # 防止 baostock 网络请求卡死
 socket.setdefaulttimeout(20)
@@ -167,6 +170,8 @@ def _fetch_st_flags(bs_code: str, start_date: str, end_date: str) -> list:
     空列表仅表示该股确实无数据；此前失败也返回 []，会被误当成
     "无 ST"静默写偏。瞬时网络失败自动重试 2 次。
     """
+    if bs is None:
+        raise RuntimeError("baostock 未安装：回填 ST 历史需要 baostock")
     for attempt in range(3):
         try:
             rs = bs.query_history_k_data_plus(
@@ -284,6 +289,10 @@ def run_backfill(
             print(f"⚠️ --shard 格式错误（应为 i/n）: {shard}，忽略分片")
 
     print(f"✓ 待处理股票: {len(stocks)} 只")
+
+    if bs is None:
+        print("❌ baostock 未安装：pip install baostock 后重试")
+        return
 
     lg = bs.login()
     if lg.error_code != '0':
