@@ -33,7 +33,7 @@ def main():
     out["by_exit"] = {k: {"n": int(len(g)), "mean": round(float(g.net.mean()), 4),
                           "win": round(float((g.net > 0).mean()), 3)}
                       for k, g in d.groupby("why")}
-    out["monthly"] = [{"ym": f"{y}-{m:02d}", "ret": round(float(v), 4)}
+    out["monthly"] = [{"ym": f"{y}-{m:02d}", "ret": round(float(v - 1), 4)}
                       for (y, m), v in (1 + daily).groupby(
                           [daily.index.year, daily.index.month]).prod().items()]
     out["trades"] = [{"date": str(r.date.date()), "code": r.code, "tier": r.tier,
