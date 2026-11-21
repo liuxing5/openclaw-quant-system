@@ -35,11 +35,18 @@ steps = {
     "8_tradable": u,
 }
 mask = pd.Series(True, index=df.index)
-for v in steps.values():
+for k, v in steps.items():
+    if k == "7_gap":
+        continue
     mask &= v
 
-d = df[mask].dropna(subset=["r_oc2"]).sort_values(["trade_date", "rank_gap"])
-picks = d.groupby("trade_date").head(TOP_N).copy()
+# 可执行口径：T 日收盘只发布「收盘最弱」的 30 只观察池；
+# T+1 开盘在观察池内按缺口 -4%~-1% 过滤，缺口最浅的 5 只买入。
+d = df[mask].dropna(subset=["r_oc2"]).sort_values(["trade_date", "close_pos"])
+watch = d.groupby("trade_date").head(30)
+picks = (watch[watch.gap.between(-0.04, -0.01)]
+         .sort_values(["trade_date", "gap"])
+         .groupby("trade_date").head(TOP_N).copy())
 daily = picks.groupby("trade_date")["r_oc2"].mean() - COST
 bench = df[u].dropna(subset=["r_oc2"]).groupby("trade_date")["r_oc2"].mean() - COST
 

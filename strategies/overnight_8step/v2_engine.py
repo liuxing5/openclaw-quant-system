@@ -51,7 +51,7 @@ CONFIG: Dict[str, Any] = {
     "gap_lo": -0.04,
     "gap_hi": -0.01,
     "max_positions": 5,
-    "watchlist_max": 12,
+    "watchlist_max": 30,
     "position_pct": 0.20,
     "min_list_days": 60,
     "source": "overnight_8step_v2",
