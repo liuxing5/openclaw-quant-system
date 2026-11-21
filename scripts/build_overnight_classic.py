@@ -316,14 +316,16 @@ def build(day: str, live: bool = False) -> dict:
         {"name": "回踩 VWAP 不破", "pass": confirmed_count, "eliminated": len(rows) - confirmed_count, "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"},
     ]
     return {
-        "title": "最严格杨永兴版",
+        "title": "最严格杨永兴版 · 14:30 全市场主板",
+        "schedule": "14:30 全市场主板扫描 → 14:40-14:50 买入 → 次日 09:30-10:00 卖出",
         "date": day,
         "updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "steps": steps,
         "candidates": candidates,
         "candidate_count": len(candidates),
         "confirmed_count": confirmed_count,
-        "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；次日 9:30-9:40 必须清仓。",
+        "note": ("严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；14:40-14:50 买入，"
+                 "次日 09:30-10:00 卖出。⚠️ 5 分钟线同口径回测为 −0.52%/笔，先观察，不建议重仓。"),
     }
 
 

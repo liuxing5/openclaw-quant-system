@@ -1,6 +1,8 @@
 name: overnight_v2
 
-# 14:30 扫描（北京时间 14:30 = UTC 06:30）
+# 14:30 全市场扫描（北京时间 14:30 = UTC 06:30）
+# 八步 v3.1（A/B/C 三档） + 杨永兴原版（全市场主板）都在这个 workflow 里跑，
+# 保证 14:40-14:50 买入窗口前拿到候选。
 on:
   schedule:
     # GitHub cron 有 0~15 分钟延迟；双触发 + 当日幂等，尽量卡在 14:30 前完成扫描
@@ -34,7 +36,7 @@ jobs:
           echo "date=$D" >> $GITHUB_OUTPUT
           echo "is_trading=$R" >> $GITHUB_OUTPUT
 
-      - name: Scan at 14:30
+      - name: Scan full market at 14:30 (8-step v3.1)
         if: steps.check.outputs.is_trading == 'true'
         env:
           POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
@@ -45,21 +47,34 @@ jobs:
           POSTGRES_POOL_SIZE: 5
         run: |
           DATE="${{ steps.check.outputs.date }}"
-          if [ -f docs/overnight_v2/latest.json ] && grep -q "\"trade_date\": \"$DATE\"" docs/overnight_v2/latest.json; then
+          if [ -f docs/overnight_v2/latest_1430.json ] && grep -q "\"trade_date\": \"$DATE\"" docs/overnight_v2/latest_1430.json; then
             echo "already scanned $DATE, skip"
             exit 0
           fi
-          python strategies/overnight_8step/v2_intraday.py --date "$DATE"
+          python strategies/overnight_8step/full_market_1430.py --date "$DATE"
           python scripts/build_overnight_v2_page.py
 
-      - name: Persist v2 snapshot
+      - name: Build strict Yang Yongxing classic at 14:30
+        if: steps.check.outputs.is_trading == 'true'
+        continue-on-error: true
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_POOL_SIZE: 5
+        run: |
+          python scripts/build_overnight_classic.py --date "${{ steps.check.outputs.date }}" --live
+
+      - name: Persist v3.1 + classic snapshot
         if: steps.check.outputs.is_trading == 'true'
         continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/overnight_v2/latest.json strategies/funnel_strategy/docs/overnight_v2.html
+          git add docs/overnight_v2/latest_1430.json strategies/funnel_strategy/docs/overnight_v2.html strategies/funnel_strategy/docs/overnight_classic.json
           git diff --cached --quiet && exit 0
-          git commit -m "data: update overnight v2 scan ${{ steps.check.outputs.date }} [skip ci]"
+          git commit -m "data: update 14:30 v3.1 + classic scan ${{ steps.check.outputs.date }} [skip ci]"
           git pull --rebase --autostash
           git push

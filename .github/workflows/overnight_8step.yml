@@ -263,8 +263,8 @@ jobs:
         POSTGRES_POOL_SIZE: 5
       run: |
         NOW=$(TZ=Asia/Shanghai date +%H%M)
-        if [ "$NOW" -lt 1430 ]; then
-          echo "盘中初筛阶段不生成原版：当前 $NOW"; exit 0
+        if [ "$NOW" -lt 1430 ] || [ "$NOW" -gt 1455 ]; then
+          echo "不在 14:30-14:55 窗口，跳过原版（当前 $NOW）"; exit 0
         fi
         DATE=$(TZ=Asia/Shanghai date +%F)
         python scripts/build_overnight_classic.py --date "$DATE" --live

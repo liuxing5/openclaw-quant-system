@@ -672,11 +672,14 @@ def render_classic_section(output_dir: Path) -> str:
     if not cards:
         cards = [empty_state("🔍", "本期暂无符合原版条件的标的", "严格条件未触发，不强行凑数", "原版策略已正常执行")]
     note = html_escape(str(data.get("note") or ""))
+    schedule = html_escape(str(data.get("schedule") or ""))
     return (
         f'<div class="container" style="padding-top:0">'
         f'<div class="section" style="margin-top:16px">'
-        f'<h2>🧭 {html_escape(str(data.get("title") or "八步隔夜法·原版"))}<span class="section-subtitle">{html_escape(str(data.get("date") or ""))} 15:00:00</span></h2>'
-        f'<div class="steps-area">{step_html}</div>'
+        f'<h2>🧭 {html_escape(str(data.get("title") or "八步隔夜法·原版"))}'
+        f'<span class="section-subtitle">{html_escape(str(data.get("date") or ""))} 14:30</span></h2>'
+        + (f'<div class="step-note">⏰ {schedule}</div>' if schedule else '')
+        + f'<div class="steps-area">{step_html}</div>'
         f'<h3 style="font-size:.9rem;margin:14px 0 8px;">候选标的 ({len(candidates)}只，确认{data.get("confirmed_count", 0)}只)</h3>'
         f'<div class="cards-grid">{"".join(cards)}</div>'
         f'<div style="font-size:.66rem;color:var(--text-secondary);margin-top:8px;">{note}</div>'
@@ -715,7 +718,11 @@ def generate_unified_html(output_dir=None, trade_date=None):
         llm_candidates, llm_date = load_candidates('llm_multisource', trade_date=trade_date)
     llm_timestamp = load_strategy_timestamp('llm_multisource', llm_date)
 
-    eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
+    eight_source = 'overnight_8step_v31'
+    eight_candidates, eight_date = load_candidates(eight_source, trade_date=trade_date)
+    if not eight_candidates:
+        eight_source = 'overnight_8step'
+        eight_candidates, eight_date = load_candidates(eight_source, trade_date=trade_date)
     # 并行 workflow 竞争：overnight_8step 和 funnel 同时 15:10 触发，
     # zuiyou1.py 可能还在写入，最多重试 8 次（每次 15s，共 120s）
     # 优化：生成历史日期报告时跳过重试（历史数据不会变化），仅当天日期重试
@@ -732,7 +739,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
         for _retry in range(2):
             _time.sleep(5)
             print(f"   overnight_8step 数据未就绪 (当前={eight_date}, 期望>={target_date_str})，5s后重试 ({_retry+1}/2)...")
-            eight_candidates, eight_date = load_candidates('overnight_8step', trade_date=trade_date)
+            eight_candidates, eight_date = load_candidates(eight_source, trade_date=trade_date)
             eight_date_str_for_check = str(eight_date) if eight_date else None
             if eight_candidates and eight_date_str_for_check and eight_date_str_for_check >= target_date_str:
                 break
@@ -752,17 +759,23 @@ def generate_unified_html(output_dir=None, trade_date=None):
         eight_timestamp = f"{target_date_str} 15:10:00"
         eight_scan = None
     eight_date_str = str(eight_date) if eight_date else None
-    eight_timestamp = load_strategy_timestamp('overnight_8step', eight_date) or eight_timestamp
+    eight_timestamp = load_strategy_timestamp(eight_source, eight_date) or eight_timestamp
+    if eight_source == 'overnight_8step_v31' and eight_date:
+        eight_timestamp = f"{eight_date} 14:30"
 
     llm_scan = load_scan_stats('llm_multisource', llm_date)
-    eight_scan = load_scan_stats('overnight_8step', eight_date)
+    eight_scan = load_scan_stats(eight_source, eight_date)
     if eight_candidates:
         # 过滤零候选审计行；盘中 selected=True 的候选即使被 15:10 宽度门控拦截，
         # 也要展示为“门控观察”，不能直接清空导致用户看到“选出来了但没显示”。
         eight_candidates = [c for c in eight_candidates if not str(c.get('ts_code', '')).endswith('.AUDIT')]
         selected = [c for c in eight_candidates if c.get('selected')]
         if selected:
-            eight_candidates = selected
+            # v3.1：A/B 可买，C 级保留为“观察不买”
+            eight_candidates = [
+                c for c in eight_candidates
+                if c.get('selected') or any('C级' in str(t) for t in (c.get('logic_tags') or []))
+            ]
     eight_gated = bool((eight_scan or {}).get('filter_stats', {}).get('门控前通过'))
     if not eight_candidates:
         # 报告日以漏斗/LLM 数据日为准，避免八步法单独跑在次日时把 10-27 挂到 10-26 报告上
@@ -826,6 +839,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
     funnel_fwd_html = _fwd_block(funnel_fwd)
     llm_fwd_html = _fwd_block(llm_fwd)
     eight_fwd_html = _fwd_block(eight_fwd)
+    if eight_source == 'overnight_8step_v31':
+        # v3.1 全市场口径的前向收益单独发布，避免把旧 8step 口径混在新候选下
+        eight_fwd_html = ""
 
     display_date = str(funnel_date or llm_date or eight_date or get_beijing_date())
 
@@ -968,6 +984,35 @@ def generate_unified_html(output_dir=None, trade_date=None):
             '<div class="step-note" style="color:var(--stop-color);">'
             f'⚠️ 市场宽度门控触发：原始通过 {stats.get("门控前通过")} 只，'
             '按风控今日不执行；上方为只读诊断链路。</div>'
+        )
+
+    if eight_source == 'overnight_8step_v31':
+        v31_rows = [
+            ("1 大盘环境", "全市场", "等权指数>10日线；全市场站上 MA20 比例 20%~70%"),
+            ("2 趋势结构", "趋势结构", "T-1 收盘>MA20>MA60；20 日动量>3%；5 日趋势>-2%；近 20 日涨停≤1"),
+            ("3 尾盘回踩", "尾盘回踩", "14:30 涨跌幅 -7.0%~-2.0%"),
+            ("4 恐慌收盘", "恐慌收盘", "14:30 位置<0.2，且不低于 VWAP 的 -2%"),
+            ("5 流动性", "流动性", "成交额≥1 亿；流通市值 50~2000 亿"),
+            ("6 换手量能", "换手量能", "换手 1.5%~8%；量能≥20 日均额 80%"),
+            ("A 级可买", "A级", "全部条件通过；14:40-14:50 买入，单票 20%"),
+            ("B 级小仓", "B级", "差一项质量条件；单票 10%"),
+            ("C 级观察", "C级", "只观察不买，等 A/B 信号"),
+        ]
+        eight_steps_html = ""
+        for sname, key, rule in v31_rows:
+            cnt = stats.get(key, 0)
+            eight_steps_html += f"""
+            <div class="step-row" title="{html_escape(rule)}">
+              <span class="step-name">{sname}</span>
+              <span class="step-pass">{cnt}</span>
+              <span class="rule-inline">{html_escape(rule)}</span>
+            </div>"""
+        if mood_text:
+            eight_steps_html += f'<div class="step-note"> {mood_text}</div>'
+        eight_steps_html += (
+            '<div class="step-note">⏰ 全市场 14:30 扫描；14:40-14:50 买入；'
+            '次日 09:25 看缺口，10:00 前卖出。前向收益统计见 '
+            '<a href="./overnight_v2.html">八步 v3 报告</a>。</div>'
         )
 
     # ── LLM多源步骤 ──
@@ -1733,8 +1778,8 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
   <div class="four-col">
     <!-- ========== 八步法 ========== -->
     <div class="section">
-      <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
-      <div style="margin:-2px 0 10px"><a href="./overnight_v2.html" style="font-size:.8rem;color:#2563eb;text-decoration:none">→ 八步法 v3.0（融合版：14:30 扫描 / 14:40-15:00 买入 / 次日 10:00 前卖出）</a></div>
+      <h2>🔮 八步隔夜法 v3.1 · 全市场 14:30<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
+      <div style="margin:-2px 0 10px"><a href="./overnight_v2.html" style="font-size:.8rem;color:#2563eb;text-decoration:none">→ 八步 v3 全市场回测与逐笔审计</a></div>
       <div class="steps-area">{eight_steps_html}{eight_fwd_html}</div>
       {eight_h3}
       {eight_stale_html}
