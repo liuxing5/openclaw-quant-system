@@ -1014,6 +1014,12 @@ def generate_unified_html(output_dir=None, trade_date=None):
             '次日 09:25 看缺口，10:00 前卖出。前向收益统计见 '
             '<a href="./overnight_v2.html">八步 v3 报告</a>。</div>'
         )
+        if stats.get('regime_blocked'):
+            eight_steps_html += (
+                '<div class="step-note" style="color:var(--stop-color);">'
+                f'⚠️ 大盘门控关闭（广度 {sentiment or "—"}%）：A/B 仅观察，今日不执行买入；'
+                'C 级不买。</div>'
+            )
 
     # ── LLM多源步骤 ──
     llm_steps_html = ""
