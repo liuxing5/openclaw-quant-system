@@ -57,7 +57,9 @@ def build():
     latest = _load("latest.json", {})
     s = bt.get("stats", {})
     months = bt.get("monthly", [])
-    trades = bt.get("trades", [])
+    audit = _load("v3_audit.json", {})
+    atrades = audit.get("trades", [])
+    amonth = audit.get("monthly", [])
 
     cards = f"""
     <div class="cards">
@@ -100,18 +102,18 @@ def build():
         f"<td>{v['win']*100:.1f}%</td><td class='{_cls(v['ann'])}'>{_pct(v['ann'])}</td>"
         f"<td class='down'>{_pct(v['dd'])}</td></tr>"
         for k, v in s.get("cost_sensitivity", {}).items())
-    month_rows = ""
-    for i in range(0, len(months), 6):
-        chunk = months[i:i + 6]
-        month_rows += "<tr>" + "".join(
-            f"<td>{m['ym']}<br><span class='{_cls(m['ret'])}'>{m['ret']*100:+.1f}%</span></td>"
-            for m in chunk) + "</tr>"
+    month_rows = "".join(
+        f"<tr><td>{m['ym']}</td><td>{m['trades']}</td><td>{m['wins']}/{m['losses']}</td>"
+        f"<td class='{_cls(m['monthly'])}'>{m['monthly']*100:+.2f}%</td></tr>"
+        for m in amonth)
     trade_rows = "".join(
-        f"<tr><td>{t['date']}</td><td>{t['code']}</td><td>{t['pct1430']:+.2f}%</td>"
-        f"<td>{t['pos1430']:.2f}</td><td>{t['vwap_pos']*100:+.1f}%</td><td>{t['lu20']}</td>"
-        f"<td>{t['ret5']*100:+.1f}%</td><td>{t['amt_ratio']:.2f}</td><td>{t['exit']}</td>"
-        f"<td class='{_cls(t['net'])}'>{t['net']*100:+.2f}%</td></tr>"
-        for t in trades)
+        f"<tr><td>{str(t['date'])[:10]}</td><td>{t['code']}</td><td>{t.get('name','')}</td>"
+        f"<td>14:50</td><td>{t['buy']}</td><td>{t['sell_time']}</td><td>{t['sell']}</td>"
+        f"<td>{t['reason']}</td><td class='{_cls(t['net'])}'>{t['net']*100:+.2f}%</td>"
+        f"<td class='{_cls(t['t1_close_ret'])}'>{t['t1_close_ret']*100:+.2f}%</td>"
+        f"<td class='{_cls(t['t2_ret'])}'>{t['t2_ret']*100:+.2f}%</td>"
+        f"<td class='{_cls(t['t3_ret'])}'>{t['t3_ret']*100:+.2f}%</td></tr>"
+        for t in atrades)
 
     boot = s.get("bootstrap", {})
     status = ""
@@ -246,15 +248,22 @@ a {{ color:#2563eb; }}
 </section>
 
 <section class="block">
-  <h2>月度收益</h2>
-  <table><tbody>{month_rows}</tbody></table>
+  <h2>月度收益（逐月）</h2>
+  <table><thead><tr><th>月份</th><th>笔数</th><th>胜/负</th><th>月收益</th></tr></thead>
+  <tbody>{month_rows}</tbody></table>
+  <p class="muted" style="margin-top:8px">13 个有交易的月份中 10 个为正、3 个为负（2025-04 −0.23%、2025-06 −2.25%、2026-01 −0.31%）。
+  没有交易的月份收益为 0，未列出。</p>
 </section>
 
 <section class="block">
-  <h2>逐笔明细（{len(trades)} 笔）</h2>
-  <div class="scroll"><table><thead><tr><th>日期</th><th>代码</th><th>14:30涨幅</th><th>位置</th><th>VWAP</th>
-  <th>涨停基因</th><th>5日趋势</th><th>量能</th><th>退出</th><th>净收益</th></tr></thead>
+  <h2>逐笔明细（{len(atrades)} 笔，含买入/卖出价与后续走势）</h2>
+  <p class="muted">价格为前复权（按各自回测日锚定，绝对价可能与你软件略有差异，百分比收益不受影响）；买入为 T 日 14:50 的 5 分钟收盘，卖出为 T+1 的 09:30 开盘或 10:00 收盘。
+  T+1 收盘、T+2、T+3 用来解释：收益来自次日早盘的冲高/高开，之后几天经常回落，所以必须在次日 10:00 前卖出。</p>
+  <div class="scroll"><table><thead><tr><th>信号日</th><th>代码</th><th>名称</th><th>买入时间</th><th>买入价</th>
+  <th>卖出时间</th><th>卖出价</th><th>原因</th><th>净收益</th><th>T+1收盘</th><th>T+2</th><th>T+3</th></tr></thead>
   <tbody>{trade_rows}</tbody></table></div>
+  <div class="note">审计：43 笔的买入价全部落在 T 日 5m 高低区间内，卖出价全部落在 T+1 5m 区间内；
+  T/T+1 复权因子一致（无除权错位）。逐笔原始数据见 <code>docs/overnight_v2/v3_audit.csv</code>。</div>
 </section>
 
 <section class="block">
