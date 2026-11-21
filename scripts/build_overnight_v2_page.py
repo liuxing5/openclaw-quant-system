@@ -58,6 +58,7 @@ def build():
     s = bt.get("stats", {})
     months = bt.get("monthly", [])
     audit = _load("v3_audit.json", {})
+    daily = _load("daily_pick_backtest.json", {})
     atrades = audit.get("trades", [])
     amonth = audit.get("monthly", [])
 
@@ -115,6 +116,25 @@ def build():
         f"<td class='{_cls(t['t3_ret'])}'>{t['t3_ret']*100:+.2f}%</td></tr>"
         for t in atrades)
 
+    ds = daily.get("all", {})
+    daily_cards = f"""
+    <div class="cards">
+      <div class="card"><div class="k">每日一笔 · 笔数</div><div class="v">{ds.get('trades',0)}</div></div>
+      <div class="card"><div class="k">胜率</div><div class="v">{ds.get('win',0)*100:.1f}%</div></div>
+      <div class="card"><div class="k">单笔净</div><div class="v {_cls(ds.get('avg',0))}">{ds.get('avg',0)*100:+.2f}%</div></div>
+      <div class="card"><div class="k">年化</div><div class="v {_cls(ds.get('ann',0))}">{ds.get('ann',0)*100:+.1f}%</div></div>
+      <div class="card"><div class="k">最大回撤</div><div class="v down">{ds.get('dd',0)*100:+.1f}%</div></div>
+      <div class="card"><div class="k">Sharpe</div><div class="v">{ds.get('sharpe',0):.2f}</div></div>
+    </div>
+    """
+    dmonth = "".join(
+        f"<tr><td>{m['ym']}</td><td class='{_cls(m['ret'])}'>{m['ret']*100:+.1f}%</td></tr>"
+        for m in daily.get("monthly", []))
+    dtrades = "".join(
+        f"<tr><td>{t['date']}</td><td>{t['code']}</td><td>{t['tier']}</td><td>{t['entry']}</td>"
+        f"<td>{t['sell_time']}</td><td>{t['sell']}</td><td>{t['why']}</td>"
+        f"<td class='{_cls(t['net'])}'>{t['net']*100:+.2f}%</td></tr>"
+        for t in daily.get("trades", []))
     boot = s.get("bootstrap", {})
     status = ""
     if latest and latest.get("scan_time") == "14:30":
@@ -170,6 +190,10 @@ a {{ color:#2563eb; }}
 </style></head><body><div class="wrap">
 <h1>🌙 隔夜八步法 v3.0 · 融合版</h1>
 <div class="sub">14:30 扫描 → 14:40-15:00 买入 → 次日 10:00 前卖出 · 融合永兴 VWAP/涨停基因、七步漏斗风控、主升浪量能、回调买入止损 · 0.25% 往返成本</div>
+
+<div class="warn" style="margin-bottom:18px">⚠️ <b>重要更正</b>：下面 43 笔的 +29.4% 是 600 个候选信号的 5 分钟小样本，<b>不稳健</b>。
+全量「每日一笔」244 天实测：胜率 46.3%、单笔 −0.31%、年化 −46.7%、最大回撤 −60.2%。
+<b>不要按 43 笔的收益实盘</b>；43 笔只说明“条件极严时可能有正期望”，不能证明每日可交易。</div>
 
 {cards}
 
@@ -264,6 +288,18 @@ a {{ color:#2563eb; }}
   <tbody>{trade_rows}</tbody></table></div>
   <div class="note">审计：43 笔的买入价全部落在 T 日 5m 高低区间内，卖出价全部落在 T+1 5m 区间内；
   T/T+1 复权因子一致（无除权错位）。逐笔原始数据见 <code>docs/overnight_v2/v3_audit.csv</code>。</div>
+</section>
+
+<section class="block">
+  <h2>每日一笔实测（2025-01 ~ 2026-04，244 天）</h2>
+  {daily_cards}
+  <p class="muted">口径：按日线近似 14:30 特征，每日取分数最高的 1 只；14:50 买入，次日 09:30/10:00 卖出，0.25% 成本。
+  这是「尽量每日推荐」的真实结果：<b class="down">强制每日一笔是负期望</b>，A 级 203 天单笔 −0.36%，B 级 41 天 −0.07%。</p>
+  <table><thead><tr><th>月份</th><th>月收益</th></tr></thead><tbody>{dmonth}</tbody></table>
+  <h2 style="margin-top:18px">逐日 244 笔</h2>
+  <div class="scroll"><table><thead><tr><th>日期</th><th>代码</th><th>级别</th><th>买入价</th><th>卖出时间</th><th>卖出价</th><th>原因</th><th>净收益</th></tr></thead>
+  <tbody>{dtrades}</tbody></table></div>
+  <p class="muted">完整数据：<code>docs/overnight_v2/daily_pick_trades.csv</code>。</p>
 </section>
 
 <section class="block">
