@@ -281,6 +281,37 @@ jobs:
         git pull --rebase --autostash
         git push
 
+    - name: Scan overnight 8-step v2 (panic gap reversal)
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
+      env:
+        POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+        POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+        POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+        POSTGRES_POOL_SIZE: 5
+      run: |
+        NOW=$(TZ=Asia/Shanghai date +%H%M)
+        if [ "$NOW" -lt 1510 ]; then
+          echo "盘后定稿前不跑 v2：当前 $NOW"; exit 0
+        fi
+        pip install pandas numpy psycopg2-binary python-dotenv
+        python strategies/overnight_8step/v2_engine.py
+        python scripts/build_overnight_v2_page.py
+
+    - name: Persist overnight v2 snapshot
+      if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
+      continue-on-error: true
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add docs/overnight_v2/latest.json strategies/funnel_strategy/docs/overnight_v2.html
+        git diff --cached --quiet && exit 0
+        git commit -m "data: update overnight v2 scan $(TZ=Asia/Shanghai date +%F) [skip ci]"
+        git pull --rebase --autostash
+        git push
+
     - name: Generate report (8step only)
       if: contains(steps.task.outputs.script, 'zuiyou1') && steps.run_script.outputs.has_result == 'true'
       continue-on-error: true

@@ -1,0 +1,77 @@
+{
+  "trade_date": "2026-11-20",
+  "generated_at": "2026-11-21T15:13:29",
+  "universe": 5218,
+  "breadth": 0.0864,
+  "risk_on": false,
+  "blocked": true,
+  "steps": {
+    "全市场": 5218,
+    "趋势结构": 197,
+    "回踩幅度": 47,
+    "恐慌收盘": 38,
+    "流动性": 20,
+    "换手适中": 7,
+    "7_缺口触发": 0,
+    "8_执行风控": 7,
+    "regime_blocked": 1
+  },
+  "candidates": [
+    {
+      "ts_code": "301606.SZ",
+      "stock_name": "绿联科技",
+      "score": 89.5,
+      "entry_low": 58.66,
+      "entry_high": 60.49,
+      "selected": false
+    },
+    {
+      "ts_code": "688169.SH",
+      "stock_name": "石头科技",
+      "score": 85.6,
+      "entry_low": 129.02,
+      "entry_high": 133.06,
+      "selected": false
+    },
+    {
+      "ts_code": "300122.SZ",
+      "stock_name": "智飞生物",
+      "score": 90.3,
+      "entry_low": 13.57,
+      "entry_high": 14.0,
+      "selected": false
+    },
+    {
+      "ts_code": "601689.SH",
+      "stock_name": "拓普集团",
+      "score": 88.4,
+      "entry_low": 46.19,
+      "entry_high": 47.63,
+      "selected": false
+    },
+    {
+      "ts_code": "600312.SH",
+      "stock_name": "平高电气",
+      "score": 83.6,
+      "entry_low": 21.02,
+      "entry_high": 21.68,
+      "selected": false
+    },
+    {
+      "ts_code": "600872.SH",
+      "stock_name": "中炬高新",
+      "score": 83.2,
+      "entry_low": 18.67,
+      "entry_high": 19.26,
+      "selected": false
+    },
+    {
+      "ts_code": "300893.SZ",
+      "stock_name": "松原安全",
+      "score": 75.2,
+      "entry_low": 15.18,
+      "entry_high": 15.65,
+      "selected": false
+    }
+  ]
+}

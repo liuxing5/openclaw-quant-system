@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>隔夜八步法 v2 · 恐慌缺口承接</title>
+<style>
+:root { --bg:#f7f9fc; --card:#fff; --text:#0f172a; --muted:#64748b; --line:#e2e8f0; --up:#dc2626; --down:#16a34a; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0b1220; --card:#111827; --text:#e5e7eb; --muted:#94a3b8; --line:#1f2937; } }
+* { box-sizing:border-box; }
+body { margin:0; padding:24px; background:var(--bg); color:var(--text);
+  font:14px/1.65 -apple-system,"Segoe UI","Microsoft YaHei",sans-serif; }
+.wrap { max-width:1040px; margin:0 auto; }
+h1 { font-size:24px; margin:0 0 4px; }
+h2 { font-size:17px; margin:0 0 12px; }
+.sub { color:var(--muted); margin-bottom:20px; }
+.block { background:var(--card); border:1px solid var(--line); border-radius:12px;
+  padding:18px 20px; margin-bottom:18px; }
+.cards { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; }
+.card { border:1px solid var(--line); border-radius:10px; padding:10px 12px; }
+.card .k { color:var(--muted); font-size:12px; }
+.card .v { font-size:19px; font-weight:700; }
+.up { color:var(--up); } .down { color:var(--down); }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th,td { border-bottom:1px solid var(--line); padding:7px 8px; text-align:left; }
+th { color:var(--muted); font-weight:600; }
+.eq { width:100%; height:auto; }
+.ax { fill:var(--muted); font-size:11px; }
+.muted { color:var(--muted); }
+ul { margin:8px 0 0 18px; padding:0; } li { margin:4px 0; }
+.warn { border-left:4px solid #f59e0b; padding:10px 14px; background:rgba(245,158,11,.08);
+  border-radius:6px; margin-top:10px; }
+a { color:#2563eb; }
+@media (max-width:720px) { .cards { grid-template-columns:repeat(2,1fr); } }
+</style></head><body><div class="wrap">
+<h1>🌙 隔夜八步法 v2 · 恐慌缺口承接</h1>
+<div class="sub">T 日收盘观察 → T+1 开盘按缺口承接 → T+2 收盘离场 · 前复权 · 往返成本 0.25%</div>
+
+
+    <div class="cards">
+      <div class="card"><div class="k">总收益</div><div class="v up">+375.4%</div></div>
+      <div class="card"><div class="k">年化</div><div class="v up">+187.6%</div></div>
+      <div class="card"><div class="k">最大回撤</div><div class="v down">-20.2%</div></div>
+      <div class="card"><div class="k">Sharpe</div><div class="v">3.72</div></div>
+      <div class="card"><div class="k">单笔均值</div><div class="v up">+0.80%</div></div>
+      <div class="card"><div class="k">胜率</div><div class="v">50.1%</div></div>
+      <div class="card"><div class="k">交易 / 活跃日</div><div class="v">505 / 166</div></div>
+      <div class="card"><div class="k">成本</div><div class="v">0.25%</div></div>
+    </div>
+    
+
+<section class="block">
+  <h2>为什么改：旧版在跟「隔夜负漂移」对着干</h2>
+  <ul>
+    <li>全 A 股隔夜（T 收→T+1 开）均值 <b>−0.01%</b>（t=−4.0），次日日内 <b>+0.19%</b>（t=+73）——隔夜是负的。</li>
+    <li>旧八步法要求涨幅 3~9.7%、换手 5~10%、量比 1.5~8，恰好落在隔夜收益最差的桶里（最高换手档 −0.46%）。</li>
+    <li>同一批「强趋势回踩」标的：T 日收盘买、T+1 收盘卖 <b class="down">−36.0%</b>；
+        T+1 开盘买、T+2 收盘卖 <b class="up">+375.4%</b>。差别只是等了一个隔夜缺口。</li>
+  </ul>
+</section>
+
+<section class="block">
+  <h2>净值曲线（2024-10 ~ 2026-04）</h2>
+  <svg viewBox="0 0 920 240" class="eq" role="img" aria-label="净值曲线">
+  <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+    <stop offset="0%" stop-color="#2563eb" stop-opacity=".35"/>
+    <stop offset="100%" stop-color="#2563eb" stop-opacity="0"/>
+  </linearGradient></defs>
+  <polyline points="20.0,216.9 25.3,216.6 30.7,215.0 36.0,214.7 41.3,213.6 46.7,208.7 52.0,209.3 57.3,211.0 62.7,213.5 68.0,214.7 73.3,217.4 78.7,216.8 84.0,217.5 89.3,217.8 94.7,219.4 100.0,220.0 105.3,217.2 110.7,215.4 116.0,216.5 121.3,213.8 126.7,213.0 132.0,215.5 137.3,218.1 142.7,215.2 148.0,214.2 153.3,210.9 158.7,209.2 164.0,209.3 169.3,211.0 174.7,214.3 180.0,216.5 185.3,212.2 190.7,215.3 196.0,214.6 201.3,212.5 206.7,210.9 212.0,211.5 217.3,210.9 222.7,211.6 228.0,210.7 233.3,209.2 238.7,210.5 244.0,211.8 249.3,207.6 254.7,204.0 260.0,203.0 265.3,204.3 270.7,204.2 276.0,206.1 281.3,206.7 286.7,207.1 292.0,209.5 297.3,199.8 302.7,200.5 308.0,196.8 313.3,196.7 318.7,197.5 324.0,195.9 329.3,197.1 334.7,192.3 340.0,193.2 345.3,187.4 350.7,187.7 356.0,185.1 361.3,175.8 366.7,174.0 372.0,171.3 377.3,176.1 382.7,175.9 388.0,171.6 393.3,171.3 398.7,172.6 404.0,171.4 409.3,173.4 414.7,166.6 420.0,157.5 425.3,157.4 430.7,159.8 436.0,162.5 441.3,164.7 446.7,161.7 452.0,147.1 457.3,147.8 462.7,144.8 468.0,132.5 473.3,126.1 478.7,131.2 484.0,134.0 489.3,126.7 494.7,136.0 500.0,134.7 505.3,129.0 510.7,123.9 516.0,125.4 521.3,128.5 526.7,126.5 532.0,124.0 537.3,126.1 542.7,132.7 548.0,131.1 553.3,138.4 558.7,136.7 564.0,134.2 569.3,136.3 574.7,124.5 580.0,118.2 585.3,122.5 590.7,119.4 596.0,117.0 601.3,104.5 606.7,107.9 612.0,113.3 617.3,102.3 622.7,92.3 628.0,87.1 633.3,88.9 638.7,91.4 644.0,99.5 649.3,93.4 654.7,86.2 660.0,87.3 665.3,81.8 670.7,97.3 676.0,90.0 681.3,78.0 686.7,81.4 692.0,86.5 697.3,77.0 702.7,72.8 708.0,70.3 713.3,71.6 718.7,72.7 724.0,64.8 729.3,57.9 734.7,56.0 740.0,52.5 745.3,50.8 750.7,53.7 756.0,52.2 761.3,59.3 766.7,52.6 772.0,50.6 777.3,55.2 782.7,42.0 788.0,38.3 793.3,20.0 798.7,23.4 804.0,23.2 809.3,26.9 814.7,23.1 820.0,31.0 825.3,28.3 830.7,39.0 836.0,54.0 841.3,34.6 846.7,25.7 852.0,49.6 857.3,55.8 862.7,62.3 868.0,66.2 873.3,58.4 878.7,54.5 884.0,36.7 889.3,34.1 894.7,23.4 900.0,38.3" fill="none" stroke="#2563eb" stroke-width="2.2"/>
+  <polygon points="20,220 20.0,216.9 25.3,216.6 30.7,215.0 36.0,214.7 41.3,213.6 46.7,208.7 52.0,209.3 57.3,211.0 62.7,213.5 68.0,214.7 73.3,217.4 78.7,216.8 84.0,217.5 89.3,217.8 94.7,219.4 100.0,220.0 105.3,217.2 110.7,215.4 116.0,216.5 121.3,213.8 126.7,213.0 132.0,215.5 137.3,218.1 142.7,215.2 148.0,214.2 153.3,210.9 158.7,209.2 164.0,209.3 169.3,211.0 174.7,214.3 180.0,216.5 185.3,212.2 190.7,215.3 196.0,214.6 201.3,212.5 206.7,210.9 212.0,211.5 217.3,210.9 222.7,211.6 228.0,210.7 233.3,209.2 238.7,210.5 244.0,211.8 249.3,207.6 254.7,204.0 260.0,203.0 265.3,204.3 270.7,204.2 276.0,206.1 281.3,206.7 286.7,207.1 292.0,209.5 297.3,199.8 302.7,200.5 308.0,196.8 313.3,196.7 318.7,197.5 324.0,195.9 329.3,197.1 334.7,192.3 340.0,193.2 345.3,187.4 350.7,187.7 356.0,185.1 361.3,175.8 366.7,174.0 372.0,171.3 377.3,176.1 382.7,175.9 388.0,171.6 393.3,171.3 398.7,172.6 404.0,171.4 409.3,173.4 414.7,166.6 420.0,157.5 425.3,157.4 430.7,159.8 436.0,162.5 441.3,164.7 446.7,161.7 452.0,147.1 457.3,147.8 462.7,144.8 468.0,132.5 473.3,126.1 478.7,131.2 484.0,134.0 489.3,126.7 494.7,136.0 500.0,134.7 505.3,129.0 510.7,123.9 516.0,125.4 521.3,128.5 526.7,126.5 532.0,124.0 537.3,126.1 542.7,132.7 548.0,131.1 553.3,138.4 558.7,136.7 564.0,134.2 569.3,136.3 574.7,124.5 580.0,118.2 585.3,122.5 590.7,119.4 596.0,117.0 601.3,104.5 606.7,107.9 612.0,113.3 617.3,102.3 622.7,92.3 628.0,87.1 633.3,88.9 638.7,91.4 644.0,99.5 649.3,93.4 654.7,86.2 660.0,87.3 665.3,81.8 670.7,97.3 676.0,90.0 681.3,78.0 686.7,81.4 692.0,86.5 697.3,77.0 702.7,72.8 708.0,70.3 713.3,71.6 718.7,72.7 724.0,64.8 729.3,57.9 734.7,56.0 740.0,52.5 745.3,50.8 750.7,53.7 756.0,52.2 761.3,59.3 766.7,52.6 772.0,50.6 777.3,55.2 782.7,42.0 788.0,38.3 793.3,20.0 798.7,23.4 804.0,23.2 809.3,26.9 814.7,23.1 820.0,31.0 825.3,28.3 830.7,39.0 836.0,54.0 841.3,34.6 846.7,25.7 852.0,49.6 857.3,55.8 862.7,62.3 868.0,66.2 873.3,58.4 878.7,54.5 884.0,36.7 889.3,34.1 894.7,23.4 900.0,38.3 900,220" fill="url(#g)"/>
+  <text x="20" y="16" class="ax">净值 5.14x</text>
+  <text x="20" y="236" class="ax">起点</text>
+  <text x="830" y="236" class="ax">最新 4.75x</text>
+</svg>
+</section>
+
+<section class="block">
+  <h2>八步规则</h2>
+  <table><thead><tr><th>步</th><th>条件</th></tr></thead><tbody>
+    <tr><td>1 大盘环境</td><td>等权指数 &gt; 10 日线，且全市场站上 MA20 比例 ≥ 30%</td></tr>
+    <tr><td>2 趋势结构</td><td>收盘 &gt; MA20 &gt; MA60，20 日动量 &gt; 3%</td></tr>
+    <tr><td>3 回踩幅度</td><td>当日 −6.0% ~ −1.5%</td></tr>
+    <tr><td>4 恐慌收盘</td><td>收盘价位于当日振幅下 40%</td></tr>
+    <tr><td>5 流动性</td><td>成交额 ≥ 1 亿，流通市值 50~2000 亿</td></tr>
+    <tr><td>6 换手适中</td><td>换手率 1.5% ~ 8%</td></tr>
+    <tr><td>7 缺口触发</td><td>T+1 开盘缺口 −4.0% ~ −1.0% 才买</td></tr>
+    <tr><td>8 执行风控</td><td>最多 5 只等权；T+1 开盘买、T+2 收盘卖；ST/次新/涨跌停开盘剔除</td></tr>
+  </tbody></table>
+</section>
+
+
+        <section class="block">
+          <h2>最新扫描 · 2026-11-20</h2>
+          <p class="muted">全市场 5218 只 · 广度 8.6% ·
+            大盘门控 <b class="down">
+            关闭</b>
+            · <b class="down">空仓观察</b></p>
+          <table><thead><tr><th>代码</th><th>名称</th><th>分值</th><th>承接区间</th><th>执行</th></tr></thead><tbody>
+          <tr><td>301606.SZ</td><td>绿联科技</td><td>89.5</td><td>58.66 ~ 60.49</td><td>观察不买</td></tr><tr><td>688169.SH</td><td>石头科技</td><td>85.6</td><td>129.02 ~ 133.06</td><td>观察不买</td></tr><tr><td>300122.SZ</td><td>智飞生物</td><td>90.3</td><td>13.57 ~ 14.0</td><td>观察不买</td></tr><tr><td>601689.SH</td><td>拓普集团</td><td>88.4</td><td>46.19 ~ 47.63</td><td>观察不买</td></tr><tr><td>600312.SH</td><td>平高电气</td><td>83.6</td><td>21.02 ~ 21.68</td><td>观察不买</td></tr><tr><td>600872.SH</td><td>中炬高新</td><td>83.2</td><td>18.67 ~ 19.26</td><td>观察不买</td></tr><tr><td>300893.SZ</td><td>松原安全</td><td>75.2</td><td>15.18 ~ 15.65</td><td>观察不买</td></tr>
+          </tbody></table>
+        </section>
+        
+
+<section class="block">
+  <h2>分段表现</h2>
+  <table><thead><tr><th>年份</th><th>策略</th><th>日胜率</th><th>等权基准</th></tr></thead>
+  <tbody><tr><td>2024</td><td class='up'>+4.7%</td><td>60.0%</td><td class='down'>-1.8%</td></tr><tr><td>2025</td><td class='up'>+289.7%</td><td>55.8%</td><td class='up'>+4.5%</td></tr><tr><td>2026</td><td class='up'>+16.5%</td><td>58.3%</td><td class='down'>-0.8%</td></tr></tbody></table>
+</section>
+
+<section class="block">
+  <h2>月度收益</h2>
+  <table><tbody><tr><td>2024-10<br><span class='up'>+0.1%</span></td><td>2024-12<br><span class='up'>+4.7%</span></td><td>2025-01<br><span class='down'>-6.2%</span></td><td>2025-02<br><span class='up'>+4.8%</span></td><td>2025-03<br><span class='down'>-2.0%</span></td><td>2025-04<br><span class='up'>+11.6%</span></td></tr><tr><td>2025-05<br><span class='up'>+6.2%</span></td><td>2025-06<br><span class='up'>+19.2%</span></td><td>2025-07<br><span class='up'>+37.3%</span></td><td>2025-08<br><span class='up'>+48.1%</span></td><td>2025-09<br><span class='up'>+0.4%</span></td><td>2025-10<br><span class='up'>+6.5%</span></td></tr><tr><td>2025-11<br><span class='up'>+16.0%</span></td><td>2025-12<br><span class='up'>+13.5%</span></td><td>2026-01<br><span class='up'>+24.2%</span></td><td>2026-02<br><span class='down'>-6.5%</span></td><td>2026-03<br><span class='down'>-10.3%</span></td><td>2026-04<br><span class='up'>+11.9%</span></td></tr></tbody></table>
+</section>
+
+
+        <section class="block">
+          <h2>样本外（2026-05 之后）</h2>
+          <p class="muted">区间 2026-05-22 ~ 2026-06-18；
+            门控关闭期自动空仓。</p>
+          <div class="cards">
+            <div class="card"><div class="k">交易</div><div class="v">0</div></div>
+            <div class="card"><div class="k">总收益</div><div class="v">+0.0%</div></div>
+            <div class="card"><div class="k">最大回撤</div><div class="v down">+0.0%</div></div>
+          </div>
+        </section>
+        
+
+<section class="block">
+  <h2>执行纪律</h2>
+  <ul>
+    <li>T 日 15:10 后扫描，得到观察池（最多 12 只，收盘越弱越靠前）。</li>
+    <li>T+1 09:25 看集合竞价：只有缺口 −4.0%~−1.0% 才买；高开、平开、缺口 &lt; −4% 全部放弃。</li>
+    <li>最多 5 只等权，单票 ≤ 20% 总仓位。</li>
+    <li>T+2 收盘卖出（T+1 当天不能卖）；不设盘中止损，靠仓位与分散控制回撤。</li>
+    <li>大盘门控关闭（广度 &lt;30% 或指数在 10 日线下）→ 空仓，不降标准硬选。</li>
+  </ul>
+  <div class="warn">⚠️ 回测不等于实盘：开盘价成交、滑点、涨跌停封单、T+1 无法止损都会侵蚀收益。
+  本策略在熊市会长期空仓，年化会显著低于回测；单票建议 10~15%。</div>
+</section>
+
+<p class="muted" style="text-align:center;margin:24px 0">
+  隔夜八步法 v2 · 数据源 daily_quotes · 仅供研究，不构成投资建议 ·
+  <a href="./funnel.html">返回六策略对比</a>
+</p>
+</div></body></html>

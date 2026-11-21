@@ -1,0 +1,20 @@
+{
+  "period": [
+    "2026-05-22",
+    "2026-06-18"
+  ],
+  "stats": {
+    "days": 0,
+    "trades": 0,
+    "avg_trade": 0.0,
+    "total": 0.0,
+    "maxdd": 0.0,
+    "sharpe": 0.0,
+    "market_return": -0.07234650872151349,
+    "breadth_min": 0.07225433526011561,
+    "breadth_max": 0.2831824311308033,
+    "gate_open_days": 0
+  },
+  "monthly": [],
+  "note": "门控全程关闭，且八步条件在该窗口筛不出标的；空仓是设计内结果。"
+}

@@ -1734,6 +1734,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
     <!-- ========== 八步法 ========== -->
     <div class="section">
       <h2>🔮 八步隔夜法<span class="section-subtitle">{eight_timestamp or eight_date_str or '—'}</span></h2>
+      <div style="margin:-2px 0 10px"><a href="./overnight_v2.html" style="font-size:.8rem;color:#2563eb;text-decoration:none">→ 八步法 v2（恐慌缺口承接）诊断与回测</a></div>
       <div class="steps-area">{eight_steps_html}{eight_fwd_html}</div>
       {eight_h3}
       {eight_stale_html}
