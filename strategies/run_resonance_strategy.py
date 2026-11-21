@@ -150,7 +150,8 @@ def main():
 
         if results:
             print(f"\n✅ 运行成功! 入选 {len(results)} 只标的")
-            print(f"📄 结果文件: {Path(args.output).resolve() / f'resonance_{datetime.now().strftime('%Y%m%d')}.csv'}")
+            out_path = Path(args.output).resolve() / f"resonance_{datetime.now().strftime('%Y%m%d')}.csv"
+            print(f"📄 结果文件: {out_path}")
         else:
             print("\n❌ 没有标的通过筛选")
             sys.exit(1)
