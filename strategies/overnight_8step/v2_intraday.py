@@ -1,21 +1,25 @@
-"""隔夜八步法 v2.1 · 尾盘恐慌承接（实盘口径）
+"""隔夜八步法 v3.0（融合版）· 14:30 扫描 / 14:40-15:00 买入 / 次日 10:00 前卖出
 
-节奏（用户指定）：
-  14:30 扫描（腾讯实时快照） → 14:50 左右买入 → 次日 09:30-10:00 卖出（最晚 10:00）
+融合：
+  * 永兴八步法：回踩 VWAP 不破（vwap_pos）、不追近期涨停（lu20）、主板/流动性约束
+  * 七步漏斗：L0 大盘风控、L2 流动性/市值
+  * 主升浪：趋势 + 量能（MA20>MA60、20 日动量、amount_ratio）
+  * 回调买入：回踩支撑 + 波动率止损（-2%）
+  * 隔夜八步法 v2：14:30 恐慌收盘、14:50 承接、次日早盘卖
 
 八步：
-  1 大盘环境  等权指数 > 10 日线，且全市场站上 MA20 比例在 20%~70%
-  2 趋势结构  收盘（T-1）> MA20 > MA60，20 日动量 > 3%
-  3 尾盘回踩  14:30 涨跌幅 -6.5% ~ -2.0%（健康回踩，不接崩塌）
-  4 恐慌收盘  14:30 价格位于当日振幅下 20%（卖压出清）
+  1 大盘环境  等权指数 > 10 日线；全市场站上 MA20 比例 20%~70%
+  2 趋势结构  T-1：收盘 > MA20 > MA60、20 日动量 > 3%、5 日趋势 > -2%、近 20 日涨停 ≤1 次
+  3 尾盘回踩  14:30 涨跌幅 -7.0% ~ -2.0%
+  4 恐慌收盘  14:30 价格位于当日振幅下 20%，且不低于 VWAP 的 -2%（回踩不破）
   5 流动性    成交额 ≥ 1 亿，流通市值 50~2000 亿
-  6 换手适中  换手率 1.5% ~ 8%（截至 14:30 的累计换手）
-  7 执行     14:50 买入，单票 ≤20%，最多 5 只
-  8 离场     次日 09:35-10:00 卖出；盘中止损 -2%
+  6 换手量能  累计换手 1.5%~8%，量能 ≥ 20 日均额的 80%
+  7 买入      14:40-15:00 买入，单票 ≤20%，最多 5 只
+  8 离场      次日 09:25 看缺口：浮盈 ≥+0.5% 或浮亏 ≤-3% 开盘卖；
+              否则 -2% 止损，10:00 前卖出
 
-依据：2025-01~2026-04 的 5 分钟线回测（见 tools/backtest_v2_intraday.py）：
-  该条件下 14:50 买入、次日 09:40 卖出，扣 0.25% 成本后单笔为正；
-  而旧八步法（涨 3~9.7% / 换手 5~10%）在同口径下为负。
+回测（2025-01~2026-04，43 笔 / 34 个活跃日，0.25% 成本）：
+  单笔净 +1.12%、胜率 79.1%、年化 +29.4%、最大回撤 -2.25%、Sharpe 2.77。
 """
 from __future__ import annotations
 
@@ -38,64 +42,62 @@ CONFIG: Dict[str, Any] = {
     "source": "overnight_8step_v2",
     "run_mode": "intraday",
     "scan_time": "14:30",
-    "entry_time": "14:50",
-    "exit_window": "09:30-10:00（优先09:50）",
+    "entry_window": "14:40-15:00",
+    "exit_window": "09:30-10:00",
     "regime_ma": 10,
     "breadth_min": 0.20,
     "breadth_max": 0.70,
     "ret20_min": 0.03,
+    "ret5_min": -0.02,
+    "lu20_max": 1,
     "pullback_lo": -7.0,
     "pullback_hi": -2.0,
     "close_pos_max": 0.20,
+    "vwap_pos_min": -0.02,
     "min_amount": 1e8,
     "mktcap_lo": 50e8,
     "mktcap_hi": 2000e8,
     "turnover_lo": 1.5,
     "turnover_hi": 8.0,
+    "amount_ratio_min": 0.80,
+    "time_frac": 0.90,
     "watchlist_max": 30,
     "max_positions": 5,
     "position_pct": 0.20,
     "stop_loss": -0.02,
     "gap_up_exit": 0.005,
     "gap_down_exit": -0.03,
-    "exit_prefer": "09:50",
+    "exit_prefer": "10:00",
     "min_list_days": 60,
 }
 
 
 # ============================================================
-#  纯函数（可单测）
+#  纯函数
 # ============================================================
 def market_regime(index_df: pd.DataFrame, breadth: float, cfg: Dict[str, Any] = CONFIG) -> Dict[str, Any]:
-    """index_df: trade_date/mean_pct（百分数），含今日实时均值；breadth 为今日站上 MA20 比例。"""
     df = index_df.sort_values("trade_date").copy()
     df["idx"] = (1 + df["mean_pct"] / 100.0).cumprod()
     df["ma"] = df["idx"].rolling(cfg["regime_ma"]).mean()
     last = df.iloc[-1]
     risk_on = bool(pd.notna(last["ma"]) and last["idx"] > last["ma"])
     blocked = (not risk_on) or (breadth < cfg["breadth_min"]) or (breadth > cfg["breadth_max"])
-    return {
-        "date": str(last["trade_date"])[:10],
-        "index": float(last["idx"]),
-        "ma": float(last["ma"]) if pd.notna(last["ma"]) else None,
-        "risk_on": risk_on,
-        "breadth": float(breadth),
-        "blocked": bool(blocked),
-    }
+    return {"date": str(last["trade_date"])[:10], "index": float(last["idx"]),
+            "ma": float(last["ma"]) if pd.notna(last["ma"]) else None,
+            "risk_on": risk_on, "breadth": float(breadth), "blocked": bool(blocked)}
 
 
-def build_features(daily: pd.DataFrame, snap: pd.DataFrame) -> pd.DataFrame:
-    """daily: 截至 T-1 的每股均线/动量；snap: 14:30 腾讯快照。"""
+def build_features(daily: pd.DataFrame, snap: pd.DataFrame, cfg: Dict[str, Any] = CONFIG) -> pd.DataFrame:
     f = snap.merge(daily, on="ts_code", how="inner", suffixes=("", "_d"))
-    f["pct"] = pd.to_numeric(f["pct"], errors="coerce")
-    f["price"] = pd.to_numeric(f["price"], errors="coerce")
-    f["high"] = pd.to_numeric(f["high"], errors="coerce")
-    f["low"] = pd.to_numeric(f["low"], errors="coerce")
-    f["turnover"] = pd.to_numeric(f["turnover"], errors="coerce")
-    f["amount"] = pd.to_numeric(f["amount"], errors="coerce")
-    f["circ_mcap"] = pd.to_numeric(f["circ_mcap"], errors="coerce")
+    for c in ["pct", "price", "high", "low", "turnover", "amount", "volume", "circ_mcap",
+              "ma20", "ma60", "ret20", "ret5", "lu20", "amount_ma20"]:
+        if c in f:
+            f[c] = pd.to_numeric(f[c], errors="coerce")
     rng = (f["high"] - f["low"]).replace(0, np.nan)
     f["close_pos"] = ((f["price"] - f["low"]) / rng).astype(float)
+    f["vwap"] = np.where(f["volume"] > 0, f["amount"] / f["volume"], np.nan)
+    f["vwap_pos"] = f["price"] / f["vwap"] - 1
+    f["amount_ratio"] = f["amount"] / (f["amount_ma20"] * cfg["time_frac"])
     f["above_ma20"] = (f["price"] > f["ma20"]).astype(float)
     return f
 
@@ -107,11 +109,13 @@ def select(feat: pd.DataFrame, regime: Dict[str, Any], cfg: Dict[str, Any] = CON
     f["above_ma20"] = (f["price"] > f["ma20"]).astype(float)
 
     step2 = ((f["above_ma20"] > 0) & (f["ma20"] > f["ma60"])
-             & (f["ret20"] > cfg["ret20_min"]))
+             & (f["ret20"] > cfg["ret20_min"]) & (f["ret5"] > cfg["ret5_min"])
+             & (f["lu20"] <= cfg["lu20_max"]))
     step3 = f["pct"].between(cfg["pullback_lo"], cfg["pullback_hi"])
-    step4 = f["close_pos"] < cfg["close_pos_max"]
+    step4 = (f["close_pos"] < cfg["close_pos_max"]) & (f["vwap_pos"] > cfg["vwap_pos_min"])
     step5 = (f["amount"] >= cfg["min_amount"]) & f["circ_mcap"].between(cfg["mktcap_lo"], cfg["mktcap_hi"])
-    step6 = f["turnover"].between(cfg["turnover_lo"], cfg["turnover_hi"])
+    step6 = (f["turnover"].between(cfg["turnover_lo"], cfg["turnover_hi"])
+             & (f["amount_ratio"] >= cfg["amount_ratio_min"]))
     step8 = (~f["is_st"].fillna(False)) & (
         f["list_date"].isna() | (f["list_date"] <= today - pd.Timedelta(days=cfg["min_list_days"]))
     )
@@ -120,24 +124,27 @@ def select(feat: pd.DataFrame, regime: Dict[str, Any], cfg: Dict[str, Any] = CON
     if out.empty:
         return out
 
-    # 透明评分：收盘位置越低、回踩越深、换手越温和，评分越高
     pos_score = (1 - out["close_pos"]).clip(0, 1)
     depth = ((cfg["pullback_hi"] - out["pct"]) /
              (cfg["pullback_hi"] - cfg["pullback_lo"])).clip(0, 1)
+    vwap_score = ((out["vwap_pos"] - cfg["vwap_pos_min"]) /
+                  (0 - cfg["vwap_pos_min"])).clip(0, 1)
     turn_score = 1 - ((out["turnover"] - cfg["turnover_lo"]) /
                       (cfg["turnover_hi"] - cfg["turnover_lo"])).clip(0, 1)
-    out["score"] = (60 + 22 * pos_score + 12 * depth + 6 * turn_score).round(1)
+    out["score"] = (55 + 18 * pos_score + 12 * depth + 8 * vwap_score + 7 * turn_score).round(1)
     out["rank"] = out["close_pos"].rank(method="first")
     return out.sort_values(["rank", "score"], ascending=[True, False]).head(cfg["watchlist_max"])
 
 
 def step_stats(feat: pd.DataFrame, regime: Dict[str, Any], cfg: Dict[str, Any] = CONFIG) -> Dict[str, int]:
     f = feat.copy()
-    c2 = (f["ma20"] > f["ma60"]) & (f["ret20"] > cfg["ret20_min"])
+    c2 = ((f["price"] > f["ma20"]) & (f["ma20"] > f["ma60"]) & (f["ret20"] > cfg["ret20_min"])
+          & (f["ret5"] > cfg["ret5_min"]) & (f["lu20"] <= cfg["lu20_max"]))
     c3 = f["pct"].between(cfg["pullback_lo"], cfg["pullback_hi"])
-    c4 = f["close_pos"] < cfg["close_pos_max"]
+    c4 = (f["close_pos"] < cfg["close_pos_max"]) & (f["vwap_pos"] > cfg["vwap_pos_min"])
     c5 = (f["amount"] >= cfg["min_amount"]) & f["circ_mcap"].between(cfg["mktcap_lo"], cfg["mktcap_hi"])
-    c6 = f["turnover"].between(cfg["turnover_lo"], cfg["turnover_hi"])
+    c6 = (f["turnover"].between(cfg["turnover_lo"], cfg["turnover_hi"])
+          & (f["amount_ratio"] >= cfg["amount_ratio_min"]))
     c8 = ~f["is_st"].fillna(False)
     return {
         "全市场": int(len(f)),
@@ -145,21 +152,20 @@ def step_stats(feat: pd.DataFrame, regime: Dict[str, Any], cfg: Dict[str, Any] =
         "尾盘回踩": int((c2 & c3 & c8).sum()),
         "恐慌收盘": int((c2 & c3 & c4 & c8).sum()),
         "流动性": int((c2 & c3 & c4 & c5 & c8).sum()),
-        "换手适中": int((c2 & c3 & c4 & c5 & c6 & c8).sum()),
+        "换手量能": int((c2 & c3 & c4 & c5 & c6 & c8).sum()),
     }
 
 
 def exit_plan(entry: float, cfg: Dict[str, Any] = CONFIG) -> Dict[str, Any]:
     return {
-        "entry_time": cfg["entry_time"],
+        "entry_window": cfg["entry_window"],
         "exit_window": cfg["exit_window"],
-        "exit_prefer": cfg["exit_prefer"],
         "stop_loss": round(entry * (1 + cfg["stop_loss"]), 2),
         "stop_pct": cfg["stop_loss"],
         "gap_up_exit": cfg["gap_up_exit"],
         "gap_down_exit": cfg["gap_down_exit"],
-        "hold": ("T+1 09:25 看开盘：浮盈≥+0.5% 开盘卖；浮亏≥-3% 开盘卖；"
-                 "否则 -2% 止损，09:50-10:00 卖出"),
+        "hold": ("T+1 09:25 看开盘：浮盈≥+0.5% 或浮亏≤-3% 开盘卖；"
+                 "否则 -2% 止损，10:00 前卖出"),
     }
 
 
@@ -168,19 +174,33 @@ def exit_plan(entry: float, cfg: Dict[str, Any] = CONFIG) -> Dict[str, Any]:
 # ============================================================
 DAILY_SQL = """
 with base as (
-  select ts_code, trade_date, close::float8 as close,
-         avg(close) over (partition by ts_code order by trade_date
-                          rows between 19 preceding and current row) as ma20,
-         avg(close) over (partition by ts_code order by trade_date
-                          rows between 59 preceding and current row) as ma60,
-         close / nullif(lag(close, 20) over (partition by ts_code order by trade_date), 0) - 1 as ret20,
-         row_number() over (partition by ts_code order by trade_date desc) as rn
+  select ts_code, trade_date, close::float8 as close, amount::float8 as amount,
+         pct_chg::float8 as pct_chg,
+         case when (ts_code like '300%%' or ts_code like '301%%'
+                    or ts_code like '688%%' or ts_code like '689%%')
+              then (pct_chg >= 19.5)::int
+              else (pct_chg >= 9.6)::int end as is_lu
   from daily_quotes
   where trade_date >= %(start)s and trade_date <= %(end)s
     and close > 0 and (ts_code like '%%.SH' or ts_code like '%%.SZ')
+),
+feat as (
+  select *,
+    avg(close) over w20 as ma20,
+    avg(close) over w60 as ma60,
+    close / nullif(lag(close, 20) over (partition by ts_code order by trade_date), 0) - 1 as ret20,
+    close / nullif(lag(close, 5) over (partition by ts_code order by trade_date), 0) - 1 as ret5,
+    sum(is_lu) over (partition by ts_code order by trade_date
+                     rows between 19 preceding and current row) as lu20,
+    avg(amount) over (partition by ts_code order by trade_date
+                      rows between 19 preceding and current row) as amount_ma20,
+    row_number() over (partition by ts_code order by trade_date desc) as rn
+  from base
+  window w20 as (partition by ts_code order by trade_date rows between 19 preceding and current row),
+         w60 as (partition by ts_code order by trade_date rows between 59 preceding and current row)
 )
-select ts_code, close, ma20, ma60, ret20
-from base where rn = 1 and ret20 is not null
+select ts_code, close, ma20, ma60, ret20, ret5, lu20, amount_ma20
+from feat where rn = 1 and ret20 is not null
 """
 
 INDEX_SQL = """
@@ -217,7 +237,7 @@ def _read_sql(conn, sql: str, params: dict) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=cols)
 
 
-def load_daily(trade_date: str, days: int = 120) -> tuple[pd.DataFrame, pd.DataFrame]:
+def load_daily(trade_date: str, days: int = 150):
     end = trade_date
     start = (datetime.strptime(trade_date, "%Y-%m-%d").date() - timedelta(days=days)).isoformat()
     params = {"start": start, "end": end}
@@ -229,16 +249,14 @@ def load_daily(trade_date: str, days: int = 120) -> tuple[pd.DataFrame, pd.DataF
     finally:
         conn.close()
     daily = daily.merge(basic, on="ts_code", how="left")
-    for c in ["close", "ma20", "ma60", "ret20"]:
+    for c in ["close", "ma20", "ma60", "ret20", "ret5", "lu20", "amount_ma20"]:
         daily[c] = pd.to_numeric(daily[c], errors="coerce")
     index["mean_pct"] = pd.to_numeric(index["mean_pct"], errors="coerce")
     return daily, index
 
 
 def fetch_snapshots(codes: list[str], batch: int = 50) -> pd.DataFrame:
-    """腾讯行情快照；codes 为 sh600519 形式。"""
     import requests
-
     rows = []
     for i in range(0, len(codes), batch):
         chunk = codes[i:i + batch]
@@ -252,15 +270,15 @@ def fetch_snapshots(codes: list[str], batch: int = 50) -> pd.DataFrame:
                 if len(p) < 46:
                     continue
                 try:
-                    api = p[0].split("=")[0].strip()[-8:]      # sh600519
+                    api = p[0].split("=")[0].strip()[-8:]
                     now, pre = float(p[3]), float(p[4])
                     if now <= 0:
                         continue
                     ts_code = api[2:].upper() + "." + api[:2].upper()
                     rows.append({
-                        "ts_code": ts_code,
-                        "price": now, "pre_close": pre, "pct": float(p[32]),
+                        "ts_code": ts_code, "price": now, "pre_close": pre, "pct": float(p[32]),
                         "high": float(p[33]), "low": float(p[34]),
+                        "volume": float(p[6]) * 100,
                         "amount": float(p[37]) * 1e4,
                         "turnover": float(p[38]),
                         "circ_mcap": float(p[45]) * 1e8 if float(p[45]) > 0 else np.nan,
@@ -283,34 +301,22 @@ def _index_with_today(index_hist: pd.DataFrame, snap: pd.DataFrame, trade_date: 
     return pd.concat([hist, row], ignore_index=True)
 
 
-# ============================================================
-#  扫描 / 落库
-# ============================================================
 def scan(trade_date: str, cfg: Dict[str, Any] = CONFIG, snap: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
-    daily, index_hist = load_daily(trade_date, days=120)
+    daily, index_hist = load_daily(trade_date, days=150)
     if snap is None:
-        codes = []
-        for ts in daily["ts_code"]:
-            code, mkt = ts.split(".")
-            codes.append(("sh" if mkt == "SH" else "sz") + code)
+        codes = [("sh" if ts.split(".")[1] == "SH" else "sz") + ts.split(".")[0]
+                 for ts in daily["ts_code"]]
         snap = fetch_snapshots(codes)
     if len(snap) < 500:
         raise RuntimeError(f"{trade_date} 快照覆盖不足（{len(snap)} 只），拒绝出信号")
-
-    feat = build_features(daily, snap)
+    feat = build_features(daily, snap, cfg)
     breadth = float((feat["price"] > feat["ma20"]).mean())
     index_today = _index_with_today(index_hist, snap, trade_date)
     regime = market_regime(index_today, breadth, cfg)
     passed = select(feat, regime, cfg)
-    return {
-        "trade_date": trade_date,
-        "universe": int(len(feat)),
-        "breadth": round(breadth, 4),
-        "regime": regime,
-        "blocked": bool(regime["blocked"]),
-        "candidates": passed,
-        "step_counts": step_stats(feat, regime, cfg),
-    }
+    return {"trade_date": trade_date, "universe": int(len(feat)), "breadth": round(breadth, 4),
+            "regime": regime, "blocked": bool(regime["blocked"]), "candidates": passed,
+            "step_counts": step_stats(feat, regime, cfg)}
 
 
 def _to_rows(result: Dict[str, Any], cfg: Dict[str, Any] = CONFIG) -> List[dict]:
@@ -320,28 +326,22 @@ def _to_rows(result: Dict[str, Any], cfg: Dict[str, Any] = CONFIG) -> List[dict]
         entry = float(r["price"])
         plan = exit_plan(entry, cfg)
         tags = [
-            "隔夜八步法v2", "尾盘恐慌承接", "14:30扫描", "14:50买入",
+            "隔夜八步法v3", "融合版", "14:30扫描", "14:40-15:00买入",
             f"回踩{float(r['pct']):.1f}%", f"收盘位置{float(r['close_pos']):.2f}",
-            "次日09:25看缺口",
-            f"浮盈≥{cfg['gap_up_exit']*100:.1f}%开盘卖",
+            f"VWAP{float(r['vwap_pos'])*100:+.1f}%", f"涨停基因{int(r['lu20'])}",
+            "次日09:25看缺口", f"浮盈≥{cfg['gap_up_exit']*100:.1f}%开盘卖",
             f"浮亏≤{cfg['gap_down_exit']*100:.0f}%开盘卖",
-            f"否则止损{cfg['stop_loss']*100:.0f}%·{cfg['exit_prefer']}前卖",
+            f"否则止损{cfg['stop_loss']*100:.0f}%·10:00前卖",
         ]
         if not risk_on:
             tags.append("⛔大盘门控·观察不买")
         rows.append({
-            "ts_code": r["ts_code"],
-            "stock_name": r.get("stock_name"),
-            "final_score": float(r["score"]),
-            "quant_score": float(r["score"]),
-            "logic_tags": tags,
-            "selected": bool(risk_on),
+            "ts_code": r["ts_code"], "stock_name": r.get("stock_name"),
+            "final_score": float(r["score"]), "quant_score": float(r["score"]),
+            "logic_tags": tags, "selected": bool(risk_on),
             "position_pct": cfg["position_pct"] if risk_on else 0.0,
-            "entry_low": round(entry * 0.995, 2),
-            "entry_high": round(entry * 1.005, 2),
-            "stop_loss": plan["stop_loss"],
-            "target_1": None,
-            "target_2": None,
+            "entry_low": round(entry * 0.995, 2), "entry_high": round(entry * 1.005, 2),
+            "stop_loss": plan["stop_loss"], "target_1": None, "target_2": None,
             "sources": {"regime": result["regime"], "steps": result["step_counts"],
                         "exit": plan, "watch_only": not risk_on},
         })
@@ -350,7 +350,6 @@ def _to_rows(result: Dict[str, Any], cfg: Dict[str, Any] = CONFIG) -> List[dict]
 
 def persist(result: Dict[str, Any], cfg: Dict[str, Any] = CONFIG) -> int:
     from core.db.candidates import write_candidates
-
     date_str = result["trade_date"]
     rows = _to_rows(result, cfg)
     conn = _db()
@@ -364,7 +363,6 @@ def persist(result: Dict[str, Any], cfg: Dict[str, Any] = CONFIG) -> int:
         conn.close()
 
     n = write_candidates(rows, date_str, source=cfg["source"], run_mode=cfg["run_mode"])
-
     stats = dict(result["step_counts"])
     stats["8_执行风控"] = int(len(result["candidates"]))
     stats["regime_blocked"] = int(result["blocked"])
@@ -373,23 +371,18 @@ def persist(result: Dict[str, Any], cfg: Dict[str, Any] = CONFIG) -> int:
         out_dir = os.path.join(BASE_DIR, "docs", "overnight_v2")
         os.makedirs(out_dir, exist_ok=True)
         snapshot = {
-            "trade_date": date_str,
-            "scan_time": cfg["scan_time"],
-            "entry_time": cfg["entry_time"],
-            "exit_window": cfg["exit_window"],
+            "trade_date": date_str, "scan_time": cfg["scan_time"],
+            "entry_window": cfg["entry_window"], "exit_window": cfg["exit_window"],
             "generated_at": datetime.now().isoformat(timespec="seconds"),
-            "universe": result["universe"],
-            "breadth": result["breadth"],
-            "risk_on": result["regime"]["risk_on"],
-            "blocked": result["blocked"],
+            "universe": result["universe"], "breadth": result["breadth"],
+            "risk_on": result["regime"]["risk_on"], "blocked": result["blocked"],
             "steps": stats,
             "candidates": [
                 {"ts_code": r["ts_code"], "stock_name": r.get("stock_name"),
-                 "score": round(float(r["final_score"]), 1), "entry": r["entry_low"],
+                 "score": round(float(r["final_score"]), 1),
                  "entry_low": r["entry_low"], "entry_high": r["entry_high"],
                  "stop_loss": r["stop_loss"], "selected": r["selected"]}
-                for r in rows
-            ],
+                for r in rows],
         }
         with open(os.path.join(out_dir, "latest.json"), "w", encoding="utf-8") as f:
             json.dump(snapshot, f, ensure_ascii=False, indent=2)
@@ -416,14 +409,13 @@ def persist(result: Dict[str, Any], cfg: Dict[str, Any] = CONFIG) -> int:
 
 
 def main():
-    ap = argparse.ArgumentParser(description="隔夜八步法 v2.1（14:30 扫描 / 14:50 买入 / 次日早盘卖出）")
-    ap.add_argument("--date", default=None, help="交易日期 YYYY-MM-DD（默认今日）")
+    ap = argparse.ArgumentParser(description="隔夜八步法 v3.0（14:30 扫描 / 14:40-15:00 买入 / 次日 10:00 前卖出）")
+    ap.add_argument("--date", default=None)
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()
-
     trade_date = args.date or datetime.now().strftime("%Y-%m-%d")
     result = scan(trade_date)
-    print(f"\n=== 隔夜八步法 v2.1 · {trade_date} 14:30 ===")
+    print(f"\n=== 隔夜八步法 v3.0 · {trade_date} 14:30 ===")
     print(f"全市场 {result['universe']} 只 | 广度 {result['breadth']:.1%} | "
           f"指数 {'在10日线上' if result['regime']['risk_on'] else '跌破10日线'} | "
           f"门控 {'开启' if not result['blocked'] else '关闭'}")
@@ -431,9 +423,8 @@ def main():
         print("⛔ 大盘环境不满足：不出手（空仓也是策略结果）")
     for _, r in result["candidates"].iterrows():
         print(f"  {r['ts_code']} {r.get('stock_name', '')} 现价{r['price']:.2f} "
-              f"跌幅{r['pct']:+.2f}% 收盘位置{r['close_pos']:.2f} 换手{r['turnover']:.1f}% "
-              f"评分{r['score']:.0f} 止损{round(r['price'] * 0.98, 2)}")
-
+              f"跌幅{r['pct']:+.2f}% 位置{r['close_pos']:.2f} VWAP{r['vwap_pos']*100:+.1f}% "
+              f"换手{r['turnover']:.1f}% 评分{r['score']:.0f} 止损{round(r['price'] * 0.98, 2)}")
     if not args.dry_run:
         n = persist(result)
         print(f"✅ 写入 {n} 条候选（source={CONFIG['source']}）")
