@@ -118,6 +118,7 @@ def persist(result: Dict[str, Any]) -> int:
     n = write_candidates(rows, date_str, source=SOURCE, run_mode=RUN_MODE)
 
     stats = dict(result["step_counts"])
+    stats["regime_blocked"] = int(result["blocked"])
     stats["A级"] = int((result["candidates"].grade == "A").sum())
     stats["B级"] = int((result["candidates"].grade == "B").sum())
     stats["C级"] = int((result["candidates"].grade == "C").sum())
