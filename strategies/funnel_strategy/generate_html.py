@@ -1016,10 +1016,20 @@ def generate_unified_html(output_dir=None, trade_date=None):
         )
         if stats.get('regime_blocked'):
             eight_steps_html += (
-                '<div class="step-note" style="color:var(--stop-color);">'
+                '<div style="margin:8px 0;padding:10px 12px;border:1px solid #fecaca;'
+                'background:#fef2f2;color:#b91c1c;border-radius:8px;font-weight:700;">'
                 f'⚠️ 大盘门控关闭（广度 {sentiment or "—"}%）：A/B 仅观察，今日不执行买入；'
                 'C 级不买。</div>'
             )
+
+    gate_banner_html = ""
+    if eight_source == 'overnight_8step_v31' and stats.get('regime_blocked'):
+        gate_banner_html = (
+            '<div style="margin:14px 0 0;padding:12px 14px;border:1px solid #fecaca;'
+            'background:#fef2f2;color:#b91c1c;border-radius:10px;font-weight:700;font-size:.92rem;">'
+            f'⚠️ 今日大盘门控关闭（广度 {sentiment or "—"}%）：八步 v3.1 的 A/B 只观察，'
+            '不执行买入；C 级不买。下一交易日 14:30 重新扫描。</div>'
+        )
 
     # ── LLM多源步骤 ──
     llm_steps_html = ""
@@ -1772,6 +1782,8 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
       <span id="themeIcon">🌙</span> 深色模式
     </button>
   </div>
+
+  {gate_banner_html}
 
   <div class="legend">
     <div class="legend-item"><div class="legend-dot" style="background:var(--score-color)"></div> 通过数</div>
