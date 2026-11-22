@@ -51,6 +51,17 @@ a { color:#2563eb; }
   </section>
 
 
+  <section class="block">
+    <h2>方案 A：A 级通过者等权（不是只买第一名）</h2>
+    <p class="muted">口径：当天所有通过 A 级条件的票等权买入（43 笔随机样本里平均 1.26 只/天），14:40-14:50 买入、次日 09:25/10:00 卖出，0.25% 成本。</p>
+    <table><thead><tr><th>样本</th><th>笔数</th><th>天数</th><th>只/天</th><th>胜率</th><th>单笔净</th><th>年化</th><th>最大回撤</th><th>日 t</th><th>Bootstrap 95%</th></tr></thead>
+    <tbody><tr><td>方案 A · 43 笔等权</td><td>43</td><td>34</td><td>1.26</td><td>79.1%</td><td class='up'>+1.12%</td><td class='up'>+35.2%</td><td class='down'>-2.2%</td><td>3.74</td><td>+0.48% ~ +1.54%</td></tr><tr><td>剔除最赚 3 笔</td><td>40</td><td>33</td><td>1.21</td><td>77.5%</td><td class='up'>+0.80%</td><td class='up'>+24.8%</td><td class='down'>-2.2%</td><td>3.27</td><td>+0.31% ~ +1.20%</td></tr><tr><td>剔除最赚 5 笔</td><td>38</td><td>32</td><td>1.19</td><td>76.3%</td><td class='up'>+0.62%</td><td class='up'>+18.9%</td><td class='down'>-2.2%</td><td>2.99</td><td>+0.18% ~ +0.99%</td></tr><tr><td>剔除最赚 10 笔</td><td>33</td><td>29</td><td>1.14</td><td>72.7%</td><td class='up'>+0.39%</td><td class='up'>+10.7%</td><td class='down'>-2.6%</td><td>2.08</td><td>+0.01% ~ +0.75%</td></tr><tr><td>2025 年</td><td>34</td><td>27</td><td>1.26</td><td>76.5%</td><td class='up'>+1.00%</td><td class='up'>+30.4%</td><td class='down'>-2.2%</td><td>3.03</td><td>+0.28% ~ +1.40%</td></tr><tr><td>2026 年</td><td>9</td><td>7</td><td>1.29</td><td>88.9%</td><td class='up'>+1.56%</td><td class='up'>+87.0%</td><td class='down'>+0.0%</td><td>2.17</td><td>+0.41% ~ +2.99%</td></tr><tr><td>对比：121 天 top1</td><td>121</td><td>121</td><td>1.00</td><td>40.5%</td><td class='down'>-0.52%</td><td class='down'>-40.3%</td><td class='down'>-48.1%</td><td>-2.62</td><td>-0.90% ~ -0.13%</td></tr></tbody></table>
+    <p class="warn" style="margin-top:10px">结论：等权组合在 43 笔无偏样本里 <b>+1.12%/笔、年化 +35.2%、回撤 −2.2%、日 t=3.74</b>；
+    剔除最赚 5 笔仍有年化 +18.9%，说明不是靠少数几笔；但剔除最赚 10 笔后年化降到 +10.7%（t=2.08），
+    且 121 天 top1 样本仍是 −0.52%/笔——<b>方案 A 比 top1 稳健，但 43 笔样本仍不足以证明“稳定”，建议纸面/小资金跟踪</b>。</p>
+  </section>
+
+
 
     <div class="cards">
       <div class="card"><div class="k">胜率</div><div class="v">79.1%</div></div>
