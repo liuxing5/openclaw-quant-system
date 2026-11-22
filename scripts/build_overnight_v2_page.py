@@ -59,6 +59,33 @@ def build():
     months = bt.get("monthly", [])
     audit = _load("v3_audit.json", {})
     daily = _load("daily_pick_backtest.json", {})
+    v31 = _load("v3_1_backtest.json", {})
+    v31_rows = ""
+    for key, label in (("a", "v3.1 A 级 · 121 天"), ("v3", "43 笔随机样本"), ("combined", "合并（去重）")):
+        x = v31.get(key)
+        if not x:
+            continue
+        v31_rows += (
+            f"<tr><td>{label}</td><td>{x['n']}</td><td>{x['win']*100:.1f}%</td>"
+            f"<td class='{_cls(x['avg'])}'>{x['avg']*100:+.2f}%</td>"
+            f"<td class='{_cls(x['ann'])}'>{x['ann']*100:+.1f}%</td>"
+            f"<td class='down'>{x['dd']*100:+.1f}%</td>"
+            f"<td>{x['t'] if x['t'] is not None else '—'}</td>"
+            f"<td>{x['boot_lo']*100:+.2f}% ~ {x['boot_hi']*100:+.2f}%</td>"
+            f"<td>{x['boot_pos']*100:.0f}%</td></tr>"
+        )
+    v31_html = f"""
+  <section class="block">
+    <h2>v3.1 A 级最终复核：能不能稳定盈利？</h2>
+    <p class="muted">同一套 A 级条件，两个不同来源的 5 分钟样本，结论相反：随机样本 43 笔 +1.12%/笔，
+    每日 top1 的 A 子集 121 笔 −0.52%/笔；合并 163 笔 −0.10%/笔，Bootstrap 95% 区间 [{v31.get('combined',{}).get('boot_lo',0)*100:+.2f}%, {v31.get('combined',{}).get('boot_hi',0)*100:+.2f}%] 跨 0。</p>
+    <table><thead><tr><th>样本</th><th>笔数</th><th>胜率</th><th>单笔净</th><th>年化</th><th>最大回撤</th><th>t</th><th>Bootstrap 95%</th><th>P(均值&gt;0)</th></tr></thead>
+    <tbody>{v31_rows}</tbody></table>
+    <p class="warn" style="margin-top:10px">结论：<b>不能证明稳定盈利</b>。121 天的实盘 top1 口径是显著负的（t=−2.62，P(均值&gt;0)=0.6%）；
+    43 笔随机样本显著为正（t=4.2），两者矛盾说明“平均通过者”与“每日分数最高者”不是一回事，而实盘买的是后者。
+    合并均值 −0.10%、区间跨 0，只能算“没有证据”。</p>
+  </section>
+"""
     atrades = audit.get("trades", [])
     amonth = audit.get("monthly", [])
 
@@ -188,12 +215,14 @@ a {{ color:#2563eb; }}
 .scroll {{ max-height:520px; overflow:auto; }}
 @media (max-width:720px) {{ .cards {{ grid-template-columns:repeat(2,1fr); }} }}
 </style></head><body><div class="wrap">
-<h1>🌙 隔夜八步法 v3.0 · 融合版</h1>
-<div class="sub">14:30 扫描 → 14:40-15:00 买入 → 次日 10:00 前卖出 · 融合永兴 VWAP/涨停基因、七步漏斗风控、主升浪量能、回调买入止损 · 0.25% 往返成本</div>
+<h1>🌙 隔夜八步法 v3.1 · 融合版</h1>
+<div class="sub">14:30 扫描 → 14:40-14:50 买入 → 次日 10:00 前卖出 · 融合永兴 VWAP/涨停基因、七步漏斗风控、主升浪量能、回调买入止损 · 0.25% 往返成本</div>
 
 <div class="warn" style="margin-bottom:18px">⚠️ <b>重要更正</b>：下面 43 笔的 +29.4% 是 600 个候选信号的 5 分钟小样本，<b>不稳健</b>。
 全量「每日一笔」244 天实测：胜率 46.3%、单笔 −0.31%、年化 −46.7%、最大回撤 −60.2%。
 <b>不要按 43 笔的收益实盘</b>；43 笔只说明“条件极严时可能有正期望”，不能证明每日可交易。</div>
+
+{v31_html}
 
 {cards}
 
