@@ -60,6 +60,7 @@ def build():
     audit = _load("v3_audit.json", {})
     daily = _load("daily_pick_backtest.json", {})
     v31 = _load("v3_1_backtest.json", {})
+    pa = _load("plan_a_backtest.json", {})
     v31_rows = ""
     for key, label in (("a", "v3.1 A 级 · 121 天"), ("v3", "43 笔随机样本"), ("combined", "合并（去重）")):
         x = v31.get(key)
@@ -84,6 +85,33 @@ def build():
     <p class="warn" style="margin-top:10px">结论：<b>不能证明稳定盈利</b>。121 天的实盘 top1 口径是显著负的（t=−2.62，P(均值&gt;0)=0.6%）；
     43 笔随机样本显著为正（t=4.2），两者矛盾说明“平均通过者”与“每日分数最高者”不是一回事，而实盘买的是后者。
     合并均值 −0.10%、区间跨 0，只能算“没有证据”。</p>
+  </section>
+"""
+    pa_rows = ""
+    for key, label in (("plan_a", "方案 A · 43 笔等权"), ("drop_top3", "剔除最赚 3 笔"),
+                       ("drop_top5", "剔除最赚 5 笔"), ("drop_top10", "剔除最赚 10 笔"),
+                       ("y2025", "2025 年"), ("y2026", "2026 年"), ("top1_121", "对比：121 天 top1")):
+        x = pa.get(key)
+        if not x:
+            continue
+        pa_rows += (
+            f"<tr><td>{label}</td><td>{x['trades']}</td><td>{x['days']}</td>"
+            f"<td>{x['names_per_day']:.2f}</td><td>{x['win_trade']*100:.1f}%</td>"
+            f"<td class='{_cls(x['avg'])}'>{x['avg']*100:+.2f}%</td>"
+            f"<td class='{_cls(x['ann'])}'>{x['ann']*100:+.1f}%</td>"
+            f"<td class='down'>{x['dd']*100:+.1f}%</td>"
+            f"<td>{x['t_day']}</td>"
+            f"<td>{x['boot_lo']*100:+.2f}% ~ {x['boot_hi']*100:+.2f}%</td></tr>"
+        )
+    pa_html = f"""
+  <section class="block">
+    <h2>方案 A：A 级通过者等权（不是只买第一名）</h2>
+    <p class="muted">口径：当天所有通过 A 级条件的票等权买入（43 笔随机样本里平均 1.26 只/天），14:40-14:50 买入、次日 09:25/10:00 卖出，0.25% 成本。</p>
+    <table><thead><tr><th>样本</th><th>笔数</th><th>天数</th><th>只/天</th><th>胜率</th><th>单笔净</th><th>年化</th><th>最大回撤</th><th>日 t</th><th>Bootstrap 95%</th></tr></thead>
+    <tbody>{pa_rows}</tbody></table>
+    <p class="warn" style="margin-top:10px">结论：等权组合在 43 笔无偏样本里 <b>+1.12%/笔、年化 +35.2%、回撤 −2.2%、日 t=3.74</b>；
+    剔除最赚 5 笔仍有年化 +18.9%，说明不是靠少数几笔；但剔除最赚 10 笔后年化降到 +10.7%（t=2.08），
+    且 121 天 top1 样本仍是 −0.52%/笔——<b>方案 A 比 top1 稳健，但 43 笔样本仍不足以证明“稳定”，建议纸面/小资金跟踪</b>。</p>
   </section>
 """
     atrades = audit.get("trades", [])
@@ -223,6 +251,7 @@ a {{ color:#2563eb; }}
 <b>不要按 43 笔的收益实盘</b>；43 笔只说明“条件极严时可能有正期望”，不能证明每日可交易。</div>
 
 {v31_html}
+{pa_html}
 
 {cards}
 
