@@ -694,16 +694,26 @@ def generate_unified_html(output_dir=None, trade_date=None):
         output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 无显式日期时，以行情表最新交易日为报告日；不能再把“今天”当报告日，
-    # 否则凌晨/盘中生成会出现：funnel 是 11-09，八步法却读了 11-10 的 0 统计。
+    # 无显式日期时，报告日取「行情表最新交易日」与「各策略候选最新快照日」的较大者。
+    # 不能再把“今天”当报告日，否则凌晨/盘中生成会出现：funnel 是 11-09，八步法却读了
+    # 11-10 的 0 统计。但只认行情表也有缺陷：v3.1 在 14:30 用实时数据扫描并写入候选，
+    # 早于 15:05 的 daily_quotes 收盘回填；若行情表滞后（如 2026-11-24 只到 11-20），
+    # 主页面就会被钉死在旧日期。因此取两者较大值，保证根页面展示最新策略快照。
     # 记录调用方是否显式指定日期：未指定时 trade_date 只用于取数，
     # 输出仍应写根页面 funnel.html，并同步一份日期页。
     explicit_date = trade_date is not None
     if trade_date is None:
         try:
-            row = query_one("SELECT MAX(trade_date) AS d FROM daily_quotes;")
-            trade_date = str(row["d"]) if row and row.get("d") else str(get_beijing_date())
-            print(f"  报告日取 daily_quotes 最新交易日: {trade_date}")
+            quote_row = query_one("SELECT MAX(trade_date) AS d FROM daily_quotes;")
+            quote_date = str(quote_row["d"]) if quote_row and quote_row.get("d") else None
+            cand_row = query_one("""
+                SELECT MAX(snapshot_date) AS d FROM daily_candidates
+                WHERE snapshot_date <= CURRENT_DATE;
+            """)
+            cand_date = str(cand_row["d"]) if cand_row and cand_row.get("d") else None
+            candidates = [d for d in (quote_date, cand_date) if d]
+            trade_date = max(candidates) if candidates else str(get_beijing_date())
+            print(f"  报告日取 max(行情 {quote_date}, 候选 {cand_date}) = {trade_date}")
         except Exception as exc:  # noqa: BLE001
             trade_date = str(get_beijing_date())
             print(f"  ⚠ 读取最新交易日失败，回退 {trade_date}: {exc}")
