@@ -1024,20 +1024,24 @@ def generate_unified_html(output_dir=None, trade_date=None):
             '次日 09:25 看缺口，10:00 前卖出。前向收益统计见 '
             '<a href="./overnight_v2.html">八步 v3 报告</a>。</div>'
         )
+        # 门控提示用「报告日 + 策略扫描时刻」的精确时间戳，避免"今日"这类模糊表述；
+        # 14:30 为 v3.1 策略定义的全市场扫描时刻（见 eight_timestamp / 页面标题）。
+        gate_scan_time = f"{eight_date} 14:30:00" if eight_date else (eight_timestamp or "—")
         if stats.get('regime_blocked'):
             eight_steps_html += (
                 '<div style="margin:8px 0;padding:10px 12px;border:1px solid #fecaca;'
                 'background:#fef2f2;color:#b91c1c;border-radius:8px;font-weight:700;">'
-                f'⚠️ 大盘门控关闭（广度 {sentiment or "—"}%）：A/B 仅观察，今日不执行买入；'
+                f'⚠️ 大盘门控关闭（广度 {sentiment or "—"}%）：A/B 仅观察，{gate_scan_time} 不执行买入；'
                 'C 级不买。</div>'
             )
 
     gate_banner_html = ""
     if eight_source == 'overnight_8step_v31' and stats.get('regime_blocked'):
+        gate_scan_time = f"{eight_date} 14:30:00" if eight_date else (eight_timestamp or "—")
         gate_banner_html = (
             '<div style="margin:14px 0 0;padding:12px 14px;border:1px solid #fecaca;'
             'background:#fef2f2;color:#b91c1c;border-radius:10px;font-weight:700;font-size:.92rem;">'
-            f'⚠️ 今日大盘门控关闭（广度 {sentiment or "—"}%）：八步 v3.1 的 A/B 只观察，'
+            f'⚠️ {gate_scan_time} 大盘门控关闭（广度 {sentiment or "—"}%）：八步 v3.1 的 A/B 只观察，'
             '不执行买入；C 级不买。下一交易日 14:30 重新扫描。</div>'
         )
 
