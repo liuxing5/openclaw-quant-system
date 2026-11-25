@@ -3,12 +3,24 @@ name: overnight_v2
 # 14:30 全市场扫描（北京时间 14:30 = UTC 06:30）
 # 八步 v3.1（A/B/C 三档） + 杨永兴原版（全市场主板）都在这个 workflow 里跑，
 # 保证 14:40-14:50 买入窗口前拿到候选。
+permissions:
+  contents: write
+
 on:
   schedule:
     # GitHub cron 有 0~15 分钟延迟；双触发 + 当日幂等，尽量卡在 14:30 前完成扫描
     - cron: '29 6 * * 1-5'
     - cron: '31 6 * * 1-5'
   workflow_dispatch:
+    inputs:
+      force:
+        description: '15:05 后强制补跑（会用盘后数据覆盖 14:30 快照）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   scan:
@@ -17,6 +29,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -32,12 +46,21 @@ jobs:
         id: check
         run: |
           D=$(TZ=Asia/Shanghai date +%F)
+          NOW=$(TZ=Asia/Shanghai date +%H%M)
+          FORCE="${{ github.event.inputs.force }}"
           R=$(python -c "import sys; sys.path.insert(0,'.'); from core.utils.trading_calendar import is_trading_day; from datetime import date; print('true' if is_trading_day(date.fromisoformat('$D')) else 'false')")
           echo "date=$D" >> $GITHUB_OUTPUT
           echo "is_trading=$R" >> $GITHUB_OUTPUT
+          # 14:30 快照必须在收盘前完成；cron-job.org 在盘后测试时不得用收盘数据覆盖 14:30 快照
+          if [ "$NOW" -ge 1505 ] && [ "$FORCE" != "true" ]; then
+            echo "⏭️ 北京时间 $NOW 已过 15:05，跳过扫描（如需补跑请传 force=true）"
+            echo "allow_scan=false" >> $GITHUB_OUTPUT
+          else
+            echo "allow_scan=true" >> $GITHUB_OUTPUT
+          fi
 
       - name: Scan full market at 14:30 (8-step v3.1)
-        if: steps.check.outputs.is_trading == 'true'
+        if: steps.check.outputs.is_trading == 'true' && steps.check.outputs.allow_scan == 'true'
         env:
           POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
           POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
@@ -55,7 +78,7 @@ jobs:
           python scripts/build_overnight_v2_page.py
 
       - name: Build strict Yang Yongxing classic at 14:30
-        if: steps.check.outputs.is_trading == 'true'
+        if: steps.check.outputs.is_trading == 'true' && steps.check.outputs.allow_scan == 'true'
         continue-on-error: true
         env:
           POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
@@ -68,7 +91,7 @@ jobs:
           python scripts/build_overnight_classic.py --date "${{ steps.check.outputs.date }}" --live
 
       - name: Persist v3.1 + classic snapshot
-        if: steps.check.outputs.is_trading == 'true'
+        if: steps.check.outputs.is_trading == 'true' && steps.check.outputs.allow_scan == 'true'
         continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
