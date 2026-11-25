@@ -1271,11 +1271,12 @@ CONFIG_STABLE = {
     # ⚠ 2026-10-13 审查后总分上限下降（主力资金维度剔除、大单减半），
     #   阈值 70 未同步下调，可能少选出临界标的 —— 待前向收益重算后校准。
     "score_threshold": 70,
-    # ⚠ 情绪分档 40/55/70/85 为经验阈值，未经校准（2026-10-13 审查）
-    "sentiment_cold": 40,      # 情绪评分阈值：冷淡
-    "sentiment_normal": 55,    # 情绪评分阈值：正常
-    "sentiment_hot": 70,       # 情绪评分阈值：活跃
-    "sentiment_fever": 85,     # 情绪评分阈值：火热/高潮
+    # 2026-11-25：情绪分数统一为 /dashboard 六维等权口径（原旧加权口径 40/55/70/85 已废弃），
+    # 阈值按「极冷/冷淡/温和/活跃/亢奋」分档映射，保持策略语义不变。
+    "sentiment_cold": 30,      # <30 极冷
+    "sentiment_normal": 45,    # >=45 温和/正常
+    "sentiment_hot": 60,       # >=60 活跃
+    "sentiment_fever": 75,     # >=75 亢奋/高潮
     "penalty_hot_turn": 12.0,
     "penalty_vol_ratio": 7.0,
     "penalty_ma_bias": 0.08,
@@ -1307,11 +1308,12 @@ CONFIG_UPPER = {
     # ⚠ 2026-10-13 审查后总分上限下降（主力资金维度剔除、大单减半），
     #   阈值 70 未同步下调，可能少选出临界标的 —— 待前向收益重算后校准。
     "score_threshold": 70,
-    # ⚠ 情绪分档 40/55/70/85 为经验阈值，未经校准（2026-10-13 审查）
-    "sentiment_cold": 40,      # 情绪评分阈值：冷淡
-    "sentiment_normal": 55,    # 情绪评分阈值：正常
-    "sentiment_hot": 70,       # 情绪评分阈值：活跃
-    "sentiment_fever": 85,     # 情绪评分阈值：火热/高潮
+    # 2026-11-25：情绪分数统一为 /dashboard 六维等权口径（原旧加权口径 40/55/70/85 已废弃），
+    # 阈值按「极冷/冷淡/温和/活跃/亢奋」分档映射，保持策略语义不变。
+    "sentiment_cold": 30,      # <30 极冷
+    "sentiment_normal": 45,    # >=45 温和/正常
+    "sentiment_hot": 60,       # >=60 活跃
+    "sentiment_fever": 75,     # >=75 亢奋/高潮
     "penalty_hot_turn": 12.0,
     "penalty_vol_ratio": 7.0,
     "penalty_ma_bias": 0.08,
@@ -1414,9 +1416,10 @@ def get_time_weight(mode: str = "post") -> float:
 # ============================================================
 #  3. 市场情绪感知
 # ============================================================
-def fetch_market_sentiment() -> Tuple[int, str]:
+def _legacy_fetch_market_sentiment() -> Tuple[int, str]:
     """
-    获取多维市场情绪指标（东财接口）。
+    [已废弃 2026-11-25] 旧东财口径：f116/f117 实为市值字段，会回落 1500/1500，
+    连板数误用涨跌幅字段。保留仅作历史对照，生产路径见下方同名新函数。
     返回 (综合情绪分数, 情绪描述)。
     
     情绪维度：
@@ -1591,6 +1594,27 @@ def fetch_market_sentiment() -> Tuple[int, str]:
         print(f"  ⚠️ 注意：此时不应信任情绪驱动的过滤/排序，建议手动检查")
         print("=" * 60)
         return 55, "正常·接口异常"
+
+
+def fetch_market_sentiment() -> Tuple[int, str]:
+    """统一口径的情绪分数：与 Render /dashboard 完全同源同分。
+
+    2026-11-25 修复：不再用东财市值字段伪造涨跌家数、不再 hardcode 1500/1500。
+    线上 /dashboard 优先，本地 live_market 兜底；两者都失败时明确返回异常标记。
+    """
+    from core.analysis.market_sentiment import describe, fetch as fetch_unified
+
+    try:
+        payload = fetch_unified()
+    except Exception as e:
+        _log("=" * 60)
+        _log(f"  ⚠️ 统一情绪接口不可用: {e}")
+        _log("  ⚠️ 返回保守 fallback (55, '正常·接口异常')，不要信任情绪驱动过滤")
+        _log("=" * 60)
+        return 55, "正常·接口异常"
+
+    _log(describe(payload))
+    return int(round(payload["score"])), payload["mood"]
 
 
 # ============================================================
@@ -2903,12 +2927,12 @@ def main():
 
     # 情绪高潮时推荐数自动压缩（逆向思维）
     final_count_limit = 5
-    if sentiment_score >= CONFIG_STABLE["sentiment_fever"]:  # >=85分 高潮
+    if sentiment_score >= CONFIG_STABLE["sentiment_fever"]:
         final_count_limit = 3
-        print(f"\n市场高潮(情绪分≥85),推荐数压缩到 {final_count_limit} 只,提示防顶部")
-    elif sentiment_score >= CONFIG_STABLE["sentiment_hot"]:  # >=70分 活跃
+        print(f"\n市场高潮(情绪分≥{CONFIG_STABLE['sentiment_fever']}),推荐数压缩到 {final_count_limit} 只,提示防顶部")
+    elif sentiment_score >= CONFIG_STABLE["sentiment_hot"]:
         final_count_limit = 4
-        print(f"\n市场偏热(情绪分≥70),推荐数压缩到 {final_count_limit} 只")
+        print(f"\n市场偏热(情绪分≥{CONFIG_STABLE['sentiment_hot']}),推荐数压缩到 {final_count_limit} 只")
 
     stable_picks = final_df[final_df["path"] == "稳健"].head(final_count_limit)
     upper_picks = final_df[final_df["path"] == "高位"].head(final_count_limit)

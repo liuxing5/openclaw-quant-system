@@ -64,6 +64,29 @@ jobs:
         # 模块未配置 DB 时 apply_schema 自动 noop（依赖 db_configured）
         python -m core.db.apply_schema || echo "⚠️ apply_schema 失败（可能未配置 DB），继续后续步骤"
 
+    - name: Bridge DATABASE_URL for unified sentiment
+      env:
+        POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+        POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+        POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+        POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+      run: |
+        python - <<'PY'
+        import os
+        import urllib.parse
+        user = urllib.parse.quote(os.environ.get('POSTGRES_USER', ''), safe='')
+        pwd = urllib.parse.quote(os.environ.get('POSTGRES_PASSWORD', ''), safe='')
+        url = (
+            f"postgresql://{user}:{pwd}@{os.environ.get('POSTGRES_HOST')}:"
+            f"{os.environ.get('POSTGRES_PORT', '5432')}/{os.environ.get('POSTGRES_DB', 'postgres')}"
+            "?sslmode=require"
+        )
+        with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as f:
+            f.write(f'DATABASE_URL={url}\n')
+            f.write(f'WEBAPP_DATABASE_URL={url}\n')
+        PY
+
     - name: Restore industry cache
       uses: actions/cache@v4
       with:
