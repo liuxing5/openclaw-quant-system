@@ -653,18 +653,21 @@ def load_main_uptrend_daily(trade_date=None):
 
 
 def render_classic_section(output_dir: Path) -> str:
-    """把 overnight_classic.json 渲染成页面底部的原版八步法区块。"""
+    """渲染杨永兴严格法区块；即使当天没有数据也必须出现在页面上。
+
+    2026-11-25 修复：旧实现在 JSON 缺失/为空时直接 return ""，导致 d32201e0
+    重生成页面后该区块消失。v3.1 与杨永兴严格法是两套不同策略，页面必须同时展示。
+    """
     path = Path(output_dir) / "overnight_classic.json"
-    if not path.exists():
-        return ""
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return ""
+    data = {}
+    if path.exists():
+        try:
+            data = json.loads(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            data = {}
     candidates = data.get("candidates") or []
     steps = data.get("steps") or []
-    if not candidates and not steps:
-        return ""
+    no_data = not candidates and not steps
     step_html = "".join(
         f'<div class="step-row"><span class="step-name">{html_escape(str(s.get("name") or ""))}</span>'
         f'<span class="step-pass">{html_escape(str(s.get("pass") if s.get("pass") is not None else "—"))}</span>'
@@ -696,14 +699,23 @@ def render_classic_section(output_dir: Path) -> str:
             f'</div><div class="cand-tags">{tags}</div></div>'
         )
     if not cards:
-        cards = [empty_state("🔍", "本期暂无符合原版条件的标的", "严格条件未触发，不强行凑数", "原版策略已正常执行")]
+        if no_data:
+            cards = [empty_state("⚠️", "本期杨永兴严格法未产出数据", "14:29/14:31 的 overnight_v2 工作流负责该策略", "请检查该工作流是否执行")]
+        else:
+            cards = [empty_state("🔍", "本期暂无符合原版条件的标的", "严格条件未触发，不强行凑数", "原版策略已正常执行")]
     note = html_escape(str(data.get("note") or ""))
     schedule = html_escape(str(data.get("schedule") or ""))
+    diff_note = (
+        "与八步 v3.1 的区别：v3.1 是全市场 A/B/C 分档（A/B 可买、C 观察）；"
+        "杨永兴严格法只做主板 14:30 尾盘窗口，要求 VWAP 上方 + 强于大盘 + 回踩不破，"
+        "标注「原版确认 / 待确认」。两者独立执行、独立选股。"
+    )
     return (
         f'<div class="container" style="padding-top:0">'
         f'<div class="section" style="margin-top:16px">'
-        f'<h2>🧭 {html_escape(str(data.get("title") or "八步隔夜法·原版"))}'
+        f'<h2>🧭 {html_escape(str(data.get("title") or "最严格杨永兴版 · 14:30 全市场主板"))}'
         f'<span class="section-subtitle">{html_escape(str(data.get("date") or ""))} 14:30</span></h2>'
+        + f'<div class="step-note">📌 {diff_note}</div>'
         + (f'<div class="step-note">⏰ {schedule}</div>' if schedule else '')
         + f'<div class="steps-area">{step_html}</div>'
         f'<h3 style="font-size:.9rem;margin:14px 0 8px;">候选标的 ({len(candidates)}只，确认{data.get("confirmed_count", 0)}只)</h3>'
@@ -1950,8 +1962,7 @@ function switchDate(dateVal) {{
     else:
         output_file = output_dir / "funnel.html"
     classic_section = render_classic_section(output_dir)
-    if classic_section:
-        html = html.replace("</body>", classic_section + "</body>")
+    html = html.replace("</body>", classic_section + "</body>")
     output_file.write_text(html, encoding='utf-8')
     print(f"  ✓ 六策略对比 HTML: {output_file}")
 

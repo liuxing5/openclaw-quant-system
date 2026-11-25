@@ -160,6 +160,8 @@ jobs:
           echo "script=record_trade_log.py evening" >> $GITHUB_OUTPUT
           echo "title=📝 16:00 实战日志记录推荐" >> $GITHUB_OUTPUT
         # cron-job.org 触发：根据北京时间范围智能选择 (使用算术扩展避免八进制解析)
+        # 注意：14:25 外部 dispatch 到本 workflow 会命中 14:00-14:34 分支 -> sell_new.py（持仓跟踪），
+        # 既不是八步 v3.1 也不是杨永兴严格法；两者由 overnight_v2.yml 在 14:29/14:31 执行。
         elif (( BEIJING_HOUR >= 9 && BEIJING_HOUR < 10 )); then
           echo "script=sell_new.py" >> $GITHUB_OUTPUT
           echo "title=⏰ 早盘卖出决策" >> $GITHUB_OUTPUT
