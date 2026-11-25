@@ -13,8 +13,10 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 import numpy as np
 import pandas as pd
@@ -122,6 +124,10 @@ def persist(result: Dict[str, Any]) -> int:
     stats["A级"] = int((result["candidates"].grade == "A").sum())
     stats["B级"] = int((result["candidates"].grade == "B").sum())
     stats["C级"] = int((result["candidates"].grade == "C").sum())
+    # 扫描真正跑完并落库的北京时间（精确到秒），供报告展示"几分几秒执行完毕"。
+    # 与设定的扫描窗口(14:30)区分：定时任务实际触发时刻可能有延迟或盘后补跑。
+    completed_at = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    stats["scan_completed_at"] = completed_at
     conn = base._db()
     try:
         cur = conn.cursor()
@@ -139,7 +145,8 @@ def persist(result: Dict[str, Any]) -> int:
     out_dir = os.path.join(BASE_DIR, "docs", "overnight_v2")
     os.makedirs(out_dir, exist_ok=True)
     with open(os.path.join(out_dir, "latest_1430.json"), "w", encoding="utf-8") as f:
-        json.dump({"trade_date": date_str, "scan_time": "14:30", "entry_window": "14:40-14:50",
+        json.dump({"trade_date": date_str, "scan_time": "14:30", "scan_completed_at": completed_at,
+                   "entry_window": "14:40-14:50",
                    "universe": result["universe"], "breadth": result["breadth"],
                    "blocked": result["blocked"], "steps": stats,
                    "candidates": rows}, f, ensure_ascii=False, indent=2)

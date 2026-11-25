@@ -370,6 +370,32 @@ def load_scan_stats(strategy, snapshot_date=None):
     return row
 
 
+def _scan_completed_time(scan_row, report_date) -> str:
+    """返回扫描实际执行完毕的北京时间(精确到秒)，供门控横幅展示。
+
+    优先级：
+      1. filter_stats.scan_completed_at —— 扫描脚本落库时写入的真实完成时刻；
+      2. strategy_scans.created_at —— 该扫描记录入库时刻（历史数据无新字段时）；
+      3. 回退设定扫描时刻 report_date 14:30:00（仅兜底，非真实完成时间）。
+    """
+    stats = (scan_row or {}).get('filter_stats') or {}
+    val = stats.get('scan_completed_at') if isinstance(stats, dict) else None
+    if val:
+        return str(val)
+    ct = (scan_row or {}).get('created_at')
+    if ct:
+        try:
+            if hasattr(ct, 'astimezone'):
+                ct = ct.astimezone(BEIJING_TZ)
+            elif hasattr(ct, 'replace'):
+                ct = ct.replace(tzinfo=timezone.utc).astimezone(BEIJING_TZ)
+            if hasattr(ct, 'strftime'):
+                return ct.strftime('%Y-%m-%d %H:%M:%S')
+        except Exception:  # noqa: BLE001
+            pass
+    return f"{report_date} 14:30:00" if report_date else "—"
+
+
 def load_strategy_timestamp(source, snapshot_date=None):
     """Load the exact created_at timestamp for a strategy's latest data.
     
@@ -1024,9 +1050,11 @@ def generate_unified_html(output_dir=None, trade_date=None):
             '次日 09:25 看缺口，10:00 前卖出。前向收益统计见 '
             '<a href="./overnight_v2.html">八步 v3 报告</a>。</div>'
         )
-        # 门控提示用「报告日 + 策略扫描时刻」的精确时间戳，避免"今日"这类模糊表述；
-        # 14:30 为 v3.1 策略定义的全市场扫描时刻（见 eight_timestamp / 页面标题）。
-        gate_scan_time = f"{eight_date} 14:30:00" if eight_date else (eight_timestamp or "—")
+        # 门控提示显示扫描"实际执行完毕"的北京时间（精确到秒），避免"今日"等模糊表述。
+        # 优先用扫描脚本写入的 filter_stats.scan_completed_at；历史数据无该字段时，
+        # 回退到 strategy_scans.created_at（数据落库时刻，同样是真实执行完毕时间）。
+        # 只有两者都缺失才回退到设定的扫描时刻 14:30:00（不作为真实完成时间展示）。
+        gate_scan_time = _scan_completed_time(eight_scan, eight_date)
         if stats.get('regime_blocked'):
             eight_steps_html += (
                 '<div style="margin:8px 0;padding:10px 12px;border:1px solid #fecaca;'
@@ -1037,7 +1065,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     gate_banner_html = ""
     if eight_source == 'overnight_8step_v31' and stats.get('regime_blocked'):
-        gate_scan_time = f"{eight_date} 14:30:00" if eight_date else (eight_timestamp or "—")
+        gate_scan_time = _scan_completed_time(eight_scan, eight_date)
         gate_banner_html = (
             '<div style="margin:14px 0 0;padding:12px 14px;border:1px solid #fecaca;'
             'background:#fef2f2;color:#b91c1c;border-radius:10px;font-weight:700;font-size:.92rem;">'
