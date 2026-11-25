@@ -154,7 +154,7 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
     <div>
       <h1>📊 六策略对比选股系统</h1>
       <div class="sub">
-        报告日期: 2026-11-25 | 生成: 2026-11-25 03:37:46
+        报告日期: 2026-11-25 | 生成: 2026-11-25 08:50:48
         <input type="date" class="date-input" id="datePicker" value="2026-11-25" min="2026-01-05" max="2026-11-25" onchange="switchDate(this.value)">
       </div>
     </div>
@@ -545,8 +545,96 @@ body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-seri
 
     <!-- ========== 主升浪 ========== -->
     <div class="section">
-      <h2>📈 主升浪检测<span class="section-subtitle">2026-11-25</span></h2>
-      <div class="steps-area"><div class="empty-state"><div class="empty-icon" aria-hidden="true">📈</div><div class="empty-title">暂无主升浪数据</div><div class="empty-desc">运行主升浪检测后自动展示分层结果</div><div class="empty-meta">等待下一次扫描</div></div></div>
+      <h2>📈 主升浪检测<span class="section-subtitle">2026-11-25 03:41:24</span></h2>
+      <div class="steps-area">
+        <div class="step-row">
+          <span class="step-name">运行时间</span>
+          <span class="step-pass">2026-11-25 03:41:24</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">A 层预筛池</span>
+          <span class="step-pass">2107 只</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">A1 业绩加速</span>
+          <span class="rule-inline">归母净利润同比 &gt; 30%</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">A2 市值适中</span>
+          <span class="rule-inline">流通市值 50-200 亿</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">A3 行业景气</span>
+          <span class="rule-inline">申万二级行业近60日涨幅排名前50%（2026-10-13: 形成期20→60日，避开A股反转区间）</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">B 层启动信号</span>
+          <span class="step-pass">0 只</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">B1 量能突破</span>
+          <span class="rule-inline">量比 &gt; 1.5 且换手率 &gt; 3%</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">B2 价格突破</span>
+          <span class="rule-inline">突破60日箱体高点 &gt; 1% 或刚站上120日均线</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">B3 主力资金</span>
+          <span class="rule-inline">已降级为弱加权项，不再一票否决（主力净流入无独立预测力，2026-10-13审查）</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">B4 封单质量</span>
+          <span class="rule-inline">涨停封单额/流通市值 &gt; 0.5% 或涨幅 &gt; 3%</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">C 层持续性</span>
+          <span class="step-pass">0 只</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C1 分时形态</span>
+          <span class="rule-inline">当日上涨即可（回测模式）</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C2 大单买入</span>
+          <span class="rule-inline">成交额/20日均 &gt; 1.0 且当日上涨</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C3 缩量上涨</span>
+          <span class="rule-inline">量比 0.2~1.5 且当日上涨</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C4 板上量比</span>
+          <span class="rule-inline">涨停或涨幅 &gt; 3%</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">C5 板块联动</span>
+          <span class="rule-inline">行业平均涨幅 &gt; 0% 且至少1只同涨</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">D 层通过</span>
+          <span class="step-pass">0 只</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">D1 ST/退市</span>
+          <span class="rule-inline">剔除ST、*ST、退市股</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">D2 减持</span>
+          <span class="rule-inline">近30日内无重大减持公告</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">D3 诱多</span>
+          <span class="rule-inline">量比 &gt; 5 但封单不足流通市值0.3%剔除</span>
+        </div>
+        <div class="step-row" style="padding-left:16px;font-size:.65rem;color:var(--text-secondary);">
+          <span class="step-name" style="font-size:.6rem;">D4 高质押</span>
+          <span class="rule-inline">大股东质押 &gt; 50% 且连板 &gt; 3 剔除</span>
+        </div>
+        <div class="step-row">
+          <span class="step-name">最终候选</span>
+          <span class="step-pass">0 只</span>
+        </div></div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">今日候选</h3>
       
       <div class="cards-grid"><div class="empty-state"><div class="empty-icon" aria-hidden="true">📈</div><div class="empty-title">无今日候选</div><div class="empty-desc">主升浪检测已运行，但今天没有标的通过全部层级</div><div class="empty-meta">等待下一次扫描</div></div></div>
