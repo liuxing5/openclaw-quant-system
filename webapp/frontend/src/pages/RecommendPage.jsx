@@ -101,11 +101,14 @@ export default function RecommendPage() {
   const strategies = data?.strategies || []
   const [active, setActive] = useState(0)
   const [picked, setPicked] = useState(false)
+  const [showOriginal, setShowOriginal] = useState(false)
+  const [iframeFailed, setIframeFailed] = useState(false)
 
   // 切换日期后，让默认策略重新落到有候选的那一路。
   useEffect(() => {
     setActive(0)
     setPicked(false)
+    setIframeFailed(false)
   }, [queryDate])
 
   const handleDateChange = (value) => {
@@ -182,6 +185,18 @@ export default function RecommendPage() {
   // 当前查看的报告日：优先用后端返回的 report_date，历史查询下就是所选日期。
   const reportDate = String(data?.report_date || latestAvailable || '').slice(0, 10)
   const isHistory = Boolean(queryDate)
+  // 原版完整报告：直接加载 funnel.html（历史日期自动切到 funnel-YYYY-MM-DD.html），
+  // 与 GitHub Pages 实时同源；加载失败时用后端透传的完整 HTML 作为 srcdoc 兜底。
+  const originalUrl = data?.html_url
+    ? `${data.html_url}?v=${encodeURIComponent(String(data.generated_at || reportDate || ''))}`
+    : SOURCE
+  const originalSrcDoc = useMemo(() => {
+    if (!data?.raw_html || !originalUrl.startsWith('http')) return undefined
+    return data.raw_html.replace(
+      '</head>',
+      '<base href="https://liuxing5.github.io/openclaw-quant-system/funnel/">\n</head>',
+    )
+  }, [data?.raw_html, originalUrl])
   // "策略尚未更新"提示仅在查看最新报告时有意义；历史报告本就是当期快照。
   const pendingNames = useMemo(
     () =>
@@ -230,7 +245,52 @@ export default function RecommendPage() {
               共 {availableDates.length || '—'} 个交易日可查 · 选择日期查看当期荐股
             </span>
             {dateHint ? <span className="text-[10px] text-amber-600 dark:text-amber-400">{dateHint}</span> : null}
+            <Button
+              variant={showOriginal ? 'primary' : 'ghost'}
+              size="sm"
+              onClick={() => setShowOriginal((v) => !v)}
+            >
+              {showOriginal ? '收起原版完整报告' : '查看原版完整报告'}
+            </Button>
           </div>
+
+          {data?.banners?.length ? (
+            <div className="space-y-2">
+              {data.banners.map((text, i) => (
+                <div key={i} className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                  {text}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {showOriginal ? (
+            <Card>
+              <SectionHeader
+                title="原版完整报告"
+                subtitle={`与 funnel.html 实时同源 · 报告日 ${reportDate || '—'}${data?.generated_at ? ` · 生成 ${data.generated_at}` : ''}`}
+                badge={<Badge tone="blue">全部内容</Badge>}
+              />
+              <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-800">
+                <iframe
+                  key={originalUrl}
+                  src={iframeFailed ? undefined : originalUrl}
+                  srcDoc={iframeFailed ? originalSrcDoc : undefined}
+                  title="原版完整报告"
+                  onError={() => setIframeFailed(true)}
+                  className="h-[1200px] w-full border-0"
+                  loading="lazy"
+                />
+              </div>
+              {data?.notes?.length ? (
+                <div className="mt-3 space-y-1">
+                  {data.notes.map((text, i) => (
+                    <p key={i} className="text-[11px] text-slate-500 dark:text-slate-400">{text}</p>
+                  ))}
+                </div>
+              ) : null}
+            </Card>
+          ) : null}
 
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="策略" value={`${strategies.length} 套`} sub="八步 / 七步 / LLM / 主升浪 / 回调 / 原版八步" />
@@ -286,6 +346,22 @@ export default function RecommendPage() {
                   subtitle={`${current.name.replace(/^[^\w\u4e00-\u9fa5]+/, '')} · ${current.updated || ''}`}
                   badge={<Badge tone="blue">{current.steps.length} 层</Badge>}
                 />
+                {(current.banners || []).length ? (
+                  <div className="mt-3 space-y-1.5">
+                    {current.banners.map((text, i) => (
+                      <p key={i} className="rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-[10px] font-medium text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300">
+                        {text}
+                      </p>
+                    ))}
+                  </div>
+                ) : null}
+                {(current.notes || []).length ? (
+                  <div className="mt-2 space-y-1">
+                    {current.notes.map((text, i) => (
+                      <p key={i} className="text-[10px] leading-relaxed text-slate-500 dark:text-slate-400">{text}</p>
+                    ))}
+                  </div>
+                ) : null}
                 <div className="mt-3 space-y-2">
                   {current.steps.length === 0 ? (
                     <div className="rounded-lg border border-dashed border-slate-200 px-3 py-6 text-center text-xs text-slate-400 dark:border-slate-700">

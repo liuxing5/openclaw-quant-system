@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from datetime import date, datetime, timezone, timedelta
 from html import escape as html_escape
@@ -394,6 +395,26 @@ def _scan_completed_time(scan_row, report_date) -> str:
         except Exception:  # noqa: BLE001
             pass
     return f"{report_date} 14:30:00" if report_date else "—"
+
+
+def _gate_time_context(scan_row, report_date):
+    """返回 (北京时间24小时制完成时刻, 是否在计划扫描窗口内的说明)。
+
+    页面上的 14:30 是计划扫描时刻，横幅显示的是扫描真实执行完毕的时刻，
+    两者可能相差数小时（GitHub Actions 延迟或补跑）。明确标注，避免误解。
+    """
+    value = _scan_completed_time(scan_row, report_date)
+    match = re.search(r"(\d{1,2}):(\d{2})(?::(\d{2}))?", value)
+    note = ""
+    if match:
+        minutes = int(match.group(1)) * 60 + int(match.group(2))
+        if 14 * 60 + 25 <= minutes <= 15 * 60 + 5:
+            note = "计划扫描窗口内"
+        elif minutes < 6 * 60:
+            note = "隔夜补跑，非 14:30 盘中快照"
+        else:
+            note = "计划窗口外补跑，非 14:30 盘中快照"
+    return value, note
 
 
 def load_strategy_timestamp(source, snapshot_date=None):
@@ -1066,23 +1087,30 @@ def generate_unified_html(output_dir=None, trade_date=None):
         # 优先用扫描脚本写入的 filter_stats.scan_completed_at；历史数据无该字段时，
         # 回退到 strategy_scans.created_at（数据落库时刻，同样是真实执行完毕时间）。
         # 只有两者都缺失才回退到设定的扫描时刻 14:30:00（不作为真实完成时间展示）。
-        gate_scan_time = _scan_completed_time(eight_scan, eight_date)
+        gate_scan_time, gate_time_note = _gate_time_context(eight_scan, eight_date)
         if stats.get('regime_blocked'):
             eight_steps_html += (
                 '<div style="margin:8px 0;padding:10px 12px;border:1px solid #fecaca;'
                 'background:#fef2f2;color:#b91c1c;border-radius:8px;font-weight:700;">'
-                f'⚠️ 大盘门控关闭（广度 {sentiment or "—"}%）：A/B 仅观察，{gate_scan_time} 不执行买入；'
-                'C 级不买。</div>'
+                f'⚠️ 大盘门控关闭（广度 {sentiment or "—"}%，口径：全市场站上 MA20 占比）：'
+                f'A/B 仅观察，{gate_scan_time}（北京时间24小时制）不执行买入；C 级不买。'
+                f'计划扫描时刻 {eight_date} 14:30。'
+                + (f'本次为{gate_time_note}。' if gate_time_note else '')
+                + '</div>'
             )
 
     gate_banner_html = ""
     if eight_source == 'overnight_8step_v31' and stats.get('regime_blocked'):
-        gate_scan_time = _scan_completed_time(eight_scan, eight_date)
+        gate_scan_time, gate_time_note = _gate_time_context(eight_scan, eight_date)
         gate_banner_html = (
             '<div style="margin:14px 0 0;padding:12px 14px;border:1px solid #fecaca;'
             'background:#fef2f2;color:#b91c1c;border-radius:10px;font-weight:700;font-size:.92rem;">'
-            f'⚠️ {gate_scan_time} 大盘门控关闭（广度 {sentiment or "—"}%）：八步 v3.1 的 A/B 只观察，'
-            '不执行买入；C 级不买。下一交易日 14:30 重新扫描。</div>'
+            f'⚠️ {gate_scan_time}（北京时间24小时制）大盘门控关闭'
+            f'（广度 {sentiment or "—"}%，口径：全市场站上 MA20 占比，与落库「情绪分」同源）：'
+            '八步 v3.1 的 A/B 只观察，不执行买入；C 级不买。'
+            f'计划扫描时刻 {eight_date} 14:30，下一交易日同理。'
+            + (f'本次为{gate_time_note}。' if gate_time_note else '')
+            + '</div>'
         )
 
     # ── LLM多源步骤 ──

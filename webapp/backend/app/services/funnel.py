@@ -43,6 +43,9 @@ def _html_source(date: str | None = None) -> tuple[str, str]:
         if local and local.exists():
             return local.read_text(encoding="utf-8", errors="replace"), str(local)
         if not date:
+            latest_page = _DOCS / "funnel.html"
+            if latest_page.exists():
+                return latest_page.read_text(encoding="utf-8", errors="replace"), str(latest_page)
             today = datetime.now(_BEIJING).date()
             files = []
             for p in _DOCS.glob("funnel-*.html"):
@@ -87,6 +90,28 @@ def funnel_data(date: str | None = None) -> dict:
     title = _text(soup.find("h1")) or "五策略对比选股系统"
     date_input = soup.find("input", {"type": "date"})
     report_date = date_input.get("value") if date_input else None
+
+    # 原页面的生成时刻与页面级说明、门控横幅一并透传，避免结构化解析丢内容
+    generated = re.search(r"生成:\s*(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})", soup.get_text(" ", strip=True))
+    generated_at = generated.group(1) if generated else None
+    page_note_ids = set()
+    for section in soup.select("div.section"):
+        page_note_ids.update(id(n) for n in section.select(".step-note"))
+    page_notes = []
+    for node in soup.select(".step-note"):
+        if id(node) in page_note_ids:
+            continue
+        text = _text(node)
+        if text and text not in page_notes:
+            page_notes.append(text)
+    banners = []
+    for node in soup.find_all("div"):
+        if "#fef2f2" not in (node.get("style") or "").lower():
+            continue
+        text = _text(node)
+        if text and text.startswith("⚠️") and text not in banners:
+            banners.append(text)
+    html_url = f"{BASE_URL}/funnel-{date}.html" if date else URL
 
     strategies = []
     for idx, section in enumerate(soup.select("div.section")):
@@ -167,9 +192,14 @@ def funnel_data(date: str | None = None) -> dict:
                 "note": None,
                 "status": "no_candidates" if ("八步" in name and not candidates) else None,
                 "steps": steps,
+                "notes": [_text(n) for n in section.select(".step-note") if _text(n)],
+                "banners": [
+                    _text(n) for n in section.find_all("div")
+                    if "#fef2f2" in (n.get("style") or "").lower() and _text(n).startswith("⚠️")
+                ],
                 "candidates": candidates,
                 "candidate_count": len(candidates),
-                "backtest": backtest[:4],
+                "backtest": backtest,
             }
         )
 
@@ -189,6 +219,13 @@ def funnel_data(date: str | None = None) -> dict:
     return {
         "title": title,
         "report_date": report_date,
+        "generated_at": generated_at,
         "source": source,
+        "html_url": html_url,
+        "banners": banners,
+        "notes": page_notes,
+        # 完整原始 HTML 一并透传：前端「原版完整报告」视图用它做 srcdoc 兜底，
+        # 保证 /recommend 与 funnel.html 的任何细节（含未来新增区块）都不丢失。
+        "raw_html": html,
         "strategies": strategies,
     }

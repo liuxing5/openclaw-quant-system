@@ -18,6 +18,8 @@ RUN pip install --upgrade pip && pip install -r /app/webapp/backend/requirements
 COPY core /app/core
 COPY webapp/backend /app/webapp/backend
 COPY strategies/agent_skills /app/strategies/agent_skills
+# 荐股页抓取 GitHub Pages 失败时，回退到本地已发布的 funnel 报告
+COPY strategies/funnel_strategy/docs /app/strategies/funnel_strategy/docs
 COPY --from=frontend /app/webapp/frontend/dist /app/webapp/frontend/dist
 
 ENV PORT=8000
