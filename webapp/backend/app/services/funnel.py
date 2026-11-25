@@ -15,33 +15,47 @@ from bs4 import BeautifulSoup
 
 from ..cache import ttl_cache
 
-URL = "https://liuxing5.github.io/openclaw-quant-system/funnel/funnel.html"
+BASE_URL = "https://liuxing5.github.io/openclaw-quant-system/funnel"
+URL = f"{BASE_URL}/funnel.html"
 _DOCS = Path(__file__).resolve().parents[4] / "strategies" / "funnel_strategy" / "docs"
 _BEIJING = timezone(timedelta(hours=8))
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
-def _html_source() -> tuple[str, str]:
-    """优先读 GitHub Pages 最新报告；网络异常才回退最近一次本地生成文件。"""
+def _html_source(date: str | None = None) -> tuple[str, str]:
+    """读取指定日期的历史报告；未指定则读最新报告。
+
+    网络异常时回退到本地 docs 目录：指定日期取同名日期页，未指定取最近一次生成文件。
+    """
     import time
-    url = f"{URL}?v={int(time.time())}"
+    if date:
+        url = f"{BASE_URL}/funnel-{date}.html"
+        local = _DOCS / f"funnel-{date}.html"
+    else:
+        url = URL
+        local = None
+    url = f"{url}?v={int(time.time())}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Cache-Control": "no-cache"})
         with urllib.request.urlopen(req, timeout=20) as resp:
-            return resp.read().decode("utf-8", "replace"), URL
+            return resp.read().decode("utf-8", "replace"), url.split("?")[0]
     except Exception:
-        today = datetime.now(_BEIJING).date()
-        files = []
-        for p in _DOCS.glob("funnel-*.html"):
-            m = re.search(r"funnel-(\d{4}-\d{2}-\d{2})\.html$", p.name)
-            if m:
-                try:
-                    files.append((datetime.strptime(m.group(1), "%Y-%m-%d").date(), p))
-                except ValueError:
-                    pass
-        if files:
-            latest_date, latest = max(files, key=lambda x: x[0])
-            if (today - latest_date).days <= 7:
-                return latest.read_text(encoding="utf-8", errors="replace"), str(latest)
+        if local and local.exists():
+            return local.read_text(encoding="utf-8", errors="replace"), str(local)
+        if not date:
+            today = datetime.now(_BEIJING).date()
+            files = []
+            for p in _DOCS.glob("funnel-*.html"):
+                m = re.search(r"funnel-(\d{4}-\d{2}-\d{2})\.html$", p.name)
+                if m:
+                    try:
+                        files.append((datetime.strptime(m.group(1), "%Y-%m-%d").date(), p))
+                    except ValueError:
+                        pass
+            if files:
+                latest_date, latest = max(files, key=lambda x: x[0])
+                if (today - latest_date).days <= 7:
+                    return latest.read_text(encoding="utf-8", errors="replace"), str(latest)
         raise
 
 
@@ -50,8 +64,25 @@ def _text(node) -> str:
 
 
 @ttl_cache(300)
-def funnel_data() -> dict:
+def funnel_dates() -> dict:
+    """从主报告的日期选择器提取全部可用历史日期（升序返回，供前端下拉）。"""
     html, source = _html_source()
+    dates = re.findall(r"var\s+available\s*=\s*\[([^\]]*)\]", html) or []
+    found = re.findall(r"\"(\d{4}-\d{2}-\d{2})\"", dates[0]) if dates else []
+    # 兜底：若内嵌数组缺失，扫描本地日期页文件名 + 最新报告日
+    if not found:
+        found = [m.group(1) for p in _DOCS.glob("funnel-*.html")
+                 if (m := re.search(r"funnel-(\d{4}-\d{2}-\d{2})\.html$", p.name))]
+    dates_sorted = sorted(set(found))
+    return {"dates": dates_sorted, "latest": dates_sorted[-1] if dates_sorted else None, "source": source}
+
+
+@ttl_cache(300)
+def funnel_data(date: str | None = None) -> dict:
+    """读取报告并结构化为 JSON；date 为 YYYY-MM-DD 时读对应历史页。"""
+    if date and not _DATE_RE.match(str(date)):
+        raise ValueError("日期格式须为 YYYY-MM-DD")
+    html, source = _html_source(date)
     soup = BeautifulSoup(html, "lxml")
     title = _text(soup.find("h1")) or "五策略对比选股系统"
     date_input = soup.find("input", {"type": "date"})

@@ -39,9 +39,20 @@ def recommend_ai_review(codes: str = Query(..., description="逗号分隔股票�
     return {"items": items}
 
 
-@router.get("/recommend/funnel")
-def recommend_funnel():
+@router.get("/recommend/dates")
+def recommend_dates():
+    """返回全部可查询的历史报告日期（升序）与最新日期。"""
     try:
-        return funnel.funnel_data()
+        return funnel.funnel_dates()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"历史日期列表暂不可用: {exc}") from None
+
+
+@router.get("/recommend/funnel")
+def recommend_funnel(date: str | None = Query(None, description="报告日期 YYYY-MM-DD，不传为最新")):
+    try:
+        return funnel.funnel_data(date)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from None
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"荐股数据源暂不可用: {exc}") from None

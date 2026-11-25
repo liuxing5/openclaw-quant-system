@@ -89,10 +89,46 @@ function CandidateCard({ c, onOpen, ai }) {
 
 export default function RecommendPage() {
   const navigate = useNavigate()
-  const { data, loading, error, reload } = useApi(() => api.get('/recommend/funnel'), [])
+  const datesQ = useApi(() => api.get('/recommend/dates'), [])
+  const availableDates = datesQ.data?.dates || []
+  const latestAvailable = datesQ.data?.latest || ''
+  const [queryDate, setQueryDate] = useState('') // 空 = 最新报告；YYYY-MM-DD = 历史报告
+  const [dateHint, setDateHint] = useState('')
+  const { data, loading, error, reload } = useApi(
+    () => api.get('/recommend/funnel', queryDate ? { date: queryDate } : {}),
+    [queryDate],
+  )
   const strategies = data?.strategies || []
   const [active, setActive] = useState(0)
   const [picked, setPicked] = useState(false)
+
+  // 切换日期后，让默认策略重新落到有候选的那一路。
+  useEffect(() => {
+    setActive(0)
+    setPicked(false)
+  }, [queryDate])
+
+  const handleDateChange = (value) => {
+    if (!value) {
+      setQueryDate('')
+      setDateHint('')
+      return
+    }
+    if (!availableDates.length || availableDates.includes(value)) {
+      setQueryDate(value)
+      setDateHint('')
+      return
+    }
+    // 与 funnel.html 一致：无数据日期自动跳到最近可用日期。
+    let closest = availableDates[0]
+    let minDiff = Infinity
+    for (const d of availableDates) {
+      const diff = Math.abs(new Date(d).getTime() - new Date(value).getTime())
+      if (diff < minDiff) { minDiff = diff; closest = d }
+    }
+    setQueryDate(closest)
+    setDateHint(`该日期暂无报告，已切换到最近可用日期 ${closest}`)
+  }
 
   useEffect(() => {
     if (!strategies.length) return
@@ -143,19 +179,24 @@ export default function RecommendPage() {
     const vals = strategies.map((s) => s.updated).filter(Boolean)
     return vals.length ? vals.sort().slice(-1)[0] : '—'
   }, [strategies])
-  const latestDate = String(latest).slice(0, 10)
+  // 当前查看的报告日：优先用后端返回的 report_date，历史查询下就是所选日期。
+  const reportDate = String(data?.report_date || latestAvailable || '').slice(0, 10)
+  const isHistory = Boolean(queryDate)
+  // "策略尚未更新"提示仅在查看最新报告时有意义；历史报告本就是当期快照。
   const pendingNames = useMemo(
     () =>
-      strategies
-        .filter((s) => s.updated && String(s.updated).slice(0, 10) < latestDate)
-        .map((s) => s.name.replace(/^[^\w\u4e00-\u9fa5]+/, '')),
-    [strategies, latestDate],
+      isHistory
+        ? []
+        : strategies
+            .filter((s) => s.updated && String(s.updated).slice(0, 10) < reportDate)
+            .map((s) => s.name.replace(/^[^\w\u4e00-\u9fa5]+/, '')),
+    [strategies, reportDate, isHistory],
   )
 
   return (
     <PageShell
       title="荐股"
-      subtitle={`六策略对比选股系统 · 数据日 ${latestDate || data?.report_date || '—'} · 盘后 15:10 更新`}
+      subtitle={`六策略对比选股系统 · 数据日 ${reportDate || '—'}${isHistory ? ' · 历史回看' : ''} · 盘后 15:10 更新`}
       actions={
         <a href={SOURCE} target="_blank" rel="noreferrer" className="text-xs font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
           数据源原文 ↗
@@ -172,10 +213,29 @@ export default function RecommendPage() {
         loadingLabel="荐股策略加载中"
       >
         <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 dark:border-slate-800 dark:bg-slate-900/60">
+            <span className="text-xs font-medium text-slate-500 dark:text-slate-400">查询日期</span>
+            <input
+              type="date"
+              value={queryDate || reportDate || ''}
+              min={availableDates[0] || undefined}
+              max={latestAvailable || reportDate || undefined}
+              onChange={(e) => handleDateChange(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-brand-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            />
+            {queryDate ? (
+              <Button variant="ghost" size="sm" onClick={() => handleDateChange('')}>回到最新</Button>
+            ) : null}
+            <span className="text-[10px] text-slate-400">
+              共 {availableDates.length || '—'} 个交易日可查 · 选择日期查看当期荐股
+            </span>
+            {dateHint ? <span className="text-[10px] text-amber-600 dark:text-amber-400">{dateHint}</span> : null}
+          </div>
+
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             <Stat label="策略" value={`${strategies.length} 套`} sub="八步 / 七步 / LLM / 主升浪 / 回调 / 原版八步" />
             <Stat label="候选" value={`${totalCandidates} 只`} sub="当前报告全部策略去重前" />
-            <Stat label="报告日期" value={data?.report_date ? fmtDate(data.report_date) : '—'} sub="数据源生成日" />
+            <Stat label="报告日期" value={data?.report_date ? fmtDate(data.report_date) : '—'} sub={isHistory ? '历史回看快照' : '数据源生成日'} />
             <Stat label="最新更新" value={latest} sub="各策略最近运行时间" />
           </div>
 
