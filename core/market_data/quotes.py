@@ -138,9 +138,15 @@ def fetch_with_akshare_full():
     if df is None or df.empty:
         logger.info("AKShare 全市场快照（新浪源兜底）...")
         try:
-            df = ak.stock_zh_a_spot()
+            # akshare>=1.20.46 把 stock_zh_a_spot 改名为 stock_zh_a_spot_sina；
+            # 不兼容旧名会导致东财限流时唯一兜底也失效，行情连续多日不更新。
+            sina_fn = getattr(ak, 'stock_zh_a_spot_sina', None) or getattr(ak, 'stock_zh_a_spot', None)
+            if sina_fn is None:
+                logger.error("AKShare 无可用新浪快照接口")
+                return None
+            df = sina_fn()
             if df is not None and not df.empty:
-                logger.info(f"新浪源成功: {len(df)} 条")
+                logger.info(f"新浪源成功({sina_fn.__name__}): {len(df)} 条")
         except Exception as e:
             logger.error(f"AKShare 新浪源失败: {e}")
             return None
