@@ -18,10 +18,17 @@ load_project_env()
 # 北京时间时区
 BEIJING_TZ = timezone(timedelta(hours=8))
 
+# 延迟 cron 补采时，把全链路的“今天”钉到目标交易日，
+# 否则东财快照/龙虎榜/北向/Tushare 会各写各的日期。
+_TARGET_DATE = None
+
 
 def get_beijing_date():
-    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）"""
-    return datetime.now(BEIJING_TZ).date()
+    """获取北京时间日期（解决 GitHub Actions UTC 时区问题）。
+
+    __main__ 中补采历史交易日时会设置 _TARGET_DATE，使所有数据源写入同一天。
+    """
+    return _TARGET_DATE or datetime.now(BEIJING_TZ).date()
 
 
 def is_trading_day(d):
@@ -793,23 +800,30 @@ def fetch_hsgt_top10():
 
 
 if __name__ == '__main__':
-    today = get_beijing_date()
-    
-    # 非交易日跳过行情采集
-    if not is_trading_day(today):
-        logger.warning(f"{today} 非交易日，跳过行情采集")
-        exit(0)
-
-    # 未收盘不执行全天采集：需北京时间 >= 15:05 才能拿到完整收盘数据，
-    # 否则盘中不完整快照会覆盖/污染当日行。此处直接拒绝执行。
     _now_bj = datetime.now(BEIJING_TZ)
     _cutoff_bj = _now_bj.replace(hour=15, minute=5, second=0, microsecond=0)
-    if _now_bj < _cutoff_bj:
+
+    if _now_bj >= _cutoff_bj:
+        # 正常盘后运行：采当天（若当天非交易日则回退到最近交易日）
+        target = get_beijing_date()
+        if not is_trading_day(target):
+            target -= timedelta(days=1)
+            while not is_trading_day(target):
+                target -= timedelta(days=1)
+    else:
+        # GitHub cron 常延迟 11 小时到次日凌晨才触发；此时“今天”还没收盘，
+        # 不能拒绝整批任务（否则 daily_quotes 会连续多日停在旧日期），
+        # 改为补采最近一个已经收盘的交易日。
+        target = _now_bj.date() - timedelta(days=1)
+        while not is_trading_day(target):
+            target -= timedelta(days=1)
         logger.warning(
             f"北京时间 {_now_bj.strftime('%H:%M:%S')} 未到收盘 15:05，"
-            f"拒绝执行全天行情采集（避免用盘中不完整快照覆盖当日数据）"
+            f"按延迟 cron 补采已收盘交易日 {target}（不用盘中半根K线覆盖）"
         )
-        exit(0)
+
+    _TARGET_DATE = target
+    logger.info(f"行情采集目标交易日: {target}")
     
     import concurrent.futures
     ensure_market_tables()

@@ -349,6 +349,20 @@ def load_candidates(source, trade_date=None, run_mode=None, retry_empty=False, m
             _close_conn(conn)
 
 
+def latest_strategy_data_date(source: str):
+    """返回该策略最近一次有数据的日期（候选表或扫描表，取较新者）。
+
+    不能把回测区间的起始日当作策略运行日期；当日无候选时必须回退到这里。
+    """
+    row = query_one("""
+        SELECT GREATEST(
+            (SELECT MAX(snapshot_date) FROM daily_candidates WHERE source = %s),
+            (SELECT MAX(snapshot_date) FROM strategy_scans WHERE strategy = %s)
+        ) AS d
+    """, (source, source))
+    return row.get('d') if row else None
+
+
 def load_scan_stats(strategy, snapshot_date=None):
     if snapshot_date:
         row = query_one("""
@@ -884,9 +898,17 @@ def generate_unified_html(output_dir=None, trade_date=None):
 
     # ── 回调买入法 (pullback_buy) ──
     pb_candidates, pb_date = load_candidates('pullback_buy', trade_date=trade_date)
-    pb_scan = load_scan_stats('pullback_buy', pb_date)
+    # 当日行情未就绪或门控关闭导致零候选时，回退到该策略最近一次真实数据日；
+    # 绝不能落到回测区间的起始日（2025-01-01），那不是策略运行日期。
+    _pb_latest = latest_strategy_data_date('pullback_buy')
+    if _pb_latest and str(_pb_latest) != str(trade_date):
+        pb_date = _pb_latest
+        pb_candidates, _ = load_candidates('pullback_buy', trade_date=pb_date)
+    pb_scan = load_scan_stats('pullback_buy', pb_date) or load_scan_stats('pullback_buy')
     pb_backtest = load_pullback_backtest()
     pb_timestamp = load_strategy_timestamp('pullback_buy', pb_date) if (pb_date or pb_scan) else None
+    pb_display_date = (pb_timestamp or str(pb_date or '')
+                       or str((pb_scan or {}).get('snapshot_date') or '') or '—')
 
     # ── 三策略前向收益重算（2026-10-13 审查新增，forward_stats.py 产出）──
     funnel_fwd = load_forward_stats("funnel_forward.json")
@@ -1942,7 +1964,7 @@ body {{ font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-ser
 
     <!-- ========== 回调买入法 ========== -->
     <div class="section">
-      <h2>🪝 回调买入法<span class="section-subtitle">{pb_timestamp or (pb_scan.get('snapshot_date', '') if pb_scan else '') or (pb_backtest.get('backtest_start', '') if pb_backtest else '') or '—'}</span></h2>
+      <h2>🪝 回调买入法<span class="section-subtitle">{pb_display_date}</span></h2>
       <div class="steps-area" style="overflow-y:auto;">{pullback_steps_html}</div>
       <h3 style="font-size:.9rem;margin:14px 0 8px;color:var(--text);">{('今日候选 (' + str(pullback_count) + '只)') if pullback_count else ('回测 Top 5 (' + str(pb_backtest.get('total_signals', 0)) + '笔)' if pb_backtest else '候选标的')}</h3>
       {pb_stale_html}
