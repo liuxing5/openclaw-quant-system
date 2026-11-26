@@ -70,8 +70,12 @@ jobs:
           POSTGRES_POOL_SIZE: 5
         run: |
           DATE="${{ steps.check.outputs.date }}"
-          if [ -f docs/overnight_v2/latest_1430.json ] && grep -q "\"trade_date\": \"$DATE\"" docs/overnight_v2/latest_1430.json; then
-            echo "already scanned $DATE, skip"
+          FORCE="${{ github.event.inputs.force }}"
+          # 幂等必须区分「14:30 盘中快照」与「凌晨补跑」：
+          # GitHub cron 经常延迟到次日凌晨才触发，那种快照 trade_date 虽是当天，
+          # 但 scan_completed_at 在凌晨，不能挡住真正的 14:30 扫描。
+          if [ "$FORCE" != "true" ] && python scripts/is_intraday_snapshot.py --date "$DATE"; then
+            echo "already scanned $DATE in intraday window, skip"
             exit 0
           fi
           python strategies/overnight_8step/full_market_1430.py --date "$DATE"
@@ -92,12 +96,13 @@ jobs:
 
       - name: Persist v3.1 + classic snapshot
         if: steps.check.outputs.is_trading == 'true' && steps.check.outputs.allow_scan == 'true'
-        continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/overnight_v2/latest_1430.json strategies/funnel_strategy/docs/overnight_v2.html strategies/funnel_strategy/docs/overnight_classic.json
           git diff --cached --quiet && exit 0
           git commit -m "data: update 14:30 v3.1 + classic scan ${{ steps.check.outputs.date }} [skip ci]"
-          git pull --rebase --autostash
+          # 两个 workflow 都会写 overnight_classic.json；rebase 时以本轮新扫描为准，
+          # 否则冲突会中断回写（之前被 continue-on-error 吞掉，页面就停在旧数据）。
+          git pull --rebase --autostash -X ours
           git push

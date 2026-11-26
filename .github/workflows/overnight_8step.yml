@@ -303,7 +303,7 @@ jobs:
         git add strategies/funnel_strategy/docs/overnight_classic.json
         git diff --cached --quiet && exit 0
         git commit -m "data: update classic scan $(TZ=Asia/Shanghai date +%F) [skip ci]"
-        git pull --rebase --autostash
+        git pull --rebase --autostash -X ours
         git push
 
     - name: Generate report (8step only)
