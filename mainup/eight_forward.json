@@ -1,13 +1,13 @@
 {
   "source": "overnight_8step",
   "generated_at": "2026-11-26",
-  "generated_at_time": "2026-11-26 14:34:20",
+  "generated_at_time": "2026-11-26 19:30:14",
   "timezone_note": "generated_at/generated_at_time 为北京时间(UTC+8)；data_as_of = daily_quotes 最新交易日（数据实际截止日）",
-  "data_as_of": "2026-11-20",
+  "data_as_of": "2026-11-26",
   "quote_coverage": {
     "start": "2024-06-12",
-    "end": "2026-11-20",
-    "n_days": 592,
+    "end": "2026-11-26",
+    "n_days": 593,
     "n_codes": 5279,
     "adjusted": "qfq (strategies.shared.adjust.qfq_factors)"
   },
@@ -17,32 +17,32 @@
   "candidate_detail": "daily_candidates[overnight_8step](morning_reuse excluded)",
   "excluded_morning_reuse": 0,
   "run_mode_breakdown": {
-    "afternoon": 552,
-    "intraday": 414
+    "afternoon": 553,
+    "intraday": 415
   },
   "morning_reuse_note": "aggregate.py morning 模式在无合格候选时会把昨日 afternoon 选中候选改日期复制为今日信号（logic_tags 含 morning_reuse/盘前复用），读库时已剔除，否则会虚增样本量 n；excluded_morning_reuse 为被剔除行数",
   "sample_range": [
     "2026-01-05",
-    "2026-11-25"
+    "2026-11-26"
   ],
-  "total_candidates": 966,
-  "unique_signals": 726,
-  "signals_out_of_matrix": 37,
+  "total_candidates": 968,
+  "unique_signals": 727,
+  "signals_out_of_matrix": 38,
   "dropped_by_reason": {
     "10": {
-      "out_of_range": 29,
+      "out_of_range": 25,
       "no_entry": 32,
-      "no_exit": 23
+      "no_exit": 27
     },
     "20": {
-      "out_of_range": 68,
+      "out_of_range": 65,
       "no_entry": 32,
-      "no_exit": 2
+      "no_exit": 5
     },
     "60": {
-      "out_of_range": 256,
+      "out_of_range": 247,
       "no_entry": 32,
-      "no_exit": 1
+      "no_exit": 10
     }
   },
   "benchmark": {
