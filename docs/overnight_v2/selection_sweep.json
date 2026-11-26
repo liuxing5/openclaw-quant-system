@@ -1,0 +1,93 @@
+{
+  "top1": {
+    "label": "每日 rank1（现状）",
+    "days": 244,
+    "n": 244,
+    "win_day": 0.4631,
+    "avg_day": -0.0031,
+    "ann": -0.4669,
+    "dd": -0.6022,
+    "t": -2.24,
+    "boot_lo": -0.0057,
+    "boot_hi": -0.0002,
+    "boot_pos": 0.017
+  },
+  "all_A": {
+    "label": "当日全部 A 级等权（方案A）",
+    "days": 203,
+    "n": 203,
+    "win_day": 0.4581,
+    "avg_day": -0.0036,
+    "ann": -0.4498,
+    "dd": -0.5741,
+    "t": -2.46,
+    "boot_lo": -0.0064,
+    "boot_hi": -0.0007,
+    "boot_pos": 0.004
+  },
+  "A_lu20le1": {
+    "label": "A_lu20le1",
+    "days": 203,
+    "n": 203,
+    "win_day": 0.4581,
+    "avg_day": -0.0036,
+    "ann": -0.4498,
+    "dd": -0.5741,
+    "t": -2.46,
+    "boot_lo": -0.0064,
+    "boot_hi": -0.0007,
+    "boot_pos": 0.004
+  },
+  "A_lu20le1_b20le70": {
+    "label": "A_lu20le1_b20le70",
+    "days": 203,
+    "n": 203,
+    "win_day": 0.4581,
+    "avg_day": -0.0036,
+    "ann": -0.4498,
+    "dd": -0.5741,
+    "t": -2.46,
+    "boot_lo": -0.0064,
+    "boot_hi": -0.0007,
+    "boot_pos": 0.004
+  },
+  "A_lu20le1_ret5pos": {
+    "label": "A_lu20le1_ret5pos",
+    "days": 188,
+    "n": 188,
+    "win_day": 0.4362,
+    "avg_day": -0.0042,
+    "ann": -0.4695,
+    "dd": -0.586,
+    "t": -2.68,
+    "boot_lo": -0.007,
+    "boot_hi": -0.0011,
+    "boot_pos": 0.004
+  },
+  "A_strict_all": {
+    "label": "A_strict_all",
+    "days": 203,
+    "n": 203,
+    "win_day": 0.4581,
+    "avg_day": -0.0036,
+    "ann": -0.4498,
+    "dd": -0.5741,
+    "t": -2.46,
+    "boot_lo": -0.0064,
+    "boot_hi": -0.0007,
+    "boot_pos": 0.004
+  },
+  "top1_lu20le1": {
+    "label": "top1 且不追涨停",
+    "days": 244,
+    "n": 244,
+    "win_day": 0.4631,
+    "avg_day": -0.0031,
+    "ann": -0.4669,
+    "dd": -0.6022,
+    "t": -2.24,
+    "boot_lo": -0.0057,
+    "boot_hi": -0.0002,
+    "boot_pos": 0.017
+  }
+}

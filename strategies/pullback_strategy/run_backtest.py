@@ -100,7 +100,12 @@ def simulate(sigs: pd.DataFrame, quotes: pd.DataFrame, cfg,
 
     busy: dict = {}          # ts_code -> 持仓占用至的日历位置（含）
     skipped = {"gap_up": 0, "suspended_next_day": 0, "nan_entry": 0,
-               "entry_below_stop": 0, "no_data": 0, "duplicate_hold": 0}
+               "entry_below_stop": 0, "no_data": 0, "duplicate_hold": 0,
+               "daily_cap": 0}
+    # 2026-11-26: 每日新开仓上限（资金约束）。原实现无资金约束，峰值并发 397，
+    # 实盘无法复制。按信号日截断，杜绝未来函数。
+    daily_cap = int(getattr(cfg, "max_new_positions_per_day", 0) or 0)
+    opened_per_day: dict = {}
     rows = []
     for _, s in sigs.iterrows():
         g = q_by_code.get(s["ts_code"])
@@ -130,6 +135,12 @@ def simulate(sigs: pd.DataFrame, quotes: pd.DataFrame, cfg,
         # ---- 问题5: 同票持仓去重 ----
         if busy.get(s["ts_code"], -1) >= entry_pos:
             skipped["duplicate_hold"] += 1
+            continue
+
+        # ---- 2026-11-26: 每日新开仓上限（资金约束）----
+        sig_day = pd.Timestamp(s["trade_date"]).normalize()
+        if daily_cap and opened_per_day.get(sig_day, 0) >= daily_cap:
+            skipped["daily_cap"] += 1
             continue
 
         # ---- 问题1: 开盘价有限性校验 ----
@@ -213,6 +224,8 @@ def simulate(sigs: pd.DataFrame, quotes: pd.DataFrame, cfg,
         # 问题5: 记录持仓区间（日历位置）用于去重与并发统计
         exit_pos = cal_pos.get(pd.Timestamp(exit_bar["trade_date"]).normalize(), entry_pos)
         busy[s["ts_code"]] = max(busy.get(s["ts_code"], -1), exit_pos)
+        if daily_cap:
+            opened_per_day[sig_day] = opened_per_day.get(sig_day, 0) + 1
 
         entry_raw = (float(entry_bar["raw_open"]) if "raw_open" in g.columns
                      else entry * sig_scale)

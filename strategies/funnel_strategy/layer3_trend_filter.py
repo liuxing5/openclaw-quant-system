@@ -52,9 +52,15 @@ def _calc_rsi(values: pd.Series, period: int = 14) -> pd.Series:
 
 
 def _batch_load_history(
-    stock_list: List[str], trade_date: date, db_conn, days: int = 300
+    stock_list: List[str], trade_date: date, db_conn, days: int = 420
 ) -> Dict[str, pd.DataFrame]:
-    """批量加载所有股票的OHLCV历史数据：一次SQL查询"""
+    """批量加载所有股票的OHLCV历史数据：一次SQL查询。
+
+    2026-11-26 修复：原 days=300 自然日约合 205 个交易日，而年线判定要
+    layer3_annual_ma_period=250 个交易日，导致 `data_days >= annual_period`
+    永远不成立，年线加分/过滤形同虚设。按 A 股每年约 243 交易日换算，
+    250 交易日需要约 420 自然日（含节假日缓冲）。
+    """
     if not stock_list:
         return {}
 
@@ -251,7 +257,7 @@ def check_trend_structure(ts_code: str, trade_date: date, cfg, verbose: bool = F
     """单股趋势结构检查（兼容接口，内部用batch load）"""
     conn = get_db_fresh()
     try:
-        cache = _batch_load_history([ts_code], trade_date, conn, days=300)
+        cache = _batch_load_history([ts_code], trade_date, conn, days=420)
     finally:
         if conn and not conn.closed:
             conn.close()
@@ -303,7 +309,7 @@ def run_layer3_trend_filter(
     try:
         if verbose:
             print(f"  ⏳批量加载K线数换({n_total} 可...")
-        ohlcv_cache = _batch_load_history(stock_list, trade_date, conn, days=300)
+        ohlcv_cache = _batch_load_history(stock_list, trade_date, conn, days=420)
     finally:
         if conn and not conn.closed:
             conn.close()

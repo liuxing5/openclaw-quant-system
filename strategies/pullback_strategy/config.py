@@ -58,6 +58,14 @@ class PullbackConfig:
     exclude_new_days: int = 60        # 剔除上市不足60天的次新股
     exclude_limit_day: bool = True    # 剔除当日涨停/跌停（无法成交）
 
+    # ---- 2026-11-26 改造：评分 IC 反向修复 ----
+    # 10459 笔历史成交按评分分五桶：Q1(最低) 胜率35.0%/均值+0.65%，
+    # Q5(最高) 胜率29.4%/均值+0.29%；final_score 与 5日收益 IC=-0.366。
+    # 根因：高动能分位在 A 股中期后跟短期反转，原 mom_pts 方向相反。
+    # 改为反向动能分（低动能得分高），并保留开关便于回滚。
+    invert_momentum_score: bool = True
+    max_new_positions_per_day: int = 5   # 资金约束：每日最多新开 5 仓（原无约束，峰值并发 397）
+
     # ---- 每日输出 ----
     top_n: int = 10                   # 每日输出候选数量
 

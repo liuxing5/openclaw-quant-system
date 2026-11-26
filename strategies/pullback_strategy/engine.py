@@ -375,7 +375,10 @@ def generate_signals(df: pd.DataFrame, cfg: PullbackConfig, meta: pd.DataFrame,
     sig = sig[(sig["risk_pct"] > 0) & (sig["risk_pct"] <= cfg.max_risk_pct / 100.0 + 1e-6)]
 
     # ---- 综合评分（用于排序，满分100）----
-    mom_pts = np.clip(sig["mom_pctile"], 0, 1) * 50                    # 截面动能分位
+    # 2026-11-26: 动量分反向。10459 笔实测评分与 5 日收益 IC=-0.366：
+    # 最低分桶胜率 35.0%/均值 +0.65%，最高分桶 29.4%/+0.29%。
+    mom_rank = np.clip(sig["mom_pctile"], 0, 1)
+    mom_pts = ((1 - mom_rank) if getattr(cfg, "invert_momentum_score", False) else mom_rank) * 50
     depth_pts = (1 - np.abs(depth.reindex(sig.index) - 0.15) / 0.15).clip(0, 1) * 25
     risk_pts = (1 - sig["risk_pct"] / (cfg.max_risk_pct / 100.0)) * 25
     sig["final_score"] = (mom_pts + depth_pts + risk_pts).round(1)

@@ -1080,7 +1080,9 @@ def generate_unified_html(output_dir=None, trade_date=None):
             eight_steps_html += f'<div class="step-note"> {mood_text}</div>'
         eight_steps_html += (
             '<div class="step-note">⏰ 全市场 14:30 扫描；14:40-14:50 买入；'
-            '次日 09:25 看缺口，10:00 前卖出。前向收益统计见 '
+            '<strong>止盈 10.5% / 止损 8% / 最长持有 9 日</strong>'
+            '（2026-11-26 改造：诊断证明次日早盘卖吃的是隔夜负收益段；'
+            '统一参数扫描 375 组中该组合 Calmar 最高 4.47）。前向收益统计见 '
             '<a href="./overnight_v2.html">八步 v3 报告</a>。</div>'
         )
         # 门控提示显示扫描"实际执行完毕"的北京时间（精确到秒），避免"今日"等模糊表述。

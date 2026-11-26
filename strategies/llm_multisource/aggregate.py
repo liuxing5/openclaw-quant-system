@@ -29,6 +29,7 @@ from core.db.connection import get_db_fresh
 from core.db.candidates import write_candidates
 from core.utils.env import load_project_env
 from core.utils.trading_calendar import is_trading_day as _calendar_is_trading_day
+from strategies.shared.board_rules import limit_pct as _limit_pct
 
 load_project_env()
 
@@ -39,6 +40,18 @@ MIN_SELECT_SCORE = int(os.getenv('MIN_SELECT_SCORE', '25'))
 MAX_SELECTED = 5
 MIN_LIQUIDITY = 1e8
 SOURCE = 'llm_multisource'
+
+
+def _at_limit_up(ts_code: str, pct_chg: float) -> bool:
+    """真实涨停判定（2026-11-26 修复）。
+
+    旧代码用 9.5%/19.5% 近似，且漏掉北交所 30cm；现在按板块真实涨跌幅限制，
+    留 0.5 个点容差（盘中 9.9% 未封板仍可买，封板 10% 才跳过）。
+    """
+    if pct_chg is None or pd.isna(pct_chg):
+        return False
+    return float(pct_chg) >= _limit_pct(ts_code) * 100 - 0.5
+
 
 # 用集合判断，兼容多种命名
 AFTERHOURS_MODES = {'afterhours', 'afternoon', 'evening'}
@@ -389,10 +402,7 @@ def aggregate_today():
                 large_order_net = q.get('large_order_net') or 0
                 main_force_net = q.get('main_force_net') or 0
 
-                is_kc_cy = ts.split('.')[0].startswith(('688', '300', '301'))
-                limit_threshold = 19.5 if is_kc_cy else 9.5
-
-                if RUN_MODE in AFTERHOURS_MODES and pct_chg >= limit_threshold:
+                if RUN_MODE in AFTERHOURS_MODES and _at_limit_up(ts, pct_chg):
                     logger.info(f"{ts} 今日已涨停 {pct_chg:.1f}%，盘后模式跳过（次日陷阱风险）")
                     continue
 
@@ -681,9 +691,7 @@ def aggregate_today():
                 main_force_net = q['main_force_net'] or 0
 
                 # 盘后模式跳过涨停股（和LLM分支保持一致）
-                is_kc_cy = ts_code.split('.')[0].startswith(('688', '300', '301'))
-                limit = 19.5 if is_kc_cy else 9.5
-                if RUN_MODE in AFTERHOURS_MODES and pct_chg >= limit:
+                if RUN_MODE in AFTERHOURS_MODES and _at_limit_up(ts_code, pct_chg):
                     continue
 
                 # 连续量化评分（和LLM分支保持一致）
@@ -900,22 +908,18 @@ def aggregate_today():
             for c in candidates:
                 ts = c['ts_code']
                 pct = c.get('pct_chg', 0)
-                is_kc_cy = ts.split('.')[0].startswith(('688', '300', '301'))
-                limit = 19.5 if is_kc_cy else 9.5
+                limit_pct = _limit_pct(ts) * 100
 
-                if pct >= limit:
+                if _at_limit_up(ts, pct):
                     logger.debug(f"{ts} 已涨停 {pct}%，盘中跳过")
                     continue
 
-                if 4 < pct < limit and c.get('turnover_rate', 0) > 5:
-                    # ⚠ 已知问题（2026-10-13 审查，暂不改行为）：
-                    # 此处对已归一化合成的 final_score 直接 ×1.2，
-                    # 与 LLM 分/量化分的几何加权链路相互叠加，可能把
-                    # final_score 推高至理论上限(100)以上，并与
-                    # MIN_SELECT_SCORE 阈值口径不一致。
-                    # 属于"准涨停"动量加成，改动会直接影响入池结果，
-                    # 待前向收益重算给出依据后再改为对同量纲分量加权。
-                    c['final_score'] *= 1.2
+                if 4 < pct < limit_pct - 0.5 and c.get('turnover_rate', 0) > 5:
+                    # 2026-11-26 修复：原先 final_score *= 1.2 会把已归一化的
+                    # 综合分推过 100 上限，与 MIN_SELECT_SCORE 阈值口径不一致。
+                    # 改为同量纲加分（+5 分，封顶 100），并同步 quant_score。
+                    c['final_score'] = min(100.0, float(c.get('final_score') or 0) + 5.0)
+                    c['quant_score'] = c['final_score']
                     if 'logic_tags' not in c:
                         c['logic_tags'] = []
                     c['logic_tags'].append('准涨停')

@@ -90,6 +90,11 @@ def persist(result: Dict[str, Any]) -> int:
     date_str = result["trade_date"]
     rows = []
     weight = {"A": 0.20, "B": 0.10, "C": 0.0}
+    # 2026-11-26 改造：诊断证明「次日早盘卖」吃的是隔夜负收益段（t=-4.0），
+    # 244 天全样本所有选股变体均为负；统一引擎参数扫描显示「止盈10.5%/止损8%/
+    # 持有9天」在 375 组里 Calmar 最高(4.47)且 top30 全部持有9天。落库改为
+    # 带止盈目标 + 更宽止损，交给统一回测/实盘跟踪按同一规则执行。
+    exit_profit, exit_stop, exit_hold = 0.105, 0.08, 9
     for _, r in result["candidates"].iterrows():
         grade = r["grade"]
         entry = float(r["price"])
@@ -100,14 +105,15 @@ def persist(result: Dict[str, Any]) -> int:
                 "八步v3.1", f"{grade}级", "14:30全市场", "14:40-14:50买入",
                 f"回踩{float(r['pct']):.1f}%", f"位置{float(r['close_pos']):.2f}",
                 f"VWAP{float(r['vwap_pos'])*100:+.1f}%", f"涨停基因{int(r['lu20'])}",
-                "次日09:25看缺口", "10:00前卖出",
+                f"止盈{exit_profit:.1%}", f"止损{exit_stop:.0%}", f"最长持有{exit_hold}日",
             ],
             "selected": grade in ("A", "B") and not result["blocked"],
             "position_pct": weight[grade] if not result["blocked"] else 0.0,
             "entry_low": round(entry * 0.995, 2), "entry_high": round(entry * 1.005, 2),
-            "stop_loss": round(entry * 0.98, 2), "target_1": None, "target_2": None,
+            "stop_loss": round(entry * (1 - exit_stop), 2),
+            "target_1": round(entry * (1 + exit_profit), 2), "target_2": None,
             "sources": {"grade": grade, "regime": result["regime"], "steps": result["step_counts"],
-                        "exit": "次日09:25 浮盈>=+0.5%或浮亏<=-3%开盘卖；否则-2%止损，10:00前卖"},
+                        "exit": f"止盈{exit_profit:.1%}/止损{exit_stop:.0%}/最长{exit_hold}日（统一风控口径，2026-11-26改造）"},
         })
     conn = base._db()
     try:

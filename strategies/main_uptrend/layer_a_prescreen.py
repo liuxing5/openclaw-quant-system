@@ -150,7 +150,13 @@ class LayerAPrescreener:
             cur = conn.cursor(cursor_factory=RealDictCursor)
 
             # 使用 stock_fundamentals 表，筛选 profit_yoy > 阈值
-            # 审查 4：report_date <= eval_date（PIT），并保留原有现金流质量条件
+            # 审查 4：2026-11-26 修复前视偏差。
+            # 旧代码 `report_date <= eval_date` 把报告期当作披露日：年报报告期
+            # 12-31，实际最晚 4-30 披露；一季报 03-31 最晚 4-30；半年报 06-30
+            # 最晚 8-31；三季报 09-30 最晚 10-31。统一按报告期 +60 天作为
+            # 最早可用日，避免回测用到当时还未公开的财报。
+            pit_date = (datetime.strptime(as_of_date, "%Y-%m-%d") -
+                        timedelta(days=60)).strftime("%Y-%m-%d")
             cur.execute("""
                 SELECT DISTINCT ts_code
                 FROM stock_fundamentals
@@ -162,7 +168,7 @@ class LayerAPrescreener:
                   AND net_profit > 0
                   AND operating_cashflow IS NOT NULL
                   AND operating_cashflow >= net_profit
-            """, (self.cfg.a_profit_growth_min * 100, as_of_date))
+            """, (self.cfg.a_profit_growth_min * 100, pit_date))
             for row in cur.fetchall():
                 codes.add(row['ts_code'])
             cur.close()
