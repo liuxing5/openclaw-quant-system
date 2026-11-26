@@ -417,6 +417,30 @@ def _gate_time_context(scan_row, report_date):
     return value, note
 
 
+def _breadth_pct(scan_row, report_date) -> str:
+    """返回精确广度百分比(1位小数)。
+
+    strategy_scans.sentiment_score 是 INT 列，8.1% 会被存成 8，页面不能直接用它
+    当广度展示。优先取 filter_stats.breadth_pct，其次取同日 latest_1430.json，
+    最后才回退到整数情绪分。
+    """
+    stats = (scan_row or {}).get('filter_stats') or {}
+    if isinstance(stats, dict) and stats.get('breadth_pct') is not None:
+        try:
+            return f"{float(stats['breadth_pct']):.1f}"
+        except (TypeError, ValueError):
+            pass
+    try:
+        path = Path(__file__).resolve().parents[2] / 'docs' / 'overnight_v2' / 'latest_1430.json'
+        data = json.loads(path.read_text(encoding='utf-8'))
+        if str(data.get('trade_date')) == str(report_date) and data.get('breadth') is not None:
+            return f"{float(data['breadth']) * 100:.1f}"
+    except Exception:  # noqa: BLE001
+        pass
+    sentiment = (scan_row or {}).get('sentiment_score')
+    return str(sentiment) if sentiment is not None else '—'
+
+
 def load_strategy_timestamp(source, snapshot_date=None):
     """Load the exact created_at timestamp for a strategy's latest data.
     
@@ -1002,6 +1026,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
             reject_map[k] = reject_map.get(k, 0) + v
 
     sentiment = eight_scan.get('sentiment_score') if eight_scan else None
+    breadth_text = _breadth_pct(eight_scan, eight_date)
     mood = eight_scan.get('mood', '') if eight_scan else ''
     mood_text = f"情绪{mood}({sentiment}分)" if sentiment else ""
     eight_steps_html = ""
@@ -1094,7 +1119,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
             eight_steps_html += (
                 '<div style="margin:8px 0;padding:10px 12px;border:1px solid #fecaca;'
                 'background:#fef2f2;color:#b91c1c;border-radius:8px;font-weight:700;">'
-                f'⚠️ 大盘门控关闭（广度 {sentiment or "—"}%，口径：全市场站上 MA20 占比）：'
+                f'⚠️ 大盘门控关闭（广度 {breadth_text}%，口径：全市场站上 MA20 占比）：'
                 f'A/B 仅观察，{gate_scan_time}（北京时间24小时制）不执行买入；C 级不买。'
                 f'计划扫描时刻 {eight_date} 14:30。'
                 + (f'本次为{gate_time_note}。' if gate_time_note else '')
@@ -1108,7 +1133,7 @@ def generate_unified_html(output_dir=None, trade_date=None):
             '<div style="margin:14px 0 0;padding:12px 14px;border:1px solid #fecaca;'
             'background:#fef2f2;color:#b91c1c;border-radius:10px;font-weight:700;font-size:.92rem;">'
             f'⚠️ {gate_scan_time}（北京时间24小时制）大盘门控关闭'
-            f'（广度 {sentiment or "—"}%，口径：全市场站上 MA20 占比，与落库「情绪分」同源）：'
+            f'（广度 {breadth_text}%，口径：全市场站上 MA20 占比，与落库「情绪分」同源）：'
             '八步 v3.1 的 A/B 只观察，不执行买入；C 级不买。'
             f'计划扫描时刻 {eight_date} 14:30，下一交易日同理。'
             + (f'本次为{gate_time_note}。' if gate_time_note else '')

@@ -127,6 +127,8 @@ def persist(result: Dict[str, Any]) -> int:
 
     stats = dict(result["step_counts"])
     stats["regime_blocked"] = int(result["blocked"])
+    # sentiment_score 列是 INT，会截断小数；把精确广度单独存进 filter_stats 供页面展示
+    stats["breadth_pct"] = round(result["breadth"] * 100, 1)
     stats["A级"] = int((result["candidates"].grade == "A").sum())
     stats["B级"] = int((result["candidates"].grade == "B").sum())
     stats["C级"] = int((result["candidates"].grade == "C").sum())
