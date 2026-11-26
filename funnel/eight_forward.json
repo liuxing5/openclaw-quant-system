@@ -1,13 +1,13 @@
 {
   "source": "overnight_8step",
   "generated_at": "2026-11-26",
-  "generated_at_time": "2026-11-26 15:14:23",
+  "generated_at_time": "2026-11-26 19:30:12",
   "timezone_note": "generated_at/generated_at_time 为北京时间(UTC+8)；data_as_of = daily_quotes 最新交易日（数据实际截止日）",
-  "data_as_of": "2026-11-20",
+  "data_as_of": "2026-11-26",
   "quote_coverage": {
     "start": "2024-06-12",
-    "end": "2026-11-20",
-    "n_days": 592,
+    "end": "2026-11-26",
+    "n_days": 593,
     "n_codes": 5279,
     "adjusted": "qfq (strategies.shared.adjust.qfq_factors)"
   },
@@ -30,19 +30,19 @@
   "signals_out_of_matrix": 38,
   "dropped_by_reason": {
     "10": {
-      "out_of_range": 29,
+      "out_of_range": 25,
       "no_entry": 32,
-      "no_exit": 23
+      "no_exit": 27
     },
     "20": {
-      "out_of_range": 68,
+      "out_of_range": 65,
       "no_entry": 32,
-      "no_exit": 2
+      "no_exit": 5
     },
     "60": {
-      "out_of_range": 256,
+      "out_of_range": 247,
       "no_entry": 32,
-      "no_exit": 1
+      "no_exit": 10
     }
   },
   "benchmark": {
