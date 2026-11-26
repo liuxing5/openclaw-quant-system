@@ -2,59 +2,97 @@
   "title": "最严格杨永兴版 · 14:30 全市场主板",
   "schedule": "14:30 全市场主板扫描 → 14:40-14:50 买入 → 次日 09:30-10:00 卖出",
   "date": "2026-11-26",
-  "updated": "2026-11-25 17:31:57",
+  "updated": "2026-11-26 06:35:22",
   "steps": [
     {
       "name": "14:30-14:50 尾盘窗口",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "只做尾盘，不碰 14:55 突击拉高"
     },
     {
       "name": "主板 + 涨幅 3%~5%",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "仅 60/00 主板，排除 300/688/ST"
     },
     {
       "name": "近 20 日涨停基因",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "近 20 个交易日至少一次涨停"
     },
     {
       "name": "量比 > 1",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "当日量能高于近 5 日均量"
     },
     {
       "name": "换手率 5%~10%",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "兼顾流动性与不过热"
     },
     {
       "name": "流通市值 50~200亿",
-      "pass": 3,
+      "pass": 2,
       "eliminated": "",
       "rule": "中盘弹性区间"
     },
     {
       "name": "VWAP + 强于大盘",
-      "pass": 3,
-      "eliminated": 3,
+      "pass": 2,
+      "eliminated": 0,
       "rule": "全天在 VWAP 上方，且强于上证/深证"
     },
     {
       "name": "回踩 VWAP 不破",
-      "pass": 0,
-      "eliminated": 3,
+      "pass": 1,
+      "eliminated": 1,
       "rule": "尾盘回踩均价线不有效跌破，次日 9:30-9:40 清仓"
     }
   ],
-  "candidates": [],
-  "candidate_count": 0,
-  "confirmed_count": 0,
+  "candidates": [
+    {
+      "code": "002716.SZ",
+      "name": "湖南白银",
+      "score": 98.2,
+      "entry": 6.52,
+      "stop": 6.5,
+      "target": 6.716,
+      "quant_score": 98.2,
+      "tags": [
+        "VWAP上方",
+        "强于大盘",
+        "回踩不破"
+      ],
+      "source": "腾讯1m",
+      "vwap": 6.5,
+      "pct_chg": 4.82,
+      "confirmed": true,
+      "path": "原版确认"
+    },
+    {
+      "code": "002303.SZ",
+      "name": "美盈森",
+      "score": 83.2,
+      "entry": 3.73,
+      "stop": 3.781,
+      "target": 3.842,
+      "quant_score": 83.2,
+      "tags": [
+        "强于大盘",
+        "待确认"
+      ],
+      "source": "腾讯1m",
+      "vwap": 3.781,
+      "pct_chg": 3.32,
+      "confirmed": false,
+      "path": "待确认"
+    }
+  ],
+  "candidate_count": 2,
+  "confirmed_count": 1,
   "note": "严格规则：主板、近20日涨停基因、VWAP/强于大盘、尾盘回踩确认；14:40-14:50 买入，次日 09:30-10:00 卖出。⚠️ 5 分钟线同口径回测为 −0.52%/笔，先观察，不建议重仓。"
 }
