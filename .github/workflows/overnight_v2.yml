@@ -120,8 +120,7 @@ jobs:
           git add docs/overnight_v2/latest_1430.json \
             strategies/funnel_strategy/docs/overnight_v2.html \
             strategies/funnel_strategy/docs/overnight_classic.json \
-            strategies/funnel_strategy/docs/funnel.html \
-            strategies/funnel_strategy/docs/funnel-${{ steps.check.outputs.date }}.html
+            strategies/funnel_strategy/docs/funnel.html
           git diff --cached --quiet && exit 0
           git commit -m "data: update 14:30 v3.1 + classic scan ${{ steps.check.outputs.date }} [skip ci]"
           # 两个 workflow 都会写 overnight_classic.json；rebase 时以本轮新扫描为准，
