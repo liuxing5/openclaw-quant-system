@@ -94,15 +94,46 @@ jobs:
         run: |
           python scripts/build_overnight_classic.py --date "${{ steps.check.outputs.date }}" --live
 
+      - name: Regenerate funnel.html with 14:30 snapshots
+        # 关键：overnight_v2 只写 JSON / overnight_v2.html，用户访问的 funnel.html
+        # 由 funnel_strategy.yml（16:20）生成发布。14:30 跑完必须同步刷新，
+        # 否则八步 v3.1 与杨永兴严格法要等到 16:20 才出现在页面上。
+        if: steps.check.outputs.is_trading == 'true' && steps.check.outputs.allow_scan == 'true'
+        env:
+          POSTGRES_HOST: ${{ secrets.SUPABASE_HOST }}
+          POSTGRES_PORT: ${{ secrets.SUPABASE_PORT }}
+          POSTGRES_USER: ${{ secrets.SUPABASE_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.SUPABASE_DB }}
+          POSTGRES_POOL_SIZE: 5
+          TZ: Asia/Shanghai
+        run: |
+          DATE="${{ steps.check.outputs.date }}"
+          python strategies/funnel_strategy/generate_html.py \
+            --output ./strategies/funnel_strategy/docs --date "$DATE"
+
       - name: Persist v3.1 + classic snapshot
         if: steps.check.outputs.is_trading == 'true' && steps.check.outputs.allow_scan == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add docs/overnight_v2/latest_1430.json strategies/funnel_strategy/docs/overnight_v2.html strategies/funnel_strategy/docs/overnight_classic.json
+          git add docs/overnight_v2/latest_1430.json \
+            strategies/funnel_strategy/docs/overnight_v2.html \
+            strategies/funnel_strategy/docs/overnight_classic.json \
+            strategies/funnel_strategy/docs/funnel.html \
+            strategies/funnel_strategy/docs/funnel-${{ steps.check.outputs.date }}.html
           git diff --cached --quiet && exit 0
           git commit -m "data: update 14:30 v3.1 + classic scan ${{ steps.check.outputs.date }} [skip ci]"
           # 两个 workflow 都会写 overnight_classic.json；rebase 时以本轮新扫描为准，
           # 否则冲突会中断回写（之前被 continue-on-error 吞掉，页面就停在旧数据）。
           git pull --rebase --autostash -X ours
           git push
+
+      - name: Publish funnel page to GitHub Pages
+        if: steps.check.outputs.is_trading == 'true' && steps.check.outputs.allow_scan == 'true'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          personal_token: ${{ secrets.GH_PAT }}
+          publish_dir: ./strategies/funnel_strategy/docs
+          destination_dir: funnel
+          keep_files: true
